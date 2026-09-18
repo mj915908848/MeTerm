@@ -593,6 +593,21 @@ export function createGeneralTab(
   });
   tabGeneral.appendChild(rateSection);
 
+  // --- SSH tab title ---
+  const titleSection = document.createElement('div');
+  titleSection.className = 'settings-section';
+  const titleLabel = document.createElement('label');
+  titleLabel.textContent = t('sshTabTitleMode');
+  titleSection.appendChild(titleLabel);
+  const titleSelect = createSettingsSelect([
+    { value: 'connection', label: t('sshTabTitleConnection'), selected: current.sshTabTitleMode !== 'terminal' },
+    { value: 'terminal', label: t('sshTabTitleTerminal'), selected: current.sshTabTitleMode === 'terminal' },
+  ]);
+  titleSelect.el.setAttribute('aria-label', t('sshTabTitleMode'));
+  titleSection.appendChild(titleSelect.el);
+  titleSelect.onchange = () => update({ sshTabTitleMode: titleSelect.value as AppSettings['sshTabTitleMode'] });
+  tabGeneral.appendChild(titleSection);
+
   // --- Remember Options ---
   const rememberSection = document.createElement('div');
   rememberSection.className = 'settings-section';

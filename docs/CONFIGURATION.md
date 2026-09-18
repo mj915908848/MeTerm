@@ -34,9 +34,13 @@ interface AppSettings {
   backgroundImageOpacity: number;  // 背景图片透明度 (%)
 
   // 窗口与布局
-  rememberWindowSize: boolean;     // 记住窗口尺寸
-  windowWidth: number;             // 窗口宽度
-  windowHeight: number;            // 窗口高度
+  sshTabTitleMode: 'connection' | 'terminal'; // SSH 标签名称，默认连接名称 / SSH tab title mode, defaults to connection name
+  rememberWindowSize: boolean;     // 记住窗口尺寸/位置（主窗口）
+  windowWidth: number;             // 窗口宽度（逻辑像素）
+  windowHeight: number;            // 窗口高度（逻辑像素）
+  windowX?: number | null;         // 窗口左上角 X（逻辑像素）；null = 交给系统放置
+  windowY?: number | null;         // 窗口左上角 Y（逻辑像素）；null = 交给系统放置
+  windowMaximized?: boolean;       // 上次保存时主窗口是否处于最大化
   rememberDrawerLayout: boolean;   // 记住抽屉布局
   drawerHeight: number;            // 抽屉高度
   drawerSidebarWidth: number;      // 抽屉侧栏宽度

@@ -293,9 +293,15 @@ export interface AppSettings {
   enableThumbnail: boolean;
   previewRefreshRate: number;
   language: 'en' | 'zh';
+  sshTabTitleMode: 'connection' | 'terminal';
   rememberWindowSize: boolean;
   windowWidth: number;
   windowHeight: number;
+  /** Remembered main-window top-left in logical px; null = let the OS place it. */
+  windowX?: number | null;
+  windowY?: number | null;
+  /** True when the main window was maximized the last time its geometry was saved. */
+  windowMaximized?: boolean;
   fileManagerFontSize: number;
   rememberDrawerLayout: boolean;
   drawerHeight: number;
@@ -397,9 +403,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   enableThumbnail: false,
   previewRefreshRate: 1000,
   language: 'en',
+  sshTabTitleMode: 'connection',
   rememberWindowSize: true,
   windowWidth: 1000,
   windowHeight: 700,
+  windowX: null,
+  windowY: null,
+  windowMaximized: false,
   fileManagerFontSize: 12,
   rememberDrawerLayout: true,
   drawerHeight: 0,

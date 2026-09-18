@@ -12,7 +12,7 @@ import { DrawerManager } from './drawer';
 import { SidebarManager } from './file-sidebar';
 import { getAllLeaves } from './split-pane';
 import { AICapsuleManager } from './ai-capsule';
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings } from './themes';
 import { hydrateSettingsSecretPresenceFromStorage } from './settings-secrets';
 import { applyWindowOpacity, applyAiBarOpacity, applyVibrancy, resolveThemeAttr, applyColorScheme, applyBackgroundImage } from './appearance';
 import { applyUiFont } from './fonts';
@@ -72,6 +72,7 @@ import {
   setLastFocusedMainWindowLabel,
 } from './app-state';
 import { togglePip } from './pip';
+import { flushMainWindowGeometry, trackMainWindowGeometry } from './window-geometry';
 import { restoreActiveJumpServersFromStorage } from './jumpserver-handler';
 import { applyNbPalette } from './nb-palette';
 
@@ -135,16 +136,13 @@ export function setupDomEventListeners(): void {
 
   // SSH connections changed
   document.addEventListener('ssh-connections-changed', () => {
-    if (isHomeView) {
-      updateSSHHomeView();
-    }
+    // The connection sidebar stays visible alongside active terminals.
+    updateSSHHomeView();
   });
 
   // Remote connections changed
   document.addEventListener('remote-connections-changed', () => {
-    if (isHomeView) {
-      updateSSHHomeView();
-    }
+    updateSSHHomeView();
   });
 
   // Remote connect from home page button
@@ -258,9 +256,8 @@ export function setupDomEventListeners(): void {
   updateWindowAspectRatio();
 
   // Window resize handler
-  let resizeSaveTimer: ReturnType<typeof setTimeout> | null = null;
   window.addEventListener('resize', () => {
-    if (isPipMode) return; // PiP: don't trigger terminal resize or save window size
+    if (isPipMode) return; // PiP: don't trigger terminal resize
     updateWindowAspectRatio();
     TerminalRegistry.resizeAll();
     syncTabMarqueeState();
@@ -270,17 +267,14 @@ export function setupDomEventListeners(): void {
     if (isGalleryView) {
       updateGalleryView();
     }
-    if (settings.rememberWindowSize) {
-      if (resizeSaveTimer) clearTimeout(resizeSaveTimer);
-      resizeSaveTimer = setTimeout(async () => {
-        const size = await getCurrentWindow().innerSize();
-        const factor = window.devicePixelRatio || 1;
-        settings.windowWidth = Math.round(size.width / factor);
-        settings.windowHeight = Math.round(size.height / factor);
-        saveSettings(settings);
-      }, 500);
-    }
   });
+
+  // Remember this window's size/position. Deliberately NOT part of the resize
+  // handler above: that runs terminal fitting and view refreshes first, so a
+  // throw anywhere in there used to silently drop the persisted geometry.
+  // window-geometry.ts listens for the window's own move/resize events instead
+  // and ignores utility windows.
+  trackMainWindowGeometry(getCurrentWindow());
 
   // On Windows/Linux: keep the maximize/restore button icon in sync with actual window state.
   if (isWindowsPlatform || isLinuxPlatform) {
@@ -519,6 +513,10 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
   void listen<{ target_window: string }>('window-close-requested', async (event) => {
     if (!isForThisWindow(event.payload)) return;
 
+    // Persist the current frame before any hide/close path, so a resize or move
+    // made within the save debounce window is still remembered.
+    await flushMainWindowGeometry();
+
     const mainWindowCount = await invoke<number>('get_main_window_count');
 
     // Last window: check hide-to-tray preference
@@ -644,6 +642,7 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     if (!isForThisWindow(event.payload)) return;
     const confirmed = await confirmSystem(t('confirmQuitAllWindows'));
     if (confirmed) {
+      await flushMainWindowGeometry();
       await invoke('request_app_quit');
     }
   });
@@ -723,7 +722,7 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
         const content = await readTextFile(filePath as string);
         const result = await importConnectionsFromJSON(content);
         await showInfoSystem(`${result.count} ${t('sshImportCount')}`, t('sshImportSuccess'));
-        if (isHomeView) updateSSHHomeView();
+        updateSSHHomeView();
       } catch {
         await showInfoSystem(t('sshImportInvalidFormat'), t('sshImportFailed'));
       }

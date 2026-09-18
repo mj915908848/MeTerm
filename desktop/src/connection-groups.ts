@@ -1,3 +1,5 @@
+import { migrateGroupSort } from './connection-sort';
+
 /**
  * Connection group management — stores group assignments in localStorage.
  *
@@ -98,6 +100,7 @@ export function createGroup(name: string): void {
 
 export function renameGroup(oldName: string, newName: string): void {
   if (oldName === newName) return;
+  migrateGroupSort(oldName, newName);
   // Update order
   const order = loadGroupOrder();
   const idx = order.indexOf(oldName);
@@ -113,6 +116,7 @@ export function renameGroup(oldName: string, newName: string): void {
 }
 
 export function deleteGroup(name: string): void {
+  migrateGroupSort(name);
   // Remove from order
   const order = loadGroupOrder().filter((g) => g !== name);
   saveGroupOrder(order);

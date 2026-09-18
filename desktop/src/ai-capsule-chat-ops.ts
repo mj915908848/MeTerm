@@ -509,6 +509,12 @@ export function restoreConversation(
   instance.messages = conv.messages.map(m => ({ ...m }));
   instance.reasoningBuffer = '';
 
+  // Hand the same history to the agent. `clear()` above wiped its context, and
+  // rebuilding only the chat panel is not enough: the panel would show the
+  // previous turns while the model started from scratch, so it had no idea which
+  // operations had already run. See ai-agent-restore.ts for the mapping.
+  instance.agent.restoreHistory(instance.messages);
+
   // Ensure chat panel exists and is in the correct layout
   if (!instance.chatPanel) {
     instance.chatPanel = createChatPanel(instance, host);

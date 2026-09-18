@@ -1,5 +1,23 @@
 # MeTerm 更新记录
 
+## v0.2.13
+
+### 新功能 / Features
+
+- **组内连接排序 / Connection sorting within groups** — 分组与“最近 / 未分组”标题的数量旁新增排序按钮，支持默认顺序、IP 升降序、名称升降序，各组分别保存偏好；排序不改写原始连接顺序。 / Add sorting beside each group count, including recent / ungrouped connections, with default, IP and name ascending or descending order; persist preferences per group without changing saved connection order.
+- **SSH 标签名称 / SSH tab titles** — 设置 → 通用可选择连接名称或终端动态标题，默认连接名称；切换立即更新已打开的标签和提示，分屏跟随聚焦会话。 / General settings let SSH tabs use connection names (default) or dynamic terminal titles; changes immediately update existing labels and tooltips, following the focused session in split panes.
+
+### 问题修复 / Fixes
+
+- **连接面板实时刷新 / Live connection panel refresh** — 新增、编辑后立即刷新连接面板，SSH 删除等待完成后再刷新，避免继续显示旧内容。 / Refresh the connection panel after additions and edits, and await SSH deletion before refreshing to avoid stale entries.
+- **AI 历史上下文恢复 / AI conversation context restoration** — 重开历史对话时恢复 Agent 的消息上下文，保留工具调用前的正文与推理，恢复工具返回的图片和错误标记，并为中断的工具调用补齐结果占位。 / Restore the Agent message context when reopening a conversation, retain assistant text and reasoning before tool calls, restore tool images and error markers, and supply placeholder results for interrupted calls.
+- **主窗口状态记忆 / Main window state persistence** — 保存与恢复主窗口尺寸、位置及最大化状态；辅助窗口不覆盖主窗口记录。 / Save and restore the main window size, position and maximized state; utility windows do not overwrite the main window record.
+- **设置回写修复 / Settings persistence fix** — 设置面板与窗口几何保存基于最新设置合并，减少陈旧快照覆盖其他设置的问题。 / Merge panel edits and geometry updates into the latest settings to reduce stale snapshot overwrites.
+- **窗口保存请求顺序 / Geometry save ordering** — 新保存请求使较早的异步读取失效，避免旧尺寸和位置覆盖最新记录；退出前等待当前保存完成。 / Invalidate earlier asynchronous reads when a newer geometry save starts, preventing stale dimensions and positions from overwriting the latest record; await the current save before exit.
+- **多屏恢复 / Multi-monitor restoration** — 按历史窗口位置选择仍连接的显示器，原显示器不可用时回退到当前屏幕并限制恢复尺寸。 / Select an attached monitor using the saved window position, and fall back to the current screen with bounded window dimensions when the original monitor is unavailable.
+
+---
+
 ## v0.2.12
 
 ### Agent 双形态(原生 TUI + 手机聊天镜像)

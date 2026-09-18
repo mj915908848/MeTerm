@@ -1,3 +1,5 @@
+import { getGroupSort, sortConnections } from './connection-sort';
+import { showGroupSortMenu } from './group-sort-menu';
 // Home left sidebar — compact grouped connection list (search-filtered).
 // Reuses the connection data + context menu from home-dashboard-left.
 
@@ -89,7 +91,12 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
   const singleGroup = !!headerSlot && groupNames.length === 1;
 
   for (const g of groupNames) {
-    const items = buckets.get(g)!;
+    const items = sortConnections(buckets.get(g)!, getGroupSort(g), settings.language, item => {
+      const raw = item.raw;
+      const host = 'sshHost' in raw ? raw.sshHost : raw.host;
+      const port = 'sshPort' in raw ? raw.sshPort : raw.port;
+      return { name: item.name, host, port };
+    });
     const isUngrouped = g === UNGROUPED;
     const isCollapsed = !query && collapsed.has(g);
 
@@ -98,6 +105,20 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
     header.innerHTML = `<span class="hsg-chevron">${icon('chevronRight')}</span>`
       + `<span class="hsg-name">${isUngrouped ? t('homeGroupUngrouped') : escapeHtml(g)}</span>`
       + `<span class="hsg-count">${items.length}</span>`;
+    const sortButton = document.createElement('button');
+    sortButton.type = 'button';
+    sortButton.className = 'hsg-sort';
+    sortButton.dataset.group = g;
+    sortButton.textContent = '↕';
+    sortButton.title = t('connectionSort');
+    sortButton.setAttribute('aria-label', `${isUngrouped ? t('homeGroupUngrouped') : g}: ${t('connectionSort')}`);
+    sortButton.setAttribute('aria-haspopup', 'menu');
+    sortButton.setAttribute('aria-expanded', 'false');
+    sortButton.onclick = event => {
+      event.stopPropagation();
+      showGroupSortMenu(sortButton, g, deps.refresh);
+    };
+    header.appendChild(sortButton);
     header.onclick = () => {
       if (query) return; // can't collapse while filtering
       toggleGroupCollapsed(g);

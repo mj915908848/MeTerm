@@ -1,3 +1,5 @@
+import { resolveSshTabTitle } from './ssh-tab-title';
+import { loadSettings } from './themes';
 /**
  * tab-renderer.ts — Tab bar rendering and progress indicators
  *
@@ -154,6 +156,7 @@ export function renderTabs(): void {
   const scrollContainer = document.createElement('div');
   scrollContainer.className = 'tab-scroll-container';
 
+  const sshTabTitleMode = loadSettings().sshTabTitleMode;
   TabManager.tabs.forEach((tab) => {
     const node = document.createElement('button');
     const tabLeaves = getAllLeaves(tab.splitRoot);
@@ -162,6 +165,10 @@ export function renderTabs(): void {
     node.className = `title-tab${isActive ? ' active' : ''}${hasPendingRequest && !isActive ? ' tab-breathing' : ''}`;
     node.type = 'button';
     const isJumpServer = tabLeaves.some((l) => jumpServerConfigMap.has(l.sessionId));
+    const focusedSessionId = (tabLeaves.find(leaf => leaf.id === tab.focusedPaneId) ?? tabLeaves[0])?.sessionId;
+    const focusedConfig = focusedSessionId && !remoteInfoMap.has(focusedSessionId)
+      ? sshConfigMap.get(focusedSessionId) : undefined;
+    const displayTitle = resolveSshTabTitle(tab.title, focusedConfig, sshTabTitleMode);
     const isSSH = !isJumpServer && tabLeaves.some((l) => sshConfigMap.has(l.sessionId));
     const isRemoteTab = tabLeaves.some((l) => TerminalRegistry.get(l.sessionId)?.isRemote);
     const remoteLeaf = isRemoteTab ? tabLeaves.find((l) => TerminalRegistry.get(l.sessionId)?.isRemote) : null;
@@ -174,8 +181,8 @@ export function renderTabs(): void {
       : '';
     const hasIcon = isSSH || isJumpServer || isRemoteTab;
     const iconArea = hasIcon ? `<span class="tab-icon-area">${jsIconSvg}${cloudIconSvg}${remoteIconSvg}</span>` : '';
-    node.innerHTML = `${iconArea}<span class="title-tab-track"><span class="title-tab-track-inner"><span class="title-tab-text primary">${escapeHtml(tab.title)}</span><span class="title-tab-text duplicate" aria-hidden="true">${escapeHtml(tab.title)}</span></span></span>`;
-    node.title = `${tab.title} · ${statusLabel(tab.status)}`;
+    node.innerHTML = `${iconArea}<span class="title-tab-track"><span class="title-tab-track-inner"><span class="title-tab-text primary">${escapeHtml(displayTitle)}</span><span class="title-tab-text duplicate" aria-hidden="true">${escapeHtml(displayTitle)}</span></span></span>`;
+    node.title = `${displayTitle} · ${statusLabel(tab.status)}`;
     node.onclick = async () => {
       TabManager.activate(tab.id);
       await activateTab(tab.id);

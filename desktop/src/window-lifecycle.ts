@@ -6,6 +6,7 @@ import { confirm, message } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { createUtilityWindow } from './window-utils';
+import { flushMainWindowGeometry } from './window-geometry';
 import { t } from './i18n';
 import { isQuitFlowRunning, setIsQuitFlowRunning, settings } from './app-state';
 import { TabManager } from './tabs';
@@ -92,6 +93,9 @@ export async function requestQuitWithConfirm(): Promise<void> {
       }
       if (_closeAllSessions) await _closeAllSessions();
     }
+    // Persist the window frame before the process goes away, so a resize/move
+    // made moments before quitting is still remembered on the next launch.
+    await flushMainWindowGeometry();
     await invoke('request_app_quit');
   } finally {
     setIsQuitFlowRunning(false);

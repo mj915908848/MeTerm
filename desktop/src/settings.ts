@@ -1,4 +1,4 @@
-import { AppSettings, saveSettings } from './themes';
+import { AppSettings, loadSettings, saveSettings } from './themes';
 import { createOverlayScrollbar } from './overlay-scrollbar';
 import { t } from './i18n';
 import { createGeneralTab } from './settings-general';
@@ -39,8 +39,19 @@ export function createSettingsPanel(options: SettingsPanelOptions): HTMLDivEleme
   const { isWindow, onSettingsChange, onLanguageChange, onClose } = options;
   let current = { ...options.settings };
 
+  // Only keys this panel actually edited may override freshly persisted values.
+  //
+  // The panel used to persist `{ ...snapshot, ...patch }`, where `snapshot` was
+  // the whole settings object captured when the panel was created. Every change
+  // made here therefore rewrote the entire settings object from that stale copy,
+  // silently rolling back anything another window had written in the meantime —
+  // most visibly the main window's remembered size/position, which made the app
+  // "forget" its window frame and reopen at the default one.
+  const editedByThisPanel: Partial<AppSettings> = {};
+
   function update(patch: Partial<AppSettings>): void {
-    current = { ...current, ...patch };
+    Object.assign(editedByThisPanel, patch);
+    current = { ...loadSettings(), ...editedByThisPanel };
     saveSettings(current);
     onSettingsChange(current);
   }

@@ -665,7 +665,7 @@ export function showConnectionContextMenu(event: MouseEvent, item: ConnectionIte
 
 async function handleDeleteConnection(item: ConnectionItem, refreshView: () => void): Promise<void> {
   if (item.type === 'ssh') {
-    removeSSHConnection((item.raw as SSHConnectionConfig).name);
+    await removeSSHConnection((item.raw as SSHConnectionConfig).name);
   } else if (item.type === 'remote') {
     const info = item.raw as RemoteServerInfo;
     await removeRemoteConnection(info.host, info.port);

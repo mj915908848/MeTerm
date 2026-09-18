@@ -32,6 +32,8 @@ import {
 import {
   trimHistory, compressContext, microCompact, shouldAutoCompact,
 } from './ai-agent-history';
+import { buildRestoredMessages } from './ai-agent-restore';
+import type { ConvEntry } from './ai-capsule-types';
 import { type AgentEvent } from './ai-agent-events';
 import { runAgentAsGenerator, type ImageAttachment } from './ai-agent-run';
 import { runTools, type ToolExecResult } from './ai-tool-orchestrator';
@@ -251,6 +253,29 @@ export class ToolAgent {
     } finally {
       this.todoState.onUpdate = listener;
     }
+  }
+
+  /**
+   * Rehydrate the model context from a persisted conversation.
+   *
+   * Reopening a saved conversation clears the agent and then rebuilds the chat
+   * panel, which used to leave the model with an empty history: the panel showed
+   * the previous turns while the next request started from scratch. The UI calls
+   * this right after `clear()` with the saved entries so the next turn continues
+   * the previous work and still knows which operations already ran and what they
+   * returned. See ai-agent-restore.ts for the entry → ChatMessage mapping.
+   *
+   * Callers must pass the entries in chronological order and must not have a run
+   * in flight — this replaces `messages` wholesale.
+   */
+  restoreHistory(entries: readonly ConvEntry[]): void {
+    this.abort();
+    this.aborted = false;
+    this.messages = buildRestoredMessages(entries);
+    this.pendingUserMessages = [];
+    // Loops only make sense within a single run; a restored transcript is not a
+    // continuation of the run that produced it.
+    this.recentToolHashes = [];
   }
 
   // ─── Public API ─────────────────────────────────────────────

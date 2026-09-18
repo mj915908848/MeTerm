@@ -1,6 +1,6 @@
 {
   "name": "meterm",
-  "version": "0.1.0",
+  "version": "0.2.13",
   "private": true,
   "license": "MIT",
   "scripts": {
@@ -9,6 +9,8 @@
     "test:ssh-secrets": "node --experimental-strip-types --test tests/ssh-secret-lifecycle.test.mts tests/durable-write-queue.test.mts",
     "test:connection-sync-security": "node --experimental-strip-types --test tests/connection-sync-security.test.mts",
     "test:editor-security": "node --experimental-strip-types --test tests/file-editor-security.test.mts",
+    "test:window-geometry": "node --experimental-strip-types --test tests/window-geometry.test.mts tests/window-geometry-persistence.test.mts",
+    "test:agent-restore": "node --experimental-strip-types --test tests/ai-agent-restore.test.mts",
     "tauri": "tauri"
   },
   "dependencies": {

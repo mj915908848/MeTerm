@@ -63,7 +63,7 @@ import { emit } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { syncTrayLanguage, setCloseAllSessionsHandler } from './window-lifecycle';
 import { revealAfterPaint } from './window-utils';
-import { LogicalSize } from '@tauri-apps/api/dpi';
+import { restoreMainWindowGeometry } from './window-geometry';
 import {
   setViewManagerCallbacks,
   activateTab,
@@ -94,7 +94,6 @@ import {
   settings, setSettings,
   sshConfigMap, remoteInfoMap, sessionProgressMap,
   remoteTabNumbers, incrementNextRemoteTabNumber,
-  isWindowsPlatform,
 } from './app-state';
 import { setupDomEventListeners, setupTauriEventListeners, setupPostReadyEventListeners } from './event-listeners';
 import { initTldr, getTldrCommands } from './tldr-help';
@@ -237,15 +236,10 @@ async function init(): Promise<void> {
   // because it fires immediately when the other window writes to localStorage.
   listenForNbPaletteChanges(() => loadSettings().colorScheme);
 
-  if (settings.rememberWindowSize && settings.windowWidth > 0 && settings.windowHeight > 0) {
-    // Windows-only guard: dynamically created secondary windows can stall on
-    // setSize during early init, causing a blank/non-interactive window.
-    // Keep restore-size behavior for main window on Windows, and unchanged on
-    // macOS/Linux to avoid behavior regressions there.
-    if (!isWindowsPlatform || currentWindowLabel === 'main') {
-      await currentWindow.setSize(new LogicalSize(settings.windowWidth, settings.windowHeight));
-    }
-  }
+  // Restore the remembered window frame (size + position + maximized state).
+  // Utility windows are filtered out inside the helper; on Windows only the
+  // primary window is resized this early (see window-geometry.ts).
+  await restoreMainWindowGeometry(currentWindow);
 
   setSSHConnectHandler(handleSSHConnect);
   setRemoteConnectHandler((info, sessionId) => { void handleRemoteConnect(info, sessionId); });

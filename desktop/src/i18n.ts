@@ -2,6 +2,16 @@ export type Language = 'en' | 'zh';
 
 export interface Translations {
   appName: string;
+  connectionSort: string;
+  connectionSortDefault: string;
+  connectionSortIpAsc: string;
+  connectionSortIpDesc: string;
+  connectionSortNameAsc: string;
+  connectionSortNameDesc: string;
+  sshTabTitleMode: string;
+  sshTabTitleConnection: string;
+  sshTabTitleTerminal: string;
+
   settings: string;
   settingsTabAppearance: string;
   settingsTabTerminal: string;
@@ -842,6 +852,16 @@ const translations: Record<Language, Translations> = {
     nbPresetStealth: '🥷 Stealth',
     nbPresetMocha: '☕ Mocha',
     rememberWindowSize: 'Remember Window Size',
+    connectionSort: 'Sort connections',
+    connectionSortDefault: 'Default order',
+    connectionSortIpAsc: 'IP ascending',
+    connectionSortIpDesc: 'IP descending',
+    connectionSortNameAsc: 'Name ascending',
+    connectionSortNameDesc: 'Name descending',
+    sshTabTitleMode: 'SSH tab title',
+    sshTabTitleConnection: 'Connection name',
+    sshTabTitleTerminal: 'Dynamic terminal title',
+
     rememberDrawerLayout: 'Remember Drawer Layout',
     pipScale: 'PiP Window Scale',
     pipScaleByScreen: 'Scale relative to screen size',
@@ -1571,6 +1591,16 @@ const translations: Record<Language, Translations> = {
     nbPresetStealth: '🥷 隐匿',
     nbPresetMocha: '☕ 摩卡',
     rememberWindowSize: '记住窗口大小',
+    connectionSort: '组内排序',
+    connectionSortDefault: '默认顺序',
+    connectionSortIpAsc: 'IP 升序',
+    connectionSortIpDesc: 'IP 降序',
+    connectionSortNameAsc: '名称升序',
+    connectionSortNameDesc: '名称降序',
+    sshTabTitleMode: 'SSH 标签名称',
+    sshTabTitleConnection: '连接名称',
+    sshTabTitleTerminal: '终端动态标题',
+
     rememberDrawerLayout: '记住抽屉布局',
     pipScale: '画中画窗口缩放比例',
     pipScaleByScreen: '根据屏幕大小比例进行缩放',
