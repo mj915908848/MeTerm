@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolveSshTabTitle } from '../src/ssh-tab-title.ts';
 
-test('SSH defaults to saved connection name regardless of remote title changes', () => {
+test('default and opt-in modes: dynamic title unless connection names are enabled', () => {
   const config = { name: '生产服务器', host: '10.0.0.2' };
   for (const title of ['root@localhost:~', 'vim /etc/hosts', '']) {
-    assert.equal(resolveSshTabTitle(title, config, undefined), '生产服务器');
-    assert.equal(resolveSshTabTitle(title, config, 'connection'), '生产服务器');
+    assert.equal(resolveSshTabTitle(title, config, undefined), title);
     assert.equal(resolveSshTabTitle(title, config, 'terminal'), title);
+    assert.equal(resolveSshTabTitle(title, config, 'connection'), '生产服务器');
   }
 });
 test('empty connection names fall back to host', () => {

@@ -4,7 +4,7 @@
  * 从 drawer.ts 中提取，供 DrawerManagerClass 委托调用。
  */
 
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 
 /** DrawerInstance 中布局相关的字段子集 */
 export interface LayoutFields {
@@ -121,8 +121,7 @@ export function saveDrawerLayout(instance: LayoutFields): void {
   const sidebar = instance.element.querySelector('.drawer-sidebar') as HTMLDivElement;
   const sidebarWidth = sidebar ? sidebar.getBoundingClientRect().width : 0;
 
-  saveSettings({
-    ...settings,
+  updateSettings({
     drawerHeight: instance.height,
     drawerSidebarWidth: sidebarWidth,
   });

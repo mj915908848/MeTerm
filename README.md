@@ -155,6 +155,19 @@ cd desktop && npm install && cd ..
 make desktop-dev
 ```
 
+For local UI, Agent, and terminal validation only, create a self-signed code
+signing certificate named `MeTerm Dev Local Signing`, then run:
+
+```bash
+make desktop-run-local            # Builds/signs and opens the ordinary local Dev app
+./build-dev-local.sh              # Builds/signs, then opens or restarts MeTerm Dev
+./build-dev-local.sh --no-open    # Builds/signs only
+```
+
+This target does not enable mobile control or development credential recovery;
+those privileged checks still require the Apple Development target below. The
+stable local identity prevents Keychain from seeing every rebuild as a new app.
+
 For macOS mobile-control or relay validation, use the isolated, Apple
 Development-signed bundle instead of the unsigned hot-reload executable:
 

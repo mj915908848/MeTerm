@@ -5,7 +5,7 @@
 import { DrawerManager } from './drawer';
 import { SidebarManager } from './file-sidebar';
 import { TerminalRegistry } from './terminal';
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 import { ConnectionSidebar } from './connection-sidebar';
 
 /**
@@ -57,7 +57,7 @@ export async function switchFileManagerMode(sessionId: string): Promise<void> {
   const s = loadSettings();
   const oldMode = s.fileManagerMode;
   const newMode = oldMode === 'sidebar' ? 'drawer' : 'sidebar';
-  saveSettings({ ...s, fileManagerMode: newMode });
+  updateSettings({ fileManagerMode: newMode });
 
   // Hide old mode
   if (oldMode === 'sidebar') {

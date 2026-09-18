@@ -25,6 +25,9 @@ import { clearPendingAttachments } from './ai-capsule-file-attach';
 import { attachLightboxClick } from './ai-image-lightbox';
 import { renderEmptyState } from './ai-empty-state';
 import { resolveFocusedPaneNumber } from './ai-capsule-tab-state';
+import { hostsMatch } from './ai-conversation-host';
+import { allowConversationSend, currentConversationHost, previewHostConversation } from './ai-conversation-host-ui';
+import { bindLegacyConversation } from './ai-capsule-chat-persistence';
 import { attachPersistentTodoListener } from './ai-capsule-chat-ui';
 import { renderTodoBoard as renderTodoBoardImport, restoreTodoBoardFromHistory } from './ai-capsule-tool-ui';
 
@@ -35,7 +38,7 @@ export interface ChatOpsHost {
   buildToolCard(msg: Extract<ConvEntry, { type: 'tool_call' }>): HTMLDivElement;
   bindCommandButtons(instance: AICapsuleInstance, container: Element): void;
   addHistory(instance: AICapsuleInstance, command: string, source: 'manual' | 'ai'): void;
-  saveConversation(instance: AICapsuleInstance, snapshot?: { id: string; messages: ConvEntry[] }): Promise<void>;
+  saveConversation(instance: AICapsuleInstance, snapshot?: { id: string; messages: ConvEntry[]; hostBinding?: ChatConversation['hostBinding'] }): Promise<void>;
   deleteConversation(id: string): Promise<void>;
   closeHistory(instance: AICapsuleInstance): void;
   closeChatHistory(instance: AICapsuleInstance): void;
@@ -63,6 +66,20 @@ export interface ChatOpsHost {
 }
 
 // ─── Create Chat Panel ──────────────────────────────────────
+
+function leaveHeaderHistoryView(
+  active: AICapsuleInstance, owner: AICapsuleInstance, panel: HTMLDivElement, host: ChatOpsHost,
+): void {
+  host.closeChatHistory(active);
+  if (active !== owner) host.closeChatHistory(owner);
+  // The panel is shared by panes in a tab; its visual state can outlive the
+  // instance that opened history. Restore it even if that instance lost focus.
+  panel.querySelector('.ai-history-preview-drawer')?.remove();
+  const history = panel.querySelector('.ai-side-chat-history-view') as HTMLElement | null;
+  if (history) history.style.display = 'none';
+  const messages = panel.querySelector('.ai-chat-messages') as HTMLElement | null;
+  if (messages) messages.style.display = '';
+}
 
 export function createChatPanel(
   instance: AICapsuleInstance,
@@ -107,9 +124,10 @@ export function createChatPanel(
   newChatBtn.addEventListener('click', () => {
     const inst = currentInstance();
     if (inst.isStreaming) return;
+    leaveHeaderHistoryView(inst, instance, panel, host);
     // Save current conversation to history if it has messages
     if (inst.messages.length > 0) {
-      const snapshot = { id: inst.currentConversationId, messages: [...inst.messages] };
+      const snapshot = { id: inst.currentConversationId, messages: [...inst.messages], hostBinding: inst.conversationHost };
       void host.saveConversation(inst, snapshot);
     }
     // Reset to a fresh conversation
@@ -118,6 +136,7 @@ export function createChatPanel(
     // is archived — user won't reference those paths again).
     clearPendingAttachments(inst, /* deleteFiles */ true);
     inst.messages = [];
+    inst.conversationHost = undefined;
     inst.currentConversationId = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     inst.streamMsgEl = null;
     inst.streamBuffer = '';
@@ -134,12 +153,17 @@ export function createChatPanel(
   clearBtn.addEventListener('click', () => {
     const inst = currentInstance();
     if (inst.isStreaming) return;
+    leaveHeaderHistoryView(inst, instance, panel, host);
     // Clear without saving — user explicitly discards
     void host.deleteConversation(inst.currentConversationId);
     inst.agent.clear();
     clearPendingAttachments(inst, /* deleteFiles */ true);
     inst.messages = [];
+    inst.conversationHost = undefined;
     inst.currentConversationId = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    inst.streamMsgEl = null;
+    inst.streamBuffer = '';
+    inst.reasoningBuffer = '';
     const msgContainer = panel.querySelector('.ai-chat-messages');
     if (msgContainer) msgContainer.innerHTML = '';
     host.updateChatTitle(inst);
@@ -313,7 +337,7 @@ export function closeChatAndSave(instance: AICapsuleInstance, host: ChatOpsHost)
 
   // Snapshot messages before clearing, then save asynchronously
   if (instance.messages.length > 0) {
-    const snapshot = { id: instance.currentConversationId, messages: [...instance.messages] };
+    const snapshot = { id: instance.currentConversationId, messages: [...instance.messages], hostBinding: instance.conversationHost };
     void host.saveConversation(instance, snapshot);
   }
 
@@ -324,6 +348,7 @@ export function closeChatAndSave(instance: AICapsuleInstance, host: ChatOpsHost)
   // Reset conversation immediately
   instance.agent.clear();
   instance.messages = [];
+  instance.conversationHost = undefined;
   instance.currentConversationId = `conv-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   if (instance.chatPanel) {
     const msgContainer = instance.chatPanel.querySelector('.ai-chat-messages');
@@ -403,6 +428,7 @@ export function sendToLLMFrom(
   text: string,
   host: ChatOpsHost,
 ): void {
+  if (!allowConversationSend(instance)) return;
   // Guard: if the agent is already streaming, inject the message into
   // the running conversation instead of starting a new run. This
   // prevents the race condition where a quick-prompt click or side-panel
@@ -434,6 +460,7 @@ export function sendToLLMFrom(
   // focus at Send time is the one the agent commands operate on
   // for the entire run, even if the user switches focus mid-stream.
   const lockedPaneNumber = resolveFocusedPaneNumber(instance.sessionId);
+  instance.conversationHost ??= currentConversationHost(instance);
   instance.state.activeRunTargetPaneNumber = lockedPaneNumber || null;
 
   openChat(instance, host);
@@ -490,9 +517,16 @@ export function restoreConversation(
   conv: ChatConversation,
   host: ChatOpsHost,
 ): void {
+  if (!hostsMatch(conv.hostBinding, currentConversationHost(instance))) {
+    previewHostConversation(conv, instance, async target => {
+      await bindLegacyConversation(conv.id, target);
+      conv.hostBinding = target;
+    });
+    return;
+  }
   // Save current conversation if it has messages
   if (instance.messages.length > 0) {
-    const snapshot = { id: instance.currentConversationId, messages: [...instance.messages] };
+    const snapshot = { id: instance.currentConversationId, messages: [...instance.messages], hostBinding: instance.conversationHost };
     void host.saveConversation(instance, snapshot);
   }
 
@@ -506,6 +540,7 @@ export function restoreConversation(
 
   // Restore conversation state
   instance.currentConversationId = conv.id;
+  instance.conversationHost = conv.hostBinding;
   instance.messages = conv.messages.map(m => ({ ...m }));
   instance.reasoningBuffer = '';
 

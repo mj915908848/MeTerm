@@ -31,6 +31,7 @@ export interface TabState {
   agent: AIAgent;
   messages: ConvEntry[];
   currentConversationId: string;
+  conversationHost: import('./ai-conversation-host').ConversationHost | undefined;
   /** Abort function for the currently-running agent.run() generator. */
   agentAbort: (() => void) | null;
   /** Shared draft text across all AI Bars in this tab. */
@@ -118,6 +119,7 @@ export interface AICapsuleInstance {
   chatHistoryOpen: boolean;
   chatHistoryPanel: HTMLDivElement | null;
   currentConversationId: string;
+  conversationHost: import('./ai-conversation-host').ConversationHost | undefined;
   layoutMode: AIChatLayoutMode;
   sidePanel: HTMLDivElement | null;
   sideResizeHandle: HTMLDivElement | null;
@@ -183,6 +185,7 @@ export type ConvEntry =
       timestamp: number; paneNumber?: number };
 
 export interface ChatConversation {
+  hostBinding?: import('./ai-conversation-host').ConversationHost;
   id: string;
   title: string;
   messages: ConvEntry[];
@@ -203,6 +206,7 @@ export const TAB_STATE_FIELDS: Array<keyof TabState> = [
   'agent',
   'messages',
   'currentConversationId',
+  'conversationHost',
   'agentAbort',
   'chatPanel',
   'chatOpen',

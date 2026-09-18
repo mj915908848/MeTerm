@@ -6,7 +6,7 @@ import { addBookmark } from './file-bookmarks';
 import { isEditableFile } from './icons';
 import { openFileInEditor } from './file-editor-bridge';
 import { isImageFile } from './file-editor-md';
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 import { invoke } from '@tauri-apps/api/core';
 import { isMacPlatform } from './app-state';
 import { t } from './i18n';
@@ -335,7 +335,7 @@ export function setupContextMenu(
                 radio: true,
                 checked: settings.fileOpenPreference === 'builtin',
                 action: () => {
-                  saveSettings({ ...loadSettings(), fileOpenPreference: 'builtin' });
+                  updateSettings({ fileOpenPreference: 'builtin' });
                   const ws = fm.getWebSocket();
                   const transport = (fm as any).transport as import('./terminal-transport').TerminalTransport | null;
                   const conn = transport?.connected ? transport : ws;
@@ -351,7 +351,7 @@ export function setupContextMenu(
                 radio: true,
                 checked: settings.fileOpenPreference === 'system',
                 action: () => {
-                  saveSettings({ ...loadSettings(), fileOpenPreference: 'system' });
+                  updateSettings({ fileOpenPreference: 'system' });
                   if (isLocal) {
                     invoke('open_path', { path: fullPath }).catch(() => {});
                   } else {

@@ -2,7 +2,7 @@
  * appearance.ts — Theme, opacity, and background image management.
  * Extracted from main.ts.
  */
-import { AppSettings, resolveIsDark, getEffectiveTheme, saveSettings } from './themes';
+import { AppSettings, resolveIsDark, getEffectiveTheme, loadSettings, updateSettings } from './themes';
 import { TerminalRegistry } from './terminal';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -62,12 +62,12 @@ export function resolveThemeAttr(colorScheme: string): string {
 }
 
 export function applyColorScheme(s: AppSettings): void {
+  Object.assign(s, loadSettings());
   document.documentElement.dataset.theme = resolveThemeAttr(s.colorScheme);
 
   const effectiveTheme = getEffectiveTheme(s);
   if (effectiveTheme !== s.theme) {
-    s.theme = effectiveTheme;
-    saveSettings(s);
+    Object.assign(s, updateSettings({ theme: effectiveTheme }));
   }
   TerminalRegistry.setSettings(s);
 

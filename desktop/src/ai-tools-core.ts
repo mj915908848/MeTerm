@@ -7,6 +7,7 @@ import { TerminalRegistry } from './terminal';
 import { DrawerManager } from './drawer';
 import { TabManager } from './tabs';
 import { getAllLeaves } from './split-pane';
+import { MESSAGE_HISTORY_MAX_CHARS } from './ai-history-budget';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -15,7 +16,7 @@ export interface ToolDefinition {
   description: string;
   parameters: {
     type: 'object';
-    properties: Record<string, { type: string; description: string; default?: unknown }>;
+    properties: Record<string, { type: string; description: string; default?: unknown; minimum?: number; maximum?: number }>;
     required: string[];
   };
 }
@@ -170,7 +171,7 @@ export const TOKEN_BUDGET = {
   /** Max characters per tool output */
   perToolOutputChars: 4000,
   /** Max total characters in message history */
-  messageHistoryMaxChars: 60000,
+  messageHistoryMaxChars: MESSAGE_HISTORY_MAX_CHARS,
   /** Default lines for read_terminal tool */
   defaultTerminalLines: 50,
   /** Lines included in system prompt context */

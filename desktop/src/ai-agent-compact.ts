@@ -14,6 +14,8 @@ import type {
   StreamCallbacks,
 } from './ai-provider';
 import { contentToText } from './ai-provider';
+import { COMPACT_SYSTEM_PROMPT, findCompactSplit, clipSummaryEvidence } from './ai-agent-compact-policy';
+import { abortableOperation } from './ai-abortable-operation';
 
 /** Number of most recent messages to keep verbatim. Everything before
  *  this window gets summarized into a single synthetic user message.
@@ -23,24 +25,6 @@ export const COMPACT_KEEP_RECENT = 6;
 
 /** Minimum message count before summarization is worth attempting. */
 export const COMPACT_MIN_MESSAGES = 10;
-
-/** System prompt for the summarization call. Kept terse so the
- *  reply fits into COMPACT_MAX_OUTPUT_TOKENS. */
-const COMPACT_SYSTEM_PROMPT = `You are a conversation summarizer for a terminal AI assistant.
-
-Your job: read the conversation below and produce a concise summary that will REPLACE it in the agent's memory.
-
-Requirements:
-1. Preserve the user's original intent and goals.
-2. List every command that was run and its key outcomes (success/failure, what was learned).
-3. List every file that was read/written and relevant contents (snippets, paths).
-4. Preserve any facts the agent discovered (directory contents, error messages, config values).
-5. Note any open questions or pending follow-ups.
-6. Omit chit-chat, internal reasoning, and repeated information.
-7. Write in the same language as the conversation.
-8. Output plain prose with bullet points — no markdown headings, no code fences for prose.
-
-The summary will be fed back to the agent as prior context, so be factual and structured.`;
 
 /** Max output tokens for the summarization call itself. */
 const COMPACT_MAX_OUTPUT = 2000;
@@ -66,33 +50,13 @@ export async function summarizeOlderMessages(
 ): Promise<ChatMessage[] | null> {
   if (messages.length < COMPACT_MIN_MESSAGES) return null;
 
-  // Split: everything up to (length - COMPACT_KEEP_RECENT) gets summarized.
-  const splitIndex = messages.length - COMPACT_KEEP_RECENT;
+  // Split: everything up to (length - COMPACT_KEEP_RECENT) gets summarized. The
+  // policy already moves the boundary back so tool batches stay intact.
+  const splitIndex = findCompactSplit(messages, COMPACT_KEEP_RECENT);
   if (splitIndex < 2) return null;
 
-  // Find a clean split point: do not split inside a tool_calls group.
-  // Walk backwards from splitIndex until we're NOT just after an
-  // assistant-with-tool_calls whose tool results would be stranded.
-  let cleanSplit = splitIndex;
-  while (cleanSplit > 1) {
-    const prev = messages[cleanSplit - 1];
-    const here = messages[cleanSplit];
-    // Don't split between assistant(tool_calls) and its tool results.
-    if (
-      prev.role === 'assistant' &&
-      prev.tool_calls &&
-      prev.tool_calls.length > 0 &&
-      here.role === 'tool'
-    ) {
-      cleanSplit++;
-      if (cleanSplit >= messages.length) return null;
-      continue;
-    }
-    break;
-  }
-
-  const toSummarize = messages.slice(0, cleanSplit);
-  const toKeep = messages.slice(cleanSplit);
+  const toSummarize = messages.slice(0, splitIndex);
+  const toKeep = messages.slice(splitIndex);
   if (toSummarize.length === 0) return null;
 
   // Build a plain-text transcript for the summarizer to read.
@@ -152,16 +116,11 @@ function formatTranscriptForSummary(messages: ChatMessage[]): string {
         }
       }
     } else if (m.role === 'tool') {
-      const head = clip(text, 600);
+      const head = clipSummaryEvidence(text, 1200);
       parts.push(`TOOL_RESULT ${m.name ?? ''}: ${head}`);
     }
   }
   return parts.join('\n\n');
-}
-
-function clip(s: string, n: number): string {
-  if (s.length <= n) return s;
-  return s.slice(0, n) + `...(${s.length - n} more chars)`;
 }
 
 function clipJson(s: string): string {
@@ -174,17 +133,24 @@ function clipJson(s: string): string {
  * Fire a single non-streaming-ish LLM call. We still receive a
  * streaming response — we just concatenate the tokens into one string.
  */
-function callLLMOnce(
+async function callLLMOnce(
   provider: AIProvider,
   messages: ChatMessage[],
   signal?: AbortSignal,
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
+  const controller = new AbortController();
+  const onAbort = () => controller.abort();
+  signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal?.aborted) controller.abort();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 30_000);
+  try {
+    return await abortableOperation<string>(controller.signal, (resolve, reject) => {
     let collected = '';
     let settled = false;
 
     const callbacks: StreamCallbacks = {
-      onToken: (t) => { collected += t; },
+      onToken: (t) => { if (!controller.signal.aborted) collected += t; },
       onComplete: (full) => {
         if (settled) return;
         settled = true;
@@ -196,13 +162,6 @@ function callLLMOnce(
         reject(err);
       },
     };
-
-    // 10s timeout — if the summarizer hangs, bail and fall back.
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      reject(new Error('Compact summarization timed out (30s)'));
-    }, 30_000);
 
     const wrapped: StreamCallbacks = {
       ...callbacks,
@@ -218,12 +177,19 @@ function callLLMOnce(
 
     // No tools passed — pure chat call.
     try {
-      provider.chat(messages, wrapped, signal, undefined);
+      provider.chat(messages, wrapped, controller.signal, undefined);
     } catch (e) {
       clearTimeout(timer);
       reject(e instanceof Error ? e : new Error(String(e)));
     }
-  });
+    });
+  } catch (error) {
+    if (timedOut) throw new Error('Compact summarization timed out (30s)');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+  }
 }
 
 // ── Expose max output for callers that want to override provider config ──

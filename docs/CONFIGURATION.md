@@ -34,7 +34,9 @@ interface AppSettings {
   backgroundImageOpacity: number;  // 背景图片透明度 (%)
 
   // 窗口与布局
-  sshTabTitleMode: 'connection' | 'terminal'; // SSH 标签名称，默认连接名称 / SSH tab title mode, defaults to connection name
+  sshTabTitleMode: 'connection' | 'terminal'; // SSH 标签名称；默认 'terminal'（终端动态标题），'connection' 为可选 / SSH tab title mode; defaults to 'terminal' (dynamic title), 'connection' is opt-in
+  autoOpenAiOnConnect: boolean;    // 连接成功后自动打开 AI 面板，默认 false；不自动发送请求 / Auto-open AI after connecting, default false; never auto-send requests
+  autoRestoreAiHistoryOnConnect: boolean; // 自动打开时恢复同主机最近的已绑定对话，默认 false；依赖 autoOpenAiOnConnect，不覆盖现有任务 / Restore latest bound same-host history on auto-open, default false; requires autoOpenAiOnConnect and never replaces an existing task
   rememberWindowSize: boolean;     // 记住窗口尺寸/位置（主窗口）
   windowWidth: number;             // 窗口宽度（逻辑像素）
   windowHeight: number;            // 窗口高度（逻辑像素）
@@ -98,3 +100,16 @@ interface AppSettings {
 - 当前 Master 收到 `MsgMasterRequestNotify` 通知
 - Master 可批准/拒绝请求
 - 支持主动 `MsgMasterReclaim` 收回控制权
+
+## macOS 兼容性影响 / macOS compatibility impact
+
+`PROJECT_RULES.md` 规则 1 要求：凡影响 macOS 功能、行为、显示与交互的改动，必须先与项目负责人协商并获得明确同意。v0.2.13 / v0.2.14 涉及的 macOS 侧变化如下，合入前需一并确认。
+
+| 变化 | 默认表现 | 是否改变既有默认 |
+|------|----------|------------------|
+| SSH 标签名称 `sshTabTitleMode` | `'terminal'`，保持终端动态标题 | 否，连接名称为可选 |
+| 主窗口位置与最大化还原 | 随「记住窗口尺寸」开关一并生效 | 是，主窗口恢复到上次位置/最大化，不再由系统放置 |
+| 连接侧栏分组排序控件 | 显示在分组标题右侧 | 是，分组标题新增一个按钮 |
+| AI 历史搜索入口 | 侧栏内联视图有独立搜索框；AI Bar 弹层复用 AI Bar 输入框 | 否，AI Bar 下仅保留一个搜索入口 |
+
+尚未在 macOS 实机验收的项（多显示器位置回退、SSH 分屏与重连、正式签名与公证安装包）见 `KNOWN_ISSUES.md` 的 `MAC-001` / `MAC-002`。

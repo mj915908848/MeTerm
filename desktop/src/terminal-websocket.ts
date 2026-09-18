@@ -223,6 +223,7 @@ export function connectWebSocket(mt: ManagedTerminal, callbacks: WsCallbacks): v
   socket.onopen = () => {
     mt.reconnectAttempt = 0;
     mt.onStatus('connected');
+    document.dispatchEvent(new CustomEvent('meterm-terminal-connected', { detail: { sessionId: mt.id } }));
     callbacks.scheduleSettleResize(mt);
 
     // 发送当前编码设置
@@ -297,6 +298,7 @@ async function connectRemoteBroker(mt: ManagedTerminal, callbacks: WsCallbacks):
     mt.transport = transport;
     mt.reconnectAttempt = 0;
     mt.onStatus('connected');
+    document.dispatchEvent(new CustomEvent('meterm-terminal-connected', { detail: { sessionId: mt.id } }));
     callbacks.scheduleSettleResize(mt);
     const settings = callbacks.getSettings();
     if (settings && settings.encoding !== 'utf-8') {
@@ -329,6 +331,7 @@ async function connectIpc(mt: ManagedTerminal, callbacks: WsCallbacks): Promise<
     mt.transport = transport;
     mt.clientId = transport.clientId;
     mt.onStatus('connected');
+    document.dispatchEvent(new CustomEvent('meterm-terminal-connected', { detail: { sessionId: mt.id } }));
     callbacks.scheduleSettleResize(mt);
 
     const settings = callbacks.getSettings();

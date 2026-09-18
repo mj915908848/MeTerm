@@ -3,7 +3,7 @@ import {
   type AppSettings,
   resolveIsDark,
   getEffectiveTheme,
-  saveSettings,
+  updateSettings,
   flushSettingsSecrets,
 } from './themes';
 import { createSettingsPanel } from './settings';
@@ -124,8 +124,7 @@ export function initSettingsWindow(): void {
 
         const effectiveTheme = getEffectiveTheme(settings);
         if (effectiveTheme !== settings.theme) {
-          settings.theme = effectiveTheme;
-          saveSettings(settings);
+          settings = updateSettings({ theme: effectiveTheme });
         }
 
         // Update native window title bar theme

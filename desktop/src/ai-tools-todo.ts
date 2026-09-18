@@ -21,7 +21,7 @@ import type { ToolHandler, ToolContext } from './ai-tools-core';
 
 // ─── Types ───────────────────────────────────────────────────────
 
-export type TodoStatus = 'pending' | 'in_progress' | 'completed';
+export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'interrupted';
 
 export interface TodoItem {
   /** Stable id (the agent supplies one, or we generate). */
@@ -67,6 +67,12 @@ export class TodoState implements TodoStateRef {
     }
   }
 
+  /** Cancellation is not completion; keep the unfinished plan available. */
+  interrupt(): void {
+    if (!this.items.some(item => item.status === 'in_progress')) return;
+    this.set(this.items.map(item => item.status === 'in_progress' ? { ...item, status: 'interrupted' } : item));
+  }
+
   /** Render the current todo list as a compact text block for system prompt injection. */
   renderForSystemPrompt(): string {
     if (this.items.length === 0) return '';
@@ -75,6 +81,7 @@ export class TodoState implements TodoStateRef {
     for (const it of this.items) {
       const marker =
         it.status === 'completed'  ? '[x]'
+        : it.status === 'interrupted' ? '[interrupted]'
         : it.status === 'in_progress' ? '[~]'
         : '[ ]';
       const label = it.status === 'in_progress' ? it.activeForm : it.content;

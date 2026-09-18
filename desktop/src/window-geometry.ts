@@ -23,7 +23,7 @@
 import { availableMonitors, getCurrentWindow, type Window as TauriWindow } from '@tauri-apps/api/window';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
 import { isPipMode, isWindowsPlatform } from './app-state';
-import { loadSettings, saveSettings, type AppSettings } from './themes';
+import { loadSettings, updateSettings, type AppSettings } from './themes';
 import {
   fitGeometryToScreen,
   fitGeometryToScreens,
@@ -123,8 +123,7 @@ export async function persistMainWindowGeometry(win: TauriWindow = getCurrentWin
   if (!settings.rememberWindowSize || isPipMode
       || document.documentElement.classList.contains('fs-mac')) return;
   const next = mergeGeometry(storedGeometryOf(settings), observed);
-  saveSettings({
-    ...settings,
+  updateSettings({
     windowWidth: next.width,
     windowHeight: next.height,
     windowX: next.x,

@@ -67,6 +67,7 @@ export class TabStateRegistry {
       agent: new AIAgent(),
       messages: [],
       currentConversationId: conversationId,
+      conversationHost: undefined,
       agentAbort: null,
       draftText: '',
       activeRunTargetPaneNumber: null,

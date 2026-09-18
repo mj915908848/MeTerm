@@ -9,8 +9,11 @@
 //   • compressContext() — escalated compression on context overflow
 //     (tool outputs + assistant text + oldest message drop).
 
-import { ChatMessage, type ContentPart } from './ai-provider';
-import { TOKEN_BUDGET } from './ai-tools-core';
+import type { ChatMessage, ContentPart } from './ai-provider';
+// Explicit `.ts` extensions are required: these modules are loaded directly by
+// `node --test`, which does not resolve extensionless relative imports.
+import { MESSAGE_HISTORY_MAX_CHARS } from './ai-history-budget.ts';
+import { buildTaskRetention, isTaskRetention } from './ai-agent-retention.ts';
 
 /** Char length estimate for a ChatMessage.content. Image parts are
  *  scored at a flat 1500 chars to match the rough token cost of a
@@ -116,10 +119,17 @@ export function microCompact(
  * Removes oldest messages first, preserving tool_call / tool pairs.
  */
 export function trimHistory(messages: ChatMessage[]): void {
-  const maxChars = TOKEN_BUDGET.messageHistoryMaxChars;
+  const maxChars = MESSAGE_HISTORY_MAX_CHARS;
   let totalChars = messages.reduce((sum, m) => sum + contentCharLength(m.content), 0);
+  if (totalChars <= maxChars || messages.length <= 2) return;
+  const retention = buildTaskRetention(messages);
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (isTaskRetention(messages[i])) messages.splice(i, 1);
+  }
+  totalChars = messages.reduce((sum, m) => sum + contentCharLength(m.content), 0);
+  const retainedChars = retention ? contentCharLength(retention.content) : 0;
 
-  while (totalChars > maxChars && messages.length > 2) {
+  while (totalChars + retainedChars > maxChars && messages.length > 2) {
     const removed = messages.shift()!;
     totalChars -= contentCharLength(removed.content);
 
@@ -138,6 +148,8 @@ export function trimHistory(messages: ChatMessage[]): void {
       }
     }
   }
+  while (messages[0]?.role === 'tool') messages.shift();
+  if (retention) messages.unshift(retention);
 }
 
 /**
@@ -163,6 +175,10 @@ function safeTruncate(s: string, max: number, suffix: string): string {
  */
 export function compressContext(messages: ChatMessage[]): boolean {
   if (messages.length <= 4) return false;
+  const retention = buildTaskRetention(messages);
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (isTaskRetention(messages[i])) messages.splice(i, 1);
+  }
 
   let compressed = false;
   const TOOL_MAX = 200;
@@ -207,5 +223,6 @@ export function compressContext(messages: ChatMessage[]): boolean {
     }
   }
 
+  if (retention) messages.unshift(retention);
   return compressed;
 }

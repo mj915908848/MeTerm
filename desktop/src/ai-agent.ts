@@ -40,6 +40,8 @@ import { runTools, type ToolExecResult } from './ai-tool-orchestrator';
 import type { ToolHandler } from './ai-tools';
 import { hooks } from './ai-hooks';
 import { summarizeOlderMessages, COMPACT_MAX_OUTPUT } from './ai-agent-compact';
+import { abortableOperation } from './ai-abortable-operation';
+import { isTerminalInterruption } from './ai-terminal-interruption';
 import { resetAgentNotificationThrottle } from './ai-notifications';
 import {
   decidePermission,
@@ -135,6 +137,7 @@ const MAX_CONTEXT_COMPRESSIONS = 2;
 export class ToolAgent {
   private messages: ChatMessage[] = [];
   private abortController: AbortController | null = null;
+  private compactController: AbortController | null = null;
   private aborted = false;
   private toolRegistry: ToolRegistry;
   /** Once set to false (e.g. after a 400 from a non-tool model),
@@ -181,6 +184,10 @@ export class ToolAgent {
   /** Read the current task plan (immutable copy). */
   getTodos(): TodoItem[] {
     return this.todoState.get();
+  }
+
+  interruptTodos(): void {
+    this.todoState.interrupt();
   }
 
   /**
@@ -380,6 +387,8 @@ export class ToolAgent {
    *  so they don't keep running in the background after the agent stops. */
   abort(): void {
     this.aborted = true;
+    this.compactController?.abort();
+    this.compactController = null;
     if (this.abortController) {
       this.abortController.abort();
       this.abortController = null;
@@ -420,7 +429,22 @@ export class ToolAgent {
 
   /** Whether a request is currently in progress. */
   get isStreaming(): boolean {
-    return this.abortController !== null;
+    return this.abortController !== null || this.compactController !== null;
+  }
+
+  get cancellationSignal(): AbortSignal | undefined {
+    return this.abortController?.signal;
+  }
+
+  private completeAbortedToolBatch(calls: ToolCall[], callbacks: AgentCallbacks): void {
+    const completed = new Set(this.messages.filter(m => m.role === 'tool').map(m => m.tool_call_id));
+    for (const call of calls) {
+      if (completed.has(call.id)) continue;
+      const result = '[Execution aborted by user]';
+      this.messages.push({ role: 'tool', tool_call_id: call.id, name: call.function.name, content: result });
+      completed.add(call.id);
+      callbacks.onToolResult?.(call.function.name, result, false);
+    }
   }
 
   // ─── Pull-based async generator API ───────────────────────
@@ -557,6 +581,11 @@ export class ToolAgent {
           reason: 'auto',
           beforeMessageCount: this.messages.length,
         });
+        if (this.aborted) {
+          this.abortController = null;
+          callbacks.onAborted?.(iteration);
+          return;
+        }
 
         let didLlmCompact = false;
         // Use a dedicated AbortController so the compact call is
@@ -564,6 +593,7 @@ export class ToolAgent {
         // this.abortController has not been created yet.  Wire it to
         // this.abort() via a short-lived listener.
         const compactCtl = new AbortController();
+        this.compactController = compactCtl;
         const abortCompact = () => compactCtl.abort();
         if (this.abortController) {
           this.abortController.signal.addEventListener('abort', abortCompact, { once: true });
@@ -589,6 +619,7 @@ export class ToolAgent {
           // Swallow — fall through to local compression below.
         } finally {
           this.abortController?.signal.removeEventListener('abort', abortCompact);
+          if (this.compactController === compactCtl) this.compactController = null;
         }
 
         // If the external signal (or this.aborted) fired during
@@ -724,12 +755,7 @@ export class ToolAgent {
 
         for (const toolCall of response.toolCalls) {
           if (this.aborted) {
-            this.messages.push({
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              name: toolCall.function.name,
-              content: '[Execution aborted by user]',
-            });
+            this.completeAbortedToolBatch(response.toolCalls, callbacks);
             this.abortController = null;
             callbacks.onAborted?.(iteration);
             return;
@@ -795,7 +821,15 @@ export class ToolAgent {
             });
             continue;
           }
-          const approved = await callbacks.onConfirmRequired(toolCall.function.name, args);
+          let approved: boolean | string;
+          try {
+            approved = await abortableOperation<boolean | string>(toolCtx.abortSignal!, (resolve, reject) => {
+              callbacks.onConfirmRequired!(toolCall.function.name, args).then(resolve, reject);
+            });
+          } catch (error) {
+            if (this.aborted) break;
+            throw error;
+          }
           if (approved === false) {
             decisions.set(toolCall.id, {
               kind: 'reject',
@@ -815,6 +849,7 @@ export class ToolAgent {
         }
 
         if (this.aborted) {
+          this.completeAbortedToolBatch(response.toolCalls, callbacks);
           this.abortController = null;
           callbacks.onAborted?.(iteration);
           return;
@@ -880,6 +915,7 @@ export class ToolAgent {
           () => this.aborted,
         );
 
+        let terminalInterrupted = false;
         // Pass 3: drain results in order — update message history + UI.
         for (const r of results) {
           // Normalize the tool result into the ChatMessage.content shape.
@@ -912,6 +948,7 @@ export class ToolAgent {
           });
           // UI callback: text + optional images attached via onToolImages.
           callbacks.onToolResult?.(r.toolName, uiText, r.isError);
+          terminalInterrupted ||= isTerminalInterruption(r.toolName, uiText);
           if (uiImages && uiImages.length > 0) {
             callbacks.onToolImages?.(r.toolName, uiImages);
           }
@@ -928,6 +965,12 @@ export class ToolAgent {
           } else {
             consecutiveErrors = 0;
           }
+        }
+
+        if (terminalInterrupted) {
+          this.abort();
+          callbacks.onAborted?.(iteration);
+          return;
         }
 
         // Tool calls handled — loop back to call LLM again with results
@@ -1116,7 +1159,7 @@ export class ToolAgent {
     callbacks: AgentCallbacks,
     signal: AbortSignal,
   ): Promise<{ text: string; toolCalls?: ToolCall[]; reasoning?: string }> {
-    return new Promise((resolve, reject) => {
+    return abortableOperation(signal, (resolve, reject) => {
       let settled = false;
 
       const streamCallbacks: StreamCallbacks = {

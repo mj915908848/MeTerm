@@ -3,7 +3,7 @@
 // Extracted from ai-capsule.ts to keep the manager class lean.
 
 import { t } from './i18n';
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 import { escapeHtml } from './status-bar';
 import { resolveActiveModel, resolveModel } from './ai-provider';
 
@@ -38,9 +38,7 @@ export function buildModelDropdown(dropdown: HTMLDivElement, label: HTMLSpanElem
   autoOption.innerHTML = `<span class="ai-model-opt-name">${t('aiModelAuto')}</span><span class="ai-model-opt-desc">${t('aiModelAutoDesc')}</span>`;
   autoOption.addEventListener('click', (e) => {
     e.stopPropagation();
-    const s = loadSettings();
-    s.aiActiveModel = 'auto';
-    saveSettings(s);
+    updateSettings({ aiActiveModel: 'auto' });
     updateModelLabel(label);
     closeDropdown();
   });
@@ -74,9 +72,7 @@ export function buildModelDropdown(dropdown: HTMLDivElement, label: HTMLSpanElem
       option.innerHTML = `<span class="ai-model-opt-name">${escapeHtml(model)}</span>`;
       option.addEventListener('click', (e) => {
         e.stopPropagation();
-        const s = loadSettings();
-        s.aiActiveModel = modelKey;
-        saveSettings(s);
+        updateSettings({ aiActiveModel: modelKey });
         updateModelLabel(label);
         closeDropdown();
       });

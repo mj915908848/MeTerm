@@ -15,7 +15,7 @@ import { showSSHModal } from './ssh';
 import { TerminalRegistry } from './terminal';
 import { handleConnectionClick } from './home-dashboard-left';
 import { renderSidebarList } from './home-side';
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 
 const GITHUB_URL = 'https://github.com/paidaxingyo666/MeTerm';
 const GITEE_URL = 'https://gitee.com/paidaxingyo666/me-term';
@@ -34,7 +34,7 @@ function loadWidth(): number {
   return w > 0 ? Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, Math.round(w))) : DEFAULT_WIDTH;
 }
 function saveWidth(w: number): void {
-  saveSettings({ ...loadSettings(), sidebarWidth: clampWidth(w) });
+  updateSettings({ sidebarWidth: clampWidth(w) });
 }
 
 interface NewAction {
@@ -200,6 +200,11 @@ class ConnectionSidebarClass {
   /** Re-render the connection list (after pin/group/connection changes). */
   refresh(): void {
     if (!this.listEl) return;
+    // Hidden panel (closed, or a retracted flyout): `open()` and `showFlyout()`
+    // refresh right after making it visible, so skipping here only avoids
+    // re-rendering a list nobody can see. Keeps this the single visibility check
+    // instead of relying on each caller's own guard.
+    if (this.panel && this.panel.style.display === 'none') return;
     renderSidebarList(this.listEl, this.groupHdrEl, this.query, {
       onSelect: (item) => { handleConnectionClick(item); if (this.flyoutMode) this.hideFlyout(); },
       refresh: () => this.refresh(),

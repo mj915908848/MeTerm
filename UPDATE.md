@@ -1,5 +1,29 @@
 # MeTerm 更新记录
 
+## v0.2.14
+
+### 新功能 / Features
+
+- **连接后自动打开 AI / Automatically open AI on connection** — 新增两个默认关闭的设置：连接成功后自动打开 AI 面板，以及自动恢复当前主机最近的非空历史；后台连接不抢占当前面板，跨主机或未绑定历史不自动恢复，已有任务或对话不被覆盖。 / Add two opt-in settings to open AI after connecting and restore the current host's latest nonempty conversation; background connections do not steal focus, unrelated or unbound history is excluded, and active tasks or conversations are preserved.
+- **Agent 回答复制 / Copy Agent responses** — 回答新增复制按钮，复制成功或失败提供反馈。 / Add response copy buttons with success and failure feedback.
+- **主机历史与全部对话 / Host-scoped history and all conversations** — 新对话按首次发送窗格绑定本机或 SSH 地址和端口；两个历史入口默认显示当前主机，可切换全部对话并按标题、内容和主机搜索。跨主机继续发送会被阻止。 / Bind new conversations to the first sending pane's local or SSH host and port; both history surfaces default to the current host, support all conversations and search by title, content and host, and block cross-host continuation.
+- **只读侧栏预览与旧历史绑定 / Read-only side previews and legacy binding** — 跨主机与未绑定历史仅供预览和复制，不执行代码或覆盖当前任务；旧历史可确认后绑定当前主机，保留内容并备份原文件，重新打开后继续。 / Preview and copy cross-host or unbound history without executing code or replacing the active task; explicitly confirm legacy ownership to bind to the current host, preserving content and backing up the original before reopening to continue.
+
+### 问题修复 / Fixes
+
+- **摘要与审批取消 / Summary and approval cancellation** — 摘要请求可及时取消并有 30 秒截止时间；停止待审批任务时清理确认卡、计时器和监听，补齐未执行工具结果，防止历史工具配对缺失。 / Bound summary requests to 30 seconds and settle cancellation promptly; stopping pending approvals cleans cards, timers and listeners and fills missing tool results to preserve complete history pairs.
+- **历史展示与搜索 / History rendering and search** — 只读历史采用正常对话气泡、推理折叠与工具卡样式，保留只读限制；搜索复用输入控件，避免输入法组合输入被列表刷新打断，并完善双语提示。 / Render read-only history with normal chat bubbles, collapsible reasoning and tool cards without execution controls; reuse search inputs to preserve IME composition and improve bilingual feedback.
+- **设置与连接面板 / Settings and connection panel** — 设置面板仅将本次修改合并到最新设置，减少陈旧快照覆盖；隐藏连接面板不重复刷新，SSH 标签默认使用终端动态标题。 / Merge only the current panel edit into fresh settings to reduce stale overwrites; avoid refreshing hidden connection panels and default SSH tabs to dynamic terminal titles.
+- **终端观察有界与可取消 / Bounded, cancellable terminal watching** — 取消时释放监听、定时器和锁；观察默认 60 秒，可设置 3–300 秒，持续输出也按时返回；仅保留最近 64 KiB 字符并标注截断。观察超时不会中止实际进程。 / Release listeners, timers and locks on cancellation; default to 60 seconds with a 3–300 second range even for continuous output, retain the latest 64 KiB characters and flag truncation. Observation timeout does not stop the process.
+- **Agent 中断与任务状态 / Agent cancellation and plan state** — 修复模型提供方吞掉取消错误导致停止无效的问题；命令手动中断后停止 Agent 继续执行，并将进行中的计划标为已中断，保留已完成和待办项。 / Settle cancellation even when providers suppress abort errors; stop Agent continuation after manually interrupted commands and mark active plan items interrupted while retaining completed and pending items.
+- **压缩目标保留 / Task retention during compaction** — 摘要优先保留目标、授权、约束、证据和未完成事项；本地裁剪或摘要失败时保留首条请求、已有摘要和最近补充，总预算 6000 字符，头尾截取并标注遗漏，保持工具调用配对且不修改原始聊天记录。保留记录可能不完整，后续用户纠正优先。 / Prioritize goals, authority, constraints, evidence and pending work in summaries; local trimming or failed summarization retains the original request, existing summary and recent additions within 6,000 characters, with marked head/tail truncation and complete tool pairs, without changing original history. Retention may be incomplete and later user corrections take priority.
+- **历史切换与预览配色 / History switching and preview colors** — 修复全部对话切换被误判为外部点击而关闭的问题；预览使用不透明主题背景，侧栏返回保留搜索与列表位置，异步保存携带主机归属。 / Prevent all-conversation switching from being mistaken for an outside click; use opaque themed preview surfaces, preserve side-list search and scroll on return, and carry host ownership in asynchronous saves.
+- **历史操作与文件清理 / History actions and file cleanup** — 修复历史视图中“新对话”和“清空对话”无效的问题，并将返回入口移到预览左上角；显式删除对话时同步清理其主机绑定备份与临时文件，失败时保留可恢复副本且不影响其他历史。 / Fix New Conversation and Clear Conversation actions while history is open and move Back to the preview's upper-left; explicit deletion now removes the matching host-binding backup and temporary file while preserving recoverable copies on failure and leaving other history untouched.
+- **设置按字段保存 / Field-level settings updates** — 将运行时设置写入统一收口为基于最新值的字段补丁，避免旧窗口快照覆盖其他窗口刚保存的设置；字号快捷键和主题切换同步使用最新状态，并增加回归保护。 / Route runtime settings writes through field patches merged into the latest persisted value, preventing stale window snapshots from overwriting recent changes; font shortcuts and theme changes now use fresh state with regression coverage.
+- **命令补全恢复 / Command completion restored** — 修复 xterm 5.5 私有字段变化导致灰色补全文字始终被隐藏的问题；补全不再等待异步索引加载，已打开、设置切换及跨窗口转移的终端都会正确挂载和释放监听。 / Fix ghost text being hidden by an obsolete xterm 5.5 private-field check; completion no longer races asynchronous index loading, and listeners are attached and released correctly for existing, settings-toggled and transferred terminals.
+
+---
+
 ## v0.2.13
 
 ### 新功能 / Features

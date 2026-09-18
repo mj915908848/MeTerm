@@ -1,16 +1,21 @@
 {
   "name": "meterm",
-  "version": "0.2.13",
+  "version": "0.2.14",
   "private": true,
   "license": "MIT",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "node --experimental-strip-types --test tests/*.test.mts",
     "test:ssh-secrets": "node --experimental-strip-types --test tests/ssh-secret-lifecycle.test.mts tests/durable-write-queue.test.mts",
     "test:connection-sync-security": "node --experimental-strip-types --test tests/connection-sync-security.test.mts",
     "test:editor-security": "node --experimental-strip-types --test tests/file-editor-security.test.mts",
     "test:window-geometry": "node --experimental-strip-types --test tests/window-geometry.test.mts tests/window-geometry-persistence.test.mts",
     "test:agent-restore": "node --experimental-strip-types --test tests/ai-agent-restore.test.mts",
+    "test:agent-compact": "node --experimental-strip-types --test tests/ai-agent-compact-policy.test.mts",
+    "test:agent-stability": "node --experimental-strip-types --test tests/ai-agent-stability.test.mts",
+    "test:agent-cancel": "node --experimental-strip-types --test tests/ai-agent-cancel.test.mts",
+    "test:conversation-host": "node --experimental-strip-types --test tests/ai-conversation-host.test.mts",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -181,6 +181,7 @@ class TerminalRegistryClass {
     await loadFont(settings.fontFamily, settings.enableNerdFont, settings.fontWeight);
     this.terminals.forEach((mt) => {
       this._applySettingsToTerminal(mt);
+      this._syncInlineCompletion(mt, settings.cmdCompletionEnabled);
       if (oldEncoding !== settings.encoding) {
         this.sendEncoding(mt, settings.encoding);
       }
@@ -194,6 +195,27 @@ class TerminalRegistryClass {
   private _applySettingsToTerminal(mt: ManagedTerminal): void {
     if (!this.settings) return;
     applySettingsToTerminal(mt, this.settings);
+  }
+
+  /** Keep completion attached to every live terminal while the setting is on.
+   * The shared index is populated asynchronously, so attachment must not wait
+   * for `globalCompletionIndex.ready`; the same index instance becomes usable
+   * as soon as history or tldr data arrives. */
+  private _syncInlineCompletion(mt: ManagedTerminal, enabled: boolean): void {
+    const existing = (mt as any)._inlineCompletion as InlineCompletion | undefined;
+    if (enabled && !existing) {
+      const completion = new InlineCompletion(
+        mt.id,
+        mt.terminal,
+        mt.container,
+        globalCompletionIndex,
+      );
+      completion.attach();
+      (mt as any)._inlineCompletion = completion;
+    } else if (!enabled && existing) {
+      existing.detach();
+      delete (mt as any)._inlineCompletion;
+    }
   }
 
   private _registerOscColorHandlers(mt: ManagedTerminal, terminal: Terminal): void {
@@ -589,12 +611,9 @@ class TerminalRegistryClass {
       applyWKWebViewIMEFix(terminal);
     }
 
-    // Inline ghost text completion
-    if (this.settings?.cmdCompletionEnabled && globalCompletionIndex.ready) {
-      const ic = new InlineCompletion(sessionId, terminal, container, globalCompletionIndex);
-      ic.attach();
-      (mt as any)._inlineCompletion = ic;
-    }
+    // Attach immediately. The shared completion index may still be loading;
+    // it is updated in place and becomes available to this terminal later.
+    this._syncInlineCompletion(mt, !!this.settings?.cmdCompletionEnabled);
 
     // Click-to-move-cursor: 点击提示符区域移动光标
     setupClickToMoveCursor(mt);
@@ -1282,6 +1301,10 @@ class TerminalRegistryClass {
       applyWKWebViewIMEFix(mt.terminal);
     }
 
+    // Transferred terminals bypass create(), so attach completion here after
+    // terminal.open() just like a normally-created terminal.
+    this._syncInlineCompletion(mt, !!this.settings?.cmdCompletionEnabled);
+
     // Apply opacity to explicit TUI backgrounds (iTerm2-like transparency)
     const opacityVal = this.settings ? Math.max(20, Math.min(100, this.settings.opacity)) / 100 : 1;
     patchCanvasBgOpacity(mt.container, opacityVal);
@@ -1415,6 +1438,8 @@ class TerminalRegistryClass {
       return;
     }
     mt.ended = true;
+    const completion = (mt as any)._inlineCompletion as InlineCompletion | undefined;
+    if (completion) completion.detach();
     this.inputListeners.delete(sessionId);
     this.outputListeners.delete(sessionId);
     this.shellStateListeners.delete(sessionId);

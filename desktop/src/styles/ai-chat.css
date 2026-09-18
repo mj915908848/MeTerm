@@ -1,5 +1,42 @@
 
 /* ─── AI Chat Panel ─── */
+.ai-history-scope { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
+.ai-history-scope button, .ai-history-preview button {
+  color: var(--text-primary); background: rgb(var(--bg-button)); border: 1px solid var(--border-primary);
+  border-radius: 6px; padding: 5px 9px; cursor: pointer;
+}
+.ai-history-scope button[aria-pressed="true"] { border-color: var(--accent, #6aa4ff); }
+.ai-history-scope input { width: 100%; color: var(--text-primary); background: transparent; border: 1px solid var(--border-primary); border-radius: 6px; padding: 6px; }
+.ai-history-preview-drawer { position: fixed; right: 8px; top: 40px; bottom: 8px; z-index: 10000; width: min(440px, 95vw); }
+.ai-history-preview { box-sizing: border-box; width: 100%; height: 100%; overflow: auto; background: rgb(var(--bg-primary, 30, 30, 30)); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: 12px; padding: 14px; box-shadow: 0 16px 60px rgba(0,0,0,.2); }
+.ai-history-preview-inline { height: auto; min-height: 100%; overflow: visible; border: 0; border-radius: 0; box-shadow: none; }
+.ai-history-preview h3 { margin: 0 0 10px; font-size: 14px; overflow-wrap: anywhere; }
+.ai-history-preview > p { font-size: 12px; color: var(--text-dim); }
+.ai-history-preview button:hover { background: rgb(var(--bg-button-hover)); }
+.ai-history-preview button:focus-visible { outline: 2px solid var(--accent, #6aa4ff); outline-offset: 2px; }
+.ai-history-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-history-preview-body { margin-top: 12px; overflow: visible; flex: none; }
+.ai-history-preview .ai-history-preview-back { display: block; margin: 0 0 12px; }
+.ai-response-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.ai-response-copy {
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ai-response-copy:hover,
+.ai-response-copy:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--accent, #6aa4ff);
+}
+.ai-response-copy:disabled { cursor: default; }
 /* Chat panel is a direct child of #terminal-panel (flex column layout).
    When visible it takes flex space, pushing .terminal-area smaller. */
 .ai-chat-panel {

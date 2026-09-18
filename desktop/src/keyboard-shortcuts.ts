@@ -20,11 +20,11 @@ import {
 import {
   sshConfigMap, remoteInfoMap, sessionProgressMap, remoteTabNumbers,
   jumpServerConfigMap,
-  settings,
+  settings, setSettings,
 } from './app-state';
 import { showQuickHelp } from './tldr-card';
 import { togglePip, isPipActive } from './pip';
-import { saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 
 export function setupKeyboardShortcuts(): void {
   document.addEventListener('keydown', async (event) => {
@@ -80,13 +80,12 @@ export function setupKeyboardShortcuts(): void {
         event.stopPropagation();
         event.stopImmediatePropagation();
         const FONT_MIN = 8, FONT_MAX = 32, FONT_DEFAULT = 14;
-        const cur = settings.fontSize ?? FONT_DEFAULT;
+        const cur = loadSettings().fontSize ?? FONT_DEFAULT;
         let next: number;
         if (isIncrease) next = Math.min(FONT_MAX, cur + 1);
         else if (isDecrease) next = Math.max(FONT_MIN, cur - 1);
         else next = FONT_DEFAULT;
-        settings.fontSize = next;
-        saveSettings(settings);
+        setSettings(updateSettings({ fontSize: next }));
         void TerminalRegistry.setSettings(settings).then(() => {
           requestAnimationFrame(() => TerminalRegistry.resizeAll());
         });

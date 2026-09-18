@@ -3,7 +3,7 @@
 // switcher's wiring so it can be mounted in both the bottom-mode
 // AI bar and the side panel.
 
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 import { t } from './i18n';
 import type { AICapsuleInstance } from './ai-capsule-types';
 
@@ -39,9 +39,7 @@ export function createThinkingToggle(
 
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    const s = loadSettings();
-    s.aiEnableThinking = !s.aiEnableThinking;
-    saveSettings(s);
+    const s = updateSettings({ aiEnableThinking: !loadSettings().aiEnableThinking });
     sync();
     const label = s.aiEnableThinking ? t('aiThinkingOn') : t('aiThinkingOff');
     for (const [, inst] of capsules) {

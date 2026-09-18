@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import ts from 'typescript';
 
 // Exercise the real IPC wrapper with a deferred geometry read. This catches
-// preference updates occurring between loadSettings() and saveSettings().
+// preference updates occurring between loadSettings() and updateSettings().
 function harness() {
   let stored: Record<string, unknown> = {
     rememberWindowSize: true, windowWidth: 1000, windowHeight: 700, opacity: 1,
@@ -18,7 +18,8 @@ function harness() {
     require: (name: string) => {
       if (name === './themes') return {
         loadSettings: () => ({ ...stored }),
-        saveSettings: (value: Record<string, unknown>) => { stored = { ...value }; },
+        // Mirrors the real merge-into-latest behaviour of updateSettings().
+        updateSettings: (patch: Record<string, unknown>) => { stored = { ...stored, ...patch }; return stored; },
       };
       if (name === './app-state') return state;
       if (name === './window-geometry-core') return {
@@ -84,7 +85,7 @@ function overlappingHarness() {
   const sandbox = {
     exports: {} as Record<string, (...args: any[]) => Promise<void>>,
     require: (name: string) => {
-      if (name === './themes') return { loadSettings: () => ({ ...stored }), saveSettings: (s: Record<string, unknown>) => { stored = s; } };
+      if (name === './themes') return { loadSettings: () => ({ ...stored }), updateSettings: (patch: Record<string, unknown>) => { stored = { ...stored, ...patch }; return stored; } };
       if (name === './app-state') return { isPipMode: false };
       if (name === './window-geometry-core') return { windowGeometryRole: () => 'owner', readStoredGeometry: () => null, mergeGeometry: (_: unknown, o: unknown) => o };
       return {};

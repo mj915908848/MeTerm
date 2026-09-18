@@ -1,7 +1,7 @@
 import { escapeHtml } from './status-bar';
 import { t } from './i18n';
 import { invoke } from '@tauri-apps/api/core';
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 import { confirm } from '@tauri-apps/plugin-dialog';
 import { getPairingInfo } from './pairing';
 import {
@@ -124,9 +124,7 @@ export function createSharingTab(): HTMLDivElement {
       nameText.style.display = '';
       nameEditBtn.style.display = '';
       nameInput.style.display = 'none';
-      const s = loadSettings();
-      s.deviceName = name;
-      saveSettings(s);
+      updateSettings({ deviceName: name });
       void invoke('set_device_name', { name });
     };
     nameInput.addEventListener('blur', saveName);

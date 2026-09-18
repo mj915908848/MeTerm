@@ -1,5 +1,5 @@
 import { escapeHtml } from './status-bar';
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 import { t } from './i18n';
 import { shieldIcon, TRUST_COLORS } from './ai-icons';
 import type { AICapsuleInstance } from './ai-capsule-types';
@@ -40,9 +40,7 @@ export function createTrustSwitcher(
       item.innerHTML = `${shieldIcon(l.value, 14)} <span>${escapeHtml(l.label)}</span>`;
       item.addEventListener('click', (e) => {
         e.stopPropagation();
-        const s = loadSettings();
-        s.aiAgentTrustLevel = l.value;
-        saveSettings(s);
+        updateSettings({ aiAgentTrustLevel: l.value });
         btn.innerHTML = shieldIcon(l.value, 16);
         btn.dataset.level = String(l.value);
         btn.title = `Trust Level ${l.value}`;

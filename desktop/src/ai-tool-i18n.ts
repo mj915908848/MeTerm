@@ -50,7 +50,8 @@ export function toolDisplayName(toolName: string): string {
 }
 
 /** Localized status badge used by the persistent task plan rows. */
-export function todoStatusLabel(status: 'pending' | 'in_progress' | 'completed'): string {
+export function todoStatusLabel(status: 'pending' | 'in_progress' | 'completed' | 'interrupted'): string {
+  if (status === 'interrupted') return getLanguage() === 'zh' ? '已中断' : 'Interrupted';
   const entry = TODO_STATUS[status];
   return entry[getLanguage()] ?? entry.en;
 }

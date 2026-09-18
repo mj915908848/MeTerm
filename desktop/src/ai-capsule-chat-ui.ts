@@ -456,6 +456,21 @@ export function buildAgentCallbacks(
     onToolImages: (toolName, images) => deps.updateToolResultImages?.(instance, toolName, images),
     onConfirmRequired: (toolName, args) => deps.showConfirmCard(instance, toolName, args),
     onAborted: (_steps) => {
+      instance.agent.interruptTodos();
+      const planEntry = [...instance.messages].reverse().find(m => m.type === 'tool_call' && m.toolName === 'todo_write');
+      if (planEntry?.type === 'tool_call') {
+        // Synthetic record of the interrupt. `result` is model-facing only — the
+        // todo_write tool card is hidden in the UI (ai-capsule-tool-ui), the board
+        // reads `args` — so it stays English like the retention prefix instead of
+        // going through i18n.
+        instance.messages.push({
+          type: 'tool_call', toolName: 'todo_write',
+          args: { todos: instance.agent.getTodos() },
+          result: 'Local task-plan update after interruption; unfinished tasks were not completed. No tool was executed for this update.',
+          isError: false,
+          timestamp: Date.now(),
+        });
+      }
       collapseActiveThinking(instance);
       instance.reasoningBuffer = '';
       if (instance.streamMsgEl && instance.streamBuffer) {
@@ -468,6 +483,7 @@ export function buildAgentCallbacks(
         instance.streamMsgEl = null;
         instance.streamBuffer = '';
       }
+      deps.saveConversation(instance);
     },
     onDegraded: (reason) => appendSystemNotice(instance, reason),
 

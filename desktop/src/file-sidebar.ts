@@ -10,7 +10,7 @@ import { DrawerManager } from './drawer';
 import { FileTreeRenderer } from './file-tree';
 import { TerminalRegistry } from './terminal';
 import { setupContextMenu } from './drawer-context-menu';
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 import { escapeHtml } from './status-bar';
 import { formatSize, formatSpeed, formatElapsed, quotePosixShellArg } from './file-utils';
 import { t } from './i18n';
@@ -739,8 +739,7 @@ class SidebarManagerClass {
       instance.element.classList.remove('resizing');
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-      const s = loadSettings();
-      saveSettings({ ...s, sidebarWidth: instance.width });
+      updateSettings({ sidebarWidth: instance.width });
       TerminalRegistry.resizeAll();
       this.updateBreadcrumb(instance, instance.currentRootPath);
     };
@@ -763,8 +762,7 @@ class SidebarManagerClass {
       const nextIdx = (currentIdx + 1) % presets.length;
       instance.width = presets[nextIdx];
       instance.element.style.setProperty('--sidebar-width', `${instance.width}px`);
-      const s = loadSettings();
-      saveSettings({ ...s, sidebarWidth: instance.width });
+      updateSettings({ sidebarWidth: instance.width });
       TerminalRegistry.resizeAll();
       this.updateBreadcrumb(instance, instance.currentRootPath);
     });

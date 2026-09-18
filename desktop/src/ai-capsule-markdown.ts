@@ -1,7 +1,7 @@
 import { escapeHtml } from './status-bar';
 import { t } from './i18n';
 
-export function renderMarkdown(text: string, sessionId: string, addHistoryFn: (cmd: string) => void): string {
+export function renderMarkdown(text: string, sessionId: string, addHistoryFn: (cmd: string) => void, options: { allowRun?: boolean } = {}): string {
   // Split into code blocks and text segments
   const segments: string[] = [];
   const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
@@ -31,7 +31,7 @@ export function renderMarkdown(text: string, sessionId: string, addHistoryFn: (c
       `<pre><code>${escapeHtml(code)}</code></pre>` +
       `</div>` +
       `<div class="ai-cmd-actions">` +
-      (isBash
+      (isBash && options.allowRun !== false
         ? `<button class="ai-cmd-run" data-cmd="${escapeHtml(code)}" data-session="${sessionId}">${t('aiRunCommand')}</button>`
         : '') +
       `<button class="ai-cmd-copy" data-code="${escapeHtml(code)}">${t('aiCopyCode')}</button>` +
@@ -46,7 +46,8 @@ export function renderMarkdown(text: string, sessionId: string, addHistoryFn: (c
     segments.push(renderInlineMarkdown(text.slice(lastIndex)));
   }
 
-  return segments.join('');
+  return segments.join('') + (text ?
+    `<div class="ai-response-actions"><button type="button" class="ai-response-copy" data-code="${escapeHtml(text)}" aria-label="${t('aiCopyResponse')}">${t('aiCopyResponse')}</button></div>` : '');
 }
 
 /**

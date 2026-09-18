@@ -158,22 +158,32 @@ export class InlineCompletion {
 
     // Position based on xterm cursor
     const buf = this.terminal.buffer.active;
-    const core = (this.terminal as any)._core;
-    if (!core?._optionsService) { this.hideGhost(); return; }
-    const dims = core?._renderService?.dimensions?.css?.cell;
-    if (!dims) { this.hideGhost(); return; }
-
     const screen = this.container.querySelector('.xterm-screen');
     if (!screen) { this.hideGhost(); return; }
 
     const screenRect = screen.getBoundingClientRect();
     const containerRect = this.container.getBoundingClientRect();
 
-    this.ghostEl.style.left = `${buf.cursorX * dims.width + screenRect.left - containerRect.left}px`;
-    this.ghostEl.style.top = `${buf.cursorY * dims.height + screenRect.top - containerRect.top}px`;
-    this.ghostEl.style.height = `${dims.height}px`;
-    this.ghostEl.style.lineHeight = `${dims.height}px`;
-    this.ghostEl.style.fontSize = `${core._optionsService.rawOptions.fontSize}px`;
+    // The old guard targeted a removed private xterm options field and
+    // therefore rejected every suggestion before it could be rendered.
+    // Font size is part of the public Terminal API; only use renderer internals
+    // opportunistically for the exact cell size and fall back to the screen
+    // geometry when the renderer implementation changes.
+    const core = (this.terminal as any)._core;
+    const rendererCell = core?._renderService?.dimensions?.css?.cell;
+    const cellWidth = rendererCell?.width || screenRect.width / this.terminal.cols;
+    const cellHeight = rendererCell?.height || screenRect.height / this.terminal.rows;
+    if (!Number.isFinite(cellWidth) || cellWidth <= 0 ||
+        !Number.isFinite(cellHeight) || cellHeight <= 0) {
+      this.hideGhost();
+      return;
+    }
+
+    this.ghostEl.style.left = `${buf.cursorX * cellWidth + screenRect.left - containerRect.left}px`;
+    this.ghostEl.style.top = `${buf.cursorY * cellHeight + screenRect.top - containerRect.top}px`;
+    this.ghostEl.style.height = `${cellHeight}px`;
+    this.ghostEl.style.lineHeight = `${cellHeight}px`;
+    this.ghostEl.style.fontSize = `${this.terminal.options.fontSize}px`;
     this.ghostEl.textContent = suffix;
     this.ghostEl.style.display = 'inline';
 

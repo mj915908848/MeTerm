@@ -1,5 +1,7 @@
 import { TerminalRegistry } from './terminal';
 import { DrawerManager } from './drawer';
+import { allowConversationSend, currentConversationHost } from './ai-conversation-host-ui';
+import { hostsMatch } from './ai-conversation-host';
 import { writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
 import { t } from './i18n';
 import { globalCompletionIndex } from './cmd-completion-data';
@@ -137,6 +139,8 @@ function saveBarCollapsed(collapsed: boolean): void {
 
 class AICapsuleManagerClass {
   private capsules = new Map<string, AICapsuleInstance>();
+  private connectedSessions = new Set<string>();
+  private pendingAutoOpen = new Set<string>();
   /** Tab-scoped shared agent state (see ai-capsule-tab-state.ts). */
   private tabStates = new TabStateRegistry();
   private _barHidden = loadBarCollapsed();
@@ -153,6 +157,14 @@ class AICapsuleManagerClass {
   private _cachedConversations = new Map<string, ChatConversation[]>();
 
   constructor() {
+    document.addEventListener('meterm-terminal-connected', ((event: CustomEvent<{ sessionId: string }>) => {
+      const sid = event.detail?.sessionId;
+      if (!sid || this.connectedSessions.has(sid)) return;
+      this.connectedSessions.add(sid);
+      if (!loadSettings().autoOpenAiOnConnect) return;
+      this.pendingAutoOpen.add(sid);
+      if (this._lastShownSessionId === sid && this.capsules.has(sid)) this.show(sid);
+    }) as EventListener);
     // Subscribe to pane closures so the tab-scoped agent can
     // surface a one-shot "Pane N was closed" notice on its next
     // iteration. The event is dispatched from TabManager.closePane.
@@ -319,7 +331,38 @@ class AICapsuleManagerClass {
     }
   }
 
+  private async restoreLatestHostHistory(inst: AICapsuleInstance): Promise<void> {
+    if (inst.isStreaming || inst.messages.length > 0 || inst.chatHistoryOpen) return;
+    const id = inst.currentConversationId;
+    const messages = inst.messages;
+    const host = currentConversationHost(inst);
+    try {
+      const conversations = await loadConversationsFn();
+      const settings = loadSettings();
+      // Disk loading is asynchronous. A user action, focus change or settings
+      // change must win over this optional automatic restoration.
+      if (!settings.autoOpenAiOnConnect || !settings.autoRestoreAiHistoryOnConnect
+          || this.capsules.get(inst.sessionId) !== inst || this._lastShownSessionId !== inst.sessionId
+          || !inst.chatOpen || inst.chatHistoryOpen || inst.isStreaming || inst.messages.length > 0
+          || inst.messages !== messages || inst.currentConversationId !== id
+          || !hostsMatch(host, currentConversationHost(inst))) return;
+      const latest = conversations.filter(conv => hostsMatch(conv.hostBinding, host) && conv.messages.length > 0)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      if (latest) this.restoreConversation(inst, latest);
+    } catch (error) {
+      console.warn('[ai] Automatic host history restoration failed:', error);
+    }
+  }
+
   /** Whether the chat side panel is currently open for the given/active session. */
+  private applyPendingAutoOpen(sessionId: string): void {
+    const inst = this.capsules.get(sessionId);
+    if (inst && this.pendingAutoOpen.delete(sessionId) && loadSettings().autoOpenAiOnConnect && !inst.chatOpen) {
+      this.openChat(inst);
+      if (loadSettings().autoRestoreAiHistoryOnConnect) void this.restoreLatestHostHistory(inst);
+    }
+  }
+
   isChatSidebarOpen(sessionId?: string): boolean {
     const sid = sessionId ?? this._lastShownSessionId;
     if (!sid) return false;
@@ -396,6 +439,7 @@ class AICapsuleManagerClass {
   }
 
   private injectUserMessage(instance: AICapsuleInstance, text: string): void {
+    if (!allowConversationSend(instance)) return;
     appendUserMessageFn(instance, text);
     instance.messages.push({ type: 'user', content: text, timestamp: Date.now() });
     void this.saveConversation(instance);
@@ -490,16 +534,26 @@ class AICapsuleManagerClass {
     });
 
     // Copy buttons
-    container.querySelectorAll<HTMLButtonElement>('.ai-cmd-copy').forEach((btn) => {
-      btn.addEventListener('click', () => {
+    container.querySelectorAll<HTMLButtonElement>('.ai-cmd-copy, .ai-response-copy').forEach((btn) => {
+      if (btn.dataset.copyBound) return;
+      btn.dataset.copyBound = 'true';
+      btn.addEventListener('click', async () => {
         const code = btn.dataset.code ?? '';
-        void clipboardWriteText(code);
-        btn.textContent = '\u2713';
-        btn.classList.add('cmd-copied');
-        setTimeout(() => {
-          btn.textContent = t('aiCopyCode');
-          btn.classList.remove('cmd-copied');
-        }, 1200);
+        const label = btn.classList.contains('ai-response-copy') ? 'aiCopyResponse' : 'aiCopyCode';
+        btn.disabled = true;
+        try {
+          await clipboardWriteText(code);
+          btn.textContent = t('commonCopied');
+          btn.classList.add('cmd-copied');
+        } catch {
+          btn.textContent = t('aiCopyFailed');
+        } finally {
+          setTimeout(() => {
+            btn.textContent = t(label);
+            btn.classList.remove('cmd-copied');
+            btn.disabled = false;
+          }, 1200);
+        }
       });
     });
   }
@@ -638,7 +692,7 @@ class AICapsuleManagerClass {
 
   // ─── Chat Persistence (delegated to ai-capsule-chat-persistence.ts) ──
 
-  private async saveConversation(instance: AICapsuleInstance, snapshot?: { id: string; messages: ConvEntry[] }): Promise<void> {
+  private async saveConversation(instance: AICapsuleInstance, snapshot?: { id: string; messages: ConvEntry[]; hostBinding?: ChatConversation['hostBinding'] }): Promise<void> {
     return saveConversationFn(instance, snapshot);
   }
 
@@ -661,6 +715,9 @@ class AICapsuleManagerClass {
       if (!instance.chatHistoryOpen) return;
       const target = e.target as HTMLElement;
       // Don't close if click is inside AI Bar, side panel, or side input area
+      // Scope switches replace the clicked node before this handler runs.
+      // The event path still retains the owning history panel.
+      if (instance.chatHistoryPanel && e.composedPath().includes(instance.chatHistoryPanel)) return;
       if (instance.element.contains(target)) return;
       if (instance.sidePanel?.contains(target)) return;
       if (instance.sideInputArea?.contains(target)) return;
@@ -799,6 +856,7 @@ class AICapsuleManagerClass {
     if (!this.capsules.has(sessionId)) {
       this.create(sessionId);
     }
+    this.applyPendingAutoOpen(sessionId);
 
     // Check if ANY session in this tab has side panel chat open
     let sideActive = false;
@@ -880,6 +938,7 @@ class AICapsuleManagerClass {
     const inst = this.capsules.get(sessionId);
     if (!inst) return;
     this._lastShownSessionId = sessionId;
+    this.applyPendingAutoOpen(sessionId);
 
     // 1) Bottom AI bar visibility is gated SOLELY by the collapse flag.
     //    (Decoupled from the chat side panel so a collapsed bar never hides
@@ -947,6 +1006,8 @@ class AICapsuleManagerClass {
     // Always remove the pane-local AI Bar element.
     inst.element.remove();
     this.capsules.delete(sessionId);
+    this.connectedSessions.delete(sessionId);
+    this.pendingAutoOpen.delete(sessionId);
 
     // Tab-scoped teardown: only when the LAST pane of this tab is
     // being destroyed. Other panes of the same tab still share the

@@ -4,7 +4,7 @@
 // history/chat-history search mode, etc.
 
 import { t } from './i18n';
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 import { TerminalRegistry } from './terminal';
 import { resolveActiveModel } from './ai-provider';
 import type { AICapsuleInstance } from './ai-capsule-types';
@@ -339,9 +339,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
           dismissPromptHint();
           const dontAsk = instance.element.querySelector('.ai-prompt-hint-check input') as HTMLInputElement;
           if (dontAsk?.checked) {
-            const s = loadSettings();
-            s.aiEnterSendsToAgent = true;
-            saveSettings(s);
+            updateSettings({ aiEnterSendsToAgent: true });
             host.syncBarPlaceholder(instance);
           }
           sendToLLM();

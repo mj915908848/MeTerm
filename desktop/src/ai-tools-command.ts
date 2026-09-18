@@ -15,6 +15,7 @@ import {
   type ToolContext,
 } from './ai-tools-core';
 import { executeAgentCommand, withSessionPtyLock } from './ai-tools-shell';
+import { createWatchLifecycle, watchTimeoutSeconds } from './ai-terminal-watch-lifecycle';
 import { detectInteractiveState } from './ai-tools-prompt-detect';
 import { resolveSingleKey } from './ai-tools-keys';
 import { waitAutoDetectedReason } from './ai-tool-i18n';
@@ -705,6 +706,8 @@ export function createWatchTerminalTool(): ToolHandler {
         '  3. The terminal enters a full-screen TUI → status: tui\n' +
         '  4. A caller-supplied regex pattern matches → status: pattern_matched\n' +
         '  5. No output for idle_timeout seconds → status: idle_no_signal\n' +
+        '  6. Total observation deadline reached → status: timeout (process is NOT stopped)\n' +
+        '  7. User stops the agent → status: aborted (process is NOT stopped)\n' +
         '\n' +
         'Typical use: after a run_command that returned idle_no_signal / timeout, or after you typed input via type_text / press_keys and want to observe the reaction.',
       parameters: {
@@ -717,6 +720,10 @@ export function createWatchTerminalTool(): ToolHandler {
           pattern: {
             type: 'string',
             description: 'Optional regex pattern to match. Returns immediately when matched. Useful for waiting on specific prompts beyond the built-in detector.',
+          },
+          timeout: {
+            type: 'number', minimum: 3, maximum: 300, default: 60,
+            description: 'Total observation deadline in seconds (3–300, default 60). timeout ends observation only; it does not stop the process.',
           },
           pane: PANE_PARAM_SCHEMA,
         },
@@ -752,6 +759,8 @@ export function createWatchTerminalTool(): ToolHandler {
       }
 
       type FinishReason =
+        | 'aborted'
+        | 'timeout'
         | 'pattern_matched'
         | 'completed'
         | 'idle_no_signal'
@@ -775,7 +784,6 @@ export function createWatchTerminalTool(): ToolHandler {
       // both its output and our view of it. Different sessions remain
       // free to run in parallel.
       return withSessionPtyLock(pane.sessionId, () => new Promise<string>((resolve) => {
-        let outputBuffer = '';
         let resolved = false;
         let matchedLine = '';
         let idleTimer: ReturnType<typeof setTimeout>;
@@ -788,6 +796,7 @@ export function createWatchTerminalTool(): ToolHandler {
           unsubIdle();
           clearTimeout(idleTimer);
           clearInterval(detectorTimer);
+          lifecycle.dispose();
         };
 
         const finalize = (
@@ -798,7 +807,7 @@ export function createWatchTerminalTool(): ToolHandler {
           if (resolved) return;
           cleanup();
           const elapsed = Math.round((Date.now() - startTime) / 1000);
-          const stripped = stripAnsi(outputBuffer).trim();
+          const stripped = stripAnsi(lifecycle.output).trim();
           const truncated = truncateOutput(stripped, TOKEN_BUDGET.perToolOutputChars);
 
           let header = `[status: ${reason}, elapsed: ${elapsed}s`;
@@ -813,8 +822,10 @@ export function createWatchTerminalTool(): ToolHandler {
           const promptInfoLine = promptInfo
             ? `\n[prompt_info: ${JSON.stringify(promptInfo)}]`
             : '';
-          resolve(`${panePrefix}${header}${promptInfoLine}\n${truncated || '(no output)'}`);
+          const omitted = lifecycle.wasTruncated ? '\n[Earlier output omitted; retained latest 65536 characters]' : '';
+          resolve(`${panePrefix}${header}${promptInfoLine}${omitted}\n${truncated || '(no output)'}`);
         };
+        const lifecycle = createWatchLifecycle(ctx.abortSignal, watchTimeoutSeconds(args.timeout) * 1000, finalize);
 
         // Reset idle timer — called on each new output
         const resetIdleTimer = () => {
@@ -837,7 +848,7 @@ export function createWatchTerminalTool(): ToolHandler {
               return;
             }
           } catch { /* ignore */ }
-          const det = detectInteractiveState(outputBuffer, false);
+          const det = detectInteractiveState(lifecycle.output, false);
           if (det.state === 'waiting_password' || det.state === 'waiting_confirm' || det.state === 'waiting_input') {
             finalize(det.state, det.matchedLine, det.promptInfo);
           }
@@ -846,12 +857,12 @@ export function createWatchTerminalTool(): ToolHandler {
         // Subscribe to output stream
         const unsubOutput = TerminalRegistry.onOutput(pane.sessionId, (data) => {
           if (resolved) return;
-          outputBuffer += data;
+          lifecycle.append(data);
           resetIdleTimer(); // output received → reset idle countdown
 
           // Check caller-supplied pattern first — it wins over detector.
           if (regex) {
-            const lines = stripAnsi(outputBuffer).split('\n');
+            const lines = stripAnsi(lifecycle.output).split('\n');
             for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
               if (regex.test(lines[i])) {
                 matchedLine = lines[i].trim();
@@ -866,6 +877,7 @@ export function createWatchTerminalTool(): ToolHandler {
         const unsubIdle = TerminalRegistry.onShellIdle(pane.sessionId, () => {
           finalize('completed');
         });
+        lifecycle.start();
       }));
     },
   };

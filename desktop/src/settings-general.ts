@@ -600,7 +600,7 @@ export function createGeneralTab(
   titleLabel.textContent = t('sshTabTitleMode');
   titleSection.appendChild(titleLabel);
   const titleSelect = createSettingsSelect([
-    { value: 'connection', label: t('sshTabTitleConnection'), selected: current.sshTabTitleMode !== 'terminal' },
+    { value: 'connection', label: t('sshTabTitleConnection'), selected: current.sshTabTitleMode === 'connection' },
     { value: 'terminal', label: t('sshTabTitleTerminal'), selected: current.sshTabTitleMode === 'terminal' },
   ]);
   titleSelect.el.setAttribute('aria-label', t('sshTabTitleMode'));
@@ -619,6 +619,8 @@ export function createGeneralTab(
     <label><input type="checkbox" id="terminal-notifications-toggle" ${current.enableTerminalNotifications ? 'checked' : ''}> ${t('enableTerminalNotifications')}</label>
     <label><input type="checkbox" id="file-link-confirm-toggle" ${!current.fileLinkSkipConfirm ? 'checked' : ''}> ${t('fileLinkSkipConfirmSetting')}</label>
     <label><input type="checkbox" id="auto-new-session-toggle" ${current.autoNewSession ? 'checked' : ''}> ${t('autoNewSession')}</label>
+    <label><input type="checkbox" id="auto-open-ai-toggle" ${current.autoOpenAiOnConnect ? 'checked' : ''}> ${t('autoOpenAiOnConnect')}</label>
+    <label><input type="checkbox" id="auto-restore-ai-history-toggle" ${current.autoRestoreAiHistoryOnConnect ? 'checked' : ''}> ${t('autoRestoreAiHistoryOnConnect')}</label>
   `;
   rememberSection.appendChild(rememberGroup);
   const windowSizeCheckbox = rememberGroup.querySelector('#remember-window-size') as HTMLInputElement;
@@ -631,6 +633,14 @@ export function createGeneralTab(
   fileLinkConfirmToggle.onchange = () => { update({ fileLinkSkipConfirm: !fileLinkConfirmToggle.checked }); };
   const autoNewSessionToggle = rememberGroup.querySelector('#auto-new-session-toggle') as HTMLInputElement;
   autoNewSessionToggle.onchange = () => { update({ autoNewSession: autoNewSessionToggle.checked }); };
+  const autoOpenAiToggle = rememberGroup.querySelector('#auto-open-ai-toggle') as HTMLInputElement;
+  const autoRestoreAiToggle = rememberGroup.querySelector('#auto-restore-ai-history-toggle') as HTMLInputElement;
+  autoRestoreAiToggle.disabled = !autoOpenAiToggle.checked;
+  autoOpenAiToggle.onchange = () => {
+    update({ autoOpenAiOnConnect: autoOpenAiToggle.checked });
+    autoRestoreAiToggle.disabled = !autoOpenAiToggle.checked;
+  };
+  autoRestoreAiToggle.onchange = () => update({ autoRestoreAiHistoryOnConnect: autoRestoreAiToggle.checked });
   tabGeneral.appendChild(rememberSection);
 
   // --- PiP Scale ---

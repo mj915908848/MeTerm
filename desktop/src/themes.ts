@@ -294,6 +294,8 @@ export interface AppSettings {
   previewRefreshRate: number;
   language: 'en' | 'zh';
   sshTabTitleMode: 'connection' | 'terminal';
+  autoOpenAiOnConnect: boolean;
+  autoRestoreAiHistoryOnConnect: boolean;
   rememberWindowSize: boolean;
   windowWidth: number;
   windowHeight: number;
@@ -403,7 +405,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   enableThumbnail: false,
   previewRefreshRate: 1000,
   language: 'en',
-  sshTabTitleMode: 'connection',
+  // 'terminal' keeps the pre-existing tab title (the dynamic terminal title);
+  // name-based titles are opt-in so the default display never changes.
+  sshTabTitleMode: 'terminal',
+  autoOpenAiOnConnect: false,
+  autoRestoreAiHistoryOnConnect: false,
   rememberWindowSize: true,
   windowWidth: 1000,
   windowHeight: 700,
@@ -508,9 +514,25 @@ export function loadSettings(): AppSettings {
   });
 }
 
-export function saveSettings(settings: AppSettings): void {
+function saveSettings(settings: AppSettings): void {
   updateSettingsSecrets(settings);
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(stripSettingsSecretsForStorage(settings)));
+}
+
+/**
+ * Merge a patch into the latest persisted settings and save the result.
+ *
+ * `saveSettings` overwrites the whole object, so a caller that wants to change
+ * one field must merge into a freshly loaded copy instead of a copy captured
+ * earlier — otherwise anything another window wrote in the meantime is rolled
+ * back. The merge itself is not atomic (localStorage is synchronous but
+ * cross-window writes are not serialized); keeping every caller on this path
+ * leaves a single place to add that later.
+ */
+export function updateSettings(patch: Partial<AppSettings>): AppSettings {
+  const next = { ...loadSettings(), ...patch };
+  saveSettings(next);
+  return next;
 }
 
 export function getTheme(name: string): TerminalTheme {

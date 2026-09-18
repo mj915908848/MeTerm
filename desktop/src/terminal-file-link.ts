@@ -14,7 +14,7 @@
 import type { Terminal, ILink, ILinkProvider } from '@xterm/xterm';
 import { invoke } from '@tauri-apps/api/core';
 import { t } from './i18n';
-import { loadSettings, saveSettings } from './themes';
+import { loadSettings, updateSettings } from './themes';
 
 // ── 类型 ────────────────────────────────────────────────────
 
@@ -265,9 +265,7 @@ function showOpenConfirm(path: string, isSSH: boolean): Promise<boolean> {
 
     const cleanup = (result: boolean) => {
       if (result && dontAskCheckbox.checked) {
-        const s = loadSettings();
-        s.fileLinkSkipConfirm = true;
-        saveSettings(s);
+        updateSettings({ fileLinkSkipConfirm: true });
       }
       overlay.remove();
       resolve(result);

@@ -833,10 +833,18 @@ export function showConfirmCard(
 
     // Button handlers
     let settled = false;
+    const signal = instance.agent.cancellationSignal;
+    const onAbort = () => {
+      if (settled) return;
+      cleanup();
+      card.remove();
+      resolve(false);
+    };
     const cleanup = () => {
       if (settled) return;
       settled = true;
       clearTimeout(autoRejectTimer);
+      signal?.removeEventListener('abort', onAbort);
       card.classList.add('resolved');
       approveBtn.disabled = true;
       rejectBtn.disabled = true;
@@ -852,20 +860,25 @@ export function showConfirmCard(
       card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('warning', 10)} Timed out</span>`;
       resolve(false);
     }, 5 * 60 * 1000);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) { onAbort(); return; }
 
     approveBtn.addEventListener('click', () => {
+      if (settled) return;
       cleanup();
       card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('success', 10)} Approved</span>`;
       resolve(true);
     });
 
     rejectBtn.addEventListener('click', () => {
+      if (settled) return;
       cleanup();
       card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('error', 10)} Rejected</span>`;
       resolve(false);
     });
 
     editBtn.addEventListener('click', () => {
+      if (settled) return;
       // Show inline editor
       const cmd = String(args.command || '');
       const editorDiv = document.createElement('div');
@@ -883,6 +896,7 @@ export function showConfirmCard(
       editInput.focus();
 
       const runEdited = () => {
+        if (settled) return;
         cleanup();
         card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('success', 10)} Edited</span>`;
         resolve(editInput.value);
@@ -1112,7 +1126,7 @@ export function restoreTodoBoardFromHistory(instance: AICapsuleInstance): void {
       const content = typeof r.content === 'string' ? r.content : '';
       if (!content) continue;
       const activeForm = typeof r.activeForm === 'string' && r.activeForm ? r.activeForm : content;
-      const status = (r.status === 'completed' || r.status === 'in_progress')
+      const status = (r.status === 'completed' || r.status === 'in_progress' || r.status === 'interrupted')
         ? r.status
         : 'pending';
       const id = typeof r.id === 'string' && r.id ? r.id : `t_restored_${idx}`;

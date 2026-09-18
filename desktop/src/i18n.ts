@@ -9,6 +9,8 @@ export interface Translations {
   connectionSortNameAsc: string;
   connectionSortNameDesc: string;
   sshTabTitleMode: string;
+  autoOpenAiOnConnect: string;
+  autoRestoreAiHistoryOnConnect: string;
   sshTabTitleConnection: string;
   sshTabTitleTerminal: string;
 
@@ -335,6 +337,8 @@ export interface Translations {
   aiClearChat: string;
   aiRunCommand: string;
   aiCopyCode: string;
+  aiCopyResponse: string;
+  aiCopyFailed: string;
   aiDangerConfirmTitle: string;
   aiDangerConfirmMsg: string;
   aiDangerConfirmRun: string;
@@ -589,6 +593,28 @@ export interface Translations {
   aiChatDeleteConfirmCancel: string;
   aiChatDeleteNoAskMinutes: string;
   aiChatHistoryBack: string;
+  aiChatHostUnbound: string;
+  aiChatHostLocal: string;
+  aiChatHostMismatchTitle: string;
+  aiChatHostMismatch: string;
+  aiChatPreviewAriaLabel: string;
+  aiChatPreviewNoticeBound: string;
+  aiChatPreviewNoticeUnbound: string;
+  aiChatPreviewBack: string;
+  aiChatPreviewClose: string;
+  aiChatCopyConversation: string;
+  aiChatCopyFailed: string;
+  aiChatBindCurrentHost: string;
+  aiChatBindConfirmBody: string;
+  aiChatBindConfirmTitle: string;
+  aiChatBindSuccessNotice: string;
+  aiChatBindSuccessStatus: string;
+  aiChatBindFailedStatus: string;
+  aiChatHistoryImageAlt: string;
+  aiChatHistorySearchPlaceholder: string;
+  aiChatScopeCurrent: string;
+  aiChatScopeAll: string;
+  commonCopied: string;
   updateAvailable: string;
   updateNow: string;
   updateLater: string;
@@ -859,6 +885,8 @@ const translations: Record<Language, Translations> = {
     connectionSortNameAsc: 'Name ascending',
     connectionSortNameDesc: 'Name descending',
     sshTabTitleMode: 'SSH tab title',
+    autoOpenAiOnConnect: 'Automatically open AI panel after connecting to a host',
+    autoRestoreAiHistoryOnConnect: 'Restore the latest conversation for this host when AI opens automatically',
     sshTabTitleConnection: 'Connection name',
     sshTabTitleTerminal: 'Dynamic terminal title',
 
@@ -1078,6 +1106,8 @@ const translations: Record<Language, Translations> = {
     aiClearChat: 'Clear Chat',
     aiRunCommand: 'Run',
     aiCopyCode: 'Copy',
+    aiCopyResponse: 'Copy response',
+    aiCopyFailed: 'Copy failed — try again',
     aiDangerConfirmTitle: 'Dangerous Command',
     aiDangerConfirmMsg: 'This command may cause irreversible changes. Are you sure you want to run it?',
     aiDangerConfirmRun: 'Run Anyway',
@@ -1310,11 +1340,33 @@ const translations: Record<Language, Translations> = {
     aiChatHistoryEmpty: 'No chat history',
     aiChatHistoryTitle: 'Chat History',
     aiChatDeleteConfirmTitle: 'Delete Conversation',
-    aiChatDeleteConfirmMsg: 'Are you sure you want to delete this conversation?',
+    aiChatDeleteConfirmMsg: 'Delete this conversation and its host-binding backup and temporary file? This cannot be undone.',
     aiChatDeleteConfirmOk: 'Delete',
     aiChatDeleteConfirmCancel: 'Cancel',
     aiChatDeleteNoAskMinutes: "Don't ask again for 5 minutes",
     aiChatHistoryBack: 'Back',
+    aiChatHostUnbound: 'Unbound',
+    aiChatHostLocal: 'Local',
+    aiChatHostMismatchTitle: 'Host mismatch',
+    aiChatHostMismatch: 'Host mismatch. Switch to the conversation host or start a new conversation.',
+    aiChatPreviewAriaLabel: 'Read-only conversation history',
+    aiChatPreviewNoticeBound: 'Read-only history. Switch to the matching host and reopen from history to continue. Ownership identifies the initial host, not every operation target.',
+    aiChatPreviewNoticeUnbound: 'Legacy history is unbound. Confirm ownership, bind to the current host, then reopen from history to continue.',
+    aiChatPreviewBack: 'Back',
+    aiChatPreviewClose: 'Close',
+    aiChatCopyConversation: 'Copy conversation',
+    aiChatCopyFailed: 'Copy failed; retry',
+    aiChatBindCurrentHost: 'Bind to current host',
+    aiChatBindConfirmBody: 'Bind this legacy history to "{host}"? Confirm it belongs to this host. This saves ownership only; no commands run and the transcript remains unchanged.',
+    aiChatBindConfirmTitle: 'Confirm host ownership',
+    aiChatBindSuccessNotice: 'Bound. Return to history and reopen on the matching host to continue; no commands were executed.',
+    aiChatBindSuccessStatus: 'Binding saved; original history backed up.',
+    aiChatBindFailedStatus: 'Binding failed; ownership was not updated. Retry.',
+    aiChatHistoryImageAlt: 'History image',
+    aiChatHistorySearchPlaceholder: 'Search conversations or hosts',
+    aiChatScopeCurrent: 'Current host',
+    aiChatScopeAll: 'All conversations',
+    commonCopied: 'Copied!',
     updateAvailable: 'New version {version} is available',
     updateNow: 'Update Now',
     updateLater: 'Later',
@@ -1598,6 +1650,8 @@ const translations: Record<Language, Translations> = {
     connectionSortNameAsc: '名称升序',
     connectionSortNameDesc: '名称降序',
     sshTabTitleMode: 'SSH 标签名称',
+    autoOpenAiOnConnect: '连接主机后自动打开 AI 面板',
+    autoRestoreAiHistoryOnConnect: '自动打开 AI 面板时恢复当前主机最近的对话',
     sshTabTitleConnection: '连接名称',
     sshTabTitleTerminal: '终端动态标题',
 
@@ -1817,6 +1871,8 @@ const translations: Record<Language, Translations> = {
     aiClearChat: '清空对话',
     aiRunCommand: '执行',
     aiCopyCode: '复制',
+    aiCopyResponse: '复制回答',
+    aiCopyFailed: '复制失败，请重试',
     aiDangerConfirmTitle: '危险命令',
     aiDangerConfirmMsg: '该命令可能造成不可逆的更改，确定要执行吗？',
     aiDangerConfirmRun: '仍然执行',
@@ -2049,11 +2105,33 @@ const translations: Record<Language, Translations> = {
     aiChatHistoryEmpty: '暂无对话历史',
     aiChatHistoryTitle: '对话历史',
     aiChatDeleteConfirmTitle: '删除对话',
-    aiChatDeleteConfirmMsg: '确定要删除这条对话记录吗？',
+    aiChatDeleteConfirmMsg: '确定删除这条对话及其主机绑定备份和临时文件吗？此操作无法撤销。',
     aiChatDeleteConfirmOk: '删除',
     aiChatDeleteConfirmCancel: '取消',
     aiChatDeleteNoAskMinutes: '5 分钟内不再提示',
     aiChatHistoryBack: '返回',
+    aiChatHostUnbound: '未绑定',
+    aiChatHostLocal: '本机',
+    aiChatHostMismatchTitle: '主机不匹配',
+    aiChatHostMismatch: '当前主机与对话归属不匹配，请切换到对应主机或新建对话。',
+    aiChatPreviewAriaLabel: '只读对话历史',
+    aiChatPreviewNoticeBound: '只读历史。切换到对应主机后，从历史列表重新打开即可继续。归属表示首次发送的主机，不代表所有操作的目标。',
+    aiChatPreviewNoticeUnbound: '旧历史尚未绑定主机。确认归属后，可绑定当前主机，再从历史列表打开继续。',
+    aiChatPreviewBack: '返回',
+    aiChatPreviewClose: '关闭',
+    aiChatCopyConversation: '复制对话',
+    aiChatCopyFailed: '复制失败，请重试',
+    aiChatBindCurrentHost: '绑定到当前主机',
+    aiChatBindConfirmBody: '将这段旧历史绑定到「{host}」？请确认它属于此主机。仅保存归属，不执行命令；对话内容保持不变。',
+    aiChatBindConfirmTitle: '确认主机归属',
+    aiChatBindSuccessNotice: '已绑定。返回历史列表后重新打开，即可在匹配主机继续；本次没有执行命令。',
+    aiChatBindSuccessStatus: '绑定成功，原历史已备份。',
+    aiChatBindFailedStatus: '绑定失败，归属未更新，请重试。',
+    aiChatHistoryImageAlt: '历史图片',
+    aiChatHistorySearchPlaceholder: '搜索对话或主机',
+    aiChatScopeCurrent: '当前主机',
+    aiChatScopeAll: '全部对话',
+    commonCopied: '已复制!',
     updateAvailable: '新版本 {version} 已发布',
     updateNow: '立即更新',
     updateLater: '稍后',

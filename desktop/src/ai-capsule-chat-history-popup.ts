@@ -86,6 +86,8 @@ export function openChatHistory(
     if (msgs) msgs.style.display = 'none';
     panel.style.display = '';
     instance.chatHistoryPanel = panel;
+    panel.dataset.historyScope = 'current';
+    panel.dataset.historyQuery = '';
     void renderChatHistoryList(instance, host);
   } else {
     // AI Bar popup mode (bottom mode, or side mode with chat not open)
@@ -102,6 +104,8 @@ export function openChatHistory(
     host.adjustPopupMaxHeight(panel, instance.element);
     host.observePopupResize(panel, instance.element);
     instance.chatHistoryPanel = panel;
+    panel.dataset.historyScope = 'current';
+    panel.dataset.historyQuery = '';
     void renderChatHistoryList(instance, host);
     // 进入搜索模式
     host.enterSearchMode(instance, t('aiSearchChatHistory'), () => {
@@ -189,10 +193,6 @@ export async function reloadChatHistoryWithFilter(
 ): Promise<void> {
   const convs = await host.loadConversations();
   host.setCachedConversations(instance.sessionId, convs);
-  let query = '';
-  if (instance.layoutMode !== 'side' && instance.chatHistoryOpen) {
-    const input = instance.element.querySelector('.ai-bar-input') as HTMLInputElement;
-    query = input?.value || '';
-  }
+  const query = instance.chatHistoryPanel?.dataset.historyQuery ?? '';
   host.renderListFromCache(instance, convs, query || undefined);
 }
