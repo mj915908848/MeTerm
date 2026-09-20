@@ -1,5 +1,31 @@
 # MeTerm 更新记录
 
+## v0.2.15
+
+### 新功能 / Features
+
+- **标签栏按连接名完整显示 / Title-bar tabs sized to their own names** — 每个标签按自身连接名的实测宽度分配空间：短名称不再被无谓压扁，只有确实过长的才收窄，整排装不下时才降级为横向滚动。同时修复图标区宽度被漏算、导致末尾字符被关闭按钮压住的老问题。 / Each tab is sized to its own measured connection name, so short names are no longer squeezed and only genuinely over-long ones are trimmed, with horizontal scrolling as the last resort. Also fixes the omitted icon area that let the close button clip the last glyph.
+- **未签名分发改为拖放安装 / Unsigned distribution now installs by drag and drop** — dmg 内只放 `MeTerm.app` 与 `Applications` 快捷方式，接收方拖进「应用程序」，首次打开由接收方在「系统设置 → 隐私与安全性」放行（或执行 `xattr -cr`）。dmg 组装改为本地与 CI 共用的脚本，打包后会挂载回读核对内容与签名完整性。 / The DMG now holds only `MeTerm.app` and an `Applications` shortcut: recipients drag it in and allow the first launch from System Settings (or run `xattr -cr`). DMG assembly moved to a script shared by local builds and CI that mounts the image back and verifies its contents and signature integrity.
+
+### 问题修复 / Fixes
+
+- **横向滚动的标签栏不再被压回 CSS 地板 / A scrolling tab strip is no longer squashed back to the CSS floor** — 标签栏降级为横向滚动后，JS 算好的宽度曾被 flex 收缩压回 CSS 的 `min-width: 84px`：带图标的标签计划 108px、实际只画 84px，名字只剩三四个字。更隐蔽的是压回后内容恰好填满容器，`scrollWidth` 等于 `clientWidth`，滚动箭头、滚轮横滚与「切标签自动滚入视野」**一并失效**。现在窗口标签栏的标签宽度只由 JS 决定，放不下就滚动而不是压扁。 / Once the strip fell back to horizontal scrolling, the flex container shrank the JS-planned width back to the CSS `min-width: 84px`: an icon tab planned at 108px was drawn at 84px, leaving three or four characters of its name visible. The knock-on effect was worse — the row then fit its container exactly, so `scrollWidth` equalled `clientWidth` and the scroll arrows, wheel scrolling and scroll-active-tab-into-view all went dead together. Tabs in the window toolbar now take their width from JS alone: the row scrolls instead of squashing.
+- **访达扩展嵌入后包签名残缺 / Broken bundle signature after embedding the Finder extension** — 未签名路径下不再产出签名与内容不匹配的 `.app`，避免接收方看到「已损坏，无法打开」；那种状态下清除隔离属性无效，任何放行方式都救不回来。 / The unsigned path no longer produces a bundle whose signature does not match its contents, which recipients would see as "damaged" — a state that stripping the quarantine attribute cannot repair.
+- **dmg 打包失败不再被吞掉 / DMG failures are no longer swallowed** — 三处 CI 重建 dmg 的步骤在 `create-dmg` 失败时不再留下空目录却报告成功。 / The three CI DMG rebuild steps no longer report success while leaving an empty directory behind after a failed `create-dmg`.
+- **移除不成立的首次打开助手 / Dropped the first-launch helper that does not work** — 曾在 dmg 内附带 `Open-MeTerm.command`，设想"在映像窗口里双击即可放行"。真机实测失败：双击弹出「Apple 无法验证」且没有可用的放行选项。这条路径在出货前无法验证（本机无 GUI 交互），因此不再出货任何需要双击的脚本，改回 macOS 标准的拖放安装。 / The image used to ship `Open-MeTerm.command` to be double-clicked from the mounted window. On a real Mac that fails: the dialog offers no way through. The path cannot be verified before shipping either (no GUI interaction available locally), so no double-clickable script is shipped any more and installation is the standard drag and drop.
+- **检查更新改为打开发布页 / Check for Updates opens the releases page** — 不再向外部更新服务器查询版本，启动后的静默自检已移除；菜单栏、托盘与关于页的「检查更新」统一用浏览器打开本仓库的 Releases 页面，已安装的版本因此不会被上游发布静默替换。 / The app no longer queries an external update server and the silent startup check is gone; all three "Check for Updates" entries open this repository's Releases page in a browser, so an installed build cannot be silently replaced by an upstream release.
+
+### 验证 / Validation
+
+- 前端单测 166 项全通过、`npx tsc --noEmit` 无错误、Rust `cargo check` 通过 / 166 frontend unit tests pass, `npx tsc --noEmit` is clean, `cargo check` passes
+- 不设置更新签名密钥时 release 打包成功，且不再产出 `.tar.gz` / `.sig` / release build succeeds without the updater signing key and no longer emits `.tar.gz` / `.sig`
+- 本地分发构建端到端跑通，dmg 挂载核对通过（映像内为 `.app` 与 `Applications` 快捷方式）；签名残缺的包会被打包脚本拦下 / end-to-end local distribution build passes and the mounted image verifies (the app plus the Applications shortcut); a bundle with a broken signature is rejected by the packaging script
+- 标签栏按连接名分配宽度已在 macOS 实机验收 / the name-sized title-bar tabs are verified on a real Mac
+- 未签名分发的放行路径在真机实测后改版：原"映像内放行助手"被 Gatekeeper 拦下，改为拖放安装 + 系统设置放行 / after testing on a real Mac the unsigned path changed: the in-image helper is rejected by Gatekeeper, so installation is drag and drop plus a System Settings release
+- CI（`Build macOS`，tag `v0.2.15`）两架构均通过并发布 dmg；下载产物核对通过：映像内含 `.app` 与 `Applications` 链接，`codesign --verify` 报 `valid on disk`，嵌套的 `.appex` 一并校验 / CI (Build macOS, tag v0.2.15) passes on both architectures and publishes the DMGs; the downloaded artifact checks out — the image holds the app and the Applications link, and `codesign --verify` reports "valid on disk" with the nested appex validated
+
+---
+
 ## v0.2.14
 
 ### 新功能 / Features

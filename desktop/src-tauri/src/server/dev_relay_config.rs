@@ -23,7 +23,11 @@ use super::relay_credentials::{
 pub(crate) const CONFIGURE_FLAG: &str = "--configure-dev-relay";
 const MAX_INPUT_BYTES: u64 = 512;
 const MAX_METADATA_BYTES: u64 = 64 * 1024;
-const DEVELOPMENT_TEAM_ID: &str = "G5J7URYYG5";
+// Local fork override: this checkout is signed by its own Apple Development
+// certificate, so the expected team must match it rather than upstream's.
+// Compiled only with `debug_assertions` + `development-mobile-control` on macOS,
+// so distributable builds are unaffected.
+const DEVELOPMENT_TEAM_ID: &str = "FR5ZQXNN46";
 // The full certificate CN contains the developer's personal Apple ID, so it is
 // injected at build time instead of living in the (published) source tree.
 // `make desktop-dev` / `make desktop-build-dev` derive it from the local

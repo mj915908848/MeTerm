@@ -63,12 +63,12 @@ desktop-build-dev:
 		cn="$$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development:/{print $$2; exit}')"; \
 		test -n "$$cn" || { echo "Apple Development certificate CN not found" >&2; exit 1; }; \
 		codesign --verify --deep --strict \
-			-R="identifier \"com.meterm.dev\" and anchor apple generic and certificate leaf[subject.OU] = \"G5J7URYYG5\" and certificate leaf[subject.CN] = \"$$cn\"" \
+			-R="identifier \"com.meterm.dev\" and anchor apple generic and certificate leaf[subject.OU] = \"FR5ZQXNN46\" and certificate leaf[subject.CN] = \"$$cn\"" \
 			'desktop/src-tauri/target/debug/bundle/macos/MeTerm Dev.app'; \
 		actual_team="$$(codesign -dv --verbose=4 \
 			'desktop/src-tauri/target/debug/bundle/macos/MeTerm Dev.app/Contents/MacOS/meterm' 2>&1 | \
 			awk -F= '/^TeamIdentifier=/{print $$2; exit}')"; \
-		test "$$actual_team" = "$${APPLE_TEAM_ID:-G5J7URYYG5}" || { \
+		test "$$actual_team" = "$${APPLE_TEAM_ID:-FR5ZQXNN46}" || { \
 			echo "MeTerm Dev signing team mismatch" >&2; exit 1; \
 		}
 

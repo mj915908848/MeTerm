@@ -102,6 +102,20 @@ jobs:
       - name: Build Tauri app (arm64)
         run: |
           cd desktop
+          # Tauri 按「环境变量是否存在」判断要不要签名，空字符串也算存在。未配置签名
+          # secret 时，工作流级 env 会把这些名字注入成空值，Tauri 于是去执行
+          # `security import` 导入一份空证书，构建就在这一步断掉：
+          #   SecKeychainItemImport: One or more parameters passed to a function were not valid.
+          #   failed to run command security import: failed to import keychain certificate
+          # 未签名路径下显式清掉，与 build-macos.sh 的未签名分支保持一致。
+          if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            unset APPLE_SIGNING_IDENTITY APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD \
+                  APPLE_API_KEY APPLE_API_ISSUER_ID APPLE_API_KEY_ID \
+                  APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          fi
           npm run tauri build -- --target aarch64-apple-darwin
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -121,6 +135,15 @@ jobs:
             SIGN_ID="-"
           fi
           bash desktop/scripts/build-finder-extension.sh "$APP_PATH" "$SIGN_ID"
+          if [ "$SIGN_ID" = "-" ]; then
+            # 嵌入 .appex 之后外层 .app 的签名已失效，只剩主二进制的 linker 签名。
+            # 免费分发路径必须在这里补一次 ad-hoc 重签，否则 codesign --verify 会报
+            # "code has no resources but signature indicates they must be present"，
+            # 接收方可能看到「MeTerm 已损坏，无法打开」而不是「无法验证开发者」。
+            # 那种情况下清除隔离标记也无效，所以这一步是免费分发能否成立的前提。
+            codesign --force --sign - "$APP_PATH"
+            codesign --verify --strict --verbose=2 "$APP_PATH"
+          fi
 
       # Developer ID sign + notarize + staple the .app (the .appex was already
       # signed inside-out in the previous step). Runs on release tags, or on a
@@ -173,14 +196,7 @@ jobs:
             if [ -n "$OLD_DMG" ]; then
               DMG_NAME=$(basename "$OLD_DMG")
               rm -f "$OLD_DMG"
-              create-dmg \
-                --volname "$APP_NAME" \
-                --window-size 660 400 \
-                --icon-size 80 \
-                --icon "$APP_NAME.app" 180 170 \
-                --app-drop-link 480 170 \
-                "$DMG_DIR/$DMG_NAME" \
-                "$APP_PATH" || true
+              bash desktop/scripts/build-dmg.sh "$APP_PATH" "$DMG_DIR/$DMG_NAME" "$APP_NAME"
             fi
           fi
 
@@ -214,6 +230,16 @@ jobs:
             desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
             desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*_aarch64.app.tar.gz
             desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*_aarch64.app.tar.gz.sig
+          body: |
+            ## 安装 / Install
+
+            打开 dmg，把 `MeTerm.app` 拖到同一窗口里的 `Applications` 快捷方式上即可，映像内不含任何安装脚本。
+
+            **首次打开会被 macOS 拦下**：本构建未做 Developer ID 签名与公证。请在「系统设置 → 隐私与安全性 → 安全性」里点「仍要打开」，或执行 `xattr -cr "/Applications/MeTerm.app"`。（macOS 15 起「右键 → 打开」已失效。）
+
+            This build is unsigned and not notarized, so Gatekeeper blocks the first launch. Drag `MeTerm.app` onto the `Applications` shortcut in the same window, then allow it once in **System Settings → Privacy & Security → Open Anyway**, or run `xattr -cr "/Applications/MeTerm.app"`. The old right-click → Open override no longer works on macOS 15+.
+
+            **下载 / Downloads**: `MeTerm_x.y.z_aarch64.dmg`（Apple Silicon）· `MeTerm_x.y.z_x64.dmg`（Intel）
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
 
@@ -279,6 +305,12 @@ jobs:
       - name: Build Tauri app (x86_64)
         run: |
           cd desktop
+          # 同 arm64：空值的 Apple 签名变量会被 Tauri 当成「要签名」而触发 security import 失败。
+          if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            unset APPLE_SIGNING_IDENTITY APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD \
+                  APPLE_API_KEY APPLE_API_ISSUER_ID APPLE_API_KEY_ID \
+                  APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
           npm run tauri build -- --target x86_64-apple-darwin
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -298,6 +330,12 @@ jobs:
             SIGN_ID="-"
           fi
           bash desktop/scripts/build-finder-extension.sh "$APP_PATH" "$SIGN_ID"
+          if [ "$SIGN_ID" = "-" ]; then
+            # 理由同 arm64 那一步：嵌入 .appex 后外层 .app 必须补一次 ad-hoc 重签，
+            # 否则包签名残缺，接收方可能见到「已损坏」。
+            codesign --force --sign - "$APP_PATH"
+            codesign --verify --strict --verbose=2 "$APP_PATH"
+          fi
 
       - name: Sign & notarize app (x86_64)
         if: ${{ (github.event_name == 'push' || inputs.sign) && env.APPLE_SIGNING_IDENTITY != '' }}
@@ -346,14 +384,7 @@ jobs:
             if [ -n "$OLD_DMG" ]; then
               DMG_NAME=$(basename "$OLD_DMG")
               rm -f "$OLD_DMG"
-              create-dmg \
-                --volname "$APP_NAME" \
-                --window-size 660 400 \
-                --icon-size 80 \
-                --icon "$APP_NAME.app" 180 170 \
-                --app-drop-link 480 170 \
-                "$DMG_DIR/$DMG_NAME" \
-                "$APP_PATH" || true
+              bash desktop/scripts/build-dmg.sh "$APP_PATH" "$DMG_DIR/$DMG_NAME" "$APP_NAME"
             fi
           fi
 
@@ -387,5 +418,15 @@ jobs:
             desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
             desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*_x86_64.app.tar.gz
             desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*_x86_64.app.tar.gz.sig
+          body: |
+            ## 安装 / Install
+
+            打开 dmg，把 `MeTerm.app` 拖到同一窗口里的 `Applications` 快捷方式上即可，映像内不含任何安装脚本。
+
+            **首次打开会被 macOS 拦下**：本构建未做 Developer ID 签名与公证。请在「系统设置 → 隐私与安全性 → 安全性」里点「仍要打开」，或执行 `xattr -cr "/Applications/MeTerm.app"`。（macOS 15 起「右键 → 打开」已失效。）
+
+            This build is unsigned and not notarized, so Gatekeeper blocks the first launch. Drag `MeTerm.app` onto the `Applications` shortcut in the same window, then allow it once in **System Settings → Privacy & Security → Open Anyway**, or run `xattr -cr "/Applications/MeTerm.app"`. The old right-click → Open override no longer works on macOS 15+.
+
+            **下载 / Downloads**: `MeTerm_x.y.z_aarch64.dmg`（Apple Silicon）· `MeTerm_x.y.z_x64.dmg`（Intel）
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

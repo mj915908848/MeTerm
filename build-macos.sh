@@ -131,34 +131,8 @@ rebuild_dmg() {
     local app_path="$1"
     local destination="$2"
     local app_name="$3"
-    local staging_dir=""
-    local temp_root="${TMPDIR:-/tmp}"
-    temp_root="${temp_root%/}"
 
-    rm -f -- "$destination"
-    if command -v create-dmg >/dev/null 2>&1; then
-        create-dmg \
-            --volname "$app_name" \
-            --window-size 660 400 \
-            --icon-size 80 \
-            --icon "$app_name.app" 180 170 \
-            --app-drop-link 480 170 \
-            "$destination" \
-            "$app_path"
-        return
-    fi
-
-    warn "未安装 create-dmg；使用 hdiutil 生成无自定义窗口布局的等价 DMG"
-    staging_dir="$(mktemp -d "$temp_root/meterm-dmg.XXXXXXXX")"
-    chmod 700 "$staging_dir"
-    if ! ditto "$app_path" "$staging_dir/$app_name.app" || \
-       ! ln -s /Applications "$staging_dir/Applications" || \
-       ! hdiutil create -quiet -volname "$app_name" -srcfolder "$staging_dir" \
-            -ov -format UDZO "$destination"; then
-        rm -rf -- "$staging_dir"
-        return 1
-    fi
-    rm -rf -- "$staging_dir"
+    bash "$PROJECT_ROOT/desktop/scripts/build-dmg.sh" "$app_path" "$destination" "$app_name"
 }
 
 step "1/5 环境检查"
@@ -246,6 +220,16 @@ build_one() {
         ENTITLEMENTS_PATH="$PROJECT_ROOT/desktop/src-tauri/Entitlements.plist" \
             APPLE_SIGNING_IDENTITY="$APPLE_SIGNING_IDENTITY" \
             bash "$PROJECT_ROOT/desktop/scripts/macos-sign-notarize.sh" sign-app "$app_path"
+    else
+        # 上一步把 Finder 扩展嵌进来了，外层 .app 的既有签名因此失效（只剩主二进制的
+        # linker 签名）。不补签的话，`codesign --verify` 会报
+        # "code has no resources but signature indicates they must be present"，
+        # 接收方可能看到「已损坏，无法打开」而不是「无法验证开发者」——
+        # 那种情况下清除隔离标记也救不回来，所以这里必须补一次 ad-hoc 重签。
+        # 这一步不依赖任何 Apple 账号，是免费分发路径能成立的前提。
+        info "嵌入扩展后补做 ad-hoc 重签（无账号路径）"
+        codesign --force --sign - "$app_path"
+        codesign --verify --strict --verbose=2 "$app_path"
     fi
 
     app_name="$(basename "$app_path" .app)"

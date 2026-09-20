@@ -15,6 +15,7 @@ import { loadSettings } from './themes';
 
 import { TabManager } from './tabs';
 import { TerminalRegistry } from './terminal';
+import { planTabWidths } from './tab-layout';
 import { DrawerManager } from './drawer';
 import { AICapsuleManager } from './ai-capsule';
 import { getAllLeaves } from './split-pane';
@@ -271,71 +272,64 @@ export function syncTabMarqueeState(): void {
   }
 
   const tabsGap = 6;
-  const totalGap = tabsGap * Math.max(0, allNodes.length - 1);
 
-  // Per-tab minimum width calculation:
+  // Floor a tab may shrink to before the row switches to horizontal scrolling:
   //   border(2) + padding(12) + gap-to-close(6) + close-margin(4) + close(16) = 40px chrome
   //   + text area: 44px (3 CJK chars or 6 Latin chars at 12px monospace ≈ 6 × 7.2px)
   //   + icon area ~24px extra for tabs with icons
   const MIN_TEXT_WIDTH = 44;
   const TAB_CHROME = 40; // border(2) + padding(12) + gap(6) + close-margin(4) + close(16)
   const ICON_EXTRA = 24; // icon-area width
-  const perTabMinWidths = allNodes.map((node) => {
+  const TEXT_TAIL_SLACK = 6; // keeps the last glyph clear of the close button
+  const minWidths = allNodes.map((node) => {
     const hasIcons = node.querySelector('.tab-icon-area') !== null;
     return TAB_CHROME + MIN_TEXT_WIDTH + (hasIcons ? ICON_EXTRA : 0);
   });
 
-  // Calculate available width for tabs
-  // In overflow mode, scroll buttons take 20px + 2px gap each = ~44px total
-  const scrollBtnSpace = 44;
-  const rawAvailable = Math.max(0, toolbarTabsEl.clientWidth);
-  const largestMinWidth = Math.max(...perTabMinWidths);
-  const maxWidth = Math.max(largestMinWidth, Math.floor(rawAvailable / 3));
-
-  // Check if overflow would occur: tabs at their minimum can't fit
-  const minTotal = perTabMinWidths.reduce((acc, w) => acc + w, 0) + totalGap;
-  const isOverflow = minTotal > rawAvailable;
-
-  // Calculate available width accounting for scroll buttons if in overflow mode
-  const available = isOverflow ? Math.max(0, rawAvailable - scrollBtnSpace) : rawAvailable;
-
-  // Calculate per-tab desired widths
-  const desiredWidths = allNodes.map((node, index) => {
+  // Width each tab needs to show its own title in full: everything before the
+  // text (padding + icon + gap), the title itself, and the absolutely
+  // positioned close button the text must not slide under. Capped by the tab's
+  // own CSS max-width so a single very long name cannot claim the whole row.
+  const fullWidths = allNodes.map((node, index) => {
     const primaryEl = node.querySelector('.title-tab-text.primary') as HTMLSpanElement | null;
-    const closeEl = node.querySelector('.tab-close') as HTMLSpanElement | null;
-    if (!primaryEl || !closeEl) return perTabMinWidths[index];
+    if (!primaryEl) return minWidths[index];
 
     const style = getComputedStyle(node);
     const paddingX = (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
     const borderX = (Number.parseFloat(style.borderLeftWidth) || 0) + (Number.parseFloat(style.borderRightWidth) || 0);
-    const innerGap = Number.parseFloat(style.columnGap || style.gap || '6') || 6;
-    const chrome = closeEl.offsetWidth + paddingX + borderX + innerGap;
-    const desired = Math.ceil(primaryEl.scrollWidth + chrome);
+    const innerGap = Number.parseFloat(style.columnGap || style.gap || '6') || tabsGap;
+    const iconEl = node.querySelector('.tab-icon-area') as HTMLElement | null;
+    const iconWidth = iconEl ? iconEl.offsetWidth : 0;
+    const closeEl = node.querySelector('.tab-close') as HTMLSpanElement | null;
+    const closeWidth = closeEl ? closeEl.offsetWidth : 0;
 
-    return Math.min(maxWidth, Math.max(perTabMinWidths[index], desired));
+    const chrome = paddingX + borderX + (iconWidth > 0 ? iconWidth + innerGap : 0) + closeWidth;
+    const needed = Math.ceil(primaryEl.scrollWidth + chrome + (closeWidth > 0 ? TEXT_TAIL_SLACK : 0));
+    const cap = Number.parseFloat(style.maxWidth);
+
+    return Math.max(minWidths[index], Number.isFinite(cap) ? Math.min(needed, cap) : needed);
   });
 
-  if (isOverflow) {
-    // Overflow mode: each tab uses its own minimum width, enable scrolling
-    allNodes.forEach((node, index) => {
-      node.style.width = `${perTabMinWidths[index]}px`;
-    });
+  // `#window-toolbar-tabs` pads itself; only the content box holds the tabs.
+  const tabsStyle = getComputedStyle(toolbarTabsEl);
+  const available = Math.max(
+    0,
+    toolbarTabsEl.clientWidth
+      - (Number.parseFloat(tabsStyle.paddingLeft) || 0)
+      - (Number.parseFloat(tabsStyle.paddingRight) || 0),
+  );
 
+  const plan = planTabWidths({ fullWidths, minWidths, available, gap: tabsGap });
+
+  allNodes.forEach((node, index) => {
+    node.style.width = `${plan.widths[index]}px`;
+  });
+
+  if (plan.overflow) {
+    // Even the floors do not fit: keep the tabs readable and scroll the row.
     toolbarTabsEl.classList.add('overflow-mode');
     ensureScrollButtons(scrollContainer);
   } else {
-    // Normal mode: distribute widths
-    const desiredTotal = desiredWidths.reduce((acc, w) => acc + w, 0) + totalGap;
-    const useUniform = desiredTotal > available;
-    const uniformWidth = Math.min(
-      maxWidth,
-      Math.max(largestMinWidth, Math.floor((available - totalGap) / Math.max(1, allNodes.length))),
-    );
-
-    allNodes.forEach((node, index) => {
-      node.style.width = `${useUniform ? uniformWidth : desiredWidths[index]}px`;
-    });
-
     toolbarTabsEl.classList.remove('overflow-mode');
     removeScrollButtons();
   }

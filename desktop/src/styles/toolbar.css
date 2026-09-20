@@ -280,6 +280,20 @@ html[data-theme="light"] .win-close-btn:hover {
   color: var(--text-muted);
 }
 
+/* Widths in the window toolbar's strip are decided by JS, not by CSS: for every
+   render `syncTabMarqueeState()` measures each tab and writes an explicit px
+   width taken from `planTabWidths()`. The strip's flex container would
+   otherwise shrink those tabs back down to the `min-width` above as soon as the
+   row ran out of room — which is exactly when the plan's floors (108px when a
+   tab carries an icon) stop matching what is drawn, and every label collapses
+   into its marquee. Pinning the tab makes the plan authoritative; if even the
+   planned floors overflow, the row scrolls instead of squashing
+   (`#window-toolbar-tabs.overflow-mode` + the scroll buttons).
+   Scoped to the toolbar so the editor's own `.title-tab` strip is unaffected. */
+#window-toolbar-tabs .title-tab {
+  flex: 0 0 auto;
+}
+
 /* Inactive tab: brighten text on hover (no box) */
 .title-tab:hover {
   color: var(--text-secondary);

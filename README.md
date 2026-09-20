@@ -129,6 +129,43 @@
 > notarization, and Keychain upgrade checks in `docs/RELEASE_CHECKLIST.md` before
 > distribution; an unsigned local development build is not a release artifact.
 
+### macOS blocks the first launch
+
+macOS builds published from this repository are **not Developer ID signed and not
+notarized** — that requires a paid Apple Developer Program membership (¥688/year).
+Gatekeeper therefore blocks the first launch with a "developer cannot be verified"
+message. **The download is not corrupt.** Do the following once and the app behaves
+normally afterwards.
+
+**Install**
+
+Open the dmg and drag `MeTerm.app` onto the `Applications` shortcut in the same
+window. That is the whole installation — no installer script is involved.
+
+**Then allow the first launch** — either way works:
+
+*Option 1 — System Settings (no Terminal)*
+
+1. Double-click MeTerm in Applications and dismiss the warning with **Done**
+2. Open **System Settings → Privacy & Security** and scroll to **Security**
+3. Click **Open Anyway** next to the MeTerm notice, then authenticate
+4. Double-click the app again
+
+> Since macOS 15 (Sequoia) Apple **removed the old right-click → Open override**.
+> Most tutorials still recommend it, but it no longer works.
+
+*Option 2 — one command*
+
+```bash
+xattr -cr "/Applications/MeTerm.app"
+```
+
+> The image deliberately contains **no helper script**. A helper only runs when
+> double-clicked from inside the mounted window, and that path cannot be verified
+> before shipping — on a real Mac it is blocked by Gatekeeper with no way through.
+> Since it cannot be verified, it should not be the install path: the standard
+> drag-to-Applications flow above is the supported one.
+
 ---
 
 ## Quick Start
@@ -160,8 +197,8 @@ signing certificate named `MeTerm Dev Local Signing`, then run:
 
 ```bash
 make desktop-run-local            # Builds/signs and opens the ordinary local Dev app
-./build-dev-local.sh              # Builds/signs, then opens or restarts MeTerm Dev
-./build-dev-local.sh --no-open    # Builds/signs only
+make desktop-build-local          # Builds/signs only, without opening
+METERM_LOCAL_SIGNING_IDENTITY='…' make desktop-run-local   # Use a different local certificate
 ```
 
 This target does not enable mobile control or development credential recovery;

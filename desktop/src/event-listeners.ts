@@ -54,7 +54,7 @@ import {
 import { showShellContextMenu, showCustomContextMenu } from './context-menu';
 import { handleSSHConnect } from './ssh-handler';
 import { handleRemoteConnect } from './remote-handler';
-import { initUpdater, checkUpdateNow } from './updater';
+import { checkUpdateNow } from './updater';
 import {
   showReconnectOverlay,
   showKickedOverlay,
@@ -796,11 +796,10 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
 // ── Post-ready event listeners (after ensureMeTermReady) ──────────
 
 export function setupPostReadyEventListeners(currentWindowLabel: string): void {
-  // Check for app updates in the background (8-second delay built in).
-  // Only run in the main window to avoid duplicate update checks.
+  // Only run in the main window to avoid duplicate toolbar renders.
+  // No startup update check: this build never contacts an update server.
   if (currentWindowLabel === 'main') {
     document.addEventListener('update-available', () => { renderToolbarActions(); });
     void listen('update-icon-pref-changed', () => { renderToolbarActions(); });
-    void initUpdater();
   }
 }

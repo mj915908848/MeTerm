@@ -128,6 +128,39 @@
 > 独立通过 `docs/RELEASE_CHECKLIST.md` 中的签名、公证及 Keychain 升级验证；本地未签名开发构建
 > 不能作为发布包。
 
+### macOS 首次打开被拦下怎么办
+
+本仓库 Release 里的 macOS 包**没有 Apple Developer ID 签名，也没有走公证** —— 那需要每年
+¥688 的付费开发者账号。因此 macOS 的 Gatekeeper 会在首次启动时拦下它，提示"无法验证开发者"。
+**这不是包坏了**，按下面的步骤做一次，之后就是普通 App。
+
+**安装**
+
+打开 dmg，把 `MeTerm.app` 拖到同一个窗口里的 `Applications` 快捷方式上，安装就完成了 ——
+全程没有安装脚本。
+
+**然后放行首次打开**，两种方式任选：
+
+**方式一：走系统设置（不需要终端）**
+
+1. 在「应用程序」里双击 MeTerm，弹出提示后点「完成」
+2. 打开 **系统设置 → 隐私与安全性**，向下滚动到「安全性」
+3. 找到关于 MeTerm 的那条提示，点 **「仍要打开」**，用 Touch ID 或密码确认
+4. 再双击一次即可
+
+> macOS 15 (Sequoia) 起 **「右键 → 打开」这个老办法已被 Apple 移除**，网上多数教程还在教它，
+> 实际点不动；只能走系统设置或下面的命令行。
+
+**方式二：一行命令**
+
+```bash
+xattr -cr "/Applications/MeTerm.app"
+```
+
+> 映像里**刻意不放任何脚本**。放行脚本只有在「在映像窗口里双击」时才可能运行，而这条路径在出货前
+> 无法验证 —— 真机上实测会被 Gatekeeper 拦下且放行不了。既然验证不了，就不该把它当成安装方式；
+> 上面这套「拖进应用程序 + 系统设置放行」是 macOS 的标准路径。
+
 ---
 
 ## 快速开始
@@ -159,8 +192,8 @@ make desktop-dev
 
 ```bash
 make desktop-run-local            # 使用固定的本地签名构建并打开 MeTerm Dev
-./build-dev-local.sh              # 构建、签名，并自动打开或重启 MeTerm Dev
-./build-dev-local.sh --no-open    # 只构建并签名
+make desktop-build-local          # 只构建并签名，不打开
+METERM_LOCAL_SIGNING_IDENTITY='…' make desktop-run-local   # 换用其他本地证书
 ```
 
 该目标不启用手机控制或开发凭据恢复；这些高权限验证仍必须使用下面的

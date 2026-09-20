@@ -97,6 +97,35 @@ GDK_BACKEND=x11 cargo tauri dev
 
 ---
 
+## MAC-003: 未签名分发的门禁放行（助手脚本方案已废弃）
+
+**模块**: `desktop/scripts/build-dmg.sh`、`build-macos.sh`、`.github/workflows/build-macos.yml`、`README.md` / `README_CN.md`
+
+**现象**: 本 fork 不购买 Apple Developer Program，发布包不做 Developer ID 签名与公证，接收方首次打开会被 Gatekeeper 拦下。
+
+**曾尝试的方案（已废弃）**: v0.2.15 曾在 dmg 内附带 `Open-MeTerm.command` 做一键放行，设想是「在映像窗口里直接双击即可运行」。**该方案在 macOS 真机上不成立**，2026-09-20 实测：双击后弹出「Apple 无法验证 "Open-MeTerm.command" 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件」，只有「完成」与「移到废纸篓」两个选项，无法放行。
+
+**性质说明**: 这一条不是"修 bug"，而是弃用一个**既无法在出货前验证、又已在真机实测失败的安装路径**。
+
+- 真机事实：2026-09-20 双击 `Open-MeTerm.command` 弹出「Apple 无法验证 "Open-MeTerm.command" 是否包含可能危害 Mac 安全或泄漏隐私的恶意软件」，只有「完成」与「移到废纸篓」，放行不了
+- 本机可复现的部分只有两条：卷内文件确实不带 `com.apple.quarantine`（`xattr` 干净）；`spctl -a -vv -t exec` 对未签名脚本**无论带不带隔离属性都返回 `rejected / source=no usable signature`**（对照实测）。因此 `spctl` 不能用来判定触发条件
+- 本机不具备复现"双击"的条件（无 GUI 交互），这条链路的失败条件无法在出货前测出
+
+**教训**: 先前把「卷内文件不带隔离属性」直接当成「助手可运行」的结论，是拿一个可测的局部事实替代了不可测的整条链路。交付路径必须在出货前可验证，否则宁可不用。
+
+**现行方案**: 映像内**不放任何脚本**，只放 `MeTerm.app` 与 `Applications` 快捷方式，接收方按 macOS 标准姿势拖放安装；首次打开用「系统设置 → 隐私与安全性 → 仍要打开」放行，或执行 `xattr -cr "/Applications/MeTerm.app"`。
+
+**影响范围**:
+
+- macOS 15 起 Apple 已移除「右键 → 打开」的绕过方式，接收方只能走上述两条路径
+- 未签名包无法通过 `spctl` 评估，属预期行为，不代表包损坏；但「签名与内容不匹配」是另一回事，那种情况会显示「已损坏，无法打开」，清除隔离属性也无效，已在 v0.2.15 中通过嵌入访达扩展后补 ad-hoc 重签修掉
+- 本 fork 的 `Build macOS` 已于 2026-09-20 启用，推 `v*` 标签会真实触发构建并在该标签上创建 Release；其余 workflow 仍为手动禁用（其中两个需要自托管 runner，本机没有，触发后会永久排队）
+- 该流水线首次运行（run `35495488669`，tag `v0.2.15`）在 `Build Tauri app` 步失败：未配置签名 secret 时，工作流级 `env` 把 `APPLE_*` 注入成空字符串，而 Tauri 按「变量是否存在」判断要不要签名（空串也算存在），于是进入签名分支并在签名前执行 `security import` 导入一份空证书，报 `failed to import keychain certificate`。已在三处同名步骤前补 `unset`（清单与 `build-macos.sh` 的未签名分支一致）
+
+**当前状态**: 助手脚本已从仓库与打包路径中移除；README 与打包脚本同步改为「拖放安装 + 系统设置放行」。拖放安装路径本身是 macOS 标准流程，不再需要真机验收。
+
+---
+
 ## AI-001: 对话历史绑定文件清理（本地已修复）
 
 **模块**: `ai-conversation-binding-store.ts` (`bindLegacyHistory`), `ai-capsule-chat-persistence.ts` (`deleteConversation`)

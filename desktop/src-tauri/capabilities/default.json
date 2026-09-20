@@ -5,7 +5,6 @@
   "permissions": [
     "main-window-commands",
     "core:default",
-    "updater:default",
     "process:allow-restart",
     "core:window:allow-start-dragging",
     "core:window:allow-destroy",

@@ -1,9 +1,15 @@
-import { check } from '@tauri-apps/plugin-updater';
 import { invoke } from '@tauri-apps/api/core';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { createUtilityWindow } from './window-utils';
 import { t } from './i18n';
 import { showToast } from './notify';
+
+// Where every "Check for Updates" entry sends the user. This fork has no
+// updater service of its own — the upstream endpoint and its minisign public
+// key were removed from tauri.conf.json — so updating is a deliberate manual
+// download from our own Releases page rather than a silent in-app install.
+const RELEASES_URL = 'https://github.com/mj915908848/MeTerm/releases';
 
 // ── Update state (module-level) ───────────────────────────────────────────────
 // Exposed so main.ts can read it for the title bar icon.
@@ -49,31 +55,11 @@ export async function openUpdaterWindow(): Promise<void> {
   }
 }
 
-// Check for updates silently on startup (after a short delay to not block app load).
-// If an update is found, shows an in-app toast and dispatches 'update-available'.
-export async function initUpdater(): Promise<void> {
-  // Small delay so the main app UI is fully ready before we talk to the network.
-  await new Promise((r) => setTimeout(r, 8000));
-  try {
-    const update = await check();
-    if (update) {
-      pendingUpdateVersion = update.version;
-      pendingUpdateBody = update.body ?? null;
-      void notifyMenuBadge(update.version);
-      showUpdateToast(update.version, update.body ?? null);
-      document.dispatchEvent(new CustomEvent('update-available', {
-        detail: { version: update.version, body: update.body ?? null },
-      }));
-    }
-  } catch {
-    // Silent — update check failures should never surface to the user.
-  }
-}
-
-// Immediately open the updater window (triggered by "Check for Updates" menu item).
-// The window itself handles checking, result display, download, and restart.
+// Open the fork's Releases page. Triggered by every "Check for Updates" entry:
+// the macOS app menu item, the tray item, and the About tab button.
+// The app itself makes no network request and installs nothing by itself.
 export function checkUpdateNow(): void {
-  void openUpdaterWindow();
+  void openUrl(RELEASES_URL);
 }
 
 // ── In-app toast notification ─────────────────────────────────────────────────
