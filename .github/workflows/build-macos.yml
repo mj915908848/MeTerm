@@ -222,6 +222,10 @@ jobs:
           path: desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app
           retention-days: 1
 
+      - name: Compose release body (tag only)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: bash .github/scripts/release-body.sh "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/release-body.md"
+
       - name: Publish release assets (tag only)
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: softprops/action-gh-release@v2
@@ -230,16 +234,8 @@ jobs:
             desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
             desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*_aarch64.app.tar.gz
             desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*_aarch64.app.tar.gz.sig
-          body: |
-            ## 安装 / Install
-
-            打开 dmg，把 `MeTerm.app` 拖到同一窗口里的 `Applications` 快捷方式上即可，映像内不含任何安装脚本。
-
-            **首次打开会被 macOS 拦下**：本构建未做 Developer ID 签名与公证。请在「系统设置 → 隐私与安全性 → 安全性」里点「仍要打开」，或执行 `xattr -cr "/Applications/MeTerm.app"`。（macOS 15 起「右键 → 打开」已失效。）
-
-            This build is unsigned and not notarized, so Gatekeeper blocks the first launch. Drag `MeTerm.app` onto the `Applications` shortcut in the same window, then allow it once in **System Settings → Privacy & Security → Open Anyway**, or run `xattr -cr "/Applications/MeTerm.app"`. The old right-click → Open override no longer works on macOS 15+.
-
-            **下载 / Downloads**: `MeTerm_x.y.z_aarch64.dmg`（Apple Silicon）· `MeTerm_x.y.z_x64.dmg`（Intel）
+          # 正文由 UPDATE.md 现场生成 / body generated from UPDATE.md
+          body_path: ${{ runner.temp }}/release-body.md
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
 
@@ -410,6 +406,10 @@ jobs:
           path: desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app
           retention-days: 1
 
+      - name: Compose release body (tag only)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: bash .github/scripts/release-body.sh "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/release-body.md"
+
       - name: Publish release assets (tag only)
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: softprops/action-gh-release@v2
@@ -418,15 +418,7 @@ jobs:
             desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
             desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*_x86_64.app.tar.gz
             desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*_x86_64.app.tar.gz.sig
-          body: |
-            ## 安装 / Install
-
-            打开 dmg，把 `MeTerm.app` 拖到同一窗口里的 `Applications` 快捷方式上即可，映像内不含任何安装脚本。
-
-            **首次打开会被 macOS 拦下**：本构建未做 Developer ID 签名与公证。请在「系统设置 → 隐私与安全性 → 安全性」里点「仍要打开」，或执行 `xattr -cr "/Applications/MeTerm.app"`。（macOS 15 起「右键 → 打开」已失效。）
-
-            This build is unsigned and not notarized, so Gatekeeper blocks the first launch. Drag `MeTerm.app` onto the `Applications` shortcut in the same window, then allow it once in **System Settings → Privacy & Security → Open Anyway**, or run `xattr -cr "/Applications/MeTerm.app"`. The old right-click → Open override no longer works on macOS 15+.
-
-            **下载 / Downloads**: `MeTerm_x.y.z_aarch64.dmg`（Apple Silicon）· `MeTerm_x.y.z_x64.dmg`（Intel）
+          # 正文由 UPDATE.md 现场生成 / body generated from UPDATE.md
+          body_path: ${{ runner.temp }}/release-body.md
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

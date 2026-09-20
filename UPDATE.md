@@ -2,69 +2,139 @@
 
 ## v0.2.15
 
-### 新功能 / Features
+### 新功能
 
-- **标签栏按连接名完整显示 / Title-bar tabs sized to their own names** — 每个标签按自身连接名的实测宽度分配空间：短名称不再被无谓压扁，只有确实过长的才收窄，整排装不下时才降级为横向滚动。同时修复图标区宽度被漏算、导致末尾字符被关闭按钮压住的老问题。 / Each tab is sized to its own measured connection name, so short names are no longer squeezed and only genuinely over-long ones are trimmed, with horizontal scrolling as the last resort. Also fixes the omitted icon area that let the close button clip the last glyph.
-- **未签名分发改为拖放安装 / Unsigned distribution now installs by drag and drop** — dmg 内只放 `MeTerm.app` 与 `Applications` 快捷方式，接收方拖进「应用程序」，首次打开由接收方在「系统设置 → 隐私与安全性」放行（或执行 `xattr -cr`）。dmg 组装改为本地与 CI 共用的脚本，打包后会挂载回读核对内容与签名完整性。 / The DMG now holds only `MeTerm.app` and an `Applications` shortcut: recipients drag it in and allow the first launch from System Settings (or run `xattr -cr`). DMG assembly moved to a script shared by local builds and CI that mounts the image back and verifies its contents and signature integrity.
+- **标签栏按连接名完整显示** — 每个标签按自身连接名的实测宽度分配空间：短名称不再被无谓压扁，只有确实过长的才收窄，整排装不下时才降级为横向滚动。同时修复图标区宽度被漏算、导致末尾字符被关闭按钮压住的老问题。
+- **未签名分发改为拖放安装** — dmg 内只放 `MeTerm.app` 与 `Applications` 快捷方式，接收方拖进「应用程序」，首次打开由接收方在「系统设置 → 隐私与安全性」放行（或执行 `xattr -cr`）。dmg 组装改为本地与 CI 共用的脚本，打包后会挂载回读核对内容与签名完整性。
 
-### 问题修复 / Fixes
+### 问题修复 / 优化
 
-- **横向滚动的标签栏不再被压回 CSS 地板 / A scrolling tab strip is no longer squashed back to the CSS floor** — 标签栏降级为横向滚动后，JS 算好的宽度曾被 flex 收缩压回 CSS 的 `min-width: 84px`：带图标的标签计划 108px、实际只画 84px，名字只剩三四个字。更隐蔽的是压回后内容恰好填满容器，`scrollWidth` 等于 `clientWidth`，滚动箭头、滚轮横滚与「切标签自动滚入视野」**一并失效**。现在窗口标签栏的标签宽度只由 JS 决定，放不下就滚动而不是压扁。 / Once the strip fell back to horizontal scrolling, the flex container shrank the JS-planned width back to the CSS `min-width: 84px`: an icon tab planned at 108px was drawn at 84px, leaving three or four characters of its name visible. The knock-on effect was worse — the row then fit its container exactly, so `scrollWidth` equalled `clientWidth` and the scroll arrows, wheel scrolling and scroll-active-tab-into-view all went dead together. Tabs in the window toolbar now take their width from JS alone: the row scrolls instead of squashing.
-- **访达扩展嵌入后包签名残缺 / Broken bundle signature after embedding the Finder extension** — 未签名路径下不再产出签名与内容不匹配的 `.app`，避免接收方看到「已损坏，无法打开」；那种状态下清除隔离属性无效，任何放行方式都救不回来。 / The unsigned path no longer produces a bundle whose signature does not match its contents, which recipients would see as "damaged" — a state that stripping the quarantine attribute cannot repair.
-- **dmg 打包失败不再被吞掉 / DMG failures are no longer swallowed** — 三处 CI 重建 dmg 的步骤在 `create-dmg` 失败时不再留下空目录却报告成功。 / The three CI DMG rebuild steps no longer report success while leaving an empty directory behind after a failed `create-dmg`.
-- **移除不成立的首次打开助手 / Dropped the first-launch helper that does not work** — 曾在 dmg 内附带 `Open-MeTerm.command`，设想"在映像窗口里双击即可放行"。真机实测失败：双击弹出「Apple 无法验证」且没有可用的放行选项。这条路径在出货前无法验证（本机无 GUI 交互），因此不再出货任何需要双击的脚本，改回 macOS 标准的拖放安装。 / The image used to ship `Open-MeTerm.command` to be double-clicked from the mounted window. On a real Mac that fails: the dialog offers no way through. The path cannot be verified before shipping either (no GUI interaction available locally), so no double-clickable script is shipped any more and installation is the standard drag and drop.
-- **检查更新改为打开发布页 / Check for Updates opens the releases page** — 不再向外部更新服务器查询版本，启动后的静默自检已移除；菜单栏、托盘与关于页的「检查更新」统一用浏览器打开本仓库的 Releases 页面，已安装的版本因此不会被上游发布静默替换。 / The app no longer queries an external update server and the silent startup check is gone; all three "Check for Updates" entries open this repository's Releases page in a browser, so an installed build cannot be silently replaced by an upstream release.
+- **横向滚动的标签栏不再被压回 CSS 地板** — 标签栏降级为横向滚动后，JS 算好的宽度曾被 flex 收缩压回 CSS 的 `min-width: 84px`：带图标的标签计划 108px、实际只画 84px，名字只剩三四个字。更隐蔽的是压回后内容恰好填满容器，`scrollWidth` 等于 `clientWidth`，滚动箭头、滚轮横滚与「切标签自动滚入视野」**一并失效**。现在窗口标签栏的标签宽度只由 JS 决定，放不下就滚动而不是压扁。
+- **访达扩展嵌入后包签名残缺** — 未签名路径下不再产出签名与内容不匹配的 `.app`，避免接收方看到「已损坏，无法打开」；那种状态下清除隔离属性无效，任何放行方式都救不回来。
+- **dmg 打包失败不再被吞掉** — 三处 CI 重建 dmg 的步骤在 `create-dmg` 失败时不再留下空目录却报告成功。
+- **移除不成立的首次打开助手** — 曾在 dmg 内附带 `Open-MeTerm.command`，设想「在映像窗口里双击即可放行」。真机实测失败：双击弹出「Apple 无法验证」且没有可用的放行选项。这条路径在出货前无法验证（本机无 GUI 交互），因此不再出货任何需要双击的脚本，改回 macOS 标准的拖放安装。
+- **检查更新改为打开发布页** — 不再向外部更新服务器查询版本，启动后的静默自检已移除；菜单栏、托盘与关于页的「检查更新」统一用浏览器打开本仓库的 Releases 页面，已安装的版本因此不会被上游发布静默替换。
 
-### 验证 / Validation
+### 验证
 
-- 前端单测 166 项全通过、`npx tsc --noEmit` 无错误、Rust `cargo check` 通过 / 166 frontend unit tests pass, `npx tsc --noEmit` is clean, `cargo check` passes
-- 不设置更新签名密钥时 release 打包成功，且不再产出 `.tar.gz` / `.sig` / release build succeeds without the updater signing key and no longer emits `.tar.gz` / `.sig`
-- 本地分发构建端到端跑通，dmg 挂载核对通过（映像内为 `.app` 与 `Applications` 快捷方式）；签名残缺的包会被打包脚本拦下 / end-to-end local distribution build passes and the mounted image verifies (the app plus the Applications shortcut); a bundle with a broken signature is rejected by the packaging script
-- 标签栏按连接名分配宽度已在 macOS 实机验收 / the name-sized title-bar tabs are verified on a real Mac
-- 未签名分发的放行路径在真机实测后改版：原"映像内放行助手"被 Gatekeeper 拦下，改为拖放安装 + 系统设置放行 / after testing on a real Mac the unsigned path changed: the in-image helper is rejected by Gatekeeper, so installation is drag and drop plus a System Settings release
-- CI（`Build macOS`，tag `v0.2.15`）两架构均通过并发布 dmg；下载产物核对通过：映像内含 `.app` 与 `Applications` 链接，`codesign --verify` 报 `valid on disk`，嵌套的 `.appex` 一并校验 / CI (Build macOS, tag v0.2.15) passes on both architectures and publishes the DMGs; the downloaded artifact checks out — the image holds the app and the Applications link, and `codesign --verify` reports "valid on disk" with the nested appex validated
+- 前端单测 166 项全通过、`npx tsc --noEmit` 无错误、Rust `cargo check` 通过
+- 不设置更新签名密钥时 release 打包成功，且不再产出 `.tar.gz` / `.sig`
+- 本地分发构建端到端跑通，dmg 挂载核对通过（映像内为 `.app` 与 `Applications` 快捷方式）；签名残缺的包会被打包脚本拦下
+- 标签栏按连接名分配宽度已在 macOS 实机验收
+- 未签名分发的放行路径在真机实测后改版：原「映像内放行助手」被 Gatekeeper 拦下，改为拖放安装 + 系统设置放行
+- CI（`Build macOS`，tag `v0.2.15`）两架构均通过并发布 dmg；下载产物核对通过：映像内含 `.app` 与 `Applications` 链接，`codesign --verify` 报 `valid on disk`，嵌套的 `.appex` 一并校验
+- CI（`Build Windows`，tag `v0.2.15`）首次运行即通过，产出 NSIS 安装包并追加进同一发布页
+
+---
+
+## Changelog (English)
+
+### What's New
+
+- **Title-bar tabs sized to their own names** — Each tab is sized to its own measured connection name, so short names are no longer squeezed and only genuinely over-long ones are trimmed, with horizontal scrolling as the last resort. Also fixes the omitted icon area that let the close button clip the last glyph.
+- **Unsigned distribution now installs by drag and drop** — The DMG now holds only `MeTerm.app` and an `Applications` shortcut: recipients drag it in and allow the first launch from System Settings (or run `xattr -cr`). DMG assembly moved to a script shared by local builds and CI that mounts the image back and verifies its contents and signature integrity.
+
+### Bug Fixes
+
+- **A scrolling tab strip is no longer squashed back to the CSS floor** — Once the strip fell back to horizontal scrolling, the flex container shrank the JS-planned width back to the CSS `min-width: 84px`: an icon tab planned at 108px was drawn at 84px, leaving three or four characters of its name visible. The knock-on effect was worse — the row then fit its container exactly, so `scrollWidth` equalled `clientWidth` and the scroll arrows, wheel scrolling and scroll-active-tab-into-view all went dead together. Tabs in the window toolbar now take their width from JS alone: the row scrolls instead of squashing.
+- **Broken bundle signature after embedding the Finder extension** — The unsigned path no longer produces a bundle whose signature does not match its contents, which recipients would see as "damaged" — a state that stripping the quarantine attribute cannot repair.
+- **DMG failures are no longer swallowed** — The three CI DMG rebuild steps no longer report success while leaving an empty directory behind after a failed `create-dmg`.
+- **Dropped the first-launch helper that does not work** — The image used to ship `Open-MeTerm.command` to be double-clicked from the mounted window. On a real Mac that fails: the dialog offers no way through. The path cannot be verified before shipping either (no GUI interaction available locally), so no double-clickable script is shipped any more and installation is the standard drag and drop.
+- **Check for Updates opens the releases page** — The app no longer queries an external update server and the silent startup check is gone; all three "Check for Updates" entries open this repository's Releases page in a browser, so an installed build cannot be silently replaced by an upstream release.
+
+### Validation
+
+- 166 frontend unit tests pass, `npx tsc --noEmit` is clean, `cargo check` passes
+- release build succeeds without the updater signing key and no longer emits `.tar.gz` / `.sig`
+- end-to-end local distribution build passes and the mounted image verifies (the app plus the Applications shortcut); a bundle with a broken signature is rejected by the packaging script
+- the name-sized title-bar tabs are verified on a real Mac
+- after testing on a real Mac the unsigned path changed: the in-image helper is rejected by Gatekeeper, so installation is drag and drop plus a System Settings release
+- CI (Build macOS, tag v0.2.15) passes on both architectures and publishes the DMGs; the downloaded artifact checks out — the image holds the app and the Applications link, and `codesign --verify` reports "valid on disk" with the nested appex validated
+- CI (Build Windows, tag v0.2.15) passes on its first run and publishes the NSIS installer to the same release page
 
 ---
 
 ## v0.2.14
 
-### 新功能 / Features
+### 新功能
 
-- **连接后自动打开 AI / Automatically open AI on connection** — 新增两个默认关闭的设置：连接成功后自动打开 AI 面板，以及自动恢复当前主机最近的非空历史；后台连接不抢占当前面板，跨主机或未绑定历史不自动恢复，已有任务或对话不被覆盖。 / Add two opt-in settings to open AI after connecting and restore the current host's latest nonempty conversation; background connections do not steal focus, unrelated or unbound history is excluded, and active tasks or conversations are preserved.
-- **Agent 回答复制 / Copy Agent responses** — 回答新增复制按钮，复制成功或失败提供反馈。 / Add response copy buttons with success and failure feedback.
-- **主机历史与全部对话 / Host-scoped history and all conversations** — 新对话按首次发送窗格绑定本机或 SSH 地址和端口；两个历史入口默认显示当前主机，可切换全部对话并按标题、内容和主机搜索。跨主机继续发送会被阻止。 / Bind new conversations to the first sending pane's local or SSH host and port; both history surfaces default to the current host, support all conversations and search by title, content and host, and block cross-host continuation.
-- **只读侧栏预览与旧历史绑定 / Read-only side previews and legacy binding** — 跨主机与未绑定历史仅供预览和复制，不执行代码或覆盖当前任务；旧历史可确认后绑定当前主机，保留内容并备份原文件，重新打开后继续。 / Preview and copy cross-host or unbound history without executing code or replacing the active task; explicitly confirm legacy ownership to bind to the current host, preserving content and backing up the original before reopening to continue.
+- **连接后自动打开 AI** — 新增两个默认关闭的设置：连接成功后自动打开 AI 面板，以及自动恢复当前主机最近的非空历史；后台连接不抢占当前面板，跨主机或未绑定历史不自动恢复，已有任务或对话不被覆盖。
+- **Agent 回答复制** — 回答新增复制按钮，复制成功或失败提供反馈。
+- **主机历史与全部对话** — 新对话按首次发送窗格绑定本机或 SSH 地址和端口；两个历史入口默认显示当前主机，可切换全部对话并按标题、内容和主机搜索。跨主机继续发送会被阻止。
+- **只读侧栏预览与旧历史绑定** — 跨主机与未绑定历史仅供预览和复制，不执行代码或覆盖当前任务；旧历史可确认后绑定当前主机，保留内容并备份原文件，重新打开后继续。
 
-### 问题修复 / Fixes
+### 问题修复 / 优化
 
-- **摘要与审批取消 / Summary and approval cancellation** — 摘要请求可及时取消并有 30 秒截止时间；停止待审批任务时清理确认卡、计时器和监听，补齐未执行工具结果，防止历史工具配对缺失。 / Bound summary requests to 30 seconds and settle cancellation promptly; stopping pending approvals cleans cards, timers and listeners and fills missing tool results to preserve complete history pairs.
-- **历史展示与搜索 / History rendering and search** — 只读历史采用正常对话气泡、推理折叠与工具卡样式，保留只读限制；搜索复用输入控件，避免输入法组合输入被列表刷新打断，并完善双语提示。 / Render read-only history with normal chat bubbles, collapsible reasoning and tool cards without execution controls; reuse search inputs to preserve IME composition and improve bilingual feedback.
-- **设置与连接面板 / Settings and connection panel** — 设置面板仅将本次修改合并到最新设置，减少陈旧快照覆盖；隐藏连接面板不重复刷新，SSH 标签默认使用终端动态标题。 / Merge only the current panel edit into fresh settings to reduce stale overwrites; avoid refreshing hidden connection panels and default SSH tabs to dynamic terminal titles.
-- **终端观察有界与可取消 / Bounded, cancellable terminal watching** — 取消时释放监听、定时器和锁；观察默认 60 秒，可设置 3–300 秒，持续输出也按时返回；仅保留最近 64 KiB 字符并标注截断。观察超时不会中止实际进程。 / Release listeners, timers and locks on cancellation; default to 60 seconds with a 3–300 second range even for continuous output, retain the latest 64 KiB characters and flag truncation. Observation timeout does not stop the process.
-- **Agent 中断与任务状态 / Agent cancellation and plan state** — 修复模型提供方吞掉取消错误导致停止无效的问题；命令手动中断后停止 Agent 继续执行，并将进行中的计划标为已中断，保留已完成和待办项。 / Settle cancellation even when providers suppress abort errors; stop Agent continuation after manually interrupted commands and mark active plan items interrupted while retaining completed and pending items.
-- **压缩目标保留 / Task retention during compaction** — 摘要优先保留目标、授权、约束、证据和未完成事项；本地裁剪或摘要失败时保留首条请求、已有摘要和最近补充，总预算 6000 字符，头尾截取并标注遗漏，保持工具调用配对且不修改原始聊天记录。保留记录可能不完整，后续用户纠正优先。 / Prioritize goals, authority, constraints, evidence and pending work in summaries; local trimming or failed summarization retains the original request, existing summary and recent additions within 6,000 characters, with marked head/tail truncation and complete tool pairs, without changing original history. Retention may be incomplete and later user corrections take priority.
-- **历史切换与预览配色 / History switching and preview colors** — 修复全部对话切换被误判为外部点击而关闭的问题；预览使用不透明主题背景，侧栏返回保留搜索与列表位置，异步保存携带主机归属。 / Prevent all-conversation switching from being mistaken for an outside click; use opaque themed preview surfaces, preserve side-list search and scroll on return, and carry host ownership in asynchronous saves.
-- **历史操作与文件清理 / History actions and file cleanup** — 修复历史视图中“新对话”和“清空对话”无效的问题，并将返回入口移到预览左上角；显式删除对话时同步清理其主机绑定备份与临时文件，失败时保留可恢复副本且不影响其他历史。 / Fix New Conversation and Clear Conversation actions while history is open and move Back to the preview's upper-left; explicit deletion now removes the matching host-binding backup and temporary file while preserving recoverable copies on failure and leaving other history untouched.
-- **设置按字段保存 / Field-level settings updates** — 将运行时设置写入统一收口为基于最新值的字段补丁，避免旧窗口快照覆盖其他窗口刚保存的设置；字号快捷键和主题切换同步使用最新状态，并增加回归保护。 / Route runtime settings writes through field patches merged into the latest persisted value, preventing stale window snapshots from overwriting recent changes; font shortcuts and theme changes now use fresh state with regression coverage.
-- **命令补全恢复 / Command completion restored** — 修复 xterm 5.5 私有字段变化导致灰色补全文字始终被隐藏的问题；补全不再等待异步索引加载，已打开、设置切换及跨窗口转移的终端都会正确挂载和释放监听。 / Fix ghost text being hidden by an obsolete xterm 5.5 private-field check; completion no longer races asynchronous index loading, and listeners are attached and released correctly for existing, settings-toggled and transferred terminals.
+- **摘要与审批取消** — 摘要请求可及时取消并有 30 秒截止时间；停止待审批任务时清理确认卡、计时器和监听，补齐未执行工具结果，防止历史工具配对缺失。
+- **历史展示与搜索** — 只读历史采用正常对话气泡、推理折叠与工具卡样式，保留只读限制；搜索复用输入控件，避免输入法组合输入被列表刷新打断，并完善双语提示。
+- **设置与连接面板** — 设置面板仅将本次修改合并到最新设置，减少陈旧快照覆盖；隐藏连接面板不重复刷新，SSH 标签默认使用终端动态标题。
+- **终端观察有界与可取消** — 取消时释放监听、定时器和锁；观察默认 60 秒，可设置 3–300 秒，持续输出也按时返回；仅保留最近 64 KiB 字符并标注截断。观察超时不会中止实际进程。
+- **Agent 中断与任务状态** — 修复模型提供方吞掉取消错误导致停止无效的问题；命令手动中断后停止 Agent 继续执行，并将进行中的计划标为已中断，保留已完成和待办项。
+- **压缩目标保留** — 摘要优先保留目标、授权、约束、证据和未完成事项；本地裁剪或摘要失败时保留首条请求、已有摘要和最近补充，总预算 6000 字符，头尾截取并标注遗漏，保持工具调用配对且不修改原始聊天记录。保留记录可能不完整，后续用户纠正优先。
+- **历史切换与预览配色** — 修复全部对话切换被误判为外部点击而关闭的问题；预览使用不透明主题背景，侧栏返回保留搜索与列表位置，异步保存携带主机归属。
+- **历史操作与文件清理** — 修复历史视图中“新对话”和“清空对话”无效的问题，并将返回入口移到预览左上角；显式删除对话时同步清理其主机绑定备份与临时文件，失败时保留可恢复副本且不影响其他历史。
+- **设置按字段保存** — 将运行时设置写入统一收口为基于最新值的字段补丁，避免旧窗口快照覆盖其他窗口刚保存的设置；字号快捷键和主题切换同步使用最新状态，并增加回归保护。
+- **命令补全恢复** — 修复 xterm 5.5 私有字段变化导致灰色补全文字始终被隐藏的问题；补全不再等待异步索引加载，已打开、设置切换及跨窗口转移的终端都会正确挂载和释放监听。
+
+---
+
+## Changelog (English)
+
+### What's New
+
+- **Automatically open AI on connection** — Add two opt-in settings to open AI after connecting and restore the current host's latest nonempty conversation; background connections do not steal focus, unrelated or unbound history is excluded, and active tasks or conversations are preserved.
+- **Copy Agent responses** — Add response copy buttons with success and failure feedback.
+- **Host-scoped history and all conversations** — Bind new conversations to the first sending pane's local or SSH host and port; both history surfaces default to the current host, support all conversations and search by title, content and host, and block cross-host continuation.
+- **Read-only side previews and legacy binding** — Preview and copy cross-host or unbound history without executing code or replacing the active task; explicitly confirm legacy ownership to bind to the current host, preserving content and backing up the original before reopening to continue.
+
+### Bug Fixes
+
+- **Summary and approval cancellation** — Bound summary requests to 30 seconds and settle cancellation promptly; stopping pending approvals cleans cards, timers and listeners and fills missing tool results to preserve complete history pairs.
+- **History rendering and search** — Render read-only history with normal chat bubbles, collapsible reasoning and tool cards without execution controls; reuse search inputs to preserve IME composition and improve bilingual feedback.
+- **Settings and connection panel** — Merge only the current panel edit into fresh settings to reduce stale overwrites; avoid refreshing hidden connection panels and default SSH tabs to dynamic terminal titles.
+- **Bounded, cancellable terminal watching** — Release listeners, timers and locks on cancellation; default to 60 seconds with a 3–300 second range even for continuous output, retain the latest 64 KiB characters and flag truncation. Observation timeout does not stop the process.
+- **Agent cancellation and plan state** — Settle cancellation even when providers suppress abort errors; stop Agent continuation after manually interrupted commands and mark active plan items interrupted while retaining completed and pending items.
+- **Task retention during compaction** — Prioritize goals, authority, constraints, evidence and pending work in summaries; local trimming or failed summarization retains the original request, existing summary and recent additions within 6,000 characters, with marked head/tail truncation and complete tool pairs, without changing original history. Retention may be incomplete and later user corrections take priority.
+- **History switching and preview colors** — Prevent all-conversation switching from being mistaken for an outside click; use opaque themed preview surfaces, preserve side-list search and scroll on return, and carry host ownership in asynchronous saves.
+- **History actions and file cleanup** — Fix New Conversation and Clear Conversation actions while history is open and move Back to the preview's upper-left; explicit deletion now removes the matching host-binding backup and temporary file while preserving recoverable copies on failure and leaving other history untouched.
+- **Field-level settings updates** — Route runtime settings writes through field patches merged into the latest persisted value, preventing stale window snapshots from overwriting recent changes; font shortcuts and theme changes now use fresh state with regression coverage.
+- **Command completion restored** — Fix ghost text being hidden by an obsolete xterm 5.5 private-field check; completion no longer races asynchronous index loading, and listeners are attached and released correctly for existing, settings-toggled and transferred terminals.
 
 ---
 
 ## v0.2.13
 
-### 新功能 / Features
+### 新功能
 
-- **组内连接排序 / Connection sorting within groups** — 分组与“最近 / 未分组”标题的数量旁新增排序按钮，支持默认顺序、IP 升降序、名称升降序，各组分别保存偏好；排序不改写原始连接顺序。 / Add sorting beside each group count, including recent / ungrouped connections, with default, IP and name ascending or descending order; persist preferences per group without changing saved connection order.
-- **SSH 标签名称 / SSH tab titles** — 设置 → 通用可选择连接名称或终端动态标题，默认连接名称；切换立即更新已打开的标签和提示，分屏跟随聚焦会话。 / General settings let SSH tabs use connection names (default) or dynamic terminal titles; changes immediately update existing labels and tooltips, following the focused session in split panes.
+- **组内连接排序** — 分组与“最近 / 未分组”标题的数量旁新增排序按钮，支持默认顺序、IP 升降序、名称升降序，各组分别保存偏好；排序不改写原始连接顺序。
+- **SSH 标签名称** — 设置 → 通用可选择连接名称或终端动态标题，默认连接名称；切换立即更新已打开的标签和提示，分屏跟随聚焦会话。
 
-### 问题修复 / Fixes
+### 问题修复 / 优化
 
-- **连接面板实时刷新 / Live connection panel refresh** — 新增、编辑后立即刷新连接面板，SSH 删除等待完成后再刷新，避免继续显示旧内容。 / Refresh the connection panel after additions and edits, and await SSH deletion before refreshing to avoid stale entries.
-- **AI 历史上下文恢复 / AI conversation context restoration** — 重开历史对话时恢复 Agent 的消息上下文，保留工具调用前的正文与推理，恢复工具返回的图片和错误标记，并为中断的工具调用补齐结果占位。 / Restore the Agent message context when reopening a conversation, retain assistant text and reasoning before tool calls, restore tool images and error markers, and supply placeholder results for interrupted calls.
-- **主窗口状态记忆 / Main window state persistence** — 保存与恢复主窗口尺寸、位置及最大化状态；辅助窗口不覆盖主窗口记录。 / Save and restore the main window size, position and maximized state; utility windows do not overwrite the main window record.
-- **设置回写修复 / Settings persistence fix** — 设置面板与窗口几何保存基于最新设置合并，减少陈旧快照覆盖其他设置的问题。 / Merge panel edits and geometry updates into the latest settings to reduce stale snapshot overwrites.
-- **窗口保存请求顺序 / Geometry save ordering** — 新保存请求使较早的异步读取失效，避免旧尺寸和位置覆盖最新记录；退出前等待当前保存完成。 / Invalidate earlier asynchronous reads when a newer geometry save starts, preventing stale dimensions and positions from overwriting the latest record; await the current save before exit.
-- **多屏恢复 / Multi-monitor restoration** — 按历史窗口位置选择仍连接的显示器，原显示器不可用时回退到当前屏幕并限制恢复尺寸。 / Select an attached monitor using the saved window position, and fall back to the current screen with bounded window dimensions when the original monitor is unavailable.
+- **连接面板实时刷新** — 新增、编辑后立即刷新连接面板，SSH 删除等待完成后再刷新，避免继续显示旧内容。
+- **AI 历史上下文恢复** — 重开历史对话时恢复 Agent 的消息上下文，保留工具调用前的正文与推理，恢复工具返回的图片和错误标记，并为中断的工具调用补齐结果占位。
+- **主窗口状态记忆** — 保存与恢复主窗口尺寸、位置及最大化状态；辅助窗口不覆盖主窗口记录。
+- **设置回写修复** — 设置面板与窗口几何保存基于最新设置合并，减少陈旧快照覆盖其他设置的问题。
+- **窗口保存请求顺序** — 新保存请求使较早的异步读取失效，避免旧尺寸和位置覆盖最新记录；退出前等待当前保存完成。
+- **多屏恢复** — 按历史窗口位置选择仍连接的显示器，原显示器不可用时回退到当前屏幕并限制恢复尺寸。
+
+---
+
+## Changelog (English)
+
+### What's New
+
+- **Connection sorting within groups** — Add sorting beside each group count, including recent / ungrouped connections, with default, IP and name ascending or descending order; persist preferences per group without changing saved connection order.
+- **SSH tab titles** — General settings let SSH tabs use connection names (default) or dynamic terminal titles; changes immediately update existing labels and tooltips, following the focused session in split panes.
+
+### Bug Fixes
+
+- **Live connection panel refresh** — Refresh the connection panel after additions and edits, and await SSH deletion before refreshing to avoid stale entries.
+- **AI conversation context restoration** — Restore the Agent message context when reopening a conversation, retain assistant text and reasoning before tool calls, restore tool images and error markers, and supply placeholder results for interrupted calls.
+- **Main window state persistence** — Save and restore the main window size, position and maximized state; utility windows do not overwrite the main window record.
+- **Settings persistence fix** — Merge panel edits and geometry updates into the latest settings to reduce stale snapshot overwrites.
+- **Geometry save ordering** — Invalidate earlier asynchronous reads when a newer geometry save starts, preventing stale dimensions and positions from overwriting the latest record; await the current save before exit.
+- **Multi-monitor restoration** — Select an attached monitor using the saved window position, and fall back to the current screen with bounded window dimensions when the original monitor is unavailable.
 
 ---
 

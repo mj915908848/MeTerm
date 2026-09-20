@@ -112,6 +112,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 1
 
+      - name: Compose release body (tag only)
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.upload_release) }}
+        shell: bash
+        run: bash .github/scripts/release-body.sh "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/release-body.md"
+
       - name: Publish release assets (tag only)
         if: ${{ startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.upload_release) }}
         uses: softprops/action-gh-release@v2
@@ -120,5 +125,7 @@ jobs:
             desktop/src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/nsis/*.exe
             desktop/src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/nsis/*.exe.sig
             desktop/src-tauri/target/${{ env.RUST_TARGET }}/release/bundle/msi/*.msi
+          # 正文由 UPDATE.md 现场生成 / body generated from UPDATE.md
+          body_path: ${{ runner.temp }}/release-body.md
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
