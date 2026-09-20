@@ -64,3 +64,45 @@ test('failed SSH deletion preserves grouping and does not report a refreshed del
   await rejection;
   assert.deepEqual(h.calls, []);
 });
+
+function removeConnectionHarness(deleteFails: boolean) {
+  const source = read('ssh.ts');
+  const start = source.indexOf('export async function removeConnection(');
+  assert.ok(start >= 0);
+  const body = source.slice(start, source.indexOf('\n}', start) + 2).replace('export ', '');
+  const warnCalls: unknown[][] = [];
+  const stored = new Map<string, string>();
+  const spoken: string[] = [];
+  const context = vm.createContext({
+    loadSavedConnections: () => [{ name: 'alpha' }, { name: 'beta' }],
+    SSH_CONNECTIONS_KEY: 'ssh-connections',
+    console: { warn: (...args: unknown[]) => warnCalls.push(args) },
+    localStorage: { setItem: (key: string, value: string) => { stored.set(key, value); spoken.push(key); } },
+    syncDelete: async (name: string) => {
+      if (deleteFails) throw new Error('stale SSH connection delete');
+      spoken.push(`synced:${name}`);
+    },
+  });
+  vm.runInContext(ts.transpileModule(body, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS },
+  }).outputText, context);
+  const pending = (context.removeConnection as (name: string) => Promise<void>)('alpha');
+  return { pending, warnCalls, stored, spoken };
+}
+
+test('a failing sync soft delete still removes the connection locally', async () => {
+  const h = removeConnectionHarness(true);
+  await h.pending;
+  assert.deepEqual(h.spoken, ['ssh-connections']);
+  assert.deepEqual(JSON.parse(h.stored.get('ssh-connections')!), [{ name: 'beta' }]);
+  assert.equal(h.warnCalls.length, 1);
+  assert.match(String(h.warnCalls[0][0]), /sync delete failed/);
+});
+
+test('a successful sync soft delete removes the connection without warning', async () => {
+  const h = removeConnectionHarness(false);
+  await h.pending;
+  assert.deepEqual(h.spoken, ['synced:alpha', 'ssh-connections']);
+  assert.deepEqual(JSON.parse(h.stored.get('ssh-connections')!), [{ name: 'beta' }]);
+  assert.deepEqual(h.warnCalls, []);
+});
