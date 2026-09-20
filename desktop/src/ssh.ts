@@ -234,7 +234,13 @@ export async function addConnection(config: SSHConnectionConfig): Promise<void> 
 }
 
 export async function removeConnection(name: string): Promise<void> {
-  await syncDelete(name);
+  try {
+    await syncDelete(name);
+  } catch (error) {
+    // The server-side soft delete is best effort: its own contract says a
+    // failure only warns, so it must not abort the local removal below.
+    console.warn('[ssh] removeConnection: sync delete failed, removing locally anyway:', error);
+  }
   const connections = loadSavedConnections().filter((c) => c.name !== name);
   localStorage.setItem(SSH_CONNECTIONS_KEY, JSON.stringify(connections));
 }
