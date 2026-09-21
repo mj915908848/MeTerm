@@ -119,8 +119,6 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
     menu.appendChild(document.createElement('div')).className = 'custom-context-menu-divider';
   };
 
-  const zh = settings?.language === 'zh';
-
   const addCheckItem = (label: string, checked: boolean, onClick: () => void | Promise<void>): HTMLButtonElement => {
     const item = document.createElement('button');
     item.className = 'custom-context-menu-item';
@@ -134,7 +132,7 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
     return item;
   };
 
-  addItem(zh ? '新窗口' : 'New Window', async () => {
+  addItem(t('appMenuNewWindow'), async () => {
     await createNewWindowNearCurrent();
   });
   addItem(t('contextMenuHome'), () => {
@@ -151,9 +149,7 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
     openSettings();
   });
   addItem(
-    isPipActive()
-      ? (zh ? '退出画中画' : 'Exit Picture-in-Picture')
-      : (zh ? '画中画' : 'Picture-in-Picture'),
+    isPipActive() ? t('toolbarExitPictureInPicture') : t('toolbarPictureInPicture'),
     async () => { await togglePip(); },
   );
   addDivider();
@@ -185,7 +181,7 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
   });
   addDivider();
   addItem(
-    zh ? '导入连接' : 'Import Connections',
+    t('appMenuImportConnections'),
     async () => {
       const filePath = await openDialog({
         multiple: false,
@@ -204,7 +200,7 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
     },
   );
   addItem(
-    zh ? '导出连接' : 'Export Connections',
+    t('appMenuExportConnections'),
     async () => {
       try {
         const result = await exportConnectionsToFile();
@@ -221,7 +217,7 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
     },
   );
   addItem(
-    zh ? '关闭所有会话' : 'Close All Sessions',
+    t('appMenuCloseAllSessions'),
     async () => {
       if (TabManager.tabs.length === 0) return;
       const confirmed = await confirmSystem(t('confirmCloseAllSessions'));
@@ -231,11 +227,11 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
     TabManager.tabs.length === 0,
   );
   addDivider();
-  addItem(zh ? '关闭窗口' : 'Close Window', async () => {
+  addItem(t('appMenuCloseWindow'), async () => {
     // Trigger window close request (will go through hide-to-tray logic)
     await emit('window-close-requested', { target_window: getCurrentWindow().label });
   });
-  addItem(zh ? '退出应用' : 'Quit Application', async () => {
+  addItem(t('appMenuQuit'), async () => {
     await requestQuitWithConfirm();
   });
 
@@ -294,7 +290,7 @@ export function renderToolbarActions(): void {
     const appIconBtn = document.createElement('button');
     appIconBtn.className = 'toolbar-app-icon-btn';
     appIconBtn.type = 'button';
-    appIconBtn.title = settings?.language === 'zh' ? '应用菜单' : 'App Menu';
+    appIconBtn.title = t('appMenuTitle');
     appIconBtn.innerHTML = `<img class="toolbar-app-icon-img" src="${appIconUrl}" alt="App" />`;
     appIconBtn.onclick = (event) => {
       event.stopPropagation();
@@ -406,7 +402,7 @@ export function renderToolbarActions(): void {
       const agentBtn = document.createElement('button');
       agentBtn.className = `toolbar-icon-btn ai-agent-btn${chatOpen ? ' active' : ''}`;
       agentBtn.type = 'button';
-      agentBtn.title = settings?.language === 'zh' ? 'AI 助手' : 'AI Agent';
+      agentBtn.title = t('toolbarAiAgent');
       agentBtn.innerHTML = `<span class="ai-agent-text">AI</span>`;
       agentBtn.onclick = () => {
         AICapsuleManager.toggleChatSidebar(agentSessionId);
@@ -440,9 +436,7 @@ export function renderToolbarActions(): void {
     const aotBtn = document.createElement('button');
     aotBtn.className = `toolbar-icon-btn always-on-top-btn${isAlwaysOnTop ? ' active' : ''}`;
     aotBtn.type = 'button';
-    aotBtn.title = isAlwaysOnTop
-      ? (settings?.language === 'zh' ? '取消置顶' : 'Unpin from top')
-      : (settings?.language === 'zh' ? '窗口置顶' : 'Always on top');
+    aotBtn.title = isAlwaysOnTop ? t('toolbarUnpinFromTop') : t('toolbarAlwaysOnTop');
     aotBtn.innerHTML = `<span class="tab-icon">${icon('pin')}</span>`;
     aotBtn.onclick = () => { void toggleAlwaysOnTop(); };
     toolbarRightEl.appendChild(aotBtn);
@@ -454,8 +448,8 @@ export function renderToolbarActions(): void {
     pipBtn.className = `toolbar-icon-btn pip-pin-btn${isPipActive() ? ' active' : ''}`;
     pipBtn.type = 'button';
     pipBtn.title = isPipActive()
-      ? (settings?.language === 'zh' ? '退出画中画' : 'Exit Picture-in-Picture')
-      : (settings?.language === 'zh' ? '画中画' : 'Picture-in-Picture');
+      ? t('toolbarExitPictureInPicture')
+      : t('toolbarPictureInPicture');
     pipBtn.innerHTML = `<span class="tab-icon">${icon('pip')}</span>`;
     pipBtn.onclick = () => { void togglePip(); };
     toolbarRightEl.appendChild(pipBtn);
@@ -474,7 +468,7 @@ export function renderToolbarActions(): void {
     const minBtn = document.createElement('button');
     minBtn.className = 'win-control-btn win-minimize-btn';
     minBtn.type = 'button';
-    minBtn.title = settings?.language === 'zh' ? '最小化' : 'Minimize';
+    minBtn.title = t('windowMinimize');
     minBtn.innerHTML = WIN_ICON_MINIMIZE;
     minBtn.onclick = () => { void getCurrentWindow().minimize(); };
     toolbarRightEl.appendChild(minBtn);
@@ -496,16 +490,14 @@ export function renderToolbarActions(): void {
     // Sync icon to current maximize state immediately
     void getCurrentWindow().isMaximized().then((isMax) => {
       maxBtn.innerHTML = isMax ? WIN_ICON_RESTORE : WIN_ICON_MAXIMIZE;
-      maxBtn.title = isMax
-        ? (settings?.language === 'zh' ? '还原' : 'Restore')
-        : (settings?.language === 'zh' ? '最大化' : 'Maximize');
+      maxBtn.title = isMax ? t('windowRestore') : t('windowMaximize');
     });
 
     // Close — goes through the existing confirmation-dialog flow
     const closeBtn = document.createElement('button');
     closeBtn.className = 'win-control-btn win-close-btn';
     closeBtn.type = 'button';
-    closeBtn.title = settings?.language === 'zh' ? '关闭' : 'Close';
+    closeBtn.title = t('windowClose');
     closeBtn.innerHTML = WIN_ICON_CLOSE;
     closeBtn.onclick = () => { void getCurrentWindow().close(); };
     toolbarRightEl.appendChild(closeBtn);

@@ -249,6 +249,22 @@ export interface Translations {
   connectionsWindowOpenFailed: string;
   connectionDeleteFailedTitle: string;
   connectionDeleteFailedBody: string;
+  toolbarAiAgent: string;
+  toolbarAlwaysOnTop: string;
+  toolbarUnpinFromTop: string;
+  toolbarPictureInPicture: string;
+  toolbarExitPictureInPicture: string;
+  windowMinimize: string;
+  windowMaximize: string;
+  windowRestore: string;
+  windowClose: string;
+  appMenuTitle: string;
+  appMenuNewWindow: string;
+  appMenuImportConnections: string;
+  appMenuExportConnections: string;
+  appMenuCloseAllSessions: string;
+  appMenuCloseWindow: string;
+  appMenuQuit: string;
   processColPID: string;
   processColName: string;
   processColUser: string;
@@ -1042,6 +1058,22 @@ const translations: Record<Language, Translations> = {
     connectionsWindowOpenFailed: 'Could not open the connections window.',
     connectionDeleteFailedTitle: 'Could not delete connection',
     connectionDeleteFailedBody: 'The connection is still in the list. See the console for details.',
+    toolbarAiAgent: 'AI Agent',
+    toolbarAlwaysOnTop: 'Always on top',
+    toolbarUnpinFromTop: 'Unpin from top',
+    toolbarPictureInPicture: 'Picture-in-Picture',
+    toolbarExitPictureInPicture: 'Exit Picture-in-Picture',
+    windowMinimize: 'Minimize',
+    windowMaximize: 'Maximize',
+    windowRestore: 'Restore',
+    windowClose: 'Close',
+    appMenuTitle: 'App Menu',
+    appMenuNewWindow: 'New Window',
+    appMenuImportConnections: 'Import Connections',
+    appMenuExportConnections: 'Export Connections',
+    appMenuCloseAllSessions: 'Close All Sessions',
+    appMenuCloseWindow: 'Close Window',
+    appMenuQuit: 'Quit Application',
     processColPID: 'PID',
     processColName: 'Name',
     processColUser: 'User',
@@ -1831,6 +1863,22 @@ const translations: Record<Language, Translations> = {
     connectionsWindowOpenFailed: '无法打开连接窗口。',
     connectionDeleteFailedTitle: '删除连接失败',
     connectionDeleteFailedBody: '该连接仍保留在列表中，详情见控制台。',
+    toolbarAiAgent: 'AI 助手',
+    toolbarAlwaysOnTop: '窗口置顶',
+    toolbarUnpinFromTop: '取消置顶',
+    toolbarPictureInPicture: '画中画',
+    toolbarExitPictureInPicture: '退出画中画',
+    windowMinimize: '最小化',
+    windowMaximize: '最大化',
+    windowRestore: '还原',
+    windowClose: '关闭',
+    appMenuTitle: '应用菜单',
+    appMenuNewWindow: '新窗口',
+    appMenuImportConnections: '导入连接',
+    appMenuExportConnections: '导出连接',
+    appMenuCloseAllSessions: '关闭所有会话',
+    appMenuCloseWindow: '关闭窗口',
+    appMenuQuit: '退出应用',
     processColPID: 'PID',
     processColName: '进程名',
     processColUser: '用户',
