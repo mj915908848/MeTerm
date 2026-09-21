@@ -315,7 +315,6 @@
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) button.active,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .active > button,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .drawer-tab.active,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .btn-toggle-sidebar.active,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .btn-filter.active,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .btn-history.active,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .sidebar-actions button.active,
@@ -880,11 +879,6 @@
   background: var(--nb-info, #4ECDC4) !important;
 }
 
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .drawer-sidebar {
-  background: var(--nb-bg, #FFFEF0) !important;
-  border-right: 2px solid var(--nb-border, #000) !important;
-}
-
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .tree-node:hover {
   background: var(--nb-highlight, #FFD93D) !important;
 }
@@ -1220,8 +1214,7 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
 
 
 /* ─── File sidebar — kill transparency ──────────────────────────── */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .file-sidebar,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .drawer-sidebar {
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .file-sidebar {
   background: var(--nb-bg, #FFFEF0) !important;
   opacity: 1 !important;
   border-right: 2px solid var(--nb-border, #000) !important;
@@ -1448,11 +1441,6 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .sidebar-resize-handle:hover::after {
   background: var(--nb-accent, #E94560) !important;
 }
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .drawer-split-handle:hover::after {
-  background: var(--nb-accent, #E94560) !important;
-}
-
 
 /* ─── Split pane backdrop kill ──────────────────────────────────── */
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .split-pane-mask {

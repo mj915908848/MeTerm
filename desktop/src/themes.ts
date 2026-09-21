@@ -307,7 +307,6 @@ export interface AppSettings {
   fileManagerFontSize: number;
   rememberDrawerLayout: boolean;
   drawerHeight: number;
-  drawerSidebarWidth: number;
   backgroundImage: string;
   backgroundImageOpacity: number;
   enableTerminalNotifications: boolean;
@@ -441,7 +440,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   fileManagerFontSize: 12,
   rememberDrawerLayout: true,
   drawerHeight: 0,
-  drawerSidebarWidth: 0,
   backgroundImage: '',
   backgroundImageOpacity: 30,
   defaultShell: '',

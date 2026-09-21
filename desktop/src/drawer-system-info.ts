@@ -283,8 +283,8 @@ export function renderSysInfo(instance: SysInfoFields): void {
   if (!serverInfoEl) return;
 
   // Determine compact vs expanded based on the surface that hosts the panel
-  // (the bottom drawer's sidebar, or the standalone left-docked panel).
-  const surface = serverInfoEl.closest('.drawer-sidebar, .server-info-panel-body') as HTMLElement | null;
+  // (the standalone left-docked server-info panel is the only remaining host).
+  const surface = serverInfoEl.closest('.server-info-panel-body') as HTMLElement | null;
   const isCompact = surface ? surface.offsetWidth < COMPACT_BREAKPOINT : false;
 
   if (isCompact) {

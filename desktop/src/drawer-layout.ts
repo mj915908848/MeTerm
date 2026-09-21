@@ -1,6 +1,6 @@
 /**
  * drawer-layout.ts
- * 布局管理相关：高度调整、拖拽调节、分屏处理、resize handle
+ * 布局管理相关：高度调整、拖拽调节、resize handle
  * 从 drawer.ts 中提取，供 DrawerManagerClass 委托调用。
  */
 
@@ -76,55 +76,11 @@ export function setupResizeHandle<T extends LayoutFields>(
   });
 }
 
-export function setupSplitHandle<T extends LayoutFields>(
-  instance: T,
-  callbacks: Pick<LayoutCallbacks<T>, 'saveDrawerLayout'>,
-): void {
-  const splitHandle = instance.element.querySelector('.drawer-split-handle') as HTMLDivElement;
-  const sidebar = instance.element.querySelector('.drawer-sidebar') as HTMLDivElement;
-  const content = instance.element.querySelector('.drawer-content') as HTMLDivElement;
-  if (!splitHandle || !sidebar || !content) return;
-
-  let startX = 0;
-  let startWidth = 0;
-
-  splitHandle.addEventListener('mousedown', (e) => {
-    e.preventDefault();
-    startX = e.clientX;
-    startWidth = sidebar.getBoundingClientRect().width;
-    document.body.classList.add('drawer-splitting');
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
-  });
-
-  const onMouseMove = (e: MouseEvent) => {
-    e.preventDefault();
-    const deltaX = e.clientX - startX;
-    const contentWidth = content.getBoundingClientRect().width;
-    const maxWidth = contentWidth * 0.5;
-    const newWidth = Math.max(100, Math.min(startWidth + deltaX, maxWidth));
-    sidebar.style.width = `${newWidth}px`;
-  };
-
-  const onMouseUp = () => {
-    document.body.classList.remove('drawer-splitting');
-    document.removeEventListener('mousemove', onMouseMove);
-    document.removeEventListener('mouseup', onMouseUp);
-    callbacks.saveDrawerLayout(instance);
-  };
-}
-
 export function saveDrawerLayout(instance: LayoutFields): void {
   const settings = loadSettings();
   if (!settings.rememberDrawerLayout) return;
 
-  const sidebar = instance.element.querySelector('.drawer-sidebar') as HTMLDivElement;
-  const sidebarWidth = sidebar ? sidebar.getBoundingClientRect().width : 0;
-
-  updateSettings({
-    drawerHeight: instance.height,
-    drawerSidebarWidth: sidebarWidth,
-  });
+  updateSettings({ drawerHeight: instance.height });
 }
 
 export function updateHeight(instance: LayoutFields): void {

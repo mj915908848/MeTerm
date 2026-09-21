@@ -79,55 +79,6 @@ body.drawer-resizing {
 }
 
 
-.drawer-sidebar {
-  width: 100px;
-  min-width: 100px;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 4px;
-  flex-shrink: 0;
-  box-sizing: border-box;
-}
-
-.drawer-split-handle {
-  width: 8px;
-  margin: 0 -3.5px;
-  cursor: col-resize;
-  background: transparent;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 1;
-}
-
-.drawer-split-handle::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 50%;
-  width: 1px;
-  background: var(--border-subtle);
-  transition: width 0.15s, left 0.15s, background 0.15s;
-}
-
-.drawer-split-handle:hover::after {
-  width: 3px;
-  left: calc(50% - 1px);
-  background: var(--accent);
-}
-
-body.drawer-splitting,
-body.drawer-splitting * {
-  -webkit-user-select: none !important;
-  user-select: none !important;
-  cursor: col-resize !important;
-  pointer-events: none !important;
-}
-
-body.drawer-splitting {
-  pointer-events: auto !important;
-}
-
 .drawer-main {
   flex: 1;
   display: flex;

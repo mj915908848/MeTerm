@@ -19,11 +19,6 @@
   background: rgba(255, 255, 255, 0.14);
 }
 
-/* Sidebar toggle button — highlight when sidebar is hidden */
-.btn-toggle-sidebar.active {
-  color: var(--accent);
-}
-
 .file-toolbar-actions {
   display: inline-flex;
   align-items: center;
@@ -130,14 +125,6 @@
 /* Compact mode: tiles fill sidebar area */
 .server-info-compact {
   margin: 0;
-}
-
-/* Sidebar: always hide scrollbar (content scrolls but no visible bar) */
-.drawer-sidebar {
-  scrollbar-width: none;
-}
-.drawer-sidebar::-webkit-scrollbar {
-  display: none;
 }
 
 .server-info-loading {
