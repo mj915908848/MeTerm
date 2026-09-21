@@ -1,0 +1,113 @@
+/* ============================================================================
+   Server info panel — the standalone, left-docked server-info surface.
+   Replaces the server-info sidebar that used to live inside the file drawer.
+   Docks as the leftmost child of #main-content (pushes the terminal, never
+   covers it), mirroring the old docked connection sidebar's geometry.
+   ============================================================================ */
+
+.server-info-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  border-radius: 12px;
+  overflow: hidden;
+  /* Same surface tone as the toolbar, so the docked panel reads as part of the
+     window chrome rather than as a second terminal. */
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.03)),
+    rgba(var(--bg-toolbar, 33, 33, 35), var(--app-window-opacity, 1));
+}
+
+html.vibrancy-active .server-info-panel {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ── Header ── */
+.sip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 8px 8px 6px 11px;
+}
+.sip-header-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sip-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.sip-close:hover {
+  background: rgba(var(--bg-button), 0.9);
+  color: var(--text-heading);
+}
+
+/* ── Body ── */
+.server-info-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 10px 10px;
+  scrollbar-width: none;
+}
+.server-info-panel-body::-webkit-scrollbar {
+  display: none;
+}
+
+.sip-empty {
+  padding: 14px 4px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* ── Right-edge resize handle (shares sidebarWidth with the file sidebar) ── */
+.server-info-panel-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -5px;
+  width: 10px;
+  cursor: col-resize;
+  z-index: 6;
+}
+.server-info-panel-resizer::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  width: 3px;
+  border-radius: 3px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background 0.12s;
+}
+.server-info-panel-resizer:hover::after,
+.server-info-panel-resizer.dragging::after {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.55);
+}

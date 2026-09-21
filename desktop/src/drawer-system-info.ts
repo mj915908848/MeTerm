@@ -137,6 +137,34 @@ export function renderProgressBar(percent: number): string {
 /** Compact mode breakpoint — exactly 2 columns of 44px tiles + gap + padding */
 const COMPACT_BREAKPOINT = 104;
 
+// ── Standalone containers ──
+//
+// Sysinfo can be displayed outside the file drawer — the left-docked server
+// info panel (server-info-panel.ts) registers its own container per session.
+// A registered container wins over the drawer's own DOM, so a session's data
+// has exactly one visible surface at a time.
+const externalContainers = new Map<string, HTMLElement>();
+
+/** Point sysinfo rendering for `sessionId` at `container` (which must contain
+ *  `#server-info-<sessionId>`). */
+export function registerSysInfoContainer(sessionId: string, container: HTMLElement): void {
+  externalContainers.set(sessionId, container);
+}
+
+/** Hand rendering back to the drawer for `sessionId`. */
+export function unregisterSysInfoContainer(sessionId: string): void {
+  externalContainers.delete(sessionId);
+}
+
+function resolveSysInfoContainer(instance: SysInfoFields): HTMLElement | null {
+  const external = externalContainers.get(instance.sessionId);
+  if (external && external.isConnected) {
+    const el = external.querySelector(`#server-info-${instance.sessionId}`) as HTMLElement | null;
+    if (el) return el;
+  }
+  return instance.element.querySelector(`#server-info-${instance.sessionId}`) as HTMLElement | null;
+}
+
 /** Render a compact liquid-fill tile */
 function renderTile(label: string, value: string, percent?: number, colorClass?: string): string {
   if (percent !== undefined) {
@@ -251,12 +279,13 @@ export function renderSysInfo(instance: SysInfoFields): void {
   const info = instance.sysInfo;
   if (!info) return;
 
-  const serverInfoEl = instance.element.querySelector(`#server-info-${instance.sessionId}`) as HTMLElement;
+  const serverInfoEl = resolveSysInfoContainer(instance);
   if (!serverInfoEl) return;
 
-  // Determine compact vs expanded based on sidebar width
-  const sidebar = serverInfoEl.closest('.drawer-sidebar') as HTMLElement;
-  const isCompact = sidebar ? sidebar.offsetWidth < COMPACT_BREAKPOINT : false;
+  // Determine compact vs expanded based on the surface that hosts the panel
+  // (the bottom drawer's sidebar, or the standalone left-docked panel).
+  const surface = serverInfoEl.closest('.drawer-sidebar, .server-info-panel-body') as HTMLElement | null;
+  const isCompact = surface ? surface.offsetWidth < COMPACT_BREAKPOINT : false;
 
   if (isCompact) {
     renderCompactSysInfo(instance, serverInfoEl);

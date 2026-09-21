@@ -1,0 +1,10 @@
+[[permission]]
+identifier = "connections-commands"
+description = "Allows the connection-list window to reveal itself, open the settings window, and remove a saved connection."
+commands.allow = [
+  "reveal_window",
+  "create_transparent_window",
+  "sync_delete_connection",
+  "remote_delete_token",
+  "jumpserver_delete_credentials",
+]

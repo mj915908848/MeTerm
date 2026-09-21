@@ -241,6 +241,12 @@ export interface Translations {
   serverInfoDisk: string;
   serverInfoNetwork: string;
   serverInfoLoading: string;
+  serverInfoPanelUnavailable: string;
+  serverInfoPanelClose: string;
+  connectionsWindowTitle: string;
+  connectionsWindowHint: string;
+  connectionsWindowSettings: string;
+  connectionsWindowOpenFailed: string;
   processColPID: string;
   processColName: string;
   processColUser: string;
@@ -1026,6 +1032,12 @@ const translations: Record<Language, Translations> = {
     serverInfoDisk: 'Disk',
     serverInfoNetwork: 'Network',
     serverInfoLoading: 'Loading...',
+    serverInfoPanelUnavailable: 'Server info is available for SSH sessions only.',
+    serverInfoPanelClose: 'Close',
+    connectionsWindowTitle: 'Connections',
+    connectionsWindowHint: 'Click a connection to open it in the main window.',
+    connectionsWindowSettings: 'Settings',
+    connectionsWindowOpenFailed: 'Could not open the connections window.',
     processColPID: 'PID',
     processColName: 'Name',
     processColUser: 'User',
@@ -1807,6 +1819,12 @@ const translations: Record<Language, Translations> = {
     serverInfoDisk: '磁盘',
     serverInfoNetwork: '网络',
     serverInfoLoading: '加载中...',
+    serverInfoPanelUnavailable: '服务器信息仅对 SSH 会话可用。',
+    serverInfoPanelClose: '关闭',
+    connectionsWindowTitle: '连接',
+    connectionsWindowHint: '点击连接即在主窗口中打开会话。',
+    connectionsWindowSettings: '设置',
+    connectionsWindowOpenFailed: '无法打开连接窗口。',
     processColPID: 'PID',
     processColName: '进程名',
     processColUser: '用户',

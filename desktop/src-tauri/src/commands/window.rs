@@ -302,6 +302,7 @@ fn validate_utility_window_request(
         "updater" => url == "?window=updater",
         "jumpserver-browser" => url == "?window=jumpserver-browser",
         "editor" => url == "?window=editor",
+        "connections" => url == "?window=connections",
         "settings" => {
             url == "?window=settings"
                 || url
@@ -621,6 +622,7 @@ mod tests {
             ("updater", "?window=updater"),
             ("jumpserver-browser", "?window=jumpserver-browser"),
             ("editor", "?window=editor"),
+            ("connections", "?window=connections"),
             ("settings", "?window=settings"),
             ("settings", "?window=settings&tab=sharing_2"),
         ] {

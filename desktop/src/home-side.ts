@@ -51,6 +51,12 @@ export interface SidebarListDeps {
   onSelect: (item: ConnectionItem) => void;
   refresh: () => void;
   getSelectedKey: () => string | null;
+  /**
+   * Whether the row context menu may offer "edit". False for lists rendered
+   * outside the main window (the standalone connections window), where the
+   * connection dialogs have no session state to connect with. Defaults to true.
+   */
+  allowEdit?: boolean;
 }
 
 /** Render the grouped, filtered connection list into `listEl`. */
@@ -138,7 +144,7 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
       row.onclick = () => deps.onSelect(item);
       row.oncontextmenu = (e) => {
         e.preventDefault();
-        showConnectionContextMenu(e, item, isUngrouped ? null : g, deps.refresh);
+        showConnectionContextMenu(e, item, isUngrouped ? null : g, deps.refresh, deps.allowEdit !== false);
       };
       const pinBtn = row.querySelector('.hsr-pin') as HTMLButtonElement;
       pinBtn.onclick = (e) => {

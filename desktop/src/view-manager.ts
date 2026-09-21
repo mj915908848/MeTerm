@@ -25,6 +25,7 @@ import { StatusBar } from './status-bar';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { invoke } from '@tauri-apps/api/core';
 import { createUtilityWindow } from './window-utils';
+import { ServerInfoPanel } from './server-info-panel';
 import {
   showSSHConnectingPlaceholder, removeSSHConnectingPlaceholder,
   hideReclaimButton, hideViewerOverlayDom, hideMasterApprovalOverlay,
@@ -196,6 +197,8 @@ export async function activateTab(tabId: string): Promise<void> {
   syncMasterApprovalForActiveTab();
   syncLockIconForActiveTab();
   syncPaneStatusBar();
+  // Keep the left-docked server info panel pointed at the tab being activated.
+  ServerInfoPanel.syncToActiveSession();
   _renderToolbarActions();
   StatusBar.setProgress(getActiveSessionProgress());
 }
@@ -249,6 +252,9 @@ export function showHomeView(): void {
     terminalPanelEl.appendChild(homeView);
   }
   updateSSHHomeView();
+  // No session is displayed on the home view — hide the server info panel
+  // (its pinned state is remembered, so it returns with the next tab).
+  ServerInfoPanel.syncToActiveSession();
   _renderToolbarActions();
 
   // Reset status bar when no active connection is displayed

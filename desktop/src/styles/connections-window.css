@@ -1,0 +1,52 @@
+/* ============================================================================
+   Connections window (?window=connections)
+   The connection list lives in its own window so the main window's left dock
+   can host the server-info panel. The list itself reuses the shared
+   .home-side-* row/group styles from home.css.
+   ============================================================================ */
+
+body.connections-window-mode {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  margin: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: rgba(var(--bg-toolbar, 33, 33, 35), var(--app-window-opacity, 1));
+  color: var(--text-primary);
+}
+
+/* macOS overlay title bar needs room for the traffic lights. */
+html.platform-macos .connections-window-mode {
+  padding-top: 28px;
+}
+
+html.platform-windows .connections-window-mode,
+html.platform-linux .connections-window-mode {
+  padding-top: 33px;
+}
+
+body.connections-window-mode .cn-search {
+  flex-shrink: 0;
+  margin: 8px 10px 4px;
+}
+
+body.connections-window-mode .home-side-new {
+  flex-shrink: 0;
+}
+
+body.connections-window-mode .cn-list {
+  padding-bottom: 10px;
+}
+
+body.connections-window-mode .cn-footer {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

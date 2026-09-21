@@ -5,8 +5,8 @@
 import { DrawerManager } from './drawer';
 import { SidebarManager } from './file-sidebar';
 import { TerminalRegistry } from './terminal';
+import { TabManager } from './tabs';
 import { loadSettings, updateSettings } from './themes';
-import { ConnectionSidebar } from './connection-sidebar';
 
 /**
  * Whether the file manager is currently open for a session, in whichever
@@ -26,10 +26,12 @@ export function isFileManagerOpen(sessionId: string): boolean {
  */
 export function toggleFileManager(sessionId: string): void {
   const mode = loadSettings().fileManagerMode;
-  // The file manager and the connection sidebar are mutually exclusive — close the
-  // connection sidebar whenever the file manager is about to open.
+  // The left dock holds a single panel: opening the file sidebar gives way to
+  // the server-info panel, and vice versa.
   const willOpen = mode === 'sidebar' ? !SidebarManager.isOpen(sessionId) : !DrawerManager.isOpen(sessionId);
-  if (willOpen) ConnectionSidebar.closeImmediate(); // outgoing closes instantly; only the file panel slides in
+  if (willOpen && mode === 'sidebar') {
+    void import('./server-info-panel').then((m) => m.ServerInfoPanel.close());
+  }
   if (mode === 'sidebar') {
     if (!SidebarManager.has(sessionId)) {
       SidebarManager.create(sessionId);
@@ -72,6 +74,9 @@ export async function switchFileManagerMode(sessionId: string): Promise<void> {
 
   // Open new mode
   if (newMode === 'sidebar') {
+    // Sidebar mode needs the left dock — hand it over from the server-info panel.
+    const { ServerInfoPanel } = await import('./server-info-panel');
+    ServerInfoPanel.close();
     if (!SidebarManager.has(sessionId)) {
       SidebarManager.create(sessionId);
       const mainContent = document.getElementById('main-content');
@@ -92,16 +97,15 @@ export async function switchFileManagerMode(sessionId: string): Promise<void> {
 }
 
 /**
- * Close the file manager (whichever mode) for a session, if it's open. Used to keep
- * it mutually exclusive with the connection sidebar.
+ * Close the left-docked file sidebar (sidebar mode) if it is open, leaving the
+ * dock free. Used by the server-info panel, which claims the same dock slot.
+ * Drawer mode (bottom) is unaffected — the two can coexist.
  */
-export function closeFileManager(sessionId: string): void {
-  const mode = loadSettings().fileManagerMode;
-  if (mode === 'sidebar') {
-    if (SidebarManager.isOpen(sessionId)) SidebarManager.closeImmediate(sessionId); // instant, so only the conn sidebar slides in
-  } else {
-    if (DrawerManager.isOpen(sessionId)) DrawerManager.toggle(sessionId);
-  }
+export function closeFileSidebarForDockSwap(): void {
+  if (loadSettings().fileManagerMode !== 'sidebar') return;
+  const sessionId = TabManager.getActiveSessionId();
+  if (!sessionId || !SidebarManager.isOpen(sessionId)) return;
+  SidebarManager.closeImmediate(sessionId);
   requestAnimationFrame(() => {
     import('./toolbar').then(({ renderToolbarActions }) => renderToolbarActions());
   });

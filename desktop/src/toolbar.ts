@@ -28,8 +28,9 @@ import { toggleJumpServerPanel, isJumpServerPanelOpen, showJsConnectionContextMe
 import { isPipActive, togglePip } from './pip';
 import { DrawerManager } from './drawer';
 import { AICapsuleManager } from './ai-capsule';
-import { ConnectionSidebar } from './connection-sidebar';
-import { toggleFileManager, closeFileManager, isFileManagerOpen } from './file-manager-toggle';
+import { toggleFileManager, isFileManagerOpen } from './file-manager-toggle';
+import { ServerInfoPanel } from './server-info-panel';
+import { openConnectionsWindow } from './connections-window';
 import { getLanAccessState, setLanAccess } from './lan-access';
 import appIconUrl from '../src-tauri/icons/icon.svg';
 
@@ -303,29 +304,33 @@ export function renderToolbarActions(): void {
   }
 
   const homeBtn = document.createElement('button');
-  homeBtn.className = `toolbar-action-btn conn-toggle-btn ${ConnectionSidebar.isOpen() ? 'active' : ''}`;
+  homeBtn.className = 'toolbar-action-btn conn-toggle-btn';
   homeBtn.type = 'button';
   homeBtn.title = settings?.language === 'zh' ? '连接' : 'Connections';
-  // Sidebar-style icon (panel with a left column) — toggles the docked
-  // connection sidebar (which pushes the terminal aside, never covers it).
+  // Opens the connection list in its own window — the main window's left dock
+  // belongs to the server-info panel.
   homeBtn.innerHTML = `<span class="tab-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg></span>`;
-  homeBtn.onclick = () => {
-    ConnectionSidebar.toggle();
-    const open = ConnectionSidebar.isOpen();
-    homeBtn.classList.toggle('active', open);
-    // Mutually exclusive with the file manager — opening the sidebar closes it.
-    if (open) {
-      const sid = TabManager.getActiveSessionId();
-      if (sid) closeFileManager(sid);
-    }
-  };
-  // Hover → float the sidebar out as a dropdown menu; click pins it docked.
-  homeBtn.addEventListener('mouseenter', () => ConnectionSidebar.showFlyout(homeBtn));
-  homeBtn.addEventListener('mouseleave', () => ConnectionSidebar.scheduleHideFlyout());
+  homeBtn.onclick = () => { void openConnectionsWindow(); };
   toolbarLeftEl.appendChild(homeBtn);
 
+  // Session-scoped buttons: the server-info panel and the file manager both need
+  // an active terminal.
+  const hasActiveSession = TabManager.tabs.length > 0 && !isHomeView && !isGalleryView;
+
+  if (hasActiveSession) {
+    // Server info (left dock) — placed before the file manager so the two docks
+    // read left-to-right in the order they occupy the window.
+    const siBtn = document.createElement('button');
+    siBtn.className = `toolbar-action-btn server-info-toggle-btn${ServerInfoPanel.isOpen() ? ' active' : ''}`;
+    siBtn.type = 'button';
+    siBtn.title = t('serverInfoToggle');
+    siBtn.innerHTML = `<span class="tab-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><line x1="7" y1="7.5" x2="7.01" y2="7.5"/><line x1="7" y1="16.5" x2="7.01" y2="16.5"/></svg></span>`;
+    siBtn.onclick = () => { ServerInfoPanel.toggle(); };
+    toolbarLeftEl.appendChild(siBtn);
+  }
+
   // File manager toggle button — only when tabs exist and not in home/gallery view
-  if (TabManager.tabs.length > 0 && !isHomeView && !isGalleryView) {
+  if (hasActiveSession) {
     const activeSessionId = TabManager.getActiveSessionId();
     const hasFm = activeSessionId && DrawerManager.has(activeSessionId);
     if (hasFm) {

@@ -11,6 +11,8 @@ import './styles/settings.css';
 import './styles/ssh-modal.css';
 import './styles/drawer.css';
 import './styles/drawer-sidebar.css';
+import './styles/server-info-panel.css';
+import './styles/connections-window.css';
 import './styles/file-sidebar.css';
 import './styles/ai-bar.css';
 import './styles/split-pane.css';
@@ -48,6 +50,7 @@ import { initUpdaterWindow } from './updater-window';
 import { initAboutWindow } from './about-window';
 import { initJumpServerBrowserWindow } from './jumpserver-browser-window';
 import { initEditorWindowShell } from './file-editor-init';
+import { initConnectionsWindow, setupConnectionsWindowBridge } from './connections-window';
 import { initPip } from './pip';
 import { initMacFullscreen } from './fullscreen-mac';
 import { initLanguage, setLanguage } from './i18n';
@@ -133,6 +136,10 @@ async function init(): Promise<void> {
     initEditorWindowShell();
     // Load CodeMirror + editor content async
     import('./file-editor').then(m => m.initEditorContent());
+    return;
+  }
+  if (params.get('window') === 'connections') {
+    initConnectionsWindow();
     return;
   }
 
@@ -247,6 +254,9 @@ async function init(): Promise<void> {
   // Register all DOM and Tauri event listeners
   setupDomEventListeners();
   setupTauriEventListeners(currentWindowLabel);
+  // Only the main window owns sessions, so it is the one that serves the
+  // connections window's open/new requests.
+  if (currentWindowLabel === 'main') setupConnectionsWindowBridge();
   setupKeyboardShortcuts();
   setupToolbarDrag();
   initPip();

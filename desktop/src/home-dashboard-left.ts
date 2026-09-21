@@ -593,14 +593,32 @@ function showGroupContextMenu(event: MouseEvent, groupName: string, refreshView:
   autoCloseMenu(menu);
 }
 
-export function showConnectionContextMenu(event: MouseEvent, item: ConnectionItem, currentGroup: string | null, refreshView: () => void): void {
+/**
+ * Connection context menu.
+ *
+ * `allowEdit` is false for menus opened outside the main window (the standalone
+ * connections window): editing a connection means opening a dialog whose
+ * "connect" path needs the main window's session state, so that window only
+ * offers the location-independent actions (group moves, delete).
+ */
+export function showConnectionContextMenu(
+  event: MouseEvent,
+  item: ConnectionItem,
+  currentGroup: string | null,
+  refreshView: () => void,
+  allowEdit = true,
+): void {
   removeContextMenu();
   const menu = document.createElement('div');
   menu.className = 'home-card-menu';
   menu.style.left = `${event.clientX}px`;
   menu.style.top = `${event.clientY}px`;
 
-  if (item.type === 'ssh') {
+  // Edit needs this window's connection state (the dialogs can trigger a
+  // connect), so it is offered only where that state lives.
+  if (!allowEdit) {
+    // no edit item
+  } else if (item.type === 'ssh') {
     const config = item.raw as SSHConnectionConfig;
     appendSshConnectionMenuItems(menu, config, t('homeEditConnection'), () => {
       menu.remove();

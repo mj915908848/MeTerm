@@ -3,7 +3,6 @@ import { type SysInfoResponse, type ServerInfoResponse, type NetIfaceInfo } from
 import type { TerminalTransport } from './terminal-transport';
 import { loadSettings } from './themes';
 import { t } from './i18n';
-import { escapeHtml } from './status-bar';
 import { jumpServerConfigMap } from './app-state';
 import { setupContextMenu } from './drawer-context-menu';
 import { showBookmarkPopup, addBookmark } from './file-bookmarks';
@@ -11,11 +10,9 @@ import { createOverlayScrollbar } from './overlay-scrollbar';
 import {
   type NetRatePoint,
   handleServerInfoResponse,
-  renderSysInfo,
 } from './drawer-system-info';
 import {
   setupResizeHandle,
-  setupSplitHandle,
   saveDrawerLayout,
   updateHeight,
 } from './drawer-layout';
@@ -35,7 +32,6 @@ export interface DrawerInstance {
   isOpen: boolean;
   height: number;
   fileManager: FileManager | null;
-  sysInfoTimer: ReturnType<typeof setInterval> | null;
   processTimer: ReturnType<typeof setInterval> | null;
   activeTab: 'files' | 'processes';
   sysInfo: SysInfoResponse | null;
@@ -106,7 +102,6 @@ class DrawerManagerClass {
       isOpen: false,
       height: savedHeight,
       fileManager,
-      sysInfoTimer: null,
       processTimer: null,
       activeTab: 'files',
       sysInfo: null,
@@ -118,14 +113,6 @@ class DrawerManagerClass {
       isHistoryView: false,
     };
 
-    // 恢复 sidebar 宽度
-    if (settings.rememberDrawerLayout && settings.drawerSidebarWidth > 0) {
-      const sidebar = drawer.querySelector('.drawer-sidebar') as HTMLDivElement;
-      if (sidebar) {
-        sidebar.style.width = `${settings.drawerSidebarWidth}px`;
-      }
-    }
-
     // Set up server info callback
     fileManager.onServerInfo = (data: ServerInfoResponse) => {
       this.handleServerInfoResponse(instance, data);
@@ -133,15 +120,12 @@ class DrawerManagerClass {
 
     this.drawers.set(sessionId, instance);
     this.setupResizeHandle(instance);
-    this.setupSplitHandle(instance);
     this.setupToggleButton(instance);
     this.setupFileManagerEvents(instance);
     this.setupMainTabs(instance);
     this.setupSmoothScroll(instance);
-    this.setupSidebarResize(instance);
 
     // Attach overlay scrollbar (inline mode: scrollbar inside each scroll area)
-    // Skip sidebar — compact mode hides scrollbar via CSS
     for (const sel of ['.file-list', '.process-list', '.transfer-history']) {
       const el = drawer.querySelector(sel) as HTMLElement | null;
       if (!el) continue;
@@ -154,25 +138,10 @@ class DrawerManagerClass {
       createOverlayScrollbar({ viewport: el, container: el, topOffset });
     }
 
-    // JumpServer：Koko 代理不支持 exec session，隐藏系统信息侧栏和进程 tab
-    if (resolvedType === 'jumpserver') {
-      const sidebar = drawer.querySelector('.drawer-sidebar') as HTMLElement;
-      const splitHandle = drawer.querySelector('.drawer-split-handle') as HTMLElement;
+    // JumpServer：Koko 代理不支持 exec session，隐藏进程 tab。
+    // (服务器信息已移出抽屉，见 server-info-panel.ts)
+    if (resolvedType === 'jumpserver' || resolvedType === 'local') {
       const processTab = drawer.querySelector('[data-tab="processes"]') as HTMLElement;
-      if (sidebar) sidebar.style.display = 'none';
-      if (splitHandle) splitHandle.style.display = 'none';
-      if (processTab) processTab.style.display = 'none';
-    }
-
-    // 本地会话：隐藏系统信息侧栏和进程 tab（本地不支持 exec/sysinfo）
-    if (resolvedType === 'local') {
-      const sidebar = drawer.querySelector('.drawer-sidebar') as HTMLElement;
-      const splitHandle = drawer.querySelector('.drawer-split-handle') as HTMLElement;
-      const sidebarToggle = drawer.querySelector('.btn-toggle-sidebar') as HTMLElement;
-      const processTab = drawer.querySelector('[data-tab="processes"]') as HTMLElement;
-      if (sidebar) sidebar.style.display = 'none';
-      if (splitHandle) splitHandle.style.display = 'none';
-      if (sidebarToggle) sidebarToggle.style.display = 'none';
       if (processTab) processTab.style.display = 'none';
     }
 
@@ -201,12 +170,6 @@ class DrawerManagerClass {
     drawer.innerHTML = `
       <div class="drawer-resize-handle"></div>
       <div class="drawer-content">
-        <div class="drawer-sidebar">
-          <div class="server-info" id="server-info-${sessionId}">
-            <div class="server-info-loading">${t('serverInfoLoading')}</div>
-          </div>
-        </div>
-        <div class="drawer-split-handle"></div>
         <div class="drawer-main">
           <div class="file-loading-overlay" id="file-loading-${sessionId}" style="display: none;">
             <div class="loading-content">
@@ -228,9 +191,6 @@ class DrawerManagerClass {
           </div>
           <div class="file-toolbar">
             <div class="drawer-main-tabs">
-              <button class="drawer-tab btn-toggle-sidebar" title="${t('serverInfoToggle')}">
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2" width="14" height="12" rx="2"/><line x1="6" y1="2" x2="6" y2="14"/><circle cx="3.5" cy="6" r="0.5" fill="currentColor" stroke="none"/><circle cx="3.5" cy="8" r="0.5" fill="currentColor" stroke="none"/><circle cx="3.5" cy="10" r="0.5" fill="currentColor" stroke="none"/></svg>
-              </button>
               <button class="drawer-tab btn-switch-mode active" data-tab="files" title="Switch view">
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2" width="14" height="12" rx="2"/><line x1="5.5" y1="2" x2="5.5" y2="14"/></svg>
               </button>
@@ -417,26 +377,6 @@ class DrawerManagerClass {
       });
     });
 
-    // Toggle system info sidebar visibility
-    // Default: sidebar hidden
-    const defaultSidebar = instance.element.querySelector('.drawer-sidebar') as HTMLElement;
-    const defaultSplitHandle = instance.element.querySelector('.drawer-split-handle') as HTMLElement;
-    if (defaultSidebar) defaultSidebar.style.display = 'none';
-    if (defaultSplitHandle) defaultSplitHandle.style.display = 'none';
-
-    const toggleSidebarBtn = instance.element.querySelector('.btn-toggle-sidebar') as HTMLButtonElement;
-    if (toggleSidebarBtn) {
-      toggleSidebarBtn.addEventListener('click', () => {
-        const sidebar = instance.element.querySelector('.drawer-sidebar') as HTMLElement;
-        const splitHandle = instance.element.querySelector('.drawer-split-handle') as HTMLElement;
-        if (!sidebar) return;
-        const hidden = sidebar.style.display === 'none';
-        sidebar.style.display = hidden ? '' : 'none';
-        if (splitHandle) splitHandle.style.display = hidden ? '' : 'none';
-        toggleSidebarBtn.classList.toggle('active', hidden);
-      });
-    }
-
     // Refresh processes button
     const refreshProcessBtn = instance.element.querySelector('.btn-refresh-processes');
     if (refreshProcessBtn) {
@@ -481,22 +421,6 @@ class DrawerManagerClass {
     observer.observe(instance.element, { childList: true, subtree: true });
   }
 
-  /** Watch sidebar width changes to toggle compact/expanded server info */
-  private setupSidebarResize(instance: DrawerInstance): void {
-    const sidebar = instance.element.querySelector('.drawer-sidebar') as HTMLElement;
-    if (!sidebar) return;
-    let lastCompact: boolean | null = null;
-    const ro = new ResizeObserver(() => {
-      const isCompact = sidebar.offsetWidth < 104;
-      sidebar.classList.toggle('sidebar-compact', isCompact);
-      if (isCompact !== lastCompact && instance.sysInfo) {
-        lastCompact = isCompact;
-        renderSysInfo(instance);
-      }
-    });
-    ro.observe(sidebar);
-  }
-
   private switchTab(instance: DrawerInstance, tab: 'files' | 'processes'): void {
     instance.activeTab = tab;
 
@@ -539,21 +463,6 @@ class DrawerManagerClass {
       this.startProcessRefresh(instance);
     } else {
       this.stopProcessRefresh(instance);
-    }
-  }
-
-  private startSysInfoRefresh(instance: DrawerInstance): void {
-    if (instance.sysInfoTimer) return;
-    instance.fileManager?.requestServerInfo('sysinfo');
-    instance.sysInfoTimer = setInterval(() => {
-      instance.fileManager?.requestServerInfo('sysinfo');
-    }, 5000);
-  }
-
-  private stopSysInfoRefresh(instance: DrawerInstance): void {
-    if (instance.sysInfoTimer) {
-      clearInterval(instance.sysInfoTimer);
-      instance.sysInfoTimer = null;
     }
   }
 
@@ -889,10 +798,6 @@ class DrawerManagerClass {
     setupResizeHandle(instance, this.layoutConfig, this.layoutCallbacks);
   }
 
-  private setupSplitHandle(instance: DrawerInstance): void {
-    setupSplitHandle(instance, this.layoutCallbacks);
-  }
-
   private saveDrawerLayout(instance: DrawerInstance): void {
     saveDrawerLayout(instance);
   }
@@ -906,7 +811,8 @@ class DrawerManagerClass {
       instance.element.style.display = '';
       instance.element.classList.add('open');
       this.updateHeight(instance);
-      this.startSysInfoRefresh(instance);
+      // sysinfo polling is owned by the server-info panel (server-info-panel.ts),
+      // which is the only surface that displays it.
       // 通知 FileManager 全局监听器：当前活跃的 drag-drop 目标为此 drawer 的 fileManager
       FileManager.setActiveDragDropTarget(instance.fileManager ?? null);
       // 首次打开抽屉时加载文件列表（SSH 的 SFTP 后台初始化需要时间，延迟到打开时加载）
@@ -923,7 +829,6 @@ class DrawerManagerClass {
       import('./ai-capsule').then(({ AICapsuleManager }) => {
         AICapsuleManager.setDrawerOffset(sessionId, 0);
       });
-      this.stopSysInfoRefresh(instance);
       this.stopProcessRefresh(instance);
       // 关闭 drawer 时清空 drag-drop 活跃目标
       FileManager.setActiveDragDropTarget(null);
@@ -968,6 +873,16 @@ class DrawerManagerClass {
     return this.drawers.get(sessionId) ?? null;
   }
 
+  /**
+   * Read-only access to a session's drawer instance. Used by the standalone
+   * server-info panel (server-info-panel.ts), which renders the same sysinfo
+   * payload this instance accumulates — that keeps a single polling source
+   * (the session's FileManager) for both surfaces.
+   */
+  getInstance(sessionId: string): DrawerInstance | null {
+    return this.drawers.get(sessionId) ?? null;
+  }
+
   /** Return session IDs of all currently open drawers. */
   getOpenSessionIds(): string[] {
     const ids: string[] = [];
@@ -993,7 +908,6 @@ class DrawerManagerClass {
   destroy(sessionId: string): void {
     const instance = this.drawers.get(sessionId);
     if (!instance) return;
-    this.stopSysInfoRefresh(instance);
     this.stopProcessRefresh(instance);
     instance.element.remove();
     this.drawers.delete(sessionId);
@@ -1080,22 +994,9 @@ class DrawerManagerClass {
       instance.fileManager.setServerLabel(label);
     }
 
-    const serverInfoEl = instance.element.querySelector(`#server-info-${sessionId}`) as HTMLElement;
-    if (serverInfoEl) {
-      serverInfoEl.innerHTML = `
-        <div class="server-info-conn">
-          <div class="server-info-item">
-            <div class="server-info-label">${t('serverInfoHost')}</div>
-            <div class="server-info-value">${escapeHtml(info.host)}${info.port && info.port !== 22 ? ':' + info.port : ''}</div>
-          </div>
-          <div class="server-info-item">
-            <div class="server-info-label">${t('serverInfoUser')}</div>
-            <div class="server-info-value">${escapeHtml(info.username)}</div>
-          </div>
-        </div>
-        <div class="server-info-loading">${t('serverInfoLoading')}</div>
-      `;
-    }
+    // The panel that displays this (server-info-panel.ts) is a separate module —
+    // notify it instead of reaching into its DOM from here.
+    window.dispatchEvent(new CustomEvent('meterm-server-conn-updated', { detail: { sessionId } }));
   }
 
   /**
