@@ -1,21 +1,15 @@
 /* ============================================================================
    Remote Connect Modal
    ============================================================================ */
+/* No scrim, matching the SSH dialog — see the note in ssh-modal.css. */
 .remote-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
   animation: ssh-overlay-in 0.18s ease-out;
-}
-
-html.vibrancy-active .remote-modal-overlay {
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 .remote-modal {

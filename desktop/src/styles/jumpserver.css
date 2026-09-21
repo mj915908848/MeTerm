@@ -2,15 +2,9 @@
    JumpServer — Asset Browser & related styles
    ============================================================================ */
 
-/* Asset browser overlay */
+/* Asset browser overlay — no scrim, matching the connection dialogs. */
 .js-asset-browser-overlay {
   z-index: 2100;
-  background: rgba(0, 0, 0, 0.55);
-}
-html.vibrancy-active .js-asset-browser-overlay {
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 /* Asset browser panel */

@@ -890,7 +890,9 @@
 
 /* ─── O. SSH / Remote Modals ────────────────────────────────────── */
 
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .ssh-modal-overlay,
+/* The SSH/JumpServer and remote dialogs deliberately have no scrim in any theme,
+   so they are NOT re-dimmed here — see the note in ssh-modal.css. `.remote-overlay`
+   is kept even though no element carries that class today. */
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .remote-overlay,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .drawer-modal-overlay,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .navigate-confirm-overlay {
@@ -1816,10 +1818,8 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
 
 /* ─── JumpServer asset browser ──────────────────────────────────── */
 
-/* Main browser overlay + popup */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .js-asset-browser-overlay {
-  background: rgba(0, 0, 0, 0.5) !important;
-}
+/* Main browser popup. The overlay keeps no scrim in any theme, matching the
+   connection dialogs — so it is not re-dimmed here either. */
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .js-asset-browser {
   background: var(--nb-bg, #FFFEF0) !important;
   border: 3px solid var(--nb-border, #000) !important;

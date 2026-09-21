@@ -1,21 +1,18 @@
 /* ============================================================================
    SSH Modal — frosted glass
    ============================================================================ */
+/* No scrim: the dialog floats over a fully readable window. The overlay element
+   itself still has to exist — it is what catches clicks outside the dialog and
+   what the Escape handler checks for. Only the darkening is gone.
+   The JumpServer dialogs reuse this class, so they inherit the same treatment. */
 .ssh-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
   z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
   animation: ssh-overlay-in 0.18s ease-out;
-}
-
-html.vibrancy-active .ssh-modal-overlay {
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 @keyframes ssh-overlay-in {
