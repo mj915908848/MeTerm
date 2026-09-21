@@ -87,45 +87,65 @@ export function filterConnections(items: ConnectionItem[], query: string): Conne
   return items.filter((i) => i.name.toLowerCase().includes(q) || i.detail.toLowerCase().includes(q));
 }
 
-// ─── Recent Activity (horizontal cards) ───
+// ─── Recent connections (home view) ───
 
-export function renderRecentActivity(query: string): void {
-  const section = document.getElementById('home-recent-activity');
-  if (!section) return;
-  section.innerHTML = '';
+/**
+ * Render the servers this device actually connected to, most recent first.
+ * Shown on the home view so a known server is one click away (no need to dig
+ * through the grouped list). Newest entries come from the SSH/remote history
+ * stores; nothing is rendered when neither has an entry.
+ */
+export function renderHomeRecentConnections(): void {
+  const host = document.getElementById('home-recent-connections');
+  if (!host) return;
+  host.innerHTML = '';
 
-  const recentSSH = loadRecentConnections();
-  const recentRemote = loadRecentRemoteConnections();
-
-  let recentItems: ConnectionItem[] = [];
-  for (const c of recentSSH) {
-    recentItems.push({ type: 'ssh', key: sshKey(c.name), name: c.name || c.host, detail: `${c.username}@${c.host}`, raw: c });
+  const items: ConnectionItem[] = [];
+  for (const c of loadRecentConnections()) {
+    items.push({
+      type: 'ssh',
+      key: sshKey(c.name),
+      name: c.name || c.host,
+      detail: `${c.username}@${c.host}${c.port && c.port !== 22 ? `:${c.port}` : ''}`,
+      raw: c,
+    });
   }
-  for (const r of recentRemote) {
-    recentItems.push({ type: 'remote', key: remoteKey(r.host, r.port), name: r.name || r.host, detail: `${r.host}:${r.port}`, raw: r });
+  for (const r of loadRecentRemoteConnections()) {
+    items.push({
+      type: 'remote',
+      key: remoteKey(r.host, r.port),
+      name: r.name || r.host,
+      detail: `${r.host}:${r.port}`,
+      raw: r,
+    });
   }
 
-  if (query) recentItems = filterConnections(recentItems, query);
-
-  if (recentItems.length === 0) return;
+  if (items.length === 0) return;
 
   const title = document.createElement('div');
-  title.className = 'home-dash-section-title';
+  title.className = 'home-recent-title';
   title.textContent = t('homeRecentActivity');
-  section.appendChild(title);
+  host.appendChild(title);
 
-  const track = document.createElement('div');
-  track.className = 'home-dash-recent-track';
+  const list = document.createElement('div');
+  list.className = 'home-recent-list';
 
-  for (const item of recentItems) {
-    const card = document.createElement('div');
-    card.className = `home-dash-recent-card home-dash-recent-${item.type}`;
-    const iconName = item.type === 'ssh' ? 'ssh' : item.type === 'remote' ? 'remote' : item.type === 'jumpserver' ? 'jumpserver' : 'terminal';
-    card.innerHTML = `<span class="home-dash-recent-icon">${icon(iconName)}</span><div class="home-dash-recent-info"><div class="home-dash-recent-name">${escapeHtml(item.name)}</div><div class="home-dash-recent-detail">${escapeHtml(item.detail)}</div></div>`;
+  for (const item of items) {
+    const iconName = item.type === 'remote' ? 'remote' : item.type === 'jumpserver' ? 'jumpserver' : 'ssh';
+
+    const row = document.createElement('div');
+    row.className = `home-recent-row home-recent-${item.type}`;
+    row.title = `${item.name} — ${item.detail}`;
+    row.innerHTML = `<span class="home-recent-icon">${icon(iconName)}</span>`
+      + `<span class="home-recent-name">${escapeHtml(item.name)}</span>`
+      + `<span class="home-recent-detail">${escapeHtml(item.detail)}</span>`;
 
     const delBtn = document.createElement('button');
-    delBtn.className = 'home-dash-recent-del';
-    delBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    delBtn.type = 'button';
+    delBtn.className = 'home-recent-del';
+    delBtn.title = t('homeRecentRemove');
+    delBtn.setAttribute('aria-label', t('homeRecentRemove'));
+    delBtn.innerHTML = `<svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
     delBtn.onclick = (e) => {
       e.stopPropagation();
       if (item.type === 'ssh') {
@@ -135,15 +155,16 @@ export function renderRecentActivity(query: string): void {
         const r = item.raw as RemoteServerInfo;
         removeRecentRemoteConnection(r.host, r.port);
       }
-      renderRecentActivity(query);
+      renderHomeRecentConnections();
     };
-    card.appendChild(delBtn);
+    row.appendChild(delBtn);
 
-    card.onclick = () => handleConnectionClick(item, card);
-    track.appendChild(card);
+    // Click connects straight away, exactly like a connection-list row.
+    row.onclick = () => handleConnectionClick(item, row);
+    list.appendChild(row);
   }
-  section.appendChild(track);
-  setupScrollFade(track);
+
+  host.appendChild(list);
 }
 
 /** Add/remove fade-left / fade-right / fade-both classes based on scroll position */

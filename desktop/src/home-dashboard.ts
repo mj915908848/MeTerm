@@ -1,11 +1,11 @@
 /**
- * Empty state shown when there is no active session (the old full-page home is
- * gone — the connection manager is now the docked left sidebar in
- * connection-sidebar.ts). This is just a minimal "no session" placeholder with
- * the "new connection" buttons.
+ * Empty state shown when there is no active session. This is a minimal
+ * "no session" placeholder with the "new connection" buttons plus the list of
+ * servers this device recently connected to (click a row to reconnect).
  */
 import { settings } from './app-state';
-import { makeNewButtons, ConnectionSidebar } from './connection-sidebar';
+import { makeNewButtons } from './connection-sidebar';
+import { renderHomeRecentConnections } from './home-dashboard-left';
 
 // Re-export names kept for ssh.ts / view-manager backwards compat.
 export { createDashboardHomeView as createSSHHomeView, updateDashboardHomeView as updateSSHHomeView };
@@ -20,14 +20,21 @@ export function createDashboardHomeView(): HTMLDivElement {
   const card = document.createElement('div');
   card.className = 'home-empty-card';
   card.innerHTML = `<div class="home-empty-title">${L('暂无会话', 'No active session')}</div>`
-    + `<div class="home-empty-sub">${L('新建一个终端，或点标题栏的侧边栏按钮选择连接。', 'Open a terminal, or use the sidebar button in the toolbar to pick a connection.')}</div>`;
+    + `<div class="home-empty-sub">${L('新建一个终端，或从下面的最近连接里直接打开。', 'Open a terminal, or pick a recent connection below.')}</div>`;
   card.appendChild(makeNewButtons());
+
+  // Recent-connection history — filled by renderHomeRecentConnections().
+  const recent = document.createElement('div');
+  recent.className = 'home-recent';
+  recent.id = 'home-recent-connections';
+  card.appendChild(recent);
+
   container.appendChild(card);
+  renderHomeRecentConnections();
 
   return container;
 }
 
 export function updateDashboardHomeView(): void {
-  // Refresh the docked connection sidebar's list (if open).
-  ConnectionSidebar.refresh();
+  renderHomeRecentConnections();
 }

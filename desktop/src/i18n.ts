@@ -752,6 +752,7 @@ export interface Translations {
   homeGroupDuplicate: string;
   homeGroupNewName: string;
   homeRecentActivity: string;
+  homeRecentRemove: string;
   homeFooterVersion: string;
   homeFooterGitHub: string;
   homeNoConnections: string;
@@ -1502,6 +1503,7 @@ const translations: Record<Language, Translations> = {
     homeGroupDuplicate: 'Duplicate Group',
     homeGroupNewName: 'Group Name',
     homeRecentActivity: 'Recent Activity',
+    homeRecentRemove: 'Remove from history',
     homeFooterVersion: 'MeTerm v{version}',
     homeFooterGitHub: 'GitHub',
     homeNoConnections: 'No connections yet',
@@ -2282,6 +2284,7 @@ const translations: Record<Language, Translations> = {
     homeGroupDuplicate: '复制分组',
     homeGroupNewName: '分组名称',
     homeRecentActivity: '最近活跃',
+    homeRecentRemove: '从历史记录中移除',
     homeFooterVersion: 'MeTerm v{version}',
     homeFooterGitHub: 'GitHub',
     homeNoConnections: '暂无连接',
