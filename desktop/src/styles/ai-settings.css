@@ -850,10 +850,10 @@
 
 .ai-system-notice {
   text-align: center;
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-secondary);
-  padding: 4px 12px;
-  opacity: 0.6;
+  padding: 6px 12px;
+  opacity: 1;
   letter-spacing: 0.3px;
 }
 

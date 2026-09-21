@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createWatchLifecycle, WATCH_BUFFER_LIMIT, watchTimeoutSeconds } from '../src/ai-terminal-watch-lifecycle.ts';
 import { buildTaskRetention, isTaskRetention } from '../src/ai-agent-retention.ts';
 import type { ChatMessage } from '../src/ai-provider.ts';
-import { trimHistory, compressContext } from '../src/ai-agent-history.ts';
+import { trimHistory, compressContext, shouldAutoCompact } from '../src/ai-agent-history.ts';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 
@@ -178,4 +178,72 @@ test('retention has a strict total budget and preserves head and tail of oversiz
   assert.ok(text.length <= 6000);
   for (const value of ['ORIGINAL HEAD', 'ORIGINAL TAIL', 'SUMMARY TAIL', 'LATEST HEAD', 'LATEST TAIL', '[...omitted...]']) assert.ok(text.includes(value));
   assert.equal(buildTaskRetention([]), null);
+});
+
+// ─── shouldAutoCompact ──────────────────────────────────────────────
+// The threshold used to be computed from two hardcoded numbers (a 128k
+// window and a 4k output reservation), so the aiMaxTokens setting had no
+// effect on when history got compressed. These pin the arithmetic and
+// prove that BOTH inputs now move the threshold.
+
+/** One message whose content is exactly `chars` characters long. */
+const charsAsMessage = (chars: number): ChatMessage[] => [
+  { role: 'user', content: 'x'.repeat(chars) },
+];
+
+test('shouldAutoCompact only fires once the estimate passes the threshold', () => {
+  // budget = 10000 − 1000 − 2000 = 7000 → threshold = 5250 tokens
+  assert.equal(shouldAutoCompact(charsAsMessage(20_000), 10_000, 1_000), false);
+  assert.equal(shouldAutoCompact(charsAsMessage(22_000), 10_000, 1_000), true);
+});
+
+test('a larger history budget raises the threshold and delays compaction', () => {
+  // 22000 chars ≈ 5500 tokens — over the small budget, under the large one.
+  assert.equal(shouldAutoCompact(charsAsMessage(22_000), 10_000, 1_000), true);
+  assert.equal(shouldAutoCompact(charsAsMessage(22_000), 20_000, 1_000), false);
+});
+
+test('a larger output reservation lowers the threshold and fires compaction earlier', () => {
+  // This is the regression that made aiMaxTokens a no-op: the output
+  // reservation is subtracted from the same budget, so raising
+  // max_tokens must make compaction MORE eager, not less.
+  assert.equal(shouldAutoCompact(charsAsMessage(10_000), 10_000, 1_000), false);
+  assert.equal(shouldAutoCompact(charsAsMessage(10_000), 10_000, 6_000), true);
+});
+
+test('the default arguments reproduce the previously hardcoded threshold', () => {
+  // floor((128000 − 4000 − 2000) × 0.75) = 91500 tokens = 366000 chars.
+  // Pinned so that changing the defaults has to be a deliberate act.
+  assert.equal(shouldAutoCompact(charsAsMessage(365_000)), false);
+  assert.equal(shouldAutoCompact(charsAsMessage(367_000)), true);
+});
+
+test('the default history budget sits on the settings slider grid', () => {
+  // Guards the trap that bit aiContextLines: a default below the slider
+  // floor (or off its step grid) gets clamped by the <input type=range>,
+  // and the control then displays a different number from the one used.
+  const settings = readFileSync(
+    new URL('../src/settings-ai.ts', import.meta.url),
+    'utf8',
+  );
+  const slider = settings.match(
+    /ai-history-budget-slider'\s*,\s*([0-9]+)\s*\*\s*1024\s*,\s*([0-9]+)\s*\*\s*1024\s*,\s*([0-9]+)\s*\*\s*1024/,
+  );
+  assert.ok(slider, 'ai-history-budget-slider row not found in settings-ai.ts — did it move?');
+  const [min, max, step] = slider.slice(1, 4).map((n) => Number(n) * 1024);
+
+  const themes = readFileSync(new URL('../src/themes.ts', import.meta.url), 'utf8');
+  const def = themes.match(/aiHistoryBudgetTokens:\s*([0-9]+)\s*\*\s*1024/);
+  assert.ok(def, 'aiHistoryBudgetTokens default not found in themes.ts — did it move?');
+  const value = Number(def[1]) * 1024;
+
+  assert.ok(
+    value >= min && value <= max,
+    `default ${value} is outside the slider range ${min}–${max}`,
+  );
+  assert.equal(
+    (value - min) % step,
+    0,
+    `default ${value} does not land on the slider's ${step} step grid`,
+  );
 });

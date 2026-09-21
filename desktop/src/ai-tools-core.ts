@@ -8,6 +8,7 @@ import { DrawerManager } from './drawer';
 import { TabManager } from './tabs';
 import { getAllLeaves } from './split-pane';
 import { MESSAGE_HISTORY_MAX_CHARS } from './ai-history-budget';
+import { SYSTEM_CONTEXT_CHARS, DEFAULT_CONTEXT_LINES } from './ai-context-budget';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -166,16 +167,17 @@ export interface ToolHandler {
 // ─── Token Budget Constants ──────────────────────────────────────
 
 export const TOKEN_BUDGET = {
-  /** Max characters for system prompt terminal context */
-  systemContextChars: 6000,    // ~80 lines ≈ 2000 tokens
+  /** Terminal-context caps live in ai-context-budget.ts (imported above)
+   *  so the budget maths stays testable without the terminal stack. */
+  systemContextChars: SYSTEM_CONTEXT_CHARS,
   /** Max characters per tool output */
   perToolOutputChars: 4000,
   /** Max total characters in message history */
   messageHistoryMaxChars: MESSAGE_HISTORY_MAX_CHARS,
   /** Default lines for read_terminal tool */
   defaultTerminalLines: 50,
-  /** Lines included in system prompt context */
-  systemContextLines: 80,
+  /** Fallback pane excerpt lines when the user setting is absent. */
+  defaultContextLines: DEFAULT_CONTEXT_LINES,
 };
 
 // ─── Danger Detection ────────────────────────────────────────────

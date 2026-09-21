@@ -66,10 +66,18 @@ html.platform-linux .editor-tabs-area {
   height: 0;
 }
 
-/* Tab buttons need no-drag so clicks work */
+/* Tab buttons need no-drag so clicks work. */
 .editor-tabs-area .title-tab {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+  /* Content-sized: the width applyEditorTabWidths() writes must win, and the
+     app-wide 340px cap — which exists for the toolbar's short connection names —
+     would clip a host:/path long before the row runs out of room. The floor stays
+     0 because the per-tab minimums come from that same JS function; a CSS
+     min-width here would be a second, silently diverging floor. */
+  flex: 0 0 auto;
+  max-width: none;
+  min-width: 0;
 }
 
 /* Content area */
@@ -623,4 +631,35 @@ html.vibrancy-active .editor-content {
 }
 html.vibrancy-active #editor-window-container {
   background: transparent;
+}
+
+/* ── Right-click menu ──
+   Reuses the app-wide .custom-context-menu chrome (home.css) so this menu is
+   identical to the ones in the main window; only the row layout differs, since
+   these rows carry a toggle column and an accelerator hint. */
+.editor-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 176px;
+}
+
+/* Fixed width whether or not a toggle is on, so labels stay aligned. */
+.editor-menu-check {
+  flex: 0 0 10px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.editor-menu-label {
+  flex: 1 1 auto;
+}
+
+/* color: inherit so a disabled row dims its hint along with everything else. */
+.editor-menu-shortcut {
+  flex: 0 0 auto;
+  margin-left: 12px;
+  color: inherit;
+  opacity: 0.55;
+  font-size: 11px;
 }

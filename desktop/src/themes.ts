@@ -320,6 +320,17 @@ export interface AppSettings {
   aiTemperature: number;
   aiContextLines: number;
   /**
+   * Token budget for conversation history before auto-compression kicks
+   * in. A model's context window is shared by input and output, so this
+   * is the INPUT side of the split and aiMaxTokens is the output
+   * reservation taken off the same budget.
+   *
+   * Default 128k reproduces the value that used to be hardcoded in the
+   * compaction check, so raising it is an explicit opt-in. Must sit on
+   * the settings slider's step grid or the control would clamp it.
+   */
+  aiHistoryBudgetTokens: number;
+  /**
    * Whether to ask the model to "think" / produce reasoning_content
    * before its final answer. Applies to thinking-mode providers
    * (DeepSeek V4, Qwen3, GLM, MiMo, etc.). Plain OpenAI / Anthropic /
@@ -330,6 +341,17 @@ export interface AppSettings {
    * and the prior working state of the app before we wired the flag).
    */
   aiEnableThinking: boolean;
+  /**
+   * Cap on the tokens the model may spend reasoning before it answers;
+   * 0 = follow the model's own default. Only meaningful while
+   * aiEnableThinking is on.
+   *
+   * Thinking tokens are billed as output AND share the same max_tokens
+   * budget as the reply, so an uncapped model can spend the whole budget
+   * thinking and leave nothing for the answer. Off by default (0) so
+   * behaviour is unchanged until the user picks a tier.
+   */
+  aiThinkingBudget: number;
   // AI Agent configuration
   aiAgentTrustLevel: number;       // 0 = manual, 1 = semi-auto, 2 = full-auto
   aiAgentMaxIterations: number;    // max agentic loop steps (default 15)
@@ -433,8 +455,23 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiBarOpacity: 80,
   aiMaxTokens: 4096,
   aiTemperature: 0.3,
-  aiContextLines: 50,
+  /**
+   * Pane excerpt lines for the agent's system prompt. Keep this at or
+   * above the slider floor in settings-ai.ts — a lower value gets
+   * clamped by the control, which would then display a different number
+   * from the one actually used. See ai-context-budget.ts.
+   */
+  aiContextLines: 10,
+  /**
+   * Conversation-history token budget feeding the compaction threshold.
+   * 128k lands on the settings slider's 32k step grid, and it
+   * deliberately reproduces the value that used to be hardcoded so that
+   * wiring the setting in does not silently change compaction timing.
+   */
+  aiHistoryBudgetTokens: 128 * 1024,
   aiEnableThinking: true,
+  /** 0 = follow the model's own reasoning-token default. */
+  aiThinkingBudget: 0,
   aiAgentTrustLevel: 0,
   aiAgentMaxIterations: 15,
   searxngUrl: '',

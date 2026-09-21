@@ -51,18 +51,22 @@ export function estimateMessageTokens(messages: ChatMessage[]): number {
  * Auto-compact decision: should we pre-emptively compress history
  * before the NEXT LLM call, based on estimated tokens?
  *
- * Threshold: 75% of (maxModelContext - maxTokens) so we still have
- * headroom for the LLM to generate the reply. Defaults assume a
- * mid-range model (128k context, 4k output); callers should pass
- * model-specific values when known.
+ * Threshold: 75% of (contextBudget − maxOutputTokens − headroom) so we
+ * still have room for the reply. A model's context window is shared by
+ * input and output, hence the subtraction.
+ *
+ * Callers should pass REAL values: `contextBudgetTokens` from the
+ * aiHistoryBudgetTokens setting and `maxOutputTokens` from aiMaxTokens.
+ * The defaults exist only so tests and offline callers work — relying on
+ * them is exactly what previously made aiMaxTokens a no-op here.
  */
 export function shouldAutoCompact(
   messages: ChatMessage[],
-  modelContextTokens = 128_000,
+  contextBudgetTokens = 128_000,
   maxOutputTokens = 4_000,
 ): boolean {
   const headroom = 2_000;
-  const budget = modelContextTokens - maxOutputTokens - headroom;
+  const budget = contextBudgetTokens - maxOutputTokens - headroom;
   const threshold = Math.floor(budget * 0.75);
   return estimateMessageTokens(messages) > threshold;
 }

@@ -12,7 +12,8 @@
 
 import { TerminalRegistry } from './terminal';
 import { DrawerManager } from './drawer';
-import { stripAnsi } from './ai-tools-core';
+import { stripAnsi, TOKEN_BUDGET } from './ai-tools-core';
+import { excerptForPane } from './ai-context-budget';
 import { getLanguage } from './i18n';
 import { TabManager, type Tab } from './tabs';
 import { getAllLeaves } from './split-pane';
@@ -200,28 +201,30 @@ function renderPaneEnv(p: PaneSnapshot): string {
 /** Build the pane-topology section that replaces the old single-pane
  *  "Environment" block. Includes per-pane recent output + closure
  *  notices. */
-function renderTopologySection(ctx: TerminalContext): string {
+function renderTopologySection(ctx: TerminalContext, contextLines: number): string {
   const lines: string[] = [];
   lines.push(`This tab contains ${ctx.panes.length} active pane(s).`);
   lines.push('Pane topology (you can operate on any of them):');
-  for (const p of ctx.panes) {
+  // Every pane draws from one shared character pool: each takes an equal
+  // cut of what is left, so a chatty first pane cannot starve the rest,
+  // and a multi-pane tab cannot inflate the prompt without bound.
+  let remainingChars = TOKEN_BUDGET.systemContextChars;
+  ctx.panes.forEach((p, i) => {
     const tags: string[] = [];
     if (p.isTarget) tags.push('DEFAULT TARGET');
     if (p.isFocused && !p.isTarget) tags.push('user focus');
     const tag = tags.length > 0 ? ` [${tags.join(', ')}]` : '';
     lines.push(`  • ${paneNumberLabel(p.paneNumber)} (pane: ${p.paneNumber})${tag} — ${renderPaneEnv(p)}`);
     if (p.recentOutput) {
-      const excerpt = p.recentOutput
-        .split('\n')
-        .slice(-3)
-        .join('\n')
-        .slice(0, 250);
+      const share = Math.floor(remainingChars / (ctx.panes.length - i));
+      const excerpt = excerptForPane(p.recentOutput, contextLines, share);
+      remainingChars -= excerpt.length;
       if (excerpt.trim()) {
         lines.push('    recent output (tail):');
         for (const line of excerpt.split('\n')) lines.push(`      ${line}`);
       }
     }
-  }
+  });
 
   if (ctx.closureNotices.length > 0) {
     lines.push('');
@@ -237,14 +240,22 @@ function renderTopologySection(ctx: TerminalContext): string {
 export function buildSystemPrompt(
   ctx: TerminalContext,
   hasTools: boolean,
-  opts?: { todoBlock?: string; attachmentsBlock?: string },
+  opts?: {
+    todoBlock?: string;
+    attachmentsBlock?: string;
+    /** Pane excerpt lines, sourced from the user's `aiContextLines` setting. */
+    contextLines?: number;
+  },
 ): string {
   const lang = getLanguage();
   const langInstr = lang === 'zh'
     ? '请使用中文回复用户。'
     : 'Reply in the same language the user uses.';
 
-  const topology = renderTopologySection(ctx);
+  const topology = renderTopologySection(
+    ctx,
+    opts?.contextLines ?? TOKEN_BUDGET.defaultContextLines,
+  );
 
   // Phase 3: persistent task plan injected by ToolAgent. When the
   // todo list has at least one item we render it as its own block so

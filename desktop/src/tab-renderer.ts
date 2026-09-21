@@ -16,6 +16,7 @@ import { loadSettings } from './themes';
 import { TabManager } from './tabs';
 import { TerminalRegistry } from './terminal';
 import { planTabWidths } from './tab-layout';
+import { syncTabMarqueeFor } from './tab-marquee';
 import { DrawerManager } from './drawer';
 import { AICapsuleManager } from './ai-capsule';
 import { getAllLeaves } from './split-pane';
@@ -334,25 +335,9 @@ export function syncTabMarqueeState(): void {
     removeScrollButtons();
   }
 
-  // Marquee animation for individual tabs (unchanged logic)
-  allNodes.forEach((node) => {
-    const primaryEl = node.querySelector('.title-tab-text.primary') as HTMLSpanElement | null;
-    const trackEl = node.querySelector('.title-tab-track') as HTMLSpanElement | null;
-    const trackInnerEl = node.querySelector('.title-tab-track-inner') as HTMLSpanElement | null;
-    const closeEl = node.querySelector('.tab-close') as HTMLSpanElement | null;
-    if (!primaryEl || !trackEl || !trackInnerEl || !closeEl) return;
-
-    const shouldScroll = primaryEl.scrollWidth > trackEl.clientWidth + 2;
-    if (shouldScroll) {
-      const gap = 24;
-      node.style.setProperty('--marquee-shift', `${primaryEl.scrollWidth + gap}px`);
-      node.classList.add('is-overflowing');
-    } else {
-      node.style.removeProperty('--marquee-shift');
-      node.classList.remove('is-overflowing');
-      trackInnerEl.style.transform = 'translateX(0)';
-    }
-  });
+  // Marquee animation for individual tabs. The editor strip deliberately does
+  // not use this — it plans widths so a full host:/path shows whenever it fits.
+  allNodes.forEach((node) => syncTabMarqueeFor(node));
 }
 
 function ensureScrollButtons(scrollContainer: HTMLDivElement): void {

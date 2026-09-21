@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { PROVIDER_PRESETS, fetchModels, type ProviderType, type AIProviderEntry } from './ai-provider';
 import { flushSettingsSecrets } from './settings-secrets';
 import { createSettingsSelect } from './custom-select';
+import { THINKING_BUDGET_TIERS } from './ai-thinking-budget';
 import {
   createPermissionModeRow,
   createPermissionRulesEditor,
@@ -296,6 +297,12 @@ export function createAITab(
     (v) => (v / 10).toFixed(1), (v) => update({ aiTemperature: v / 10 })));
   aiSettingsWrap.appendChild(mkSliderRow(t('aiMaxTokens'), 'ai-tokens-slider', 256, 16384, 256, current.aiMaxTokens,
     (v) => `${v}`, (v) => update({ aiMaxTokens: v })));
+  // Input side of the context split: how much conversation history to
+  // carry before compaction. Paired with aiMaxTokens (the output
+  // reservation) — both feed shouldAutoCompact. Step is 32k, so the
+  // default 128k sits exactly 4 steps up from the floor.
+  aiSettingsWrap.appendChild(mkSliderRow(t('aiHistoryBudget'), 'ai-history-budget-slider', 32 * 1024, 1024 * 1024, 32 * 1024, current.aiHistoryBudgetTokens,
+    (v) => `${Math.round(v / 1024)}k`, (v) => update({ aiHistoryBudgetTokens: v })));
   aiSettingsWrap.appendChild(mkSliderRow(t('aiContextLines'), 'ai-context-slider', 10, 200, 10, current.aiContextLines,
     (v) => `${v}`, (v) => update({ aiContextLines: v })));
 
@@ -314,6 +321,24 @@ export function createAITab(
   thinkCb.onchange = () => update({ aiEnableThinking: thinkCb.checked });
   thinkRow.appendChild(thinkToggle);
   aiSettingsWrap.appendChild(thinkRow);
+
+  // Reasoning-token cap, paired with the toggle above. Sent as a
+  // top-level `thinking_budget` field; "Model default" (0) sends nothing
+  // so the provider keeps its own value.
+  const thinkBudgetRow = document.createElement('div');
+  thinkBudgetRow.className = 'ai-slider-row';
+  thinkBudgetRow.innerHTML = `<label title="${t('aiThinkingBudgetHint')}">${t('aiThinkingBudget')}</label>`;
+  const thinkBudgetSel = createSettingsSelect(
+    THINKING_BUDGET_TIERS.map((tier) => ({
+      value: String(tier.value),
+      label: t(tier.labelKey),
+      selected: current.aiThinkingBudget === tier.value,
+    })),
+  );
+  thinkBudgetSel.el.style.marginLeft = 'auto';
+  thinkBudgetSel.onchange = () => update({ aiThinkingBudget: Number(thinkBudgetSel.value) });
+  thinkBudgetRow.appendChild(thinkBudgetSel.el);
+  aiSettingsWrap.appendChild(thinkBudgetRow);
 
   // Agent divider
   const agentDivider = document.createElement('hr');

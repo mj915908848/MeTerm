@@ -104,8 +104,9 @@ export async function persistMainWindowGeometry(win: TauriWindow = getCurrentWin
   // PiP geometry is transient by design; pip.ts restores the pre-PiP frame itself.
   if (isPipMode) return;
   // Native macOS fullscreen resizes the window to the whole display; that frame
-  // must never become the "preferred" size. fullscreen-mac.ts mirrors the state
-  // onto `fs-mac` (isFullscreen() itself is not in the window capability set).
+  // must never become the "preferred" size. fullscreen-mac.ts mirrors
+  // isFullscreen() onto the `fs-mac` class; this reads the class rather than
+  // calling the API because it is synchronous and needs no IPC round-trip.
   if (document.documentElement.classList.contains('fs-mac')) return;
 
   if (!loadSettings().rememberWindowSize) return;

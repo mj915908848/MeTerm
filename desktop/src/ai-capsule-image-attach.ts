@@ -11,6 +11,17 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AttachedImage, AICapsuleInstance } from './ai-capsule-types';
 import { openImageLightbox } from './ai-image-lightbox';
 import {
+  ALLOWED_IMAGE_MIMES,
+  MAX_IMAGE_RAW_BYTES,
+  MAX_IMAGES,
+  MIN_LONGEST_EDGE,
+  base64DecodedBytes,
+  evaluateAdmission,
+  planShrink,
+  sumEncodedBytes,
+} from './ai-image-budget';
+import { showToast } from './notify';
+import {
   attachFileToInstance,
   pickAttachmentFiles as pickAttachmentFilesImpl,
   isImageFile,
@@ -110,9 +121,7 @@ function wireGlobalPasteOnce(): void {
     if (imgFiles.length > 0) {
       e.preventDefault();
       for (const f of imgFiles) {
-        void blobToAttachedImage(f, f.name).then((img) => {
-          if (img) addPendingImage(instance, img);
-        });
+        void attachBlobToInstance(instance, f, f.name);
       }
       return;
     }
@@ -138,22 +147,36 @@ function wireGlobalPasteOnce(): void {
  * which doesn't expose screenshot bytes via the standard paste API.
  */
 async function tryReadClipboardImageNative(instance: AICapsuleInstance): Promise<void> {
+  let result: {
+    data: string | null;
+    media_type: string | null;
+    width: number;
+    height: number;
+  };
   try {
-    const result = await invoke<{
+    result = await invoke<{
       data: string | null;
       media_type: string | null;
       width: number;
       height: number;
     }>('read_clipboard_image');
-    if (!result.data || !result.media_type) return;
-    addPendingImage(instance, {
-      mediaType: result.media_type as AttachedImage['mediaType'],
-      data: result.data,
-      label: `clipboard-${result.width}x${result.height}.png`,
-    });
   } catch {
     // Silently ignore — fall back to file picker / drag-drop UX.
+    return;
   }
+  if (!result.data || !result.media_type) return;
+
+  // The bridge hands back base64 PNG plus the pasteboard's pixel size, so the
+  // budget gate can weigh it — and shrink it — without decoding it first.
+  // This path used to skip every check and enqueue whatever it got.
+  await admitImage(instance, {
+    mediaType: result.media_type,
+    data: result.data,
+    rawBytes: base64DecodedBytes(result.data),
+    label: `clipboard-${result.width}x${result.height}.png`,
+    width: result.width,
+    height: result.height,
+  });
 }
 
 /**
@@ -192,35 +215,41 @@ export async function pickImageFiles(
 
     let attached = 0;
     for (const path of paths) {
+      const fileName = String(path).split(/[/\\]/).pop() || 'image';
+      const ext = fileName.toLowerCase().split('.').pop() || 'png';
+      const mediaType =
+        ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
+        ext === 'webp' ? 'image/webp' :
+        ext === 'gif' ? 'image/gif' :
+        'image/png';
+
+      let bytes: number[];
       try {
-        const fileName = String(path).split(/[/\\]/).pop() || 'image';
-        const ext = fileName.toLowerCase().split('.').pop() || 'png';
-        const mediaType = (
-          ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' :
-          ext === 'webp' ? 'image/webp' :
-          ext === 'gif' ? 'image/gif' :
-          'image/png'
-        ) as AttachedImage['mediaType'];
-        // Read raw bytes from Rust (5 MB cap to match the in-memory limit).
-        const bytes = await invoke<number[]>('agent_read_file_bytes', {
+        bytes = await invoke<number[]>('agent_read_file_bytes', {
           path,
-          maxBytes: 5 * 1024 * 1024,
+          maxBytes: MAX_IMAGE_RAW_BYTES,
         });
-        const u8 = new Uint8Array(bytes);
-        let bin = '';
-        const CHUNK = 0x8000;
-        for (let i = 0; i < u8.length; i += CHUNK) {
-          bin += String.fromCharCode(...u8.subarray(i, i + CHUNK));
-        }
-        addPendingImage(instance, {
-          mediaType,
-          data: btoa(bin),
-          label: fileName,
-        });
-        attached++;
       } catch {
-        // Skip this file (over size cap, permission denied, etc.)
+        // The bridge refuses rather than truncates, so a failure here means
+        // the file is over the cap (or unreadable). Say so instead of
+        // dropping it silently, which is what used to happen.
+        showToast({
+          title: 'Image not attached',
+          body: `"${fileName}" could not be read — the limit is ${Math.round(
+            MAX_IMAGE_RAW_BYTES / (1024 * 1024),
+          )} MB per image.`,
+        });
+        continue;
       }
+
+      const u8 = new Uint8Array(bytes);
+      const ok = await admitImage(instance, {
+        mediaType,
+        data: encodeBase64(u8),
+        rawBytes: u8.length,
+        label: fileName,
+      });
+      if (ok) attached++;
     }
     return attached;
   } catch {
@@ -251,38 +280,201 @@ export function unregisterInstanceRoot(root: HTMLElement): void {
   if (idx >= 0) _instanceRoots.splice(idx, 1);
 }
 
-const ALLOWED_MIMES = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'image/gif',
-]);
-const MAX_IMAGES = 4;
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB per image
+const ALLOWED_MIMES = new Set<string>(ALLOWED_IMAGE_MIMES);
 
-/**
- * Convert a File/Blob into a base64 string (no data: prefix).
- * Returns null if the MIME type is unsupported or the file is too large.
- */
-export async function blobToAttachedImage(
-  blob: Blob,
-  label?: string,
-): Promise<AttachedImage | null> {
-  if (!ALLOWED_MIMES.has(blob.type)) return null;
-  if (blob.size > MAX_BYTES) return null;
-  const buf = await blob.arrayBuffer();
-  const bytes = new Uint8Array(buf);
-  // Chunked base64 to avoid blowing the stack on large files.
+/** Chunked base64 — a whole multi-megabyte image would blow the call stack. */
+function encodeBase64(bytes: Uint8Array): string {
   let binary = '';
   const CHUNK = 0x8000;
   for (let i = 0; i < bytes.length; i += CHUNK) {
-    const slice = bytes.subarray(i, i + CHUNK);
-    binary += String.fromCharCode(...slice);
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
   }
-  return {
-    mediaType: blob.type as AttachedImage['mediaType'],
-    data: btoa(binary),
+  return btoa(binary);
+}
+
+/** A candidate image, before it is accepted onto the pending queue. */
+interface ImageCandidate {
+  mediaType: string;
+  /** Base64, no data-URI prefix. */
+  data: string;
+  /** Decoded byte length. */
+  rawBytes: number;
+  label?: string;
+  /** Pixel dimensions, when the producer already knows them. */
+  width?: number;
+  height?: number;
+}
+
+function reportRejected(message: string): false {
+  showToast({ title: 'Image not attached', body: message });
+  return false;
+}
+
+/**
+ * Attach a Blob, enforcing the shared image budget.
+ *
+ * Every entry point — the document paste event, the native clipboard
+ * bridge, drag/drop on the AI bar, drag/drop on the side panel, and the
+ * image file picker — funnels through here so they cannot drift apart.
+ * Previously the clipboard bridge checked nothing at all and pushed
+ * whatever the system pasteboard held straight onto the queue, so a Retina
+ * screenshot sailed past the 5 MB guard and blew the bridge's 16 MB
+ * request-body limit with an error that never mentioned images.
+ */
+export async function attachBlobToInstance(
+  instance: AICapsuleInstance,
+  blob: Blob,
+  label?: string,
+): Promise<boolean> {
+  if (!ALLOWED_MIMES.has(blob.type)) {
+    return reportRejected('Unsupported image format — PNG, JPEG, WebP or GIF only.');
+  }
+  const buf = await blob.arrayBuffer();
+  return admitImage(instance, {
+    mediaType: blob.type,
+    data: encodeBase64(new Uint8Array(buf)),
+    rawBytes: buf.byteLength,
     label,
+  });
+}
+
+/**
+ * Admit or shrink a candidate. A size rejection is not final: the image is
+ * re-encoded at progressively smaller sizes first, because attaching a Retina
+ * screenshot is a normal thing to do and refusing it outright would be
+ * unhelpful when it can simply be made smaller.
+ */
+async function admitImage(
+  instance: AICapsuleInstance,
+  cand: ImageCandidate,
+): Promise<boolean> {
+  const queuedEncodedBytes = sumEncodedBytes(instance.pendingImages);
+  const verdict = evaluateAdmission({
+    queuedCount: instance.pendingImages.length,
+    queuedEncodedBytes,
+    mediaType: cand.mediaType,
+    rawBytes: cand.rawBytes,
+    encodedBytes: cand.data.length,
+  });
+
+  if (verdict.admitted) {
+    pushCandidate(instance, cand);
+    return true;
+  }
+
+  if (verdict.canShrink) {
+    const shrunk = await shrinkToFit(instance, cand, queuedEncodedBytes);
+    if (shrunk) {
+      pushCandidate(instance, shrunk);
+      return true;
+    }
+    return reportRejected(
+      `Still too large at ${MIN_LONGEST_EDGE}px — resize it further, or attach fewer images.`,
+    );
+  }
+
+  return reportRejected(verdict.message);
+}
+
+function pushCandidate(instance: AICapsuleInstance, cand: ImageCandidate): void {
+  addPendingImage(instance, {
+    mediaType: cand.mediaType as AttachedImage['mediaType'],
+    data: cand.data,
+    label: cand.label,
+  });
+}
+
+async function shrinkToFit(
+  instance: AICapsuleInstance,
+  cand: ImageCandidate,
+  otherEncodedBytes: number,
+): Promise<ImageCandidate | null> {
+  const source = await loadCandidateImage(cand);
+  if (!source) return null;
+  const width = cand.width || source.naturalWidth;
+  const height = cand.height || source.naturalHeight;
+  if (!width || !height) return null;
+
+  const plan = planShrink({
+    longestEdge: Math.max(width, height),
+    otherEncodedBytes,
+  });
+
+  for (const edge of plan.edges) {
+    const out = reencode(source, cand, width, height, edge);
+    if (!out) continue;
+    const verdict = evaluateAdmission({
+      queuedCount: instance.pendingImages.length,
+      queuedEncodedBytes: otherEncodedBytes,
+      mediaType: out.mediaType,
+      rawBytes: out.rawBytes,
+      encodedBytes: out.data.length,
+    });
+    if (verdict.admitted) return out;
+  }
+  return null;
+}
+
+function loadCandidateImage(cand: ImageCandidate): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = `data:${cand.mediaType};base64,${cand.data}`;
+  });
+}
+
+/**
+ * Redraw the image at `longestEdge`. PNG stays PNG: it is lossless, and a
+ * screenshot is precisely the case where terminal text has to stay legible.
+ * JPEG and WebP keep their own format at high quality.
+ */
+function reencode(
+  source: HTMLImageElement,
+  cand: ImageCandidate,
+  width: number,
+  height: number,
+  longestEdge: number,
+): ImageCandidate | null {
+  const scale = longestEdge / Math.max(width, height);
+  const outW = Math.max(1, Math.round(width * scale));
+  const outH = Math.max(1, Math.round(height * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = outW;
+  canvas.height = outH;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(source, 0, 0, outW, outH);
+
+  let mime: string;
+  let quality: number | undefined;
+  if (cand.mediaType === 'image/png') {
+    mime = 'image/png';
+    quality = undefined;
+  } else if (cand.mediaType === 'image/webp') {
+    mime = 'image/webp';
+    quality = 0.9;
+  } else {
+    mime = 'image/jpeg';
+    quality = 0.9;
+  }
+
+  let url: string;
+  try {
+    url = quality === undefined ? canvas.toDataURL(mime) : canvas.toDataURL(mime, quality);
+  } catch {
+    return null;
+  }
+  const comma = url.indexOf(',');
+  if (comma < 0) return null;
+  const data = url.slice(comma + 1);
+  if (!data) return null;
+  return {
+    mediaType: mime,
+    data,
+    rawBytes: base64DecodedBytes(data),
+    label: cand.label,
   };
 }
 
@@ -520,9 +712,7 @@ export function wireImageAttachmentHandlers(
     for (const f of Array.from(e.dataTransfer.files)) {
       // Images ride the multimodal content path…
       if (isImageFile(f)) {
-        void blobToAttachedImage(f, f.name).then((img) => {
-          if (img) addPendingImage(instance, img);
-        });
+        void attachBlobToInstance(instance, f, f.name);
         continue;
       }
       // …everything else goes through the generic file-attachment path
@@ -561,9 +751,7 @@ export function registerSidePanelForPaste(
     e.preventDefault();
     for (const f of Array.from(e.dataTransfer.files)) {
       if (isImageFile(f)) {
-        void blobToAttachedImage(f, f.name).then((img) => {
-          if (img) addPendingImage(instance, img);
-        });
+        void attachBlobToInstance(instance, f, f.name);
       } else {
         void attachFileToInstance(instance, f);
       }

@@ -13,6 +13,7 @@ import { EditorState, Compartment, type Extension } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { createOverlayScrollbar } from './overlay-scrollbar';
+import { planTabWidths } from './tab-layout';
 import { renderMarkdown, isImageFile } from './file-editor-md';
 import {
   getEditorLanguage as getLang,
@@ -41,6 +42,17 @@ import {
   type EditorSaveResult,
   type EditorTabClosed,
 } from './file-editor-events';
+import {
+  readText as clipboardReadText,
+  writeText as clipboardWriteText,
+} from '@tauri-apps/plugin-clipboard-manager';
+import {
+  buildEditorMenu,
+  buildEditorTabMenu,
+  detectMacPlatform,
+  type EditorMenuCommand,
+} from './editor-menu-model';
+import { showEditorContextMenu } from './editor-context-menu';
 
 interface TabInfo {
   tabId: string;
@@ -427,23 +439,89 @@ function setSaveBtnState(state: 'saving' | 'saved' | 'failed' | 'timeout'): void
   }
 }
 
+// ── Tab strip widths ──
+//
+// Editor tabs show their full `host:/path` whenever the row can hold it and trim
+// only under pressure. The opposite default applies app-wide: `.title-tab` caps
+// itself at 340px for the toolbar's short connection names, which is far too
+// narrow for a path — file-editor.css lifts that cap for this strip.
+//
+// The allocation itself is planTabWidths(), shared with the window tab strip, so
+// both rows water-fill the same way: short labels keep their natural width while
+// the longest ones are trimmed to a uniform cap, and only when even the floors do
+// not fit does the row scroll.
+
+/** Text a tab may shrink to before the row scrolls (≈3 CJK / 6 Latin at 12px). */
+const EDITOR_MIN_TEXT_WIDTH = 44;
+/** Keeps the last glyph clear of the close button. */
+const EDITOR_TEXT_TAIL_SLACK = 6;
+
+function applyEditorTabWidths(): void {
+  const nodes = Array.from(tabBarEl.querySelectorAll('.title-tab')) as HTMLButtonElement[];
+  if (nodes.length === 0) return;
+
+  const barStyle = getComputedStyle(tabBarEl);
+  const gap = Number.parseFloat(barStyle.columnGap) || 0;
+  const available = Math.max(
+    0,
+    tabBarEl.clientWidth
+      - (Number.parseFloat(barStyle.paddingLeft) || 0)
+      - (Number.parseFloat(barStyle.paddingRight) || 0),
+  );
+
+  // Everything that is not the title: padding, borders and the close button.
+  // Measured rather than assumed, so it stays correct if any of them changes.
+  const measured = nodes.map((node) => {
+    const style = getComputedStyle(node);
+    const paddingX = (Number.parseFloat(style.paddingLeft) || 0)
+      + (Number.parseFloat(style.paddingRight) || 0);
+    const borderX = (Number.parseFloat(style.borderLeftWidth) || 0)
+      + (Number.parseFloat(style.borderRightWidth) || 0);
+    const closeEl = node.querySelector('.tab-close') as HTMLElement | null;
+    const closeWidth = closeEl ? closeEl.offsetWidth : 0;
+    const chrome = paddingX + borderX + closeWidth;
+    const slack = closeWidth > 0 ? EDITOR_TEXT_TAIL_SLACK : 0;
+    // scrollWidth reports the title's full width even while it is ellipsised.
+    const textWidth = node.querySelector('.title-tab-text')?.scrollWidth ?? 0;
+    return {
+      full: Math.ceil(textWidth + chrome + slack),
+      min: Math.ceil(Math.min(textWidth, EDITOR_MIN_TEXT_WIDTH) + chrome + slack),
+    };
+  });
+
+  const plan = planTabWidths({
+    fullWidths: measured.map((m) => m.full),
+    minWidths: measured.map((m) => m.min),
+    available,
+    gap,
+  });
+
+  nodes.forEach((node, index) => {
+    node.style.width = `${plan.widths[index]}px`;
+  });
+}
+
 function renderTabs(): void {
   tabBarEl.innerHTML = '';
   for (const [id, tab] of tabs) {
     const isActive = id === activeTabId;
+    const label = `${tab.isDirty ? '● ' : ''}${tab.host}:${tab.filePath}`;
     const btn = document.createElement('button');
     btn.className = `title-tab${isActive ? ' active' : ''}`;
     btn.title = `${tab.host}:${tab.filePath}`;
+    // Lets a right-click on the tab find out which tab it landed on.
+    btn.dataset.tabId = id;
     btn.addEventListener('click', () => void activateTab(id));
+    // One text node inside the clipping track: `.title-tab-text` caps itself at
+    // 100% of the track, so the ellipsis appears exactly when the planned width
+    // is narrower than the label. No marquee duplicate — the row prefers full
+    // paths and shrinks under pressure instead (see applyEditorTabWidths).
     const trackOuter = document.createElement('span');
     trackOuter.className = 'title-tab-track';
-    const trackInner = document.createElement('span');
-    trackInner.className = 'title-tab-track-inner';
     const textSpan = document.createElement('span');
     textSpan.className = 'title-tab-text';
-    textSpan.textContent = `${tab.isDirty ? '● ' : ''}${tab.host}:${tab.filePath}`;
-    trackInner.appendChild(textSpan);
-    trackOuter.appendChild(trackInner);
+    textSpan.textContent = label;
+    trackOuter.appendChild(textSpan);
     btn.appendChild(trackOuter);
     const closeBtn = document.createElement('span');
     closeBtn.className = 'tab-close';
@@ -452,6 +530,8 @@ function renderTabs(): void {
     btn.appendChild(closeBtn);
     tabBarEl.appendChild(btn);
   }
+  // Must run after insertion: the measurement reads scrollWidth off live nodes.
+  applyEditorTabWidths();
 }
 
 function updateWindowTitle(): void {
@@ -550,7 +630,7 @@ function updateStatusBar(): void {
     const formatBtn = document.createElement('button');
     formatBtn.id = 'editor-format-btn';
     formatBtn.className = 'editor-format-btn';
-    formatBtn.textContent = '格式化';
+    formatBtn.textContent = t('editorFormat');
     formatBtn.title = 'Shift+Alt+F';
     formatBtn.addEventListener('click', () => formatActiveTab());
     statusBarEl.appendChild(formatBtn);
@@ -830,6 +910,179 @@ function handleSaveResult(result: EditorSaveResult): void {
   if (result.tabId === activeTabId) setSaveBtnState(result.success ? 'saved' : 'failed');
 }
 
+// ── Right-click menu ──
+//
+// This window owns its context menu rather than letting WebKit supply one. The
+// default menu's labels come from the system (English regardless of the app
+// language), and its "Reload" discards this window's entire view state while the
+// main window's file bridge keeps believing the tab is still open — after which
+// reopening that file only ever shows "Loading...". See editor-menu-model.ts.
+
+/** Text selected in the tab's editor, or '' when the view holds no selection. */
+function selectedText(tab: TabInfo): string {
+  const view = tab.editorView;
+  if (!view) return '';
+  const range = view.state.selection.main;
+  return range.empty ? '' : view.state.sliceDoc(range.from, range.to);
+}
+
+/** Language id after the user's manual override — same rule as the status bar. */
+function effectiveLang(tab: TabInfo): string {
+  return tab.forcedLang
+    || getLang(tab.fileName, tab.editorView?.state.doc.toString() ?? tab.content);
+}
+
+async function copySelection(tab: TabInfo): Promise<void> {
+  const text = selectedText(tab);
+  if (text) await clipboardWriteText(text);
+}
+
+async function cutSelection(tab: TabInfo): Promise<void> {
+  const view = tab.editorView;
+  const text = selectedText(tab);
+  if (!view || !text) return;
+  // Clipboard first: if the write rejects, the text must not already be gone.
+  await clipboardWriteText(text);
+  view.dispatch(view.state.replaceSelection(''));
+  view.focus();
+}
+
+async function pasteIntoSelection(tab: TabInfo): Promise<void> {
+  const view = tab.editorView;
+  if (!view) return;
+  const text = await clipboardReadText();
+  if (!text) return;
+  view.dispatch(view.state.replaceSelection(text));
+  view.focus();
+}
+
+function selectAllText(tab: TabInfo): void {
+  const view = tab.editorView;
+  if (!view) return;
+  view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+  view.focus();
+}
+
+/**
+ * Close a batch of tabs, stopping at the first one that refuses.
+ *
+ * `closeTab` asks before discarding unsaved edits and simply returns when the
+ * answer is no. Without the re-check below the loop would carry on and close the
+ * remaining tabs behind that decision, so `tabs` is read again after each await.
+ */
+async function closeTabsByIds(ids: readonly string[], keepActiveId?: string): Promise<void> {
+  for (const id of ids) {
+    if (!tabs.has(id)) continue;
+    await closeTab(id);
+    if (tabs.has(id)) return;
+  }
+  if (keepActiveId && tabs.has(keepActiveId)) void activateTab(keepActiveId);
+}
+
+function runEditorMenuCommand(command: EditorMenuCommand, targetTabId?: string): void {
+  const tab = targetTabId
+    ? tabs.get(targetTabId)
+    : (activeTabId ? tabs.get(activeTabId) : null);
+  if (!tab) return;
+  // The tab menu acts on the tab that was clicked, which need not be the active
+  // one, so the ordering comes from the live map rather than from activeTabId.
+  const order = [...tabs.keys()];
+  const index = order.indexOf(tab.tabId);
+  switch (command) {
+    case 'cut': void cutSelection(tab); return;
+    case 'copy': void copySelection(tab); return;
+    case 'paste': void pasteIntoSelection(tab); return;
+    case 'selectAll': selectAllText(tab); return;
+    case 'save': saveTab(tab.tabId); return;
+    case 'closeTab': void closeTab(tab.tabId); return;
+    case 'closeOthers':
+      void closeTabsByIds(order.filter((id) => id !== tab.tabId), tab.tabId);
+      return;
+    case 'closeLeft':
+      void closeTabsByIds(order.slice(0, index), tab.tabId);
+      return;
+    case 'closeRight':
+      void closeTabsByIds(order.slice(index + 1), tab.tabId);
+      return;
+    // The last close shuts the window, which is what an empty editor window
+    // would amount to anyway.
+    case 'closeAll': void closeTabsByIds(order); return;
+    case 'wordWrap': toggleWrapLines(tab); return;
+    case 'mdPreview': void toggleMdPreview(tab); return;
+    case 'format': formatActiveTab(); return;
+  }
+}
+
+function openEditorContextMenu(event: MouseEvent): void {
+  const target = event.target as HTMLElement | null;
+  // A right-click in the title bar is about tabs, not about the document: on a
+  // tab it targets that tab, anywhere else along the bar it targets the active
+  // one. The editor body and the status bar keep the document menu.
+  const tabEl = target?.closest?.('.title-tab') as HTMLElement | null;
+  const onTitleBar = tabEl !== null || target?.closest?.('.editor-tab-bar') != null;
+
+  const tab = tabEl?.dataset.tabId
+    ? tabs.get(tabEl.dataset.tabId) ?? null
+    : (activeTabId ? tabs.get(activeTabId) : null);
+
+  if (!tab) {
+    // Nothing to act on — but still keep WebKit's default menu out of this window.
+    event.preventDefault();
+    return;
+  }
+
+  if (onTitleBar) {
+    const order = [...tabs.keys()];
+    showEditorContextMenu(
+      event,
+      buildEditorTabMenu(
+        { tabIndex: order.indexOf(tab.tabId), tabCount: order.length },
+        detectMacPlatform(navigator.userAgent),
+      ),
+      (command) => runEditorMenuCommand(command, tab.tabId),
+    );
+    return;
+  }
+
+  const range = tab.editorView?.state.selection.main;
+  showEditorContextMenu(
+    event,
+    buildEditorMenu(
+      {
+        isImage: tab.isImage,
+        hasSelection: !!range && !range.empty,
+        isMarkdown: effectiveLang(tab) === 'md',
+        wrapLines: tab.wrapLines,
+        previewOpen: tab.previewOpen,
+        canFormat: canFormat(tab),
+      },
+      detectMacPlatform(navigator.userAgent),
+    ),
+    (command) => runEditorMenuCommand(command),
+  );
+}
+
+/**
+ * Identifies this *page load* of the editor window, and changes whenever the
+ * view is rebuilt. The owner windows keep their own record of it so they can
+ * tell that the tabs they think are on screen no longer exist; see the pong
+ * handler in file-editor-bridge.ts.
+ *
+ * Minted lazily: a throw here must never be able to stop the module from
+ * loading, and the fallback simply fails validation on the other side, which is
+ * read as "no information" rather than "new view".
+ */
+let editorViewInstanceId: string | null = null;
+function currentEditorViewId(): string {
+  if (editorViewInstanceId) return editorViewInstanceId;
+  try {
+    editorViewInstanceId = crypto.randomUUID();
+  } catch {
+    editorViewInstanceId = `view-${Date.now().toString(36)}`;
+  }
+  return editorViewInstanceId;
+}
+
 async function installEditorEventListeners(): Promise<void> {
   // Register all data handlers before answering the readiness handshake. This
   // guarantees the first open/content event cannot be lost during startup.
@@ -851,7 +1104,10 @@ async function installEditorEventListeners(): Promise<void> {
     const payload = event.payload;
     if (!payload || !isSafeEditorWindowLabel(payload.ownerLabel)
         || !isValidEditorNonce(payload.requestId)) return;
-    void emitTo(payload.ownerLabel, EDITOR_PONG_EVENT, { requestId: payload.requestId });
+    void emitTo(payload.ownerLabel, EDITOR_PONG_EVENT, {
+      requestId: payload.requestId,
+      viewId: currentEditorViewId(),
+    });
   });
 }
 
@@ -893,5 +1149,13 @@ export async function initEditorContent(): Promise<void> {
   });
 
   await installEditorEventListeners();
+
+  // One listener for the whole window — tab strip, editor body and status bar
+  // alike — so WebKit's default menu can never surface anywhere in it.
+  document.addEventListener('contextmenu', openEditorContextMenu);
+
+  // Re-plan on resize: a wider window can show more of each path.
+  window.addEventListener('resize', () => requestAnimationFrame(applyEditorTabWidths));
+
   await revealAfterPaint(getCurrentWindow().label);
 }

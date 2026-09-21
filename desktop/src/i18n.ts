@@ -291,8 +291,15 @@ export interface Translations {
   aiTemperature: string;
   aiMaxTokens: string;
   aiContextLines: string;
+  aiHistoryBudget: string;
   aiEnableThinking: string;
   aiEnableThinkingHint: string;
+  aiThinkingBudget: string;
+  aiThinkingBudgetHint: string;
+  aiThinkingBudgetDefault: string;
+  aiThinkingBudgetLow: string;
+  aiThinkingBudgetMedium: string;
+  aiThinkingBudgetHigh: string;
   aiThinkingOn: string;
   aiThinkingOff: string;
   aiAgentTrustLevel: string;
@@ -349,6 +356,7 @@ export interface Translations {
   aiServerErrorRetry: string;
   aiNetworkRetry: string;
   aiContextCompressed: string;
+  aiContextCompressedOverflow: string;
   aiThinking: string;
   aiWorking: string;
   aiStopGenerating: string;
@@ -767,6 +775,13 @@ export interface Translations {
   editorMdPreview: string;
   editorMdPreviewOff: string;
   editorWordWrap: string;
+  editorCut: string;
+  editorCopy: string;
+  editorPaste: string;
+  editorSelectAll: string;
+  editorSave: string;
+  editorCloseTab: string;
+  editorFormat: string;
 }
 
 const translations: Record<Language, Translations> = {
@@ -1060,8 +1075,15 @@ const translations: Record<Language, Translations> = {
     aiTemperature: 'Temperature',
     aiMaxTokens: 'Max Tokens',
     aiContextLines: 'Context Lines',
+    aiHistoryBudget: 'History Budget',
     aiEnableThinking: 'Thinking Mode',
     aiEnableThinkingHint: 'Ask thinking-mode models (DeepSeek V4, Qwen3, GLM, MiMo, etc.) to reason before answering. Ignored by plain OpenAI / Anthropic / Gemini.',
+    aiThinkingBudget: 'Thinking Budget',
+    aiThinkingBudgetHint: 'Caps the tokens spent reasoning before the answer. Thinking tokens share the max-tokens budget with the reply, so an uncapped model can crowd the answer out. "Model default" sends no cap at all.',
+    aiThinkingBudgetDefault: 'Model default',
+    aiThinkingBudgetLow: 'Low (4k)',
+    aiThinkingBudgetMedium: 'Medium (16k)',
+    aiThinkingBudgetHigh: 'High (32k)',
     aiThinkingOn: 'Thinking on',
     aiThinkingOff: 'Thinking off',
     aiPermissionMode: 'Permission Mode',
@@ -1118,6 +1140,7 @@ const translations: Record<Language, Translations> = {
     aiServerErrorRetry: 'Server error, retrying',
     aiNetworkRetry: 'Network blip, retrying',
     aiContextCompressed: 'Context compressed to fit model limits',
+    aiContextCompressedOverflow: 'Context exceeded the model limit — compressed and retrying',
     aiThinking: 'Thinking',
     aiWorking: 'Working',
     aiStopGenerating: 'Stop',
@@ -1534,6 +1557,13 @@ const translations: Record<Language, Translations> = {
     editorMdPreview: 'Preview',
     editorMdPreviewOff: 'Hide Preview',
     editorWordWrap: 'Wrap',
+    editorCut: 'Cut',
+    editorCopy: 'Copy',
+    editorPaste: 'Paste',
+    editorSelectAll: 'Select All',
+    editorSave: 'Save',
+    editorCloseTab: 'Close Tab',
+    editorFormat: 'Format',
   },
   zh: {
     appName: 'MeTerm',
@@ -1825,8 +1855,15 @@ const translations: Record<Language, Translations> = {
     aiTemperature: '温度',
     aiMaxTokens: '最大 Token',
     aiContextLines: '上下文行数',
+    aiHistoryBudget: '历史预算',
     aiEnableThinking: '思考模式',
     aiEnableThinkingHint: '启用后会让支持思考模式的模型（DeepSeek V4、Qwen3、GLM、MiMo 等）先推理再回答。OpenAI / Anthropic / Gemini 等不支持此参数的厂商会忽略。',
+    aiThinkingBudget: '思考预算',
+    aiThinkingBudgetHint: '限制模型在作答前花在推理上的 token 数。思考 token 与答案共用「最大 Token」预算，不设上限时可能把答案挤没。选「跟随模型」则完全不发该参数。',
+    aiThinkingBudgetDefault: '跟随模型',
+    aiThinkingBudgetLow: '低（4k）',
+    aiThinkingBudgetMedium: '中（16k）',
+    aiThinkingBudgetHigh: '高（32k）',
     aiThinkingOn: '思考已开启',
     aiThinkingOff: '思考已关闭',
     aiPermissionMode: '权限模式',
@@ -1883,6 +1920,7 @@ const translations: Record<Language, Translations> = {
     aiServerErrorRetry: '服务暂时不可用，正在重试',
     aiNetworkRetry: '网络异常，正在重试',
     aiContextCompressed: '上下文已压缩以适应模型限制',
+    aiContextCompressedOverflow: '上下文超出模型上限，已压缩后重试',
     aiThinking: '思考中',
     aiWorking: '工作中',
     aiStopGenerating: '停止',
@@ -2299,6 +2337,13 @@ const translations: Record<Language, Translations> = {
     editorMdPreview: '预览',
     editorMdPreviewOff: '关闭预览',
     editorWordWrap: '换行',
+    editorCut: '剪切',
+    editorCopy: '复制',
+    editorPaste: '粘贴',
+    editorSelectAll: '全选',
+    editorSave: '保存',
+    editorCloseTab: '关闭标签',
+    editorFormat: '格式化',
   },
 };
 

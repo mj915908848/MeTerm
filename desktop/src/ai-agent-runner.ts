@@ -96,7 +96,11 @@ function dispatchEvent(ev: AgentEvent, cb: AgentCallbacks): void {
       cb.onRetrying?.(ev.attempt, ev.maxAttempts, ev.delayMs, ev.reason);
       break;
     case 'context_compressed':
-      cb.onContextCompressed?.();
+      cb.onContextCompressed?.({
+        reason: ev.reason,
+        beforeMessageCount: ev.beforeMessageCount,
+        afterMessageCount: ev.afterMessageCount,
+      });
       break;
     case 'error':
       cb.onError(ev.error);

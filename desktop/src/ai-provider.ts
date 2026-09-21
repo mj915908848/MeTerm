@@ -3,6 +3,7 @@
 // with SSE streaming support.
 
 import { invoke, Channel } from '@tauri-apps/api/core';
+import { thinkingFieldsFor } from './ai-thinking-budget';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -99,6 +100,14 @@ export interface AIProviderConfig {
    * the call site (settings.aiEnableThinking).
    */
   enableThinking?: boolean;
+  /**
+   * Cap on the tokens the model may spend reasoning before it answers.
+   * Sent as a top-level `thinking_budget` field alongside
+   * enable_thinking; omitted or 0 leaves the provider's own default in
+   * place. Only meaningful while enableThinking is on — thinking tokens
+   * are billed as output and share max_tokens with the reply.
+   */
+  thinkingBudget?: number;
 }
 
 export interface AIProvider {
@@ -395,19 +404,14 @@ class OpenAIProvider implements AIProvider {
       stream: true,
     };
 
-    // Thinking-mode toggle. Different providers use different field
-    // names; we send all of them and let each provider read the one
-    // it knows. Unknown extras are ignored by OpenAI, Anthropic,
-    // Gemini and Z.AI (verified per their docs).
-    //   - DeepSeek V4 / Z.AI GLM: `thinking: { type: enabled|disabled }`
-    //   - Qwen3 / DashScope:      `enable_thinking: true|false`
-    //   - vLLM-served Qwen3:      `chat_template_kwargs.enable_thinking`
-    if (typeof this.config.enableThinking === 'boolean') {
-      const on = this.config.enableThinking;
-      body.thinking = { type: on ? 'enabled' : 'disabled' };
-      body.enable_thinking = on;
-      body.chat_template_kwargs = { enable_thinking: on };
-    }
+    // Thinking-mode toggle + optional reasoning-token cap. The field
+    // names, the tier list, and the "only cap it while thinking is on"
+    // rule all live in ai-thinking-budget.ts so the settings UI can
+    // never drift from what actually goes on the wire.
+    Object.assign(
+      body,
+      thinkingFieldsFor(this.config.enableThinking, this.config.thinkingBudget),
+    );
 
     if (tools && tools.length > 0) {
       body.tools = tools.map((t) => ({

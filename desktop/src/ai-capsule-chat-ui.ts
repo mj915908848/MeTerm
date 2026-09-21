@@ -501,8 +501,16 @@ export function buildAgentCallbacks(
         : t('aiServerErrorRetry');
       appendSystemNotice(instance, `${reasonText} (${attempt}/${maxAttempts})`);
     },
-    onContextCompressed: () => {
-      appendSystemNotice(instance, t('aiContextCompressed'));
+    onContextCompressed: (info) => {
+      // Distinguish "we compressed proactively" from "the provider
+      // rejected the request as too long and we rescued it".
+      const label = info.reason === 'overflow'
+        ? t('aiContextCompressedOverflow')
+        : t('aiContextCompressed');
+      appendSystemNotice(
+        instance,
+        `${label} (${info.beforeMessageCount} → ${info.afterMessageCount})`,
+      );
     },
     // NOTE: task-plan updates are delivered by the persistent listener
     // installed via attachPersistentTodoListener — not through this

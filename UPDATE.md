@@ -1,5 +1,61 @@
 # MeTerm 更新记录
 
+## v0.2.16
+
+### 新功能
+
+- **编辑器窗口自带右键菜单** — 此前在任何位置右键都会弹出 WebKit 的系统默认菜单（Reload / Share / Inspect Element / AutoFill），文字由系统提供、不随界面语言变化，一直是英文。现在由应用接管：在编辑正文或状态栏弹出文档菜单（剪切 / 复制 / 粘贴 / 全选 / 保存 / 关闭标签 / 换行 / Markdown 预览 / 格式化），在标签上弹出标签菜单（关闭此标签 / 关闭其他标签 / 关闭左侧标签 / 关闭右侧标签 / 关闭所有标签），标题栏空白处作用于当前活动标签。菜单样式复用主窗口那套，视觉一致。
+- **编辑器标签栏优先完整显示路径** — 标签此前继承了主窗口为工具栏调的 340px 上限，长路径必然被截断，跟这一行还剩多少空间无关；改用主窗口那套水位法分配（`planTabWidths`）：放得下就全部完整显示，不够时只收窄最长的那些，连地板都放不下才横向滚动。
+- **图片粘贴/拖入接入统一的体积预算** — 五条入口（document 粘贴、原生剪切板桥、两处拖放、文件选择器）统一走同一道闸门；超预算先用 canvas 按阶梯重编码、每步以真实编码长度重过闸，PNG 保持 PNG 以保文字清晰，GIF 不重编码以免丢帧。此前剪切板路径完全没有校验，且前端允许的 4×5MB 经 base64 膨胀后必然撞上后端 16MB 请求体上限，报错却只说 "AI request body is too large"。
+- **AI 上下文行数、历史预算与思考预算真正生效** — 「上下文行数」此前是个死设置（六处引用全是类型与文案，没有任何业务代码读它），Agent 固定抓 80 行、渲染层又二次截成每面板 3 行；现在抓取与渲染同源读设置值。新增「历史预算」（此前压缩阈值恒按 128k 窗口 / 4k 输出硬编码，"最大 Token"设置对压缩时机毫无影响）与「思考预算」三档（默认"跟随模型"= 不发参数，零行为变更）。
+- **上下文压缩提示带数量并可见** — 提示早已存在，只是被 10px 字号 + 0.6 透明度 + 次要色三重弱化基本藏住；现在文案为「上下文已压缩以适应模型限制 (42 → 8)」，并区分主动压缩与溢出后重试。
+
+### 问题修复 / 优化
+
+- **编辑器窗口无法关闭** — `capabilities/editor.json` 给了 `core:window:allow-close` 却没给 `core:window:allow-destroy`，而 Tauri 的 `close()` 流程末尾会走 `destroy()`，请求被窗口自己的权限白名单拒绝：点 × 纹丝不动、也不弹框。该文件出自上游 v0.2.12，属上游漏配。
+- **编辑器视图重建后同一文件永久卡在"加载中"** — 编辑器标签的事实源在主窗口（`file-editor-bridge.ts`），而 `EDITOR_WINDOW_CLOSED_EVENT` 只在真正关窗时发出；视图被重建（reload、webview 进程重启）时主窗口毫不知情，再点同一文件会走"已存在标签"分支、只重发打开事件而不排队读取。现在编辑器在握手里带上「视图实例 id」，主窗口发现 id 变了就清掉陈旧记录，重新打开即正常加载。
+- **标签菜单批量关闭尊重用户的否决** — `closeTab` 对未保存改动弹确认、取消时只是安静返回；批量关闭现在每次之后都重新确认标签确实关掉了，一旦被否决立刻中止整批，而不是把剩下的标签在用户说"不"之后继续关掉。
+- **剪切先写剪贴板再删文字** — 依赖已废弃的 `execCommand` 改为直接改 CodeMirror state；写入失败时不能先把内容弄丢。
+- **状态栏「格式化」按钮写死中文** — 英文界面下也显示中文，改为走 i18n。
+- **工具确认对可选的 abort signal 改判空** — 原先 `toolCtx.abortSignal!` 非空断言把可选字段当成必填；无头与测试驱动未必挂 signal，改为显式分支。
+
+### 验证
+
+- 前端单测 253 项全通过（新增 55 项：菜单模型 23、标签宽度守卫 8、视图身份判定 9、图片体积预算 15）、`npx tsc --noEmit` 无错误、`npm run build` 通过
+- 编辑器右键菜单、标签完整显示路径、视图自愈均在 macOS 实机验收；标签宽度改动附带读源码的守卫测试，并把 `flex: 0 0 auto` 故意改坏验证过守卫确实会失败
+- 阿里云 Token Plan 是否透传 `thinking_budget` 尚未实测（第三方网关文档称 `deepseek-v4.1-flash` 支持、默认 32768，大于本项目 `max_tokens`，是长回答被截断的可疑根因）
+- 图片降采样的真机表现（Retina 全屏截图粘贴）尚未实测
+
+---
+
+## Changelog (English)
+
+### What's New
+
+- **The editor window owns its context menu** — Right-clicking anywhere used to produce WebKit's default menu (Reload / Share / Inspect Element / AutoFill); those labels come from the system, follow the localisations the app declares (this bundle declares none), and so stayed English whatever the UI language was. The app now takes over: the editor body and status bar get a document menu (cut / copy / paste / select all / save / close tab / word wrap / Markdown preview / format), a tab gets a tab menu (close tab / close others / close left / close right / close all), and the bare title bar acts on the active tab. The chrome is the same one the main window uses, so the two look alike.
+- **Editor tabs show a full path rather than clipping one** — Tabs inherited the toolbar's 340px cap, so a long path was always clipped no matter how much room the row had. They now use the same water-filling allocation as the window strip (`planTabWidths`): show every path in full when the row can hold them, trim only the longest when it cannot, and scroll only when even the floors do not fit.
+- **Image paste and drop go through one size budget** — All five entry points (document paste, the native clipboard bridge, both drag-and-drop surfaces, the file picker) share a single gate; over-budget images are re-encoded down a ladder with each step re-checked on its real encoded length, PNG stays PNG to keep terminal text crisp, and GIF is never re-encoded so the animation survives. The clipboard path previously had no check at all, and the 4×5MB the front end allowed grew past the backend's 16MB request-body cap once base64-expanded, surfacing only as "AI request body is too large".
+- **AI context lines, history budget and thinking budget now take effect** — "Context lines" was a dead setting (six references, all type/label/default; no consumer), with the Agent hardcoded to fetch 80 lines and the renderer cutting that to 3 lines per pane; capture and rendering now read the same value. A new "history budget" replaces the hardcoded 128k window / 4k output reservation that made the max-tokens setting irrelevant to compaction, and a three-tier "thinking budget" defaults to "follow the model", which sends no parameter at all.
+- **The compaction notice carries counts and is actually visible** — The notice already existed but was hidden by 10px type at 0.6 opacity in a secondary colour; it now reads "context compressed to fit model limits (42 → 8)" and distinguishes proactive compaction from overflow rescue.
+
+### Bug Fixes
+
+- **The editor window could not be closed** — `capabilities/editor.json` granted `core:window:allow-close` but not `core:window:allow-destroy`, and Tauri's `close()` flow ends in `destroy()`, so the request was rejected by the window's own allow-list: the × did nothing and no dialog appeared. The file dates from upstream v0.2.12 and is an upstream omission.
+- **Reopening a file after the editor view was rebuilt stuck on "Loading…" forever** — The open-tab record lives in the main window (`file-editor-bridge.ts`), while `EDITOR_WINDOW_CLOSED_EVENT` only fires on a real close, so a rebuilt view (reload, webview restart) went unnoticed and the same file took the already-open shortcut without queueing a read. The editor now stamps a view-instance id on every handshake; when the id changes the owner drops its stale record and the file loads normally.
+- **Batch tab closing respects a veto** — `closeTab` prompts before discarding unsaved edits and silently returns on cancel; batch closing now re-checks after each await that the tab really went away and stops the whole batch the moment one is refused, instead of closing the rest behind the user's back.
+- **Cut writes to the clipboard before removing the text** — The deprecated `execCommand` path is replaced with direct CodeMirror state edits, so a failed clipboard write cannot lose the content first.
+- **The status bar's format button had a hardcoded Chinese label** — It read Chinese even in the English UI; it now goes through i18n.
+- **Tool confirmation branches on the optional abort signal** — `toolCtx.abortSignal!` treated an optional field as required; headless and test drivers need not attach one, so the call now branches explicitly.
+
+### Validation
+
+- Front-end unit tests: 253 passing (55 new: 23 menu model, 8 tab-width guards, 9 view-identity, 15 image budget), `npx tsc --noEmit` clean, `npm run build` succeeded
+- The editor context menu, full-path tab strip and view recovery were verified on macOS; the tab-width change ships source-reading guard tests, and the guards were validated by deliberately breaking `flex: 0 0 auto` and watching them fail
+- Whether Alibaba Cloud's Token Plan forwards `thinking_budget` is unverified (third-party gateway docs say `deepseek-v4.1-flash` supports it with a default of 32768, larger than this project's `max_tokens`, making it the prime suspect for truncated long answers)
+- Image downscaling on a real Mac (pasting a Retina full-screen shot) is not yet verified
+
+---
+
 ## v0.2.15
 
 ### 新功能

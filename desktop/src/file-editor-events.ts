@@ -25,6 +25,13 @@ export interface EditorPing {
 
 export interface EditorPong {
   requestId: string;
+  /**
+   * Identifies the editor *page load*, not the window. Recreated whenever the
+   * view is rebuilt (a reload, or the webview restarting), which is how the
+   * window that owns the tabs finds out its view is gone. Optional so a build
+   * that predates it still answers pings.
+   */
+  viewId?: string;
 }
 
 export interface EditorOpen {
@@ -73,6 +80,27 @@ export function isSafeEditorWindowLabel(value: unknown): value is string {
 export function isValidEditorNonce(value: unknown): value is string {
   return typeof value === 'string'
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+/** How a pong's view id relates to the view the caller last spoke to. */
+export type EditorViewContact = 'ignore' | 'known' | 'recreated';
+
+/**
+ * Decide what a pong's `viewId` means for the caller.
+ *
+ * `knownViewId` is what the caller recorded last time; `incoming` is whatever
+ * the editor sent and is therefore untrusted. A missing or malformed id is
+ * ignored rather than treated as a change — an older editor build, or a view
+ * that could not mint a UUID, must never be mistaken for a fresh view, because
+ * the caller reacts to 'recreated' by discarding its record of every open tab.
+ */
+export function classifyEditorViewContact(
+  knownViewId: string | null,
+  incoming: unknown,
+): EditorViewContact {
+  if (!isValidEditorNonce(incoming)) return 'ignore';
+  if (knownViewId === null) return 'known';
+  return incoming === knownViewId ? 'known' : 'recreated';
 }
 
 export function editorTextFitsLimit(value: string): boolean {

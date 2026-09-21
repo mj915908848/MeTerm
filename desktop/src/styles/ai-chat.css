@@ -988,7 +988,12 @@ html.vibrancy-active .ai-side-model-dropdown {
 /* Side panel: keep meta below title, stacked vertically */
 .ai-side-chat-history-view .ai-chat-hist-info {
   flex-direction: column;
-  align-items: flex-start;
+  /* stretch, NOT flex-start. This is the cross axis: with flex-start the title
+     sizes to fit-content, and because it is `white-space: nowrap` its
+     min-content equals its max-content — so a long title resolves to its full
+     text width, escapes the info box and paints underneath the delete button
+     instead of ellipsising. */
+  align-items: stretch;
   gap: 2px;
 }
 [data-theme="light"] .ai-side-chat-history-view .ai-chat-hist-row:hover {

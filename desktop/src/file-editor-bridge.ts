@@ -26,6 +26,7 @@ import {
   EDITOR_WINDOW_CLOSED_EVENT,
   EDITOR_WINDOW_LABEL,
   MAX_EDITOR_FILE_BYTES,
+  classifyEditorViewContact,
   editorTextFitsLimit,
   isValidEditorNonce,
   purgeLegacyEditorStorage,
@@ -79,6 +80,22 @@ const pendingReads: PendingRead[] = [];
 const pendingSaves: PendingSave[] = [];
 const handshakes = new Map<string, () => void>();
 let bridgeListeners: Promise<void> | null = null;
+
+/**
+ * Which page load of the editor window we last spoke to.
+ *
+ * The maps above are the source of truth for open tabs, but the editor window
+ * only *holds* them. If its view is rebuilt — a reload, or the webview
+ * restarting — that record is wiped while this side never hears about it, since
+ * EDITOR_WINDOW_CLOSED_EVENT only fires on a real close. From then on the
+ * tab-already-exists branch below would skip the read for any previously opened
+ * file and the editor would sit on "Loading…" forever.
+ *
+ * The editor stamps its view id on every pong, so a change here means the view
+ * is gone and the stale record must go with it. `null` means "not yet known",
+ * which is deliberately not treated as a change.
+ */
+let knownEditorViewId: string | null = null;
 
 purgeLegacyEditorStorage(localStorage);
 
@@ -138,6 +155,7 @@ function forgetTab(tabId: string): void {
 }
 
 function resetClosedEditor(): void {
+  knownEditorViewId = null;
   for (const tabId of [...tabs.keys()]) forgetTab(tabId);
 }
 
@@ -145,8 +163,20 @@ async function installBridgeListeners(): Promise<void> {
   if (bridgeListeners) return bridgeListeners;
   bridgeListeners = Promise.all([
     listen<EditorPong>(EDITOR_PONG_EVENT, event => {
-      const requestId = event.payload?.requestId;
+      const payload = event.payload;
+      const requestId = payload?.requestId;
       if (!isValidEditorNonce(requestId)) return;
+      const viewId = payload?.viewId;
+      const contact = classifyEditorViewContact(knownEditorViewId, viewId);
+      // Narrow `viewId` alongside the classification rather than asserting it.
+      if (contact === 'ignore' || !isValidEditorNonce(viewId)) return;
+      if (contact === 'recreated') {
+        // A different page load is answering: everything we believe is open on
+        // screen no longer is. Drop it before answering the handshake so the
+        // caller's subsequent open takes the fresh-tab path, content and all.
+        resetClosedEditor();
+      }
+      knownEditorViewId = viewId;
       handshakes.get(requestId)?.();
     }),
     listen<EditorSaveRequest>(EDITOR_SAVE_REQUEST_EVENT, event => {

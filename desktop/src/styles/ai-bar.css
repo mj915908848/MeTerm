@@ -535,17 +535,22 @@ html.vibrancy-active .ai-bar-chat-history-panel {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  opacity: 0;
+  /* Dimmed rather than hidden: the row is reachable without hovering it, so a
+     fully transparent button makes deletion undiscoverable. Brightens on row
+     hover and on keyboard focus. */
+  opacity: 0.55;
   transition: opacity 0.15s, background 0.15s, color 0.15s;
 }
 
-.ai-chat-hist-row:hover .ai-chat-hist-delete {
+.ai-chat-hist-row:hover .ai-chat-hist-delete,
+.ai-chat-hist-delete:focus-visible {
   opacity: 1;
 }
 
 .ai-chat-hist-delete:hover {
   background: rgba(255, 107, 107, 0.15);
   color: #ff6b6b;
+  opacity: 1;
 }
 
 /* Chat history detail messages */

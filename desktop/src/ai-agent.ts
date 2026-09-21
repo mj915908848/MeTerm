@@ -114,8 +114,16 @@ export interface AgentCallbacks {
 
   /** LLM request failed, retrying after delay. */
   onRetrying?: (attempt: number, maxAttempts: number, delayMs: number, reason: string) => void;
-  /** Context was compressed to fit within model limits. */
-  onContextCompressed?: () => void;
+  /**
+   * Context was compressed to fit within model limits. Carries the
+   * message counts on both sides so callers can surface how much was
+   * folded away, and whether the provider forced it ('overflow').
+   */
+  onContextCompressed?: (info: {
+    reason: 'auto' | 'overflow';
+    beforeMessageCount: number;
+    afterMessageCount: number;
+  }) => void;
   // NOTE: task-plan changes (todo_write) are delivered via the
   // persistent listener installed with `setTodoUpdateListener`, not
   // through this callbacks surface. That way `agent.clear()` and
@@ -505,10 +513,27 @@ export class ToolAgent {
       maxTokens: settings.aiMaxTokens,
       temperature: settings.aiTemperature,
       enableThinking: settings.aiEnableThinking,
+      thinkingBudget: settings.aiThinkingBudget,
     };
 
     const configuredMax: number = settings.aiAgentMaxIterations ?? DEFAULT_MAX_ITERATIONS;
     const maxIterations = configuredMax === 0 ? ABSOLUTE_MAX_ITERATIONS : configuredMax;
+
+    // Pane excerpt lines for the system prompt's terminal context. This
+    // was previously a hardcoded constant, which made the user-facing
+    // aiContextLines setting a no-op. Both the capture (gatherContext)
+    // and the rendering (buildSystemPrompt) read from here so the two
+    // can never drift apart again.
+    const contextLines: number =
+      settings.aiContextLines ?? TOKEN_BUDGET.defaultContextLines;
+
+    // Conversation-history budget feeding the compaction threshold. A
+    // model's context window is shared by input and output, so this (the
+    // input side) and aiMaxTokens (the output reservation) come off the
+    // same budget. Previously BOTH sides were hardcoded — the window at
+    // 128k and the output reservation at 4k — so the aiMaxTokens setting
+    // had no effect on when history got compressed.
+    const historyBudgetTokens: number = settings.aiHistoryBudgetTokens;
 
     // Sync web_search tool with current settings (user may have toggled SearXNG)
     syncWebSearchTool(this.toolRegistry);
@@ -574,7 +599,11 @@ export class ToolAgent {
       // run to avoid runaway retries.
       if (
         contextCompressions < MAX_CONTEXT_COMPRESSIONS &&
-        shouldAutoCompact(this.messages, /* default model context */)
+        shouldAutoCompact(
+          this.messages,
+          historyBudgetTokens,
+          settings.aiMaxTokens,
+        )
       ) {
         await hooks.emitPreCompact({
           sessionId,
@@ -610,10 +639,15 @@ export class ToolAgent {
             compactCtl.signal,
           );
           if (summarized) {
+            const beforeMessageCount = this.messages.length;
             this.messages = summarized;
             didLlmCompact = true;
             contextCompressions++;
-            callbacks.onContextCompressed?.();
+            callbacks.onContextCompressed?.({
+              reason: 'auto',
+              beforeMessageCount,
+              afterMessageCount: this.messages.length,
+            });
           }
         } catch {
           // Swallow — fall through to local compression below.
@@ -631,10 +665,17 @@ export class ToolAgent {
         }
 
         if (!didLlmCompact) {
+          // compressContext mutates the array in place, so sample the
+          // length before calling it.
+          const beforeMessageCount = this.messages.length;
           const compressed = compressContext(this.messages);
           if (compressed) {
             contextCompressions++;
-            callbacks.onContextCompressed?.();
+            callbacks.onContextCompressed?.({
+              reason: 'auto',
+              beforeMessageCount,
+              afterMessageCount: this.messages.length,
+            });
           }
         }
       }
@@ -645,7 +686,7 @@ export class ToolAgent {
       // — the next iteration will see an empty list for them.
       const meta = getSessionMeta(sessionId);
       const closureNotices = meta.consumeClosureNotices();
-      const ctx = gatherContext(sessionId, TOKEN_BUDGET.systemContextLines, {
+      const ctx = gatherContext(sessionId, contextLines, {
         targetPaneNumber: meta.targetPaneNumber,
         closureNotices,
       });
@@ -653,6 +694,7 @@ export class ToolAgent {
       const systemPrompt = buildSystemPrompt(ctx, hasTools, {
         todoBlock: this.todoState.renderForSystemPrompt(),
         attachmentsBlock: this.renderAttachmentsBlock(),
+        contextLines,
       });
 
       const fullMessages: ChatMessage[] = [
@@ -822,10 +864,16 @@ export class ToolAgent {
             continue;
           }
           let approved: boolean | string;
+          // `abortSignal` is optional on ToolContext (see ai-tools-core.ts). The
+          // runLoop always attaches one right before tool execution, but headless
+          // and test drivers may not, so branch on it instead of asserting.
+          const confirmSignal = toolCtx.abortSignal;
           try {
-            approved = await abortableOperation<boolean | string>(toolCtx.abortSignal!, (resolve, reject) => {
-              callbacks.onConfirmRequired!(toolCall.function.name, args).then(resolve, reject);
-            });
+            approved = confirmSignal
+              ? await abortableOperation<boolean | string>(confirmSignal, (resolve, reject) => {
+                  callbacks.onConfirmRequired!(toolCall.function.name, args).then(resolve, reject);
+                })
+              : await callbacks.onConfirmRequired!(toolCall.function.name, args);
           } catch (error) {
             if (this.aborted) break;
             throw error;
@@ -1000,10 +1048,17 @@ export class ToolAgent {
         // ── Context overflow → compress and retry ──
         if (errorInfo.category === 'context_overflow') {
           if (contextCompressions < MAX_CONTEXT_COMPRESSIONS) {
+            // compressContext mutates the array in place, so sample the
+            // length before calling it.
+            const beforeMessageCount = this.messages.length;
             const compressed = compressContext(this.messages);
             if (compressed) {
               contextCompressions++;
-              callbacks.onContextCompressed?.();
+              callbacks.onContextCompressed?.({
+                reason: 'overflow',
+                beforeMessageCount,
+                afterMessageCount: this.messages.length,
+              });
               iteration--; // Retry same iteration
               continue;
             }

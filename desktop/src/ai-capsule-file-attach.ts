@@ -8,7 +8,7 @@
 //
 // Flow:
 //   1. User drops / picks a file
-//   2. We read bytes into memory (for now, up to 500 MB — files
+//   2. We read bytes into memory (for now, up to 50 MB — files
 //      larger than that should really go straight to SFTP, not via
 //      the capsule)
 //   3. Invoke Rust `agent_save_attachment` which writes it into
@@ -21,6 +21,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { AttachedFile, AICapsuleInstance } from './ai-capsule-types';
+import { MAX_IMAGE_RAW_BYTES } from './ai-image-budget';
 import { showToast } from './notify';
 
 /** Hard upper bound for drag-dropped files. We need to hold the
@@ -174,7 +175,7 @@ export async function pickAttachmentFiles(
     const paths = Array.isArray(selection) ? selection : [selection];
 
     // Lazy-import the image helper to avoid a circular import cycle.
-    const { blobToAttachedImage, addPendingImage } = await import('./ai-capsule-image-attach');
+    const { attachBlobToInstance } = await import('./ai-capsule-image-attach');
 
     const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif']);
     let attached = 0;
@@ -200,7 +201,7 @@ export async function pickAttachmentFiles(
       } catch { /* stat_path unavailable — proceed, let read fail */ }
 
       try {
-        const cap = isImage ? 5 * 1024 * 1024 : MAX_ATTACHMENT_BYTES;
+        const cap = isImage ? MAX_IMAGE_RAW_BYTES : MAX_ATTACHMENT_BYTES;
         const bytes = await invoke<number[]>('agent_read_file_bytes', {
           path: String(p),
           maxBytes: cap,
@@ -232,9 +233,9 @@ export async function pickAttachmentFiles(
             'image/png'
           ) as ('image/png' | 'image/jpeg' | 'image/webp' | 'image/gif');
           const blob = new Blob([u8], { type: mediaType });
-          const img = await blobToAttachedImage(blob, fileName);
-          if (img) {
-            addPendingImage(instance, img);
+          // Goes through the shared budget gate, which reports rejections
+          // and shrinks oversized images instead of dropping them.
+          if (await attachBlobToInstance(instance, blob, fileName)) {
             attached++;
           }
           continue;

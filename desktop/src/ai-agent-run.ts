@@ -86,7 +86,8 @@ export async function* runAgentAsGenerator(
     },
     onRetrying: (attempt, maxAttempts, delayMs, reason) =>
       queue.push({ type: 'retrying', attempt, maxAttempts, delayMs, reason }),
-    onContextCompressed: () => queue.push({ type: 'context_compressed' }),
+    onContextCompressed: (info) =>
+      queue.push({ type: 'context_compressed', ...info }),
   };
 
   // Kick off the agent in the background.

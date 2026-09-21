@@ -66,8 +66,19 @@ export type AgentEvent =
   | { type: 'degraded'; reason: string }
   /** A transient error is being retried with backoff. */
   | { type: 'retrying'; attempt: number; maxAttempts: number; delayMs: number; reason: string }
-  /** The context window was compressed to fit within model limits. */
-  | { type: 'context_compressed' }
+  /**
+   * The context window was compressed to fit within model limits.
+   * Carries both sides of the message count so the UI can tell the user
+   * how much history was folded away, and why it happened.
+   *   - 'auto'     → proactive compression before the next call
+   *   - 'overflow' → the provider rejected the request as too long
+   */
+  | {
+      type: 'context_compressed';
+      reason: 'auto' | 'overflow';
+      beforeMessageCount: number;
+      afterMessageCount: number;
+    }
   /** Unrecoverable error — the run will stop after this event. */
   | { type: 'error'; error: Error };
 
