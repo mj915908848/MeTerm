@@ -115,7 +115,7 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
     sortButton.type = 'button';
     sortButton.className = 'hsg-sort';
     sortButton.dataset.group = g;
-    sortButton.textContent = '↕';
+    sortButton.innerHTML = icon('sort');
     sortButton.title = t('connectionSort');
     sortButton.setAttribute('aria-label', `${isUngrouped ? t('homeGroupUngrouped') : g}: ${t('connectionSort')}`);
     sortButton.setAttribute('aria-haspopup', 'menu');

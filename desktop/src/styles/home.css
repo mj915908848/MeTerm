@@ -2472,9 +2472,11 @@ html[data-theme="light"] .group-modal-btn:hover { background: rgba(0, 0, 0, 0.07
   border-radius: 4px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 16px;
   cursor: pointer;
 }
+/* The glyph this replaced sized itself via font-size; the SVG needs an explicit box.
+   14px matches the icon's own 14-unit grid, so it renders 1:1 and stays crisp. */
+.hsg-sort svg { width: 14px; height: 14px; }
 .hsg-sort:hover, .hsg-sort[aria-expanded="true"] { background: rgba(var(--bg-button-hover), var(--app-window-opacity)); color: var(--text-primary); }
 .hsg-sort:focus-visible, .connection-sort-menu .home-card-menu-item:focus-visible {
   outline: 2px solid var(--text-secondary);

@@ -1,4 +1,4 @@
-export type IconName = 'home' | 'settings' | 'plus' | 'terminal' | 'gallery' | 'ssh' | 'server' | 'chevronLeft' | 'chevronRight' | 'mobile' | 'share' | 'remote' | 'remoteList' | 'jumpserver' | 'pip' | 'pin' | 'phone';
+export type IconName = 'home' | 'settings' | 'plus' | 'terminal' | 'gallery' | 'ssh' | 'server' | 'chevronLeft' | 'chevronRight' | 'mobile' | 'share' | 'remote' | 'remoteList' | 'jumpserver' | 'pip' | 'pin' | 'phone' | 'sort';
 
 const icons: Record<IconName, string> = {
   home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5L12 4l9 7.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6.5 10.5V20h11V10.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
@@ -18,6 +18,18 @@ const icons: Record<IconName, string> = {
   pip: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="12" y="10" width="8" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 21h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
   pin: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 7h2v2H6v-2h2l1-7Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 14v7" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
   phone: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><line x1="11" y1="18.5" x2="13" y2="18.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  // Three rounded bars sharing a left edge, longest on top: the conventional
+  // "sort" affordance. Deliberately direction-neutral — the menu it opens carries
+  // the sort modes and marks the active one, so the button itself does not claim
+  // ascending or descending.
+  //
+  // This is the one entry drawn on a 14-unit grid instead of 24, because it renders
+  // at exactly 14px in the group header: scaling a 24-unit grid down to 14px lands
+  // every coordinate on a fractional pixel and softens the edges, which is what made
+  // the text glyph it replaced look muddy. It is drawn with solid rects (not strokes)
+  // on integer coordinates, so scaling is exactly 1:1 and every edge stays sharp.
+  // The viewBox and the CSS size in `.hsg-sort svg` have to stay in step.
+  sort: '<svg viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="2" width="10" height="2" rx="1" fill="currentColor"/><rect x="2" y="6" width="7" height="2" rx="1" fill="currentColor"/><rect x="2" y="10" width="4" height="2" rx="1" fill="currentColor"/></svg>',
 };
 
 export function icon(name: IconName): string {
