@@ -718,6 +718,12 @@ class AICapsuleManagerClass {
       // Scope switches replace the clicked node before this handler runs.
       // The event path still retains the owning history panel.
       if (instance.chatHistoryPanel && e.composedPath().includes(instance.chatHistoryPanel)) return;
+      // Modal dialogs of this flow (the delete-conversation confirmation, the
+      // dangerous-command warning) are appended to <body>, so their clicks look
+      // "outside" every panel above. They are not: treating them as outside
+      // clicks closed the history view the moment the user confirmed a
+      // deletion, bouncing the panel back to the chat pane.
+      if (target.closest?.('.ai-danger-overlay')) return;
       if (instance.element.contains(target)) return;
       if (instance.sidePanel?.contains(target)) return;
       if (instance.sideInputArea?.contains(target)) return;

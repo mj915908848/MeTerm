@@ -535,16 +535,18 @@ html.vibrancy-active .ai-bar-chat-history-panel {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  /* Dimmed rather than hidden: the row is reachable without hovering it, so a
-     fully transparent button makes deletion undiscoverable. Brightens on row
-     hover and on keyboard focus. */
-  opacity: 0.55;
+  /* Hidden until the row is hovered, so rows read as plain labels. Kept
+     keyboard-reachable through `:focus-visible`, and non-interactive while
+     invisible so a click aimed at the row can never land on it by accident. */
+  opacity: 0;
+  pointer-events: none;
   transition: opacity 0.15s, background 0.15s, color 0.15s;
 }
 
 .ai-chat-hist-row:hover .ai-chat-hist-delete,
 .ai-chat-hist-delete:focus-visible {
   opacity: 1;
+  pointer-events: auto;
 }
 
 .ai-chat-hist-delete:hover {
