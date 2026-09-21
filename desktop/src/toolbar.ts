@@ -306,7 +306,7 @@ export function renderToolbarActions(): void {
   const homeBtn = document.createElement('button');
   homeBtn.className = 'toolbar-action-btn conn-toggle-btn';
   homeBtn.type = 'button';
-  homeBtn.title = settings?.language === 'zh' ? '连接' : 'Connections';
+  homeBtn.title = t('connectionsWindowTitle');
   // Opens the connection list in its own window — the main window's left dock
   // belongs to the server-info panel.
   homeBtn.innerHTML = `<span class="tab-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg></span>`;

@@ -247,6 +247,8 @@ export interface Translations {
   connectionsWindowHint: string;
   connectionsWindowSettings: string;
   connectionsWindowOpenFailed: string;
+  connectionDeleteFailedTitle: string;
+  connectionDeleteFailedBody: string;
   processColPID: string;
   processColName: string;
   processColUser: string;
@@ -1038,6 +1040,8 @@ const translations: Record<Language, Translations> = {
     connectionsWindowHint: 'Click a connection to open it in the main window.',
     connectionsWindowSettings: 'Settings',
     connectionsWindowOpenFailed: 'Could not open the connections window.',
+    connectionDeleteFailedTitle: 'Could not delete connection',
+    connectionDeleteFailedBody: 'The connection is still in the list. See the console for details.',
     processColPID: 'PID',
     processColName: 'Name',
     processColUser: 'User',
@@ -1825,6 +1829,8 @@ const translations: Record<Language, Translations> = {
     connectionsWindowHint: '点击连接即在主窗口中打开会话。',
     connectionsWindowSettings: '设置',
     connectionsWindowOpenFailed: '无法打开连接窗口。',
+    connectionDeleteFailedTitle: '删除连接失败',
+    connectionDeleteFailedBody: '该连接仍保留在列表中，详情见控制台。',
     processColPID: 'PID',
     processColName: '进程名',
     processColUser: '用户',

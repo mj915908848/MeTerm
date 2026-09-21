@@ -5,6 +5,7 @@
  */
 import { t } from './i18n';
 import { icon } from './icons';
+import { showToast } from './notify';
 import { createOverlayScrollbar } from './overlay-scrollbar';
 import { appendSshConnectionMenuItems } from './development-credential-recovery-ui';
 import { loadCardOrder, saveCardOrder } from './home-dashboard-card-order';
@@ -703,16 +704,34 @@ export function showConnectionContextMenu(
 }
 
 async function handleDeleteConnection(item: ConnectionItem, refreshView: () => void): Promise<void> {
-  if (item.type === 'ssh') {
-    await removeSSHConnection((item.raw as SSHConnectionConfig).name);
-  } else if (item.type === 'remote') {
-    const info = item.raw as RemoteServerInfo;
-    await removeRemoteConnection(info.host, info.port);
-  } else if (item.type === 'jumpserver') {
-    await removeJumpServerConfig((item.raw as JumpServerConfig).name);
+  try {
+    if (item.type === 'ssh') {
+      await removeSSHConnection((item.raw as SSHConnectionConfig).name);
+    } else if (item.type === 'remote') {
+      const info = item.raw as RemoteServerInfo;
+      await removeRemoteConnection(info.host, info.port);
+    } else if (item.type === 'jumpserver') {
+      await removeJumpServerConfig((item.raw as JumpServerConfig).name);
+    }
+  } catch (error) {
+    // The credential is still there, so nothing changed. Tell the user (a
+    // silent console.error makes a failed delete look like a dead button — the
+    // standalone connections window has no visible console), then re-throw:
+    // listeners must not hear about a mutation that never happened. The caller
+    // logs the error.
+    showToast({
+      title: t('connectionDeleteFailedTitle'),
+      body: t('connectionDeleteFailedBody'),
+    });
+    throw error;
   }
-  removeConnectionGroup(item.key);
-  refreshView();
+  // The connection is gone for good, so local metadata and the view must follow
+  // it — even if writing the group map misbehaves, the stale row cannot stay.
+  try {
+    removeConnectionGroup(item.key);
+  } finally {
+    refreshView();
+  }
 }
 
 // ─── Helpers ───

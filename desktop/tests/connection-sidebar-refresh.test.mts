@@ -29,6 +29,7 @@ function deletionHarness(reject = false) {
   const end = source.indexOf('// ─── Helpers', start);
   assert.ok(start >= 0 && end > start);
   const calls: string[] = [];
+  const toasts: { title: string; body: string }[] = [];
   let finish!: () => void;
   const gate = new Promise<void>(resolve => { finish = resolve; });
   const context = vm.createContext({
@@ -38,6 +39,9 @@ function deletionHarness(reject = false) {
       calls.push('deleted');
     },
     removeConnectionGroup: () => calls.push('group removed'),
+    // i18n keys come back verbatim so the assertions can name the key itself.
+    t: (key: string) => key,
+    showToast: (opts: { title: string; body: string }) => toasts.push(opts),
   });
   vm.runInContext(ts.transpileModule(source.slice(start, end), {
     compilerOptions: { module: ts.ModuleKind.CommonJS },
@@ -46,7 +50,7 @@ function deletionHarness(reject = false) {
     { type: 'ssh', key: 'ssh:test', raw: { name: 'test' } },
     () => calls.push('refreshed'),
   ) as Promise<void>;
-  return { calls, finish, pending };
+  return { calls, toasts, finish, pending };
 }
 
 test('SSH deletion refreshes only after the credential and metadata deletion completes', async () => {
@@ -55,6 +59,7 @@ test('SSH deletion refreshes only after the credential and metadata deletion com
   h.finish();
   await h.pending;
   assert.deepEqual(h.calls, ['deleted', 'group removed', 'refreshed']);
+  assert.deepEqual(h.toasts, []);
 });
 
 test('failed SSH deletion preserves grouping and does not report a refreshed deletion', async () => {
@@ -63,6 +68,8 @@ test('failed SSH deletion preserves grouping and does not report a refreshed del
   h.finish();
   await rejection;
   assert.deepEqual(h.calls, []);
+  // …but it must be visible: a silent failure reads as a dead button.
+  assert.deepEqual(h.toasts.map((toast) => toast.title), ['connectionDeleteFailedTitle']);
 });
 
 function removeConnectionHarness(deleteFails: boolean) {
