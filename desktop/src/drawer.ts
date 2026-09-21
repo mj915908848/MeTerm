@@ -10,6 +10,7 @@ import { createOverlayScrollbar } from './overlay-scrollbar';
 import {
   type NetRatePoint,
   handleServerInfoResponse,
+  unregisterSysInfoContainer,
 } from './drawer-system-info';
 import {
   setupResizeHandle,
@@ -913,6 +914,9 @@ class DrawerManagerClass {
     this.drawers.delete(sessionId);
     this.pendingTransports.delete(sessionId);
     this.pendingWebSockets.delete(sessionId);
+    // Also drop the server-info panel's container registration for this session;
+    // otherwise the registry keeps one entry per session that ever existed.
+    unregisterSysInfoContainer(sessionId);
     // Notify sidebar to also destroy
     window.dispatchEvent(new CustomEvent('meterm-drawer-destroyed', { detail: { sessionId } }));
   }

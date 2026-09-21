@@ -117,7 +117,11 @@ class ServerInfoPanelClass {
       this.panel.style.display = '';
       TerminalRegistry.resizeAll();
     }
-    if (changed) this.startPolling();
+    // Unconditional on purpose: startPolling() is a no-op while the timer is
+    // already running, and calling it only on `changed` left the timer stopped
+    // after a close()/open() cycle — same session, so `changed` is false, but
+    // close() had already cleared the interval and the panel froze on stale data.
+    this.startPolling();
     this.render();
   }
 
