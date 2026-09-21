@@ -560,3 +560,31 @@ export function showCustomContextMenu(event: MouseEvent): void {
   document.addEventListener('click', cleanup, true);
   window.addEventListener('blur', cleanup);
 }
+
+// ── Utility windows: never the WebView's own menu ──
+
+/**
+ * Suppress the WebView's built-in context menu in a utility window.
+ *
+ * The main window replaces the menu with the app's own (showCustomContextMenu).
+ * A window that registers nothing — the connections window, for one — gets
+ * WKWebView's built-in menu instead: "Reload" and "Inspect Element". That reads
+ * as a browser page rather than an app, and "Reload" would discard the list the
+ * user is working in.
+ *
+ * Inputs keep the native menu so copy / paste / select-all still work — the same
+ * exception the main window makes.
+ */
+export function suppressNativeContextMenu(): void {
+  document.addEventListener('contextmenu', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement
+    ) {
+      return;
+    }
+    event.preventDefault();
+  });
+}

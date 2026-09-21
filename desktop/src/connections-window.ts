@@ -25,6 +25,7 @@ import { loadSettings, resolveIsDark, type AppSettings } from './themes';
 import { createUtilityWindow, revealAfterPaint } from './window-utils';
 import { createOverlayScrollbar } from './overlay-scrollbar';
 import { showToast } from './notify';
+import { suppressNativeContextMenu } from './context-menu';
 import { renderSidebarList } from './home-side';
 import { collectAllConnections, editConnection, findConnectionItem, handleConnectionClick, setEditConnectDelegate, type ConnectionItem } from './home-dashboard-left';
 import { setSSHConnectHandler, type SSHConnectionConfig } from './ssh';
@@ -154,6 +155,12 @@ export function initConnectionsWindow(): void {
   const app = document.getElementById('app');
   if (app) app.style.display = 'none';
   document.body.classList.add('connections-window-mode');
+
+  // Right-clicking anywhere this window does not handle itself would otherwise
+  // pop WKWebView's own menu: "Reload" and "Inspect Element". Handled rows show
+  // the app menu; everything else (a dialog's padding, empty list space, the
+  // footer) must show nothing rather than a browser menu.
+  suppressNativeContextMenu();
 
   const needsCustomControls = isWindowsPlatform || isLinuxPlatform;
 
