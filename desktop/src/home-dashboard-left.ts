@@ -595,19 +595,89 @@ function showGroupContextMenu(event: MouseEvent, groupName: string, refreshView:
 }
 
 /**
+ * Some windows may edit a connection but must not act on the dialog's "connect"
+ * outcome — sessions belong to the main window alone. Such a window installs a
+ * delegate here and forwards the request (type + key only, never credentials).
+ * Left unset (the main window) means "connect right here".
+ *
+ * Mirrors how the SSH and remote dialogs already hand their connect outcome to
+ * `setSSHConnectHandler` / `setRemoteConnectHandler`.
+ */
+let editConnectDelegate: ((item: ConnectionItem) => void) | null = null;
+
+export function setEditConnectDelegate(delegate: ((item: ConnectionItem) => void) | null): void {
+  editConnectDelegate = delegate;
+}
+
+/**
+ * Re-find a connection after an edit, matched on the fields its key is built from.
+ *
+ * Every key derives from user-editable data (`sshKey(name)`, `remoteKey(host,
+ * port)`, `jumpserverKey(name)`), so the key captured when the menu opened goes
+ * stale the moment the user renames or re-points the connection. Anything that has
+ * to act on the *edited* connection must look it up again instead of reusing it.
+ */
+export function findConnectionItem(
+  type: ConnectionItem['type'],
+  match: (raw: unknown) => boolean,
+): ConnectionItem | undefined {
+  return collectAllConnections().find((item) => item.type === type && match(item.raw));
+}
+
+/**
+ * Run the edit flow for one connection.
+ *
+ * Runs in whichever window rendered the row. The standalone connections window
+ * shows the same dialogs in place on purpose: the main window is often
+ * full-screen, i.e. on its own macOS Space, so raising it there made the
+ * connections window disappear entirely.
+ */
+export function editConnection(item: ConnectionItem, refreshView: () => void = () => {}): void {
+  if (item.type === 'ssh') {
+    showSSHModal(item.raw as SSHConnectionConfig);
+    return;
+  }
+  if (item.type === 'remote') {
+    showRemoteEditDialog(item.raw as RemoteServerInfo);
+    return;
+  }
+  // JumpServer: the dialog can request a connect, and a saved config changes the
+  // row's name/detail, so the list has to re-render.
+  void (async () => {
+    const config = item.raw as JumpServerConfig;
+    const { showJumpServerConfigDialog } = await import('./jumpserver-ui');
+    const result = await showJumpServerConfigDialog(config);
+    if (!result) return;
+    refreshView();
+    if (!result.connect) return;
+    if (editConnectDelegate) {
+      // Re-resolve first: renaming the config moves its key.
+      const saved = findConnectionItem(
+        'jumpserver',
+        (raw) => (raw as JumpServerConfig).name === result.config.name,
+      );
+      if (saved) editConnectDelegate(saved);
+      return;
+    }
+    const { handleJumpServerConnect } = await import('./jumpserver-handler');
+    handleJumpServerConnect(result.config);
+  })();
+}
+
+/**
  * Connection context menu.
  *
- * `allowEdit` is false for menus opened outside the main window (the standalone
- * connections window): editing a connection means opening a dialog whose
- * "connect" path needs the main window's session state, so that window only
- * offers the location-independent actions (group moves, delete).
+ * `onEdit` is for a window that wants the plain edit item instead of the
+ * window-specific extras `appendSshConnectionMenuItems` attaches (a dev-only
+ * credential-recovery entry whose backend command the connections window is not
+ * granted). It still runs `editConnection` — in that window, not elsewhere.
  */
 export function showConnectionContextMenu(
   event: MouseEvent,
   item: ConnectionItem,
   currentGroup: string | null,
   refreshView: () => void,
-  allowEdit = true,
+  onEdit?: () => void,
 ): void {
   removeContextMenu();
   const menu = document.createElement('div');
@@ -615,39 +685,22 @@ export function showConnectionContextMenu(
   menu.style.left = `${event.clientX}px`;
   menu.style.top = `${event.clientY}px`;
 
-  // Edit needs this window's connection state (the dialogs can trigger a
-  // connect), so it is offered only where that state lives.
-  if (!allowEdit) {
-    // no edit item
-  } else if (item.type === 'ssh') {
-    const config = item.raw as SSHConnectionConfig;
-    appendSshConnectionMenuItems(menu, config, t('homeEditConnection'), () => {
-      menu.remove();
-      showSSHModal(config);
-    });
-  } else if (item.type === 'remote') {
+  if (onEdit) {
     const editItem = document.createElement('button');
     editItem.className = 'home-card-menu-item';
     editItem.textContent = t('homeEditConnection');
-    editItem.onclick = () => { menu.remove(); showRemoteEditDialog(item.raw as RemoteServerInfo); };
+    editItem.onclick = () => { menu.remove(); onEdit(); };
     menu.appendChild(editItem);
-  } else if (item.type === 'jumpserver') {
+  } else if (item.type === 'ssh') {
+    appendSshConnectionMenuItems(menu, item.raw as SSHConnectionConfig, t('homeEditConnection'), () => {
+      menu.remove();
+      editConnection(item, refreshView);
+    });
+  } else {
     const editItem = document.createElement('button');
     editItem.className = 'home-card-menu-item';
     editItem.textContent = t('homeEditConnection');
-    editItem.onclick = async () => {
-      menu.remove();
-      const config = item.raw as JumpServerConfig;
-      const { showJumpServerConfigDialog } = await import('./jumpserver-ui');
-      const result = await showJumpServerConfigDialog(config);
-      if (result) {
-        refreshView();
-        if (result.connect) {
-          const { handleJumpServerConnect } = await import('./jumpserver-handler');
-          handleJumpServerConnect(result.config);
-        }
-      }
-    };
+    editItem.onclick = () => { menu.remove(); editConnection(item, refreshView); };
     menu.appendChild(editItem);
   }
 

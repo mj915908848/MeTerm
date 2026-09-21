@@ -10,6 +10,12 @@
  * connection" button) emits a request that the main window performs, so all
  * session state stays in one window. Only a connection type + key crosses the
  * boundary — never credentials, matching the app's credential-broker rule.
+ *
+ * Editing runs *here*, in the very list the user is working in. It used to be
+ * delegated to the main window, which raised it with `show() + setFocus()`; when
+ * the main window is full-screen it owns its own macOS Space, so that switched
+ * Spaces and made this window vanish. Only a dialog's "connect" outcome still
+ * travels to the main window, because a session belongs there.
  */
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
@@ -20,7 +26,9 @@ import { createUtilityWindow, revealAfterPaint } from './window-utils';
 import { createOverlayScrollbar } from './overlay-scrollbar';
 import { showToast } from './notify';
 import { renderSidebarList } from './home-side';
-import { collectAllConnections, handleConnectionClick, type ConnectionItem } from './home-dashboard-left';
+import { collectAllConnections, editConnection, findConnectionItem, handleConnectionClick, setEditConnectDelegate, type ConnectionItem } from './home-dashboard-left';
+import { setSSHConnectHandler, type SSHConnectionConfig } from './ssh';
+import { setRemoteConnectHandler, type RemoteServerInfo } from './remote';
 import { makeNewButtons, runNewConnectionAction, type NewConnectionKind } from './connection-sidebar';
 import { applyNbPalette } from './nb-palette';
 import { setSettings, isWindowsPlatform, isLinuxPlatform } from './app-state';
@@ -33,6 +41,24 @@ const EVENT_OPEN_REQUEST = 'connections-open-request';
 const EVENT_NEW_REQUEST = 'connections-new-request';
 /** We changed connection data (edit/delete) — the main window should re-render. */
 const EVENT_MUTATED = 'connections-mutated';
+
+/**
+ * Hand a dialog's "connect" outcome back to the main window.
+ *
+ * This window edits in place — on purpose, so the list the user is working in is
+ * never covered by the main window (which is often full-screen, i.e. on its own
+ * macOS Space) — but it owns no sessions. Every dialog's connect path therefore
+ * ends here as a `{type, key}` request. The item is re-resolved from the store
+ * because an edit can rename or re-point a connection, which moves its key.
+ * Only the type and key cross the boundary: never credentials.
+ */
+function requestConnectInMainWindow(
+  type: ConnectionItem['type'],
+  matches: (raw: unknown) => boolean,
+): void {
+  const item = findConnectionItem(type, matches);
+  if (item) void emit(EVENT_OPEN_REQUEST, { type: item.type, key: item.key });
+}
 
 // ── Opened from the main window ──
 
@@ -174,23 +200,49 @@ export function initConnectionsWindow(): void {
   footer.textContent = t('connectionsWindowHint');
   document.body.appendChild(footer);
 
+  // This window's own mutations (edit/delete) also have to re-render the main
+  // window, whose home view and toolbar read the same shared store.
+  const afterMutation = (): void => {
+    refresh();
+    void emit(EVENT_MUTATED);
+  };
+
   const refresh = (): void => {
     renderSidebarList(listScroll, groupHeader, searchInput.value.trim(), {
       onSelect: (item: ConnectionItem) => {
         // The main window opens the session; keep this list open as a launcher.
         void emit(EVENT_OPEN_REQUEST, { type: item.type, key: item.key });
       },
-      // Edits/deletions happen against shared localStorage. Tell the main window
-      // so its home view and toolbar pick the change up.
-      refresh: () => {
-        refresh();
-        void emit(EVENT_MUTATED);
-      },
+      refresh: afterMutation,
       getSelectedKey: () => null,
-      // Editing opens dialogs whose "connect" path needs the main window's state.
-      allowEdit: false,
+      // Edit runs in *this* window, on the very list the user is working in. The
+      // plain edit entry is used because the full SSH menu would also attach a
+      // dev-only credential-recovery item, whose backend command this window is
+      // deliberately not granted.
+      onEdit: (item) => editConnection(item, afterMutation),
     });
   };
+
+  // This window shows the edit dialogs in place, but a session still belongs to the
+  // main window, so every dialog's "connect" path is delegated there. Matching on
+  // the saved fields (not the key) is what makes a rename safe: the key is derived
+  // from those fields, so it moves when they do.
+  setSSHConnectHandler((config) => {
+    requestConnectInMainWindow('ssh', (raw) => {
+      const saved = raw as SSHConnectionConfig;
+      return saved.name === config.name && saved.host === config.host && saved.port === config.port;
+    });
+  });
+  setRemoteConnectHandler((info) => {
+    requestConnectInMainWindow('remote', (raw) => {
+      const saved = raw as RemoteServerInfo;
+      return saved.host === info.host && saved.port === info.port;
+    });
+  });
+  // The JumpServer edit dialog hands over the saved item, already re-resolved.
+  setEditConnectDelegate((item) => {
+    void emit(EVENT_OPEN_REQUEST, { type: item.type, key: item.key });
+  });
 
   searchInput.addEventListener('input', refresh);
   searchInput.addEventListener('keydown', (e) => {

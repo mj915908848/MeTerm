@@ -52,11 +52,13 @@ export interface SidebarListDeps {
   refresh: () => void;
   getSelectedKey: () => string | null;
   /**
-   * Whether the row context menu may offer "edit". False for lists rendered
-   * outside the main window (the standalone connections window), where the
-   * connection dialogs have no session state to connect with. Defaults to true.
+   * Run the edit flow for a row. Optional: without it the menu builder uses the
+   * full in-window menu (`appendSshConnectionMenuItems`), which attaches a
+   * dev-only credential-recovery entry this list is not granted. The standalone
+   * connections window passes its own runner — same `editConnection`, same
+   * window, just without that extra entry.
    */
-  allowEdit?: boolean;
+  onEdit?: (item: ConnectionItem) => void;
 }
 
 /** Render the grouped, filtered connection list into `listEl`. */
@@ -144,7 +146,13 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
       row.onclick = () => deps.onSelect(item);
       row.oncontextmenu = (e) => {
         e.preventDefault();
-        showConnectionContextMenu(e, item, isUngrouped ? null : g, deps.refresh, deps.allowEdit !== false);
+        showConnectionContextMenu(
+          e,
+          item,
+          isUngrouped ? null : g,
+          deps.refresh,
+          deps.onEdit ? () => deps.onEdit!(item) : undefined,
+        );
       };
       const pinBtn = row.querySelector('.hsr-pin') as HTMLButtonElement;
       pinBtn.onclick = (e) => {

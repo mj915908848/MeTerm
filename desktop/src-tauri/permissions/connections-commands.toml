@@ -1,10 +1,26 @@
 [[permission]]
 identifier = "connections-commands"
-description = "Allows the connection-list window to reveal itself, open the settings window, and remove a saved connection."
+description = "Allows the connection-list window to reveal itself and to create, edit and delete saved connections in place. Session commands are deliberately NOT granted: the window delegates every connect to the main window."
 commands.allow = [
   "reveal_window",
   "create_transparent_window",
+  # SSH — the edit dialog's own commands: probe the target, surface the local key
+  # state, then write the edited record (secrets go through the native vault).
+  "test_ssh_connection",
+  "detect_default_ssh_key",
+  "check_ssh_agent",
+  "sync_upsert_connection",
+  "sync_update_connection_password",
   "sync_delete_connection",
+  # Remote.
+  "remote_store_token",
+  "remote_has_token",
   "remote_delete_token",
+  # JumpServer. `migrate` is on the save path too: editing a config without
+  # retyping its secret sends an empty submission, and addJumpServerConfig then
+  # asks whether a credential for that binding already exists in the vault.
+  "jumpserver_store_credentials",
+  "jumpserver_credential_status",
+  "jumpserver_migrate_credentials",
   "jumpserver_delete_credentials",
 ]
