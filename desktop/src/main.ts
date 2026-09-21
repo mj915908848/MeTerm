@@ -361,10 +361,11 @@ async function init(): Promise<void> {
         sessionCreated = true;
       }
     } catch { /* ignore */ }
-    // Terminal-first: always open a local terminal on startup (unless one was
-    // already created from an initial path). The connection manager is now a
-    // toggleable left sidebar rather than a landing page.
-    if (!sessionCreated) {
+    // Startup session is opt-in (settings.autoNewSession, off by default): when
+    // it is off the app lands on the home view, which lists recent connections
+    // so a server is one click away. An explicit "open this folder" launch
+    // (initialPath above) always wins — that is a deliberate user action.
+    if (!sessionCreated && settings.autoNewSession) {
       try {
         await createNewSession();
         sessionCreated = true;
