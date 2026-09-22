@@ -119,17 +119,27 @@ export async function createNewPrivateSession(): Promise<void> {
   _renderTabs();
 }
 
+/**
+ * Boot the local meterm backend.
+ *
+ * Deliberately silent about the status bar while it does: the bar describes the
+ * *displayed session* (user@host, latency, viewers) and at boot there is none, so
+ * the old `setConnection('connected', 'Local')` here left the home view
+ * advertising a live local connection before any session existed. Callers that go
+ * on to open a session announce their own label straight away
+ * (createNewSession(), handleSSHConnect(), the JumpServer handlers), and they all
+ * await this first — so nothing is lost by staying quiet. Only a genuine boot
+ * failure still talks to the bar, because nothing else would surface it.
+ */
 export async function ensureMeTermReady(): Promise<boolean> {
   if (metermReady && port > 0 && authToken) {
     return true;
   }
-  StatusBar.setConnection('connecting', 'Starting...');
   try {
     const info = await waitForMeTerm(40, 300);
     setPort(info.port);
     setAuthToken(info.token);
     setMetermReady(true);
-    StatusBar.setConnection('connected', 'Local');
     startPairPoller(port, authToken);
     startRemoteSessionPoller(port, authToken);
     return true;

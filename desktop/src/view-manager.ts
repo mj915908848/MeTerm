@@ -289,6 +289,10 @@ export function showGalleryView(): void {
   }
   updateGalleryView();
   startGalleryRefresh();
+  // The gallery shows sessions as thumbnails in a grid, not one terminal on
+  // screen — like the home view it displays no single session, so the left dock
+  // must step aside (syncToActiveSession keeps the pin and hides the panel).
+  ServerInfoPanel.syncToActiveSession();
   _renderToolbarActions();
   StatusBar.setProgress(null);
 }

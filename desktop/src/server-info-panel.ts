@@ -23,6 +23,7 @@ import { DrawerManager } from './drawer';
 import { renderSysInfo, registerSysInfoContainer, unregisterSysInfoContainer } from './drawer-system-info';
 import { loadSettings, updateSettings } from './themes';
 import { escapeHtml } from './status-bar';
+import { isHomeView, isGalleryView } from './app-state';
 
 const MIN_WIDTH = 140;
 const MAX_WIDTH = 560;
@@ -111,8 +112,9 @@ class ServerInfoPanelClass {
   }
 
   /**
-   * Follow the active tab's session. Called from activateTab / showHomeView, so
-   * the panel always describes the terminal the user is looking at.
+   * Follow the active tab's session. Called from activateTab / showHomeView /
+   * showGalleryView, so the panel always describes the terminal the user is
+   * looking at.
    */
   syncToActiveSession(): void {
     if (!this._open) return;
@@ -124,7 +126,12 @@ class ServerInfoPanelClass {
       this.infoEl = null;
       this.compact = false;
     }
-    if (!sessionId || !hasRemoteServerInfo(sessionId)) {
+    // Home / gallery display no session even though the SSH tab that owns one is
+    // still open — leaving the home view only hides the terminal, it never closes
+    // the tab, so the active session (and hasRemoteServerInfo) is still there and
+    // the panel stayed on screen above the dashboard. Both views belong to the
+    // "nothing to describe" case below.
+    if (isHomeView || isGalleryView || !sessionId || !hasRemoteServerInfo(sessionId)) {
       // Nothing to describe: home/gallery has no session at all, and local /
       // JumpServer sessions have no remote exec channel to describe. Keep the
       // pin — the panel comes back with the next SSH tab.
