@@ -2009,8 +2009,21 @@ html.vibrancy-active .conn-sidebar.conn-sidebar--flyout {
 .home-empty-card .home-side-new { max-width: 340px; margin: 0 auto; }
 
 /* ── Recent connections (history) on the empty home view ── */
+/* Centred on the same column as the "new connection" grid above it: the buttons
+   sit in a 340px block with 10px side padding (see `.home-empty-card
+   .home-side-new`), so the history mirrors that geometry — a 340px content box
+   with the same 10px gutters — and is centred by the auto margins. Without this
+   the list kept its full 460px card width and read as left-shifted against the
+   centred buttons. */
 .home-empty-card .home-recent {
-  margin-top: 22px;
+  /* Single source for the left edge of the section label AND every row's
+     content (icon). They used to drift apart (label 2px, rows 8px) so the
+     history read as indented against its own heading. */
+  --recent-content-inset: 2px;
+  box-sizing: content-box;
+  max-width: 340px;
+  margin: 22px auto 0;
+  padding: 0 10px;
   text-align: left;
 }
 /* Collapse the section entirely when there is no history yet. */
@@ -2021,7 +2034,7 @@ html.vibrancy-active .conn-sidebar.conn-sidebar--flyout {
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--text-muted);
-  margin: 0 0 6px 2px;
+  margin: 0 0 6px var(--recent-content-inset, 2px);
 }
 .home-recent-empty {
   font-size: 12px;
@@ -2040,7 +2053,10 @@ html.vibrancy-active .conn-sidebar.conn-sidebar--flyout {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 8px;
+  /* Left inset shared with .home-recent-title so the icon lines up with the
+     "recent activity" label. The row BOX still spans the full column, so the
+     hover highlight keeps matching the buttons above. */
+  padding: 7px 8px 7px var(--recent-content-inset, 2px);
   border-radius: 7px;
   cursor: pointer;
   min-width: 0;
