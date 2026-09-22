@@ -251,6 +251,7 @@ export interface Translations {
   connectionDeleteFailedTitle: string;
   connectionDeleteFailedBody: string;
   toolbarAiAgent: string;
+  toolbarHome: string;
   toolbarAlwaysOnTop: string;
   toolbarUnpinFromTop: string;
   toolbarPictureInPicture: string;
@@ -767,6 +768,7 @@ export interface Translations {
   homeGroupDeleteConfirm: string;
   homeGroupMoveToGroup: string;
   homeGroupNodeCount: string;
+  homeGroupResizeHint: string;
   homeGroupColor: string;
   homeGroupColorClear: string;
   homeGroupCollapse: string;
@@ -1058,6 +1060,7 @@ const translations: Record<Language, Translations> = {
     connectionDeleteFailedTitle: 'Could not delete connection',
     connectionDeleteFailedBody: 'The connection is still in the list. See the console for details.',
     toolbarAiAgent: 'AI Agent',
+    toolbarHome: 'Home',
     toolbarAlwaysOnTop: 'Always on top',
     toolbarUnpinFromTop: 'Unpin from top',
     toolbarPictureInPicture: 'Picture-in-Picture',
@@ -1540,6 +1543,7 @@ const translations: Record<Language, Translations> = {
     homeGroupDeleteConfirm: 'Delete this group? Connections will be moved to Recent.',
     homeGroupMoveToGroup: 'Move to Group',
     homeGroupNodeCount: '{count} Nodes',
+    homeGroupResizeHint: 'Drag to resize — double-click to restore the default width',
     homeGroupColor: 'Color',
     homeGroupColorClear: 'Clear Color',
     homeGroupCollapse: 'Collapse',
@@ -1861,6 +1865,7 @@ const translations: Record<Language, Translations> = {
     connectionDeleteFailedTitle: '删除连接失败',
     connectionDeleteFailedBody: '该连接仍保留在列表中，详情见控制台。',
     toolbarAiAgent: 'AI 助手',
+    toolbarHome: '主页',
     toolbarAlwaysOnTop: '窗口置顶',
     toolbarUnpinFromTop: '取消置顶',
     toolbarPictureInPicture: '画中画',
@@ -2343,6 +2348,7 @@ const translations: Record<Language, Translations> = {
     homeGroupDeleteConfirm: '删除该分组？连接将移至最近。',
     homeGroupMoveToGroup: '移动到分组',
     homeGroupNodeCount: '{count} 个节点',
+    homeGroupResizeHint: '拖动调整宽度，双击恢复默认宽度',
     homeGroupColor: '颜色',
     homeGroupColorClear: '清除颜色',
     homeGroupCollapse: '折叠',

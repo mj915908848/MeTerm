@@ -299,15 +299,32 @@ export function renderToolbarActions(): void {
     toolbarLeftEl.appendChild(appIconBtn);
   }
 
-  const homeBtn = document.createElement('button');
-  homeBtn.className = 'toolbar-action-btn conn-toggle-btn';
-  homeBtn.type = 'button';
-  homeBtn.title = t('connectionsWindowTitle');
-  // Opens the connection list in its own window — the main window's left dock
-  // belongs to the server-info panel.
-  homeBtn.innerHTML = `<span class="tab-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg></span>`;
-  homeBtn.onclick = () => { void openConnectionsWindow(); };
-  toolbarLeftEl.appendChild(homeBtn);
+  // Back to the home view. Sits first in the row because it switches what the
+  // window shows — the same job the gallery button does further along, and the
+  // only way back to the connection manager while a terminal is open.
+  const homeViewBtn = document.createElement('button');
+  homeViewBtn.className = `toolbar-action-btn home-toggle-btn${isHomeView ? ' active' : ''}`;
+  homeViewBtn.type = 'button';
+  homeViewBtn.title = t('toolbarHome');
+  homeViewBtn.innerHTML = `<span class="tab-icon">${icon('home')}</span>`;
+  homeViewBtn.onclick = () => {
+    showHomeView();
+    renderTabs();
+  };
+  toolbarLeftEl.appendChild(homeViewBtn);
+
+  // Connection list in its own window — second in the row, directly after the
+  // home button (asked for in v0.2.18): both are "take me somewhere else in the
+  // app" entries, so they stay adjacent. Session-scoped tools follow; the main
+  // window's left dock belongs to the server-info panel, hence a window of its
+  // own for the list.
+  const connBtn = document.createElement('button');
+  connBtn.className = 'toolbar-action-btn conn-toggle-btn';
+  connBtn.type = 'button';
+  connBtn.title = t('connectionsWindowTitle');
+  connBtn.innerHTML = `<span class="tab-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg></span>`;
+  connBtn.onclick = () => { void openConnectionsWindow(); };
+  toolbarLeftEl.appendChild(connBtn);
 
   // Session-scoped buttons: the server-info panel and the file manager both need
   // an active terminal.

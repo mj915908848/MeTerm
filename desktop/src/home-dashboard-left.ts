@@ -10,6 +10,12 @@ import { createOverlayScrollbar } from './overlay-scrollbar';
 import { appendSshConnectionMenuItems } from './development-credential-recovery-ui';
 import { loadCardOrder, saveCardOrder } from './home-dashboard-card-order';
 import {
+  clearCardWidth,
+  dragCardWidth,
+  loadCardWidths,
+  setCardWidth,
+} from './home-card-width';
+import {
   type SSHConnectionConfig,
   loadSavedConnections,
   loadRecentConnections,
@@ -91,19 +97,22 @@ export function filterConnections(items: ConnectionItem[], query: string): Conne
 // ─── Recent connections (home view) ───
 
 /**
- * Render the servers this device actually connected to, most recent first.
- * Shown on the home view so a known server is one click away (no need to dig
- * through the grouped list). Newest entries come from the SSH/remote history
- * stores; nothing is rendered when neither has an entry.
+ * Render the servers this device actually connected to, most recent first, as
+ * the horizontal card track the full-page home used to show.
+ *
+ * A compact card per entry (icon + name + user@host, × to forget it) laid out
+ * left to right and scrolled sideways — a wide window shows several at once
+ * instead of one tall column. Newest entries come from the SSH/remote history
+ * stores; with neither populated the section stays empty and hides itself.
  */
-export function renderHomeRecentConnections(): void {
-  const host = document.getElementById('home-recent-connections');
-  if (!host) return;
-  host.innerHTML = '';
+export function renderRecentActivity(query: string): void {
+  const section = document.getElementById('home-recent-activity');
+  if (!section) return;
+  section.innerHTML = '';
 
-  const items: ConnectionItem[] = [];
+  const recentItems: ConnectionItem[] = [];
   for (const c of loadRecentConnections()) {
-    items.push({
+    recentItems.push({
       type: 'ssh',
       key: sshKey(c.name),
       name: c.name || c.host,
@@ -112,7 +121,7 @@ export function renderHomeRecentConnections(): void {
     });
   }
   for (const r of loadRecentRemoteConnections()) {
-    items.push({
+    recentItems.push({
       type: 'remote',
       key: remoteKey(r.host, r.port),
       name: r.name || r.host,
@@ -121,34 +130,39 @@ export function renderHomeRecentConnections(): void {
     });
   }
 
+  const items = filterConnections(recentItems, query);
   if (items.length === 0) return;
 
   const title = document.createElement('div');
-  title.className = 'home-recent-title';
+  title.className = 'home-dash-section-title';
   title.textContent = t('homeRecentActivity');
-  host.appendChild(title);
+  section.appendChild(title);
 
-  const list = document.createElement('div');
-  list.className = 'home-recent-list';
+  const track = document.createElement('div');
+  track.className = 'home-dash-recent-track';
 
   for (const item of items) {
     const iconName = item.type === 'remote' ? 'remote' : item.type === 'jumpserver' ? 'jumpserver' : 'ssh';
 
-    const row = document.createElement('div');
-    row.className = `home-recent-row home-recent-${item.type}`;
-    row.title = `${item.name} — ${item.detail}`;
-    row.innerHTML = `<span class="home-recent-icon">${icon(iconName)}</span>`
-      + `<span class="home-recent-name">${escapeHtml(item.name)}</span>`
-      + `<span class="home-recent-detail">${escapeHtml(item.detail)}</span>`;
+    const card = document.createElement('div');
+    card.className = `home-dash-recent-card home-dash-recent-${item.type}`;
+    // Names and hosts are ellipsised inside a 220px card, so the full pair is
+    // available on hover.
+    card.title = `${item.name} — ${item.detail}`;
+    card.innerHTML = `<span class="home-dash-recent-icon">${icon(iconName)}</span>`
+      + `<div class="home-dash-recent-info">`
+      + `<div class="home-dash-recent-name">${escapeHtml(item.name)}</div>`
+      + `<div class="home-dash-recent-detail">${escapeHtml(item.detail)}</div>`
+      + `</div>`;
 
     const delBtn = document.createElement('button');
     delBtn.type = 'button';
-    delBtn.className = 'home-recent-del';
+    delBtn.className = 'home-dash-recent-del';
     delBtn.title = t('homeRecentRemove');
     delBtn.setAttribute('aria-label', t('homeRecentRemove'));
-    delBtn.innerHTML = `<svg width="9" height="9" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
-    delBtn.onclick = (e) => {
-      e.stopPropagation();
+    delBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    delBtn.onclick = (event) => {
+      event.stopPropagation();
       if (item.type === 'ssh') {
         const c = item.raw as SSHConnectionConfig;
         removeRecentConnection(c.host, c.port ?? 22, c.username);
@@ -156,16 +170,17 @@ export function renderHomeRecentConnections(): void {
         const r = item.raw as RemoteServerInfo;
         removeRecentRemoteConnection(r.host, r.port);
       }
-      renderHomeRecentConnections();
+      renderRecentActivity(query);
     };
-    row.appendChild(delBtn);
+    card.appendChild(delBtn);
 
     // Click connects straight away, exactly like a connection-list row.
-    row.onclick = () => handleConnectionClick(item, row);
-    list.appendChild(row);
+    card.onclick = () => handleConnectionClick(item, card);
+    track.appendChild(card);
   }
 
-  host.appendChild(list);
+  section.appendChild(track);
+  setupScrollFade(track);
 }
 
 /** Add/remove fade-left / fade-right / fade-both classes based on scroll position */
@@ -293,6 +308,81 @@ export function renderGroupsSection(query: string, refreshView: () => void): voi
   setupScrollFade(groupsGrid);
 }
 
+// ─── Card width (right-edge drag) ───
+
+/** Turn a pinned width into an inline style + the flag the CSS keys off. */
+function applyPinnedWidth(card: HTMLDivElement, width: number): void {
+  card.style.width = `${width}px`;
+  card.dataset.fixedWidth = '1';
+}
+
+/**
+ * Let a card's right edge be dragged to widen it, and apply whatever width was
+ * pinned for it last time.
+ *
+ * Unpinned cards are a flat `flex: 0 0 260px`, so a long `user@host` is
+ * ellipsised. Pinning is for the case where 260px is not enough — or is too
+ * much — and `data-fixed-width` switches the card to `flex: 0 0 auto` in the
+ * stylesheet so the dragged width wins. Double-clicking the handle drops the
+ * pin and hands the card back to the default width.
+ */
+function makeCardResizable(card: HTMLDivElement, cardKey: string): void {
+  const pinned = loadCardWidths()[cardKey];
+  if (pinned) applyPinnedWidth(card, pinned);
+
+  const handle = document.createElement('div');
+  handle.className = 'home-dash-card-resizer';
+  handle.title = t('homeGroupResizeHint');
+  handle.setAttribute('role', 'separator');
+  handle.setAttribute('aria-label', t('homeGroupResizeHint'));
+  handle.draggable = false;
+
+  handle.addEventListener('pointerdown', (event: PointerEvent) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    // The width handle sits over the header, which starts a card reorder on
+    // mousedown — neither that nor a card click may fire from a resize.
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth = card.getBoundingClientRect().width;
+    handle.setPointerCapture(event.pointerId);
+    card.classList.add('resizing');
+
+    const onMove = (move: PointerEvent) => {
+      applyPinnedWidth(card, dragCardWidth(startWidth, move.clientX - startX));
+    };
+    const finish = (persist: boolean) => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onCancel);
+      card.classList.remove('resizing');
+      if (!persist) return;
+      // A click with no movement would otherwise pin the card at whatever width
+      // the row happened to hand it.
+      const width = card.getBoundingClientRect().width;
+      if (Math.abs(width - startWidth) < 1) return;
+      setCardWidth(cardKey, width);
+    };
+    const onUp = () => finish(true);
+    const onCancel = () => finish(false);
+
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onCancel);
+  });
+
+  handle.addEventListener('dblclick', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearCardWidth(cardKey);
+    card.style.width = '';
+    card.removeAttribute('data-fixed-width');
+  });
+
+  card.appendChild(handle);
+}
+
 // ─── Group card ───
 
 function createGroupCard(
@@ -373,6 +463,8 @@ function createGroupCard(
   }
 
   card.appendChild(list);
+  // Key shared with the reorder order, so a card keeps one identity.
+  makeCardResizable(card, groupName ?? '@ungrouped');
   return card;
 }
 
@@ -423,6 +515,8 @@ function createTypeGroupCard(type: 'ssh' | 'remote' | 'jumpserver', items: Conne
   }
 
   card.appendChild(list);
+  // Key shared with the reorder order, so a card keeps one identity.
+  makeCardResizable(card, `__type:${type}`);
   return card;
 }
 
@@ -924,6 +1018,13 @@ function startInlineRename(nameSpan: HTMLElement, groupName: string, refreshView
 
 // ─── Drag reorder (mouse-based for horizontal scroll) ───
 
+/**
+ * How far outside a card's own row a drag still counts as aiming at that card.
+ * Half of the grid's 12px gutter, so the rows' hit areas meet exactly once and
+ * the gap between two rows never leaves the placeholder undecided.
+ */
+const ROW_HIT_SLOP = 6;
+
 function setupDragReorder(
   card: HTMLDivElement,
   _groupName: string,
@@ -1034,23 +1135,38 @@ function setupDragReorder(
     // Edge auto-scroll when near container boundaries
     startEdgeScroll(e.clientX);
 
-    // Find drop target
+    // Find drop target. The row counts as well as the column: cards wrap onto
+    // several rows now, so an X-only test would happily drop onto a card on a
+    // different row that happens to share the same horizontal range.
     const siblings = Array.from(grid.querySelectorAll('.home-dash-group-card:not([style*="display: none"])'));
     grid.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
 
+    let fallback: HTMLElement | null = null;
+    let target: HTMLElement | null = null;
     for (const other of siblings) {
       const r = other.getBoundingClientRect();
-      if (e.clientX >= r.left && e.clientX <= r.right) {
-        (other as HTMLElement).classList.add('drag-over');
-        const mid = r.left + r.width / 2;
-        if (placeholder) {
-          if (e.clientX < mid) {
-            grid.insertBefore(placeholder, other);
-          } else if (other.nextSibling !== placeholder) {
-            grid.insertBefore(placeholder, other.nextSibling);
-          }
-        }
+      if (e.clientX < r.left || e.clientX > r.right) continue;
+      if (!fallback) fallback = other as HTMLElement;
+      if (e.clientY >= r.top - ROW_HIT_SLOP && e.clientY <= r.bottom + ROW_HIT_SLOP) {
+        target = other as HTMLElement;
         break;
+      }
+    }
+
+    // Outside every card's row (above the grid, or mid-gutter) fall back to the
+    // first card sharing the cursor's column, which is what this did before the
+    // grid wrapped.
+    const dropTarget = target ?? fallback;
+    if (dropTarget) {
+      const r = dropTarget.getBoundingClientRect();
+      dropTarget.classList.add('drag-over');
+      const mid = r.left + r.width / 2;
+      if (placeholder) {
+        if (e.clientX < mid) {
+          grid.insertBefore(placeholder, dropTarget);
+        } else if (dropTarget.nextSibling !== placeholder) {
+          grid.insertBefore(placeholder, dropTarget.nextSibling);
+        }
       }
     }
   }

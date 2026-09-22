@@ -14,7 +14,7 @@ import { showSSHModal } from './ssh';
 
 export type NewConnectionKind = 'local' | 'ssh' | 'remote' | 'jumpserver' | 'phone';
 
-interface NewAction {
+export interface NewAction {
   kind: NewConnectionKind;
   iconName: 'terminal' | 'ssh' | 'remote' | 'jumpserver' | 'phone';
   labelKey: 'homeNewLocalSession' | 'homeNewSSHSession' | 'homeRemoteConnect' | 'homeNewJumpServer' | 'homeNewPhonePairing';
@@ -23,7 +23,12 @@ interface NewAction {
   ctxMenu?: boolean;
 }
 
-const NEW_ACTIONS: NewAction[] = [
+/**
+ * Every "new connection" entry, in reading order. Exported so the full-page
+ * home can render them as its 2×2 grid without keeping a second copy of the
+ * icons, labels and actions — see home-action-grid.ts for the placement.
+ */
+export const NEW_ACTIONS: NewAction[] = [
   { kind: 'local', iconName: 'terminal', labelKey: 'homeNewLocalSession', cls: 'local', ctxMenu: true, action: () => document.dispatchEvent(new CustomEvent('new-local-session')) },
   { kind: 'ssh', iconName: 'ssh', labelKey: 'homeNewSSHSession', cls: 'ssh', action: () => showSSHModal() },
   { kind: 'remote', iconName: 'remote', labelKey: 'homeRemoteConnect', cls: 'remote', action: () => document.dispatchEvent(new CustomEvent('remote-connect-request')) },

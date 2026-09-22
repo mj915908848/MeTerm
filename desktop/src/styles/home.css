@@ -1104,6 +1104,10 @@ html[data-theme="light"] .home-dash-recent-jumpserver .home-dash-recent-icon { c
 /* ── Groups grid ── */
 .home-dash-groups-grid {
   display: flex;
+  /* Cards keep their own width and wrap onto further rows: a row that does not
+     divide evenly leaves its leftover space blank on the right instead of
+     stretching the cards to fill it. */
+  flex-wrap: wrap;
   gap: 12px;
   overflow-x: auto;
   padding: 4px 28px;
@@ -1127,7 +1131,13 @@ html[data-theme="light"] .home-dash-recent-jumpserver .home-dash-recent-icon { c
 }
 
 .home-dash-group-card {
+  /* A flat 260px card. The row wraps (see .home-dash-groups-grid) so one more
+     card starts a new line instead of every card being stretched to fill the
+     space; a name longer than 260px is ellipsised. To give one card more room,
+     drag its right edge — see makeCardResizable(). */
   flex: 0 0 260px;
+  min-width: 220px;
+  max-width: 100%;
   border: none;
   border-radius: 8px;
   background: rgba(var(--bg-card), 0.55);
@@ -1138,6 +1148,51 @@ html[data-theme="light"] .home-dash-recent-jumpserver .home-dash-recent-icon { c
   flex-direction: column;
   position: relative;
   z-index: 0; /* stacking context: contain overlay-sb z-index within card */
+}
+
+/* A dragged width (home-card-width.ts): stop growing, hold the pinned size. */
+.home-dash-group-card[data-fixed-width] {
+  flex: 0 0 auto;
+}
+
+/* ── Resize handle (right edge) ──
+   Sits inside the card because the card clips (overflow: hidden). The card's
+   overlay scrollbar is nudged 8px left (see `.home-dash-group-card > .overlay-sb`
+   below) so grabbing the edge resizes instead of dragging the scrollbar. */
+.home-dash-card-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 12;
+}
+.home-dash-card-resizer::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  width: 2px;
+  height: 28px;
+  margin-top: -14px;
+  border-radius: 1px;
+  background: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+.home-dash-group-card:hover .home-dash-card-resizer::after,
+.home-dash-group-card.resizing .home-dash-card-resizer::after {
+  opacity: 0.35;
+}
+.home-dash-group-card.resizing {
+  transition: none;
+}
+/* Keep the card's own scrollbar clear of the resize strip. */
+.home-dash-group-card > .overlay-sb {
+  transform: translateX(-8px);
 }
 
 .home-dash-group-card:hover {
@@ -2002,115 +2057,6 @@ html.vibrancy-active .conn-sidebar.conn-sidebar--flyout {
   to { transform: translateY(0); opacity: 1; }
 }
 
-/* ── Empty state (no active session) ── */
-.home-empty-card { text-align: center; max-width: 460px; width: 100%; }
-.home-empty-card .home-empty-title { font-size: 17px; font-weight: 700; color: var(--text-heading); }
-.home-empty-card .home-empty-sub { font-size: 12.5px; color: var(--text-muted); margin: 8px 0 18px; }
-.home-empty-card .home-side-new { max-width: 340px; margin: 0 auto; }
-
-/* ── Recent connections (history) on the empty home view ── */
-/* Centred on the same column as the "new connection" grid above it: the buttons
-   sit in a 340px block with 10px side padding (see `.home-empty-card
-   .home-side-new`), so the history mirrors that geometry — a 340px content box
-   with the same 10px gutters — and is centred by the auto margins. Without this
-   the list kept its full 460px card width and read as left-shifted against the
-   centred buttons. */
-.home-empty-card .home-recent {
-  /* Single source for the left edge of the section label AND every row's
-     content (icon). They used to drift apart (label 2px, rows 8px) so the
-     history read as indented against its own heading. */
-  --recent-content-inset: 2px;
-  box-sizing: content-box;
-  max-width: 340px;
-  margin: 22px auto 0;
-  padding: 0 10px;
-  text-align: left;
-}
-/* Collapse the section entirely when there is no history yet. */
-.home-empty-card .home-recent:empty { display: none; }
-.home-recent-title {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin: 0 0 6px var(--recent-content-inset, 2px);
-}
-.home-recent-empty {
-  font-size: 12px;
-  color: var(--text-dim);
-  padding: 4px 2px;
-}
-.home-recent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  max-height: 34vh;
-  overflow-y: auto;
-}
-.home-recent-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  /* Left inset shared with .home-recent-title so the icon lines up with the
-     "recent activity" label. The row BOX still spans the full column, so the
-     hover highlight keeps matching the buttons above. */
-  padding: 7px 8px 7px var(--recent-content-inset, 2px);
-  border-radius: 7px;
-  cursor: pointer;
-  min-width: 0;
-  transition: background 0.12s;
-}
-.home-recent-row:hover {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.13);
-}
-.home-recent-icon {
-  display: inline-flex;
-  flex-shrink: 0;
-  color: var(--text-secondary);
-}
-.home-recent-icon svg { width: 14px; height: 14px; }
-.home-recent-name {
-  font-size: 12.5px;
-  color: var(--text-primary);
-  max-width: 42%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.home-recent-detail {
-  flex: 1;
-  min-width: 0;
-  font-size: 11.5px;
-  color: var(--text-muted);
-  font-family: 'Menlo', monospace;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.home-recent-del {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-dim);
-  opacity: 0;
-  cursor: pointer;
-  transition: opacity 0.12s, background 0.12s, color 0.12s;
-}
-.home-recent-row:hover .home-recent-del { opacity: 1; }
-.home-recent-del:hover {
-  background: rgba(var(--bg-button), 0.9);
-  color: var(--text-heading);
-}
 .home-side-search {
   display: flex;
   align-items: center;
@@ -2499,3 +2445,21 @@ html[data-theme="light"] .group-modal-btn:hover { background: rgba(0, 0, 0, 0.07
   outline-offset: -2px;
 }
 .connection-sort-menu .home-card-menu-item:focus { background: rgba(var(--bg-button-hover), var(--app-window-opacity)); }
+
+/* ── Full-page home (restored in v0.2.18) ── */
+/* No history yet → the recent block renders nothing, and without this the empty
+   section would still hold a row's share of the scroll column's gap. */
+.home-dashboard #home-recent-activity:empty { display: none; }
+
+/* Phone pairing arrived after the 2×2 grid existed, so it has no cell of its
+   own and renders full-width under the four session kinds (home-action-grid.ts).
+   Given a tint of its own: the other four reuse the .home-btn-* variants above. */
+.home-dash-ctrl-btn.home-btn-phone {
+  background: rgba(45, 212, 191, 0.10);
+  color: #2dd4bf;
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
+}
+.home-dash-ctrl-btn.home-btn-phone:hover {
+  background: rgba(45, 212, 191, 0.18);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
+}
