@@ -537,14 +537,17 @@ class StatusBarClass {
   }
 
   /**
-   * Auto-hide the status bar when idle, show it only when something notable is
-   * happening: connecting / reconnecting / error, a file transfer, or AI running.
-   * (A steady connected/idle session shows nothing → the bar collapses to 0.)
+   * Show the status bar whenever there is a session to describe — a live
+   * connection (with its latency / session-count capsules), a connection in
+   * progress, an error, a file transfer, or a running AI turn. Only the
+   * session-less state (nothing open, i.e. the home view) collapses the bar
+   * to 0 so the reserved 24px row is reclaimed.
    */
   private updateVisibility(): void {
     if (!this.container) return;
     const s = this.state;
     const show =
+      s.connectionStatus === 'connected' ||
       s.connectionStatus === 'connecting' ||
       s.connectionStatus === 'reconnecting' ||
       s.connectionStatus === 'error' ||
