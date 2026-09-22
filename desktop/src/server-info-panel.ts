@@ -41,6 +41,24 @@ function loadWidth(): number {
   return w > 0 ? clampWidth(w) : DEFAULT_WIDTH;
 }
 
+/**
+ * Server info needs a real remote exec channel, which only a plain SSH session
+ * has:
+ *   - a local session has no remote side at all;
+ *   - a JumpServer session is an SSH connection too, but to Koko, and Koko
+ *     never granted us an exec channel — its file browser works over a
+ *     multiplexed SFTP subsystem on the authenticated terminal connection
+ *     instead (see UPDATE.md, "JumpServer SFTP 无法初始化").
+ *
+ * `executorType` is resolved once per session by DrawerManager.create(), so this
+ * is the same field the drawer and the file manager run on. The toolbar renders
+ * its entry from this function as well — one predicate, one place to change.
+ */
+export function hasRemoteServerInfo(sessionId: string | null): boolean {
+  if (!sessionId) return false;
+  return DrawerManager.getInstance(sessionId)?.executorType === 'ssh';
+}
+
 class ServerInfoPanelClass {
   private panel: HTMLDivElement | null = null;
   private bodyEl: HTMLDivElement | null = null;
@@ -106,8 +124,10 @@ class ServerInfoPanelClass {
       this.infoEl = null;
       this.compact = false;
     }
-    if (!sessionId) {
-      // Home/gallery view: nothing to describe. Keep the pin, hide the panel.
+    if (!sessionId || !hasRemoteServerInfo(sessionId)) {
+      // Nothing to describe: home/gallery has no session at all, and local /
+      // JumpServer sessions have no remote exec channel to describe. Keep the
+      // pin — the panel comes back with the next SSH tab.
       this.stopPolling();
       if (this.panel) this.panel.style.display = 'none';
       TerminalRegistry.resizeAll();
@@ -142,11 +162,13 @@ class ServerInfoPanelClass {
 
     const instance = DrawerManager.getInstance(sessionId);
     if (!instance || instance.executorType !== 'ssh') {
-      // Local sessions have no remote exec channel, and JumpServer's Koko proxy
-      // does not support exec sessions either — sysinfo needs a real SSH exec.
+      // Not an SSH session: syncToActiveSession() already hid the panel and the
+      // toolbar has no entry for it. Clear whatever is left instead of rendering
+      // a message into a hidden panel — this also drops stale numbers if the
+      // session ever changes type under us.
       this.releaseContainer();
       this.infoEl = null;
-      this.bodyEl.innerHTML = `<div class="sip-empty">${t('serverInfoPanelUnavailable')}</div>`;
+      this.bodyEl.innerHTML = '';
       return;
     }
 
@@ -203,7 +225,15 @@ class ServerInfoPanelClass {
   private requestSysInfo(): void {
     const sessionId = this.sessionId;
     if (!this._open || !sessionId) return;
-    DrawerManager.getFileManager(sessionId)?.requestServerInfo('sysinfo');
+    // Polling has to be gated here too, not just in syncToActiveSession(): open()
+    // fires one request directly, and a local/JumpServer session would be asked
+    // for sysinfo it cannot answer.
+    if (!hasRemoteServerInfo(sessionId)) return;
+    const fileManager = DrawerManager.getFileManager(sessionId);
+    // Both halves of the panel refresh on the same tick: the process box lives
+    // in this panel now, so nothing else polls it.
+    fileManager?.requestServerInfo('sysinfo');
+    fileManager?.requestServerInfo('processes');
   }
 
   /** Compact/expanded layout follows the panel's own width. */

@@ -4,9 +4,10 @@
  * 从 drawer.ts 中提取，供 DrawerManagerClass 委托调用。
  */
 
-import type { SysInfoResponse, ProcessListResponse, ServerInfoResponse, NetIfaceInfo } from './protocol';
+import type { SysInfoResponse, ProcessInfo, ProcessListResponse, ServerInfoResponse, NetIfaceInfo } from './protocol';
 import { t } from './i18n';
 import { escapeHtml } from './status-bar';
+import { formatLoadAverage, orderNicNames, pickDefaultNic, swapPercent } from './server-info-derive';
 
 export interface NetRatePoint {
   ts: number;
@@ -19,6 +20,8 @@ export interface SysInfoFields {
   sessionId: string;
   element: HTMLDivElement;
   sysInfo: SysInfoResponse | null;
+  /** Cached `ps` output; rendered by renderExpandedSysInfo, see the note there. */
+  processes: ProcessInfo[] | null;
   prevNetIfaces: NetIfaceInfo[] | null;
   prevNetTimestamp: number;
   netHistory: Map<string, NetRatePoint[]>;
@@ -46,10 +49,10 @@ export function updateNetHistory(instance: SysInfoFields, ifaces: NetIfaceInfo[]
   instance.prevNetIfaces = ifaces;
   instance.prevNetTimestamp = now;
 
-  // Auto-select first NIC if not set
-  if (!instance.selectedNic && ifaces.length > 0) {
-    instance.selectedNic = ifaces[0].name;
-  }
+  // Auto-select the uplink rather than interfaces[0]: a container host lists
+  // docker0/veth* right next to the real NIC and the kernel's order decides
+  // which one comes first. A NIC the user picked keeps winning while it exists.
+  instance.selectedNic = pickDefaultNic(ifaces.map(i => i.name), instance.selectedNic);
 }
 
 export function formatUptime(seconds: number): string {
@@ -81,8 +84,9 @@ export function renderNetChart(instance: SysInfoFields): string {
   const nic = instance.selectedNic;
   const history = instance.netHistory.get(nic) || [];
 
-  const nicOptions = ifaces.map(i =>
-    `<option value="${escapeHtml(i.name)}"${i.name === nic ? ' selected' : ''}>${escapeHtml(i.name)}</option>`
+  // Physical adapters first, virtual ones last (see server-info-derive.ts).
+  const nicOptions = orderNicNames(ifaces.map(i => i.name)).map(name =>
+    `<option value="${escapeHtml(name)}"${name === nic ? ' selected' : ''}>${escapeHtml(name)}</option>`
   ).join('');
 
   let lastRx = 0, lastTx = 0;
@@ -221,9 +225,21 @@ function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElemen
   const info = instance.sysInfo;
   if (!info) return;
   const memPercent = info.mem_total > 0 ? (info.mem_used / info.mem_total) * 100 : 0;
+  const swapTotal = info.swap_total ?? 0;
+  const swapUsed = info.swap_used ?? 0;
 
   const existingConn = serverInfoEl.querySelector('.server-info-conn');
   const connHtml = existingConn ? existingConn.outerHTML : '';
+
+  // Older remote hosts (and the local fallback) report no load average — drop
+  // the row rather than showing an empty one.
+  const loadText = formatLoadAverage(info.load_avg);
+  const loadHtml = loadText
+    ? `<div class="server-info-item">
+      <div class="server-info-label">${t('serverInfoLoad')}</div>
+      <div class="server-info-value server-info-value-small">${loadText}</div>
+    </div>`
+    : '';
 
   const disksHtml = (info.disks || []).map(d => {
     const pct = d.total > 0 ? (d.used / d.total) * 100 : 0;
@@ -248,6 +264,7 @@ function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElemen
       <div class="server-info-label">${t('serverInfoUptime')}</div>
       <div class="server-info-value">${formatUptime(info.uptime_seconds ?? 0)}</div>
     </div>
+    ${loadHtml}
     <div class="server-info-item">
       <div class="server-info-label">${t('serverInfoCPU')} · ${escapeHtml(String(info.cpu_cores ?? 0))} cores</div>
       <div class="server-info-value server-info-value-small">${escapeHtml(String(info.cpu_model ?? ''))}</div>
@@ -258,6 +275,12 @@ function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElemen
       <div class="server-info-value server-info-value-small">${formatBytes(info.mem_used ?? 0)} / ${formatBytes(info.mem_total ?? 0)}</div>
       ${renderProgressBar(memPercent)}
     </div>
+    <div class="server-info-item">
+      <div class="server-info-label">${t('serverInfoSwap')}</div>
+      <div class="server-info-value server-info-value-small">${formatBytes(swapUsed)} / ${formatBytes(swapTotal)}</div>
+      ${renderProgressBar(swapPercent(swapTotal, swapUsed))}
+    </div>
+    ${renderProcessBox(instance)}
     ${renderNetChart(instance)}
     ${disksHtml}
   `;
@@ -273,6 +296,46 @@ function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElemen
       renderSysInfo(instance);
     });
   }
+}
+
+/**
+ * The process list used to live in the file drawer's own tab; it now renders as
+ * a small box inside the panel, between the memory rows and the network chart.
+ *
+ * It is rendered from `instance.processes` as part of the sysinfo template
+ * rather than into its own target: the two polls (sysinfo, processes) land out
+ * of step, and a separate DOM node would be wiped by the next sysinfo render —
+ * the rows would flicker every 5s. One owner for the whole block, no flicker.
+ *
+ * Three columns only. The panel is 280px by default, and PID/user/etime would
+ * leave the command column a few characters wide.
+ */
+function renderProcessBox(instance: SysInfoFields): string {
+  const procs = instance.processes ?? [];
+  const rows = procs.map(p => {
+    const cmd = escapeHtml(String(p.command));
+    return `<tr>
+      <td class="sip-proc-cmd" title="${cmd}">${cmd}</td>
+      <td class="sip-proc-num${p.mem > 50 ? ' high-usage' : ''}">${p.mem.toFixed(1)}</td>
+      <td class="sip-proc-num${p.cpu > 50 ? ' high-usage' : ''}">${p.cpu.toFixed(1)}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="server-info-item">
+    <div class="server-info-label">${t('serverInfoProcesses')}</div>
+    <div class="sip-proc">
+      <table class="sip-proc-table">
+        <thead>
+          <tr>
+            <th class="sip-proc-cmd">${t('processColCommand')}</th>
+            <th class="sip-proc-num">${t('processColMem')}</th>
+            <th class="sip-proc-num">${t('processColCPU')}</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
 
 export function renderSysInfo(instance: SysInfoFields): void {
@@ -306,33 +369,6 @@ export function renderSysInfo(instance: SysInfoFields): void {
   });
 }
 
-export function renderProcessList(instance: SysInfoFields, data: ProcessListResponse): void {
-  const tbody = instance.element.querySelector(`#process-list-${instance.sessionId}`) as HTMLElement;
-  if (!tbody) return;
-
-  tbody.innerHTML = data.processes.map(p => `
-    <tr>
-      <td>${p.pid}</td>
-      <td class="process-name">${escapeHtml(String(p.command))}</td>
-      <td>${escapeHtml(String(p.user))}</td>
-      <td class="${p.cpu > 50 ? 'high-usage' : ''}">${p.cpu.toFixed(1)}</td>
-      <td class="${p.mem > 50 ? 'high-usage' : ''}">${p.mem.toFixed(1)}</td>
-      <td>${escapeHtml(String(p.time))}</td>
-    </tr>
-  `).join('');
-
-  // 仅在文本被截断时显示 tooltip
-  tbody.querySelectorAll('td').forEach((td) => {
-    td.addEventListener('mouseenter', () => {
-      if (td.scrollWidth > td.clientWidth) {
-        td.title = td.textContent || '';
-      } else {
-        td.removeAttribute('title');
-      }
-    });
-  });
-}
-
 export function handleServerInfoResponse(instance: SysInfoFields, data: ServerInfoResponse): void {
   if (data.type === 'sysinfo') {
     const sysInfo = data as SysInfoResponse;
@@ -340,6 +376,10 @@ export function handleServerInfoResponse(instance: SysInfoFields, data: ServerIn
     updateNetHistory(instance, sysInfo.net_ifaces || []);
     renderSysInfo(instance);
   } else if (data.type === 'processes') {
-    renderProcessList(instance, data as ProcessListResponse);
+    // Cached and re-rendered as a whole: the box lives inside the sysinfo
+    // template, so writing the rows into their own node would be undone by the
+    // next sysinfo tick (see renderProcessBox).
+    instance.processes = (data as ProcessListResponse).processes;
+    renderSysInfo(instance);
   }
 }

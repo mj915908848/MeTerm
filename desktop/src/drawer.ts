@@ -1,5 +1,5 @@
 import { FileManager } from './file-manager';
-import { type SysInfoResponse, type ServerInfoResponse, type NetIfaceInfo } from './protocol';
+import { type SysInfoResponse, type ProcessInfo, type ServerInfoResponse, type NetIfaceInfo } from './protocol';
 import type { TerminalTransport } from './terminal-transport';
 import { loadSettings } from './themes';
 import { t } from './i18n';
@@ -33,9 +33,9 @@ export interface DrawerInstance {
   isOpen: boolean;
   height: number;
   fileManager: FileManager | null;
-  processTimer: ReturnType<typeof setInterval> | null;
-  activeTab: 'files' | 'processes';
   sysInfo: SysInfoResponse | null;
+  /** Last `ps` snapshot, rendered by the server-info panel's process box. */
+  processes: ProcessInfo[] | null;
   prevNetIfaces: NetIfaceInfo[] | null;
   prevNetTimestamp: number;
   netHistory: Map<string, NetRatePoint[]>;
@@ -103,9 +103,8 @@ class DrawerManagerClass {
       isOpen: false,
       height: savedHeight,
       fileManager,
-      processTimer: null,
-      activeTab: 'files',
       sysInfo: null,
+      processes: null,
       prevNetIfaces: null,
       prevNetTimestamp: 0,
       netHistory: new Map(),
@@ -127,23 +126,16 @@ class DrawerManagerClass {
     this.setupSmoothScroll(instance);
 
     // Attach overlay scrollbar (inline mode: scrollbar inside each scroll area)
-    for (const sel of ['.file-list', '.process-list', '.transfer-history']) {
+    for (const sel of ['.file-list', '.transfer-history']) {
       const el = drawer.querySelector(sel) as HTMLElement | null;
       if (!el) continue;
-      // .file-list / .process-list 内部有 sticky thead,scrollbar 需要从 thead 下方开始
+      // .file-list 内部有 sticky thead,scrollbar 需要从 thead 下方开始
       // 否则 thumb 会叠在表头上
       const tableEl = el.querySelector('table') as HTMLElement | null;
       const topOffset = tableEl
         ? () => (tableEl.querySelector('thead') as HTMLElement | null)?.offsetHeight || 0
         : undefined;
       createOverlayScrollbar({ viewport: el, container: el, topOffset });
-    }
-
-    // JumpServer：Koko 代理不支持 exec session，隐藏进程 tab。
-    // (服务器信息已移出抽屉，见 server-info-panel.ts)
-    if (resolvedType === 'jumpserver' || resolvedType === 'local') {
-      const processTab = drawer.querySelector('[data-tab="processes"]') as HTMLElement;
-      if (processTab) processTab.style.display = 'none';
     }
 
     // 消费 pending transport/websocket（解决创建顺序问题）
@@ -195,9 +187,6 @@ class DrawerManagerClass {
               <button class="drawer-tab btn-switch-mode active" data-tab="files" title="Switch view">
                 <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2" width="14" height="12" rx="2"/><line x1="5.5" y1="2" x2="5.5" y2="14"/></svg>
               </button>
-              <button class="drawer-tab" data-tab="processes" title="${t('drawerTabProcesses')}">
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="2"/><line x1="5" y1="6" x2="11" y2="6"/><line x1="5" y1="8.5" x2="9" y2="8.5"/><line x1="5" y1="11" x2="7" y2="11"/></svg>
-              </button>
             </div>
             <div class="file-toolbar-actions" data-tab-content="files">
               <button class="btn-back" title="返回上一层">
@@ -240,13 +229,6 @@ class DrawerManagerClass {
                   <line x1="4" y1="2" x2="4" y2="14"/>
                   <line x1="8" y1="2" x2="8" y2="14"/>
                   <line x1="12" y1="2" x2="12" y2="14"/>
-                </svg>
-              </button>
-            </div>
-            <div class="file-toolbar-actions" data-tab-content="processes" style="display:none;">
-              <button class="btn-refresh-processes" title="刷新进程列表">
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M14 8a6 6 0 1 1-1.76-4.24M14 2v4h-4"/>
                 </svg>
               </button>
             </div>
@@ -315,22 +297,6 @@ class DrawerManagerClass {
             </table>
           </div>
           <div class="file-status-bar" id="file-status-bar-${sessionId}"></div>
-          <div class="process-list" data-tab-content="processes" style="display: none;">
-            <table class="process-table" id="process-table-${sessionId}">
-              <thead>
-                <tr>
-                  <th style="width:10%">${t('processColPID')}</th>
-                  <th style="width:36%">${t('processColName')}</th>
-                  <th style="width:14%">${t('processColUser')}</th>
-                  <th style="width:12%">${t('processColCPU')}</th>
-                  <th style="width:12%">${t('processColMem')}</th>
-                  <th style="width:16%">${t('processColTime')}</th>
-                </tr>
-              </thead>
-              <tbody id="process-list-${sessionId}">
-              </tbody>
-            </table>
-          </div>
           <div class="transfer-history" id="transfer-history-${sessionId}" style="display: none;">
             <div class="history-toolbar">
               <div class="history-search-wrapper">
@@ -373,22 +339,14 @@ class DrawerManagerClass {
     const tabBtns = instance.element.querySelectorAll('.drawer-tab[data-tab]');
     tabBtns.forEach(btn => {
       btn.addEventListener('click', () => {
-        const tab = (btn as HTMLElement).dataset.tab as 'files' | 'processes';
+        const tab = (btn as HTMLElement).dataset.tab as 'files';
         this.switchTab(instance, tab);
       });
     });
-
-    // Refresh processes button
-    const refreshProcessBtn = instance.element.querySelector('.btn-refresh-processes');
-    if (refreshProcessBtn) {
-      refreshProcessBtn.addEventListener('click', () => {
-        instance.fileManager?.requestServerInfo('processes');
-      });
-    }
   }
 
   private setupSmoothScroll(instance: DrawerInstance): void {
-    const selectors = ['.file-list', '.process-list', '.transfer-history'];
+    const selectors = ['.file-list', '.transfer-history'];
     const factor = 0.35; // reduce scroll speed to ~35%
 
     const applySmooth = (container: HTMLElement) => {
@@ -422,10 +380,9 @@ class DrawerManagerClass {
     observer.observe(instance.element, { childList: true, subtree: true });
   }
 
-  private switchTab(instance: DrawerInstance, tab: 'files' | 'processes'): void {
-    instance.activeTab = tab;
-
-    // Update tab button states
+  private switchTab(instance: DrawerInstance, tab: 'files'): void {
+    // Only the file view is left in the drawer — the process list moved to the
+    // server-info panel (see drawer-system-info.ts::renderProcessBox).
     const tabBtns = instance.element.querySelectorAll('.drawer-tab');
     tabBtns.forEach(btn => {
       const btnTab = (btn as HTMLElement).dataset.tab;
@@ -456,28 +413,6 @@ class DrawerManagerClass {
         horizontalIcon.style.display = 'inline';
         verticalIcon.style.display = 'none';
       }
-    }
-
-    // Start/stop process refresh
-    if (tab === 'processes') {
-      instance.fileManager?.requestServerInfo('processes');
-      this.startProcessRefresh(instance);
-    } else {
-      this.stopProcessRefresh(instance);
-    }
-  }
-
-  private startProcessRefresh(instance: DrawerInstance): void {
-    if (instance.processTimer) return;
-    instance.processTimer = setInterval(() => {
-      instance.fileManager?.requestServerInfo('processes');
-    }, 5000);
-  }
-
-  private stopProcessRefresh(instance: DrawerInstance): void {
-    if (instance.processTimer) {
-      clearInterval(instance.processTimer);
-      instance.processTimer = null;
     }
   }
 
@@ -830,7 +765,6 @@ class DrawerManagerClass {
       import('./ai-capsule').then(({ AICapsuleManager }) => {
         AICapsuleManager.setDrawerOffset(sessionId, 0);
       });
-      this.stopProcessRefresh(instance);
       // 关闭 drawer 时清空 drag-drop 活跃目标
       FileManager.setActiveDragDropTarget(null);
     }
@@ -909,7 +843,6 @@ class DrawerManagerClass {
   destroy(sessionId: string): void {
     const instance = this.drawers.get(sessionId);
     if (!instance) return;
-    this.stopProcessRefresh(instance);
     instance.element.remove();
     this.drawers.delete(sessionId);
     this.pendingTransports.delete(sessionId);

@@ -184,62 +184,8 @@
   pointer-events: none;
 }
 
-/* ============================================================================
-   Process List Table
-   ============================================================================ */
-.process-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-.process-table {
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
-  font-size: var(--file-manager-font-size, 12px);
-}
-
-.process-table thead th {
-  position: sticky;
-  top: 0;
-  background: rgb(var(--bg-primary));
-  padding: 4px calc(var(--file-manager-font-size, 12px) * 0.8);
-  text-align: left;
-  border-bottom: 1px solid var(--border-primary);
-  font-size: var(--file-manager-font-size, 12px);
-  font-weight: 600;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  z-index: 10;
-  user-select: none;
-}
-
-.process-table tbody td {
-  padding: 3px calc(var(--file-manager-font-size, 12px) * 0.8);
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: var(--file-manager-font-size, 12px);
-  font-family: 'Menlo', monospace;
-  line-height: 1.4;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.process-table tbody tr:hover {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.08);
-}
-
-.process-name {
-  /* 截断样式已由 .process-table tbody td 统一处理 */
-}
-
-.high-usage {
-  color: #e05050;
-  font-weight: 600;
-}
+/* Process list styles moved to server-info-panel.css — the table lives in the
+   server-info panel now (.sip-proc*), not in the file drawer. */
 
 /* ============================================================================
    Network Chart

@@ -168,6 +168,11 @@ export interface SysInfoResponse {
   cpu_usage: number;
   mem_total: number;
   mem_used: number;
+  /** Swap in bytes; absent on hosts that report no swap at all. */
+  swap_total?: number;
+  swap_used?: number;
+  /** 1/5/15-minute load averages. */
+  load_avg?: number[];
   disks: DiskInfo[];
   net_ifaces?: NetIfaceInfo[];
 }

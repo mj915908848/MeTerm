@@ -20,6 +20,8 @@ echo "CPU_CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 1)"
 cm=$(grep 'model name' /proc/cpuinfo 2>/dev/null | head -1 | sed 's/.*: //'); [ -z "$cm" ] && cm=$(sysctl -n machdep.cpu.brand_string 2>/dev/null); [ -z "$cm" ] && cm="unknown"; echo "CPU_MODEL=$cm"
 if [ -f /proc/stat ]; then c1=$(awk '/^cpu /{print $2,$3,$4,$5,$6,$7,$8}' /proc/stat); sleep 1; c2=$(awk '/^cpu /{print $2,$3,$4,$5,$6,$7,$8}' /proc/stat); echo "$c1" "$c2" | awk '{u1=$1+$3;t1=$1+$2+$3+$4+$5+$6+$7;u2=$8+$10;t2=$8+$9+$10+$11+$12+$13+$14;dt=t2-t1;if(dt>0)printf "CPU_USAGE=%.1f\n",(u2-u1)/dt*100;else print "CPU_USAGE=0"}'; elif command -v top >/dev/null 2>&1; then top -l1 -n0 -s0 2>/dev/null | awk '/CPU usage/{gsub(/%/,"",$7);printf "CPU_USAGE=%.1f\n",100-$7}'; else echo "CPU_USAGE=0"; fi
 if [ -f /proc/meminfo ]; then awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}/^MemFree:/{f=$2}/^Buffers:/{b=$2}/^Cached:/{c=$2}END{if(a>0){u=t-a}else{u=t-f-b-c};printf "MEM_TOTAL=%.0f\nMEM_USED=%.0f\n",t*1024,u*1024}' /proc/meminfo; elif command -v sysctl >/dev/null 2>&1; then t=$(sysctl -n hw.memsize 2>/dev/null||echo 0);echo "MEM_TOTAL=$t";p=$(vm_stat 2>/dev/null|awk '/Pages active/{a=$3}/Pages wired/{w=$3}/Pages occupied by compressor/{c=$3}END{gsub(/\./,"",a);gsub(/\./,"",w);gsub(/\./,"",c);printf "%.0f\n",(a+w+c)*4096}');echo "MEM_USED=${p:-0}"; fi
+if [ -f /proc/meminfo ]; then awk '/^SwapTotal:/{t=$2}/^SwapFree:/{f=$2}END{printf "SWAP_TOTAL=%.0f\nSWAP_USED=%.0f\n",t*1024,(t-f)*1024}' /proc/meminfo; elif command -v sysctl >/dev/null 2>&1; then sysctl -n vm.swapusage 2>/dev/null | awk '{t="";u="";for(i=1;i<=NF;i++){if($i=="total")t=$(i+2);if($i=="used")u=$(i+2)};sub(/M$/,"",t);sub(/M$/,"",u);if(t!="")printf "SWAP_TOTAL=%.0f\nSWAP_USED=%.0f\n",t*1048576,u*1048576}'; fi
+if [ -f /proc/loadavg ]; then echo "LOADAVG=$(awk '{printf "%s|%s|%s",$1,$2,$3}' /proc/loadavg)"; elif command -v sysctl >/dev/null 2>&1; then echo "LOADAVG=$(sysctl -n vm.loadavg 2>/dev/null | sed 's/[{}]//g' | awk '{printf "%s|%s|%s",$1,$2,$3}')"; fi
 df -kP 2>/dev/null | awk 'NR>1 && $1 ~ /^\// {printf "DISK=%s|%.0f|%.0f|%.0f\n",$6,$2*1024,$3*1024,$4*1024}'
 if [ -f /proc/net/dev ]; then awk '/^ *[a-z]/ && !/^ *lo:/ {gsub(/:/, " "); printf "NET=%s|%.0f|%.0f\n",$1,$2,$10}' /proc/net/dev 2>/dev/null; fi
 if [ -f /proc/uptime ]; then echo "UPTIME_SECS=$(cut -d. -f1 /proc/uptime 2>/dev/null)"; elif command -v sysctl >/dev/null 2>&1; then bt=$(sysctl -n kern.boottime 2>/dev/null|sed 's/.*sec = \([0-9]*\).*/\1/');now=$(date +%s);echo "UPTIME_SECS=$((now-bt))"; else echo "UPTIME_SECS=0"; fi
@@ -38,6 +40,22 @@ pub async fn handle_server_info(session: &Session, payload: &[u8]) -> Vec<u8> {
 
     let exec_type = session.executor_type.lock().unwrap().clone();
     if exec_type != "ssh" {
+        // A JumpServer session is a real SSH connection, but to Koko, and Koko
+        // never granted us an exec channel (the file browser multiplexes an SFTP
+        // subsystem on the authenticated connection instead). Answering with
+        // handle_local_server_info() here would label THIS machine's hostname and
+        // OS as the remote asset's — say so instead.
+        if exec_type == "jumpserver" {
+            let err = serde_json::json!({
+                "type": "error",
+                "code": "SERVER_INFO_UNSUPPORTED",
+                "message": "server info is not available over a JumpServer session",
+            });
+            return protocol::encode_message(
+                protocol::MSG_SERVER_INFO,
+                serde_json::to_vec(&err).unwrap_or_default().as_slice(),
+            );
+        }
         // Local session — return local info
         return handle_local_server_info(&req_type);
     }
@@ -164,6 +182,22 @@ fn parse_sysinfo_output(output: &str) -> serde_json::Value {
             }
             "MEM_USED" => {
                 info["mem_used"] = val.parse::<i64>().unwrap_or(0).into();
+            }
+            "SWAP_TOTAL" => {
+                info["swap_total"] = val.parse::<i64>().unwrap_or(0).into();
+            }
+            "SWAP_USED" => {
+                info["swap_used"] = val.parse::<i64>().unwrap_or(0).into();
+            }
+            "LOADAVG" => {
+                // 1/5/15-minute load averages, pipe-separated.
+                let loads: Vec<f64> = val
+                    .split('|')
+                    .filter_map(|v| v.trim().parse::<f64>().ok())
+                    .collect();
+                if !loads.is_empty() {
+                    info["load_avg"] = loads.into();
+                }
             }
             "UPTIME_SECS" => {
                 info["uptime_seconds"] = val.parse::<i64>().unwrap_or(0).into();

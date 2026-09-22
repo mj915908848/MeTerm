@@ -29,7 +29,7 @@ import { isPipActive, togglePip } from './pip';
 import { DrawerManager } from './drawer';
 import { AICapsuleManager } from './ai-capsule';
 import { toggleFileManager, isFileManagerOpen } from './file-manager-toggle';
-import { ServerInfoPanel } from './server-info-panel';
+import { ServerInfoPanel, hasRemoteServerInfo } from './server-info-panel';
 import { openConnectionsWindow } from './connections-window';
 import { getLanAccessState, setLanAccess } from './lan-access';
 import appIconUrl from '../src-tauri/icons/icon.svg';
@@ -313,9 +313,12 @@ export function renderToolbarActions(): void {
   // an active terminal.
   const hasActiveSession = TabManager.tabs.length > 0 && !isHomeView && !isGalleryView;
 
-  if (hasActiveSession) {
-    // Server info (left dock) — placed before the file manager so the two docks
-    // read left-to-right in the order they occupy the window.
+  // Server info (left dock) — placed before the file manager so the two docks
+  // read left-to-right in the order they occupy the window. Only SSH sessions
+  // get the entry: a local session has no remote side, and a JumpServer
+  // session's Koko connection carries no exec channel (hasRemoteServerInfo).
+  const siSessionId = TabManager.getActiveSessionId() ?? null;
+  if (hasActiveSession && hasRemoteServerInfo(siSessionId)) {
     const siBtn = document.createElement('button');
     siBtn.className = `toolbar-action-btn server-info-toggle-btn${ServerInfoPanel.isOpen() ? ' active' : ''}`;
     siBtn.type = 'button';

@@ -179,7 +179,6 @@ export interface Translations {
   sshAuthUsedDefaultTitle: string;
   sshAuthUsedDefaultBody: string;
   drawerTabFiles: string;
-  drawerTabProcesses: string;
   // File sidebar
   sidebarRefresh: string;
   sidebarNewFolder: string;
@@ -236,12 +235,14 @@ export interface Translations {
   serverInfoOS: string;
   serverInfoKernel: string;
   serverInfoUptime: string;
+  serverInfoLoad: string;
   serverInfoCPU: string;
   serverInfoMemory: string;
+  serverInfoSwap: string;
+  serverInfoProcesses: string;
   serverInfoDisk: string;
   serverInfoNetwork: string;
   serverInfoLoading: string;
-  serverInfoPanelUnavailable: string;
   serverInfoPanelClose: string;
   connectionsWindowTitle: string;
   connectionsWindowHint: string;
@@ -265,12 +266,9 @@ export interface Translations {
   appMenuCloseAllSessions: string;
   appMenuCloseWindow: string;
   appMenuQuit: string;
-  processColPID: string;
-  processColName: string;
-  processColUser: string;
+  processColCommand: string;
   processColCPU: string;
   processColMem: string;
-  processColTime: string;
   backgroundImage: string;
   backgroundImageOpacity: string;
   backgroundImageSelect: string;
@@ -989,7 +987,6 @@ const translations: Record<Language, Translations> = {
     sshAuthUsedDefaultTitle: 'Connected via default key',
     sshAuthUsedDefaultBody: 'Authentication succeeded using a key in ~/.ssh/.',
     drawerTabFiles: 'Files',
-    drawerTabProcesses: 'Processes',
     sidebarRefresh: 'Refresh',
     sidebarNewFolder: 'New folder',
     sidebarUpload: 'Upload',
@@ -1045,12 +1042,14 @@ const translations: Record<Language, Translations> = {
     serverInfoOS: 'OS',
     serverInfoKernel: 'Kernel',
     serverInfoUptime: 'Uptime',
+    serverInfoLoad: 'Load',
     serverInfoCPU: 'CPU',
     serverInfoMemory: 'Memory',
+    serverInfoSwap: 'Swap',
+    serverInfoProcesses: 'Processes',
     serverInfoDisk: 'Disk',
     serverInfoNetwork: 'Network',
     serverInfoLoading: 'Loading...',
-    serverInfoPanelUnavailable: 'Server info is available for SSH sessions only.',
     serverInfoPanelClose: 'Close',
     connectionsWindowTitle: 'Connections',
     connectionsWindowHint: 'Click a connection to open it in the main window.',
@@ -1074,12 +1073,9 @@ const translations: Record<Language, Translations> = {
     appMenuCloseAllSessions: 'Close All Sessions',
     appMenuCloseWindow: 'Close Window',
     appMenuQuit: 'Quit Application',
-    processColPID: 'PID',
-    processColName: 'Name',
-    processColUser: 'User',
+    processColCommand: 'Command',
     processColCPU: 'CPU%',
     processColMem: 'MEM%',
-    processColTime: 'Time',
     backgroundImage: 'Background Image',
     backgroundImageOpacity: 'Image Opacity',
     backgroundImageSelect: 'Select Image',
@@ -1794,7 +1790,6 @@ const translations: Record<Language, Translations> = {
     sshAuthUsedDefaultTitle: '已通过默认密钥连接',
     sshAuthUsedDefaultBody: '使用 ~/.ssh/ 下的默认密钥完成了认证。',
     drawerTabFiles: '文件',
-    drawerTabProcesses: '进程',
     sidebarRefresh: '刷新',
     sidebarNewFolder: '新建文件夹',
     sidebarUpload: '上传',
@@ -1850,12 +1845,14 @@ const translations: Record<Language, Translations> = {
     serverInfoOS: '系统',
     serverInfoKernel: '内核',
     serverInfoUptime: '运行',
+    serverInfoLoad: '负载',
     serverInfoCPU: 'CPU',
     serverInfoMemory: '内存',
+    serverInfoSwap: '交换',
+    serverInfoProcesses: '进程',
     serverInfoDisk: '磁盘',
     serverInfoNetwork: '网络',
     serverInfoLoading: '加载中...',
-    serverInfoPanelUnavailable: '服务器信息仅对 SSH 会话可用。',
     serverInfoPanelClose: '关闭',
     connectionsWindowTitle: '连接',
     connectionsWindowHint: '点击连接即在主窗口中打开会话。',
@@ -1879,12 +1876,9 @@ const translations: Record<Language, Translations> = {
     appMenuCloseAllSessions: '关闭所有会话',
     appMenuCloseWindow: '关闭窗口',
     appMenuQuit: '退出应用',
-    processColPID: 'PID',
-    processColName: '进程名',
-    processColUser: '用户',
+    processColCommand: '命令',
     processColCPU: 'CPU%',
     processColMem: '内存%',
-    processColTime: '运行时间',
     backgroundImage: '背景图片',
     backgroundImageOpacity: '图片透明度',
     backgroundImageSelect: '选择图片',

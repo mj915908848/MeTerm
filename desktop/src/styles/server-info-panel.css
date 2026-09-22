@@ -78,11 +78,79 @@ html.vibrancy-active .server-info-panel {
   display: none;
 }
 
-.sip-empty {
-  padding: 14px 4px;
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--text-muted);
+/* ── Process box ──
+   Moved out of the file drawer's own tab (it used to be a full-width table
+   next to the file list): a small fixed-height list between the memory rows
+   and the network chart. Three columns only — the panel is 280px by default,
+   and PID/user/etime would leave the command column a few characters wide.
+
+   Surface: `--bg-primary` against the panel's `--bg-toolbar`, the same pair the
+   terminal and the panel already use to tell two surfaces apart. The white-alpha
+   washes used by .si-tile are invisible on a light theme — this box has to read
+   as a box in both. */
+.sip-proc {
+  margin-top: 3px;
+  max-height: 148px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: rgb(var(--bg-primary));
+  scrollbar-width: thin;
+}
+.sip-proc-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 11px;
+  font-family: 'Menlo', monospace;
+}
+.sip-proc-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 3px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: right;
+  color: var(--text-secondary);
+  /* Opaque on purpose: this is the only thing hiding the rows that scroll
+     under the sticky header. */
+  background: rgb(var(--bg-primary));
+  border-bottom: 1px solid var(--border-primary);
+  user-select: none;
+}
+.sip-proc-table thead th.sip-proc-cmd {
+  text-align: left;
+}
+.sip-proc-table tbody td {
+  padding: 2px 6px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sip-proc-table tbody tr:first-child td {
+  border-top: none;
+}
+.sip-proc-table tbody td.sip-proc-cmd {
+  color: var(--text-primary);
+}
+.sip-proc-table tbody tr:hover {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.08);
+}
+.sip-proc-cmd {
+  width: auto;
+}
+.sip-proc-num {
+  width: 46px;
+  text-align: right;
+}
+/* A process eating more than half the box's CPU/memory. Needs the extra
+   specificity: the row colour above is set on `.sip-proc-table tbody td`. */
+.sip-proc-table tbody td.sip-proc-num.high-usage {
+  color: #e05050;
+  font-weight: 600;
 }
 
 /* ── Right-edge resize handle (shares sidebarWidth with the file sidebar) ── */
