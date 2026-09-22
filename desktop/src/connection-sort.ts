@@ -57,3 +57,39 @@ export function sortConnections<T>(
     return direction * (hostOrder || left.port - right.port || collator.compare(left.name, right.name));
   });
 }
+
+/**
+ * Sort scope of the "no group" bucket. The connection list keys that bucket by
+ * `UNGROUPED` in home-side.ts and the home page's per-type cards show exactly
+ * those rows, so the two names have to stay identical — `sort-sync.test.mts`
+ * fails if either drifts.
+ */
+const UNGROUPED_GROUP = '__ungrouped__';
+
+/**
+ * Name/host/port of a stored connection, for the host- and name-based modes.
+ * JumpServer configs carry `sshHost`/`sshPort` where SSH/remote ones have
+ * `host`/`port`, so both shapes have to be read here rather than at each call.
+ */
+export function connectionAddress(item: { name: string; raw: unknown }): SortableConnection {
+  const raw = (item.raw ?? {}) as { sshHost?: string; sshPort?: number; host?: string; port?: number };
+  const host = 'sshHost' in raw ? raw.sshHost : raw.host;
+  const port = 'sshPort' in raw ? raw.sshPort : raw.port;
+  return { name: item.name, host: host ?? '', port: port ?? 0 };
+}
+
+/**
+ * Sort one group's rows the way the connection manager renders them.
+ *
+ * Every surface that lists connections inside a group has to go through this —
+ * the home page's cards and the connection window both show the same bucket, and
+ * a surface that skips it silently falls back to insertion order, which reads as
+ * "the sort I picked over there did nothing here".
+ *
+ * `group === null` addresses the ungrouped bucket.
+ */
+export function sortGroupConnections<T extends { name: string; raw: unknown }>(
+  items: readonly T[], group: string | null, language: string,
+): T[] {
+  return sortConnections(items, getGroupSort(group ?? UNGROUPED_GROUP), language, connectionAddress);
+}

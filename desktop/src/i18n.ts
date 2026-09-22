@@ -248,6 +248,9 @@ export interface Translations {
   connectionsWindowHint: string;
   connectionsWindowSettings: string;
   connectionsWindowOpenFailed: string;
+  connectionMoveToGroup: string;
+  connectionClearSelection: string;
+  connectionGroupEmptyHint: string;
   connectionDeleteFailedTitle: string;
   connectionDeleteFailedBody: string;
   toolbarAiAgent: string;
@@ -1054,9 +1057,12 @@ const translations: Record<Language, Translations> = {
     serverInfoLoading: 'Loading...',
     serverInfoPanelClose: 'Close',
     connectionsWindowTitle: 'Connections',
-    connectionsWindowHint: 'Click a connection to open it in the main window.',
+    connectionsWindowHint: 'Click a connection to open it. ⌘/Ctrl-click to select several, then drag them onto a group.',
     connectionsWindowSettings: 'Settings',
     connectionsWindowOpenFailed: 'Could not open the connections window.',
+    connectionMoveToGroup: 'Move to group',
+    connectionClearSelection: 'Clear',
+    connectionGroupEmptyHint: 'Drag connections here',
     connectionDeleteFailedTitle: 'Could not delete connection',
     connectionDeleteFailedBody: 'The connection is still in the list. See the console for details.',
     toolbarAiAgent: 'AI Agent',
@@ -1859,9 +1865,12 @@ const translations: Record<Language, Translations> = {
     serverInfoLoading: '加载中...',
     serverInfoPanelClose: '关闭',
     connectionsWindowTitle: '连接',
-    connectionsWindowHint: '点击连接即在主窗口中打开会话。',
+    connectionsWindowHint: '点击连接即打开会话。⌘/Ctrl 点击可多选，再拖到分组上即可移动。',
     connectionsWindowSettings: '设置',
     connectionsWindowOpenFailed: '无法打开连接窗口。',
+    connectionMoveToGroup: '移动到分组',
+    connectionClearSelection: '取消选择',
+    connectionGroupEmptyHint: '拖放连接到此处',
     connectionDeleteFailedTitle: '删除连接失败',
     connectionDeleteFailedBody: '该连接仍保留在列表中，详情见控制台。',
     toolbarAiAgent: 'AI 助手',

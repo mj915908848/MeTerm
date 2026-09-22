@@ -3,6 +3,7 @@
  * connection groups, context menus, group modals, drag reorder.
  * Extracted from home-dashboard.ts for code size control.
  */
+import { settings } from './app-state';
 import { t } from './i18n';
 import { icon } from './icons';
 import { showToast } from './notify';
@@ -15,6 +16,7 @@ import {
   loadCardWidths,
   setCardWidth,
 } from './home-card-width';
+import { sortGroupConnections } from './connection-sort';
 import {
   type SSHConnectionConfig,
   loadSavedConnections,
@@ -47,7 +49,7 @@ import {
   createGroup,
   renameGroup,
   deleteGroup,
-  setConnectionGroup,
+  assignConnectionsToGroup,
   removeConnectionGroup,
   loadGroupColors,
   setGroupColor,
@@ -262,15 +264,21 @@ export function renderGroupsSection(query: string, refreshView: () => void): voi
 
   // Build all cards: named groups + type groups
   const namedCards = new Map<string, HTMLDivElement>();
+  // Rows inside a card are sorted exactly the way the connection window sorts
+  // them (same per-group mode, same store). Without this the card keeps the
+  // stored insertion order, so a sort picked in the connection window looks like
+  // it was ignored here.
   for (const groupName of groupOrder) {
-    const items = grouped.get(groupName) || [];
+    const items = sortGroupConnections(grouped.get(groupName) || [], groupName, settings.language);
     if (items.length === 0 && query) continue;
     namedCards.set(groupName, createGroupCard(groupName, items, groupMap, refreshView, groupColors[groupName], collapsedSet.has(groupName)));
   }
 
-  const ungroupedSSH = ungrouped.filter((i) => i.type === 'ssh');
-  const ungroupedRemote = ungrouped.filter((i) => i.type === 'remote');
-  const ungroupedJumpserver = ungrouped.filter((i) => i.type === 'jumpserver');
+  // The per-type cards are the ungrouped bucket, split by kind, so they follow
+  // the sort mode saved for that bucket (`null` = ungrouped).
+  const ungroupedSSH = sortGroupConnections(ungrouped.filter((i) => i.type === 'ssh'), null, settings.language);
+  const ungroupedRemote = sortGroupConnections(ungrouped.filter((i) => i.type === 'remote'), null, settings.language);
+  const ungroupedJumpserver = sortGroupConnections(ungrouped.filter((i) => i.type === 'jumpserver'), null, settings.language);
   const typeCardMap = new Map<string, HTMLDivElement>();
   if (ungroupedSSH.length > 0) typeCardMap.set('__type:ssh', createTypeGroupCard('ssh', ungroupedSSH, groupMap, refreshView));
   if (ungroupedRemote.length > 0) typeCardMap.set('__type:remote', createTypeGroupCard('remote', ungroupedRemote, groupMap, refreshView));
@@ -587,7 +595,14 @@ export function handleConnectionClick(item: ConnectionItem, anchor?: HTMLElement
 
 // ─── Context menus ───
 
-function showGroupContextMenu(event: MouseEvent, groupName: string, refreshView: () => void): void {
+/**
+ * Group management menu: collapse, rename, colour, duplicate, delete.
+ *
+ * Shared with the standalone connections window, which renders the same group
+ * headers — a group you can create in a window has to be renameable and
+ * deletable in that same window, or the feature is a dead end.
+ */
+export function showGroupContextMenu(event: MouseEvent, groupName: string, refreshView: () => void): void {
   removeContextMenu();
   const menu = document.createElement('div');
   menu.className = 'home-card-menu';
@@ -772,6 +787,12 @@ export function showConnectionContextMenu(
   currentGroup: string | null,
   refreshView: () => void,
   onEdit?: () => void,
+  /**
+   * The current selection, when the right-clicked row is part of one. The "move
+   * to group" entries then act on all of it — a menu that moved only the row
+   * under the cursor would make a multi-row selection look broken.
+   */
+  moveKeys?: readonly string[],
 ): void {
   removeContextMenu();
   const menu = document.createElement('div');
@@ -798,6 +819,9 @@ export function showConnectionContextMenu(
     menu.appendChild(editItem);
   }
 
+  const moving = moveKeys && moveKeys.length > 0 ? [...moveKeys] : [item.key];
+  const suffix = moving.length > 1 ? ` (${moving.length})` : '';
+
   const groups = loadGroupOrder();
   if (groups.length > 0 || currentGroup) {
     const divider = document.createElement('div');
@@ -808,22 +832,22 @@ export function showConnectionContextMenu(
       if (g === currentGroup) continue;
       const moveItem = document.createElement('button');
       moveItem.className = 'home-card-menu-item';
-      moveItem.textContent = `→ ${g}`;
+      moveItem.textContent = `→ ${g}${suffix}`;
       moveItem.onclick = () => {
         menu.remove();
-        setConnectionGroup(item.key, g);
+        assignConnectionsToGroup(moving, g);
         refreshView();
       };
       menu.appendChild(moveItem);
     }
 
-    if (currentGroup) {
+    if (currentGroup || moving.length > 1) {
       const ungroup = document.createElement('button');
       ungroup.className = 'home-card-menu-item';
-      ungroup.textContent = `→ ${t('homeGroupUngrouped')}`;
+      ungroup.textContent = `→ ${t('homeGroupUngrouped')}${suffix}`;
       ungroup.onclick = () => {
         menu.remove();
-        removeConnectionGroup(item.key);
+        assignConnectionsToGroup(moving, null);
         refreshView();
       };
       menu.appendChild(ungroup);

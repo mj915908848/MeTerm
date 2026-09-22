@@ -1,4 +1,4 @@
-import { getGroupSort, sortConnections } from './connection-sort';
+import { sortGroupConnections } from './connection-sort';
 import { showGroupSortMenu } from './group-sort-menu';
 // Home left sidebar — compact grouped connection list (search-filtered).
 // Reuses the connection data + context menu from home-dashboard-left.
@@ -59,6 +59,21 @@ export interface SidebarListDeps {
    * window, just without that extra entry.
    */
   onEdit?: (item: ConnectionItem) => void;
+  /** Multi-select: rows the owning window currently holds. */
+  isRowSelected?: (key: string) => boolean;
+  /**
+   * Multi-select: called on every row click before anything opens. Returning
+   * true also opens the connection — which is what an unmodified click must
+   * keep doing. `visibleKeys` is the rendered row order, so a shift-click can
+   * range over exactly what is on screen.
+   */
+  onRowClick?: (
+    item: ConnectionItem,
+    mods: { toggle: boolean; range: boolean },
+    visibleKeys: string[],
+  ) => boolean;
+  /** Group header right-click. `null` addresses the ungrouped bucket. */
+  onGroupContextMenu?: (event: MouseEvent, group: string | null) => void;
 }
 
 /** Render the grouped, filtered connection list into `listEl`. */
@@ -67,14 +82,6 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
   listEl.classList.remove('is-faded', 'at-top', 'at-bottom');
   if (headerSlot) headerSlot.innerHTML = '';
   const all = filterConnections(collectAllConnections(), query);
-
-  if (all.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'home-side-empty';
-    empty.textContent = query ? L('无匹配连接', 'No matching connections') : L('暂无连接，点上方按钮新建', 'No connections yet — add one above');
-    listEl.appendChild(empty);
-    return;
-  }
 
   const groupMap = loadGroupMap();
   const order = loadGroupOrder();
@@ -88,28 +95,53 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
     buckets.get(g)!.push(item);
   }
 
+  // A named group is rendered even when it holds nothing: it is the drop target
+  // a user creates one moment before dragging rows into it, and hiding it would
+  // make the group they just made look like it never happened. While searching
+  // the list stays limited to groups that actually matched.
   const groupNames: string[] = [];
-  for (const g of order) if (buckets.has(g)) groupNames.push(g);
+  for (const g of order) if (g !== UNGROUPED && (buckets.has(g) || !query)) groupNames.push(g);
   for (const g of buckets.keys()) if (g !== UNGROUPED && !groupNames.includes(g)) groupNames.push(g);
-  if (buckets.has(UNGROUPED)) groupNames.push(UNGROUPED);
+  // The ungrouped bucket is the list's root: it is always there, so there is
+  // always somewhere to drag a row out of a group.
+  if (!query) groupNames.push(UNGROUPED);
+
+  // Only the ungrouped bucket and no connections at all → the plain empty state.
+  if (all.length === 0 && (query || groupNames.length <= 1)) {
+    const empty = document.createElement('div');
+    empty.className = 'home-side-empty';
+    empty.textContent = query ? L('无匹配连接', 'No matching connections') : L('暂无连接，点上方按钮新建', 'No connections yet — add one above');
+    listEl.appendChild(empty);
+    return;
+  }
 
   // Single group → pull its header into the crisp fixed slot above the list, and put
   // only its rows in the (featherable) scroll area. Multiple groups → keep everything
   // in the scroll with no feather (the group names structure the list).
   const singleGroup = !!headerSlot && groupNames.length === 1;
 
-  for (const g of groupNames) {
-    const items = sortConnections(buckets.get(g)!, getGroupSort(g), settings.language, item => {
-      const raw = item.raw;
-      const host = 'sshHost' in raw ? raw.sshHost : raw.host;
-      const port = 'sshPort' in raw ? raw.sshPort : raw.port;
-      return { name: item.name, host, port };
-    });
+  // Rows are ordered by their group's saved sort mode — the exact call the home
+  // page's cards make, so the two lists can never disagree about the order.
+  const plan = groupNames.map(g => ({
+    name: g,
+    items: sortGroupConnections(buckets.get(g) ?? [], g, settings.language),
+    collapsed: !query && collapsed.has(g),
+  }));
+
+  // The rows actually on screen, in render order. A shift-click ranges over this
+  // and nothing else, so a range can never silently swallow a collapsed group.
+  const visibleKeys: string[] = [];
+  for (const entry of plan) {
+    if (entry.collapsed) continue;
+    for (const item of entry.items) visibleKeys.push(item.key);
+  }
+
+  for (const { name: g, items, collapsed: isCollapsed } of plan) {
     const isUngrouped = g === UNGROUPED;
-    const isCollapsed = !query && collapsed.has(g);
 
     const header = document.createElement('div');
     header.className = 'home-side-group' + (isCollapsed ? ' collapsed' : '');
+    header.dataset.group = g;
     header.innerHTML = `<span class="hsg-chevron">${icon('chevronRight')}</span>`
       + `<span class="hsg-name">${isUngrouped ? t('homeGroupUngrouped') : escapeHtml(g)}</span>`
       + `<span class="hsg-count">${items.length}</span>`;
@@ -132,18 +164,44 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
       toggleGroupCollapsed(g);
       deps.refresh();
     };
+    if (deps.onGroupContextMenu) {
+      const openGroupMenu = deps.onGroupContextMenu;
+      header.oncontextmenu = (event) => {
+        event.preventDefault();
+        openGroupMenu(event, isUngrouped ? null : g);
+      };
+    }
     (singleGroup ? headerSlot! : listEl).appendChild(header);
 
     if (isCollapsed) continue;
 
+    if (items.length === 0) {
+      const hint = document.createElement('div');
+      hint.className = 'home-side-group-empty';
+      hint.textContent = t('connectionGroupEmptyHint');
+      listEl.appendChild(hint);
+      continue;
+    }
+
     for (const item of items) {
       const row = document.createElement('div');
       row.className = `home-side-row home-side-row-${item.type}` + (item.key === selectedKey ? ' selected' : '');
+      row.dataset.key = item.key;
+      row.dataset.group = g;
+      if (deps.isRowSelected?.(item.key)) row.classList.add('hsr-picked');
       const pinned = isPinned(item.key);
       row.innerHTML = `<span class="hsr-icon">${icon(connTypeIcon(item.type))}</span>`
         + `<span class="hsr-name" title="${escapeHtml(item.detail)}">${escapeHtml(item.name)}</span>`
         + `<button class="hsr-pin${pinned ? ' pinned' : ''}" type="button" tabindex="-1" title="${L('收藏', 'Pin')}">${STAR_SVG}</button>`;
-      row.onclick = () => deps.onSelect(item);
+      const onRowClick = deps.onRowClick;
+      row.onclick = (event) => {
+        if (!onRowClick) { deps.onSelect(item); return; }
+        const connect = onRowClick(item, {
+          toggle: event.metaKey || event.ctrlKey,
+          range: event.shiftKey,
+        }, visibleKeys);
+        if (connect) deps.onSelect(item);
+      };
       row.oncontextmenu = (e) => {
         e.preventDefault();
         showConnectionContextMenu(

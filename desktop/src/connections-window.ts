@@ -27,12 +27,30 @@ import { createOverlayScrollbar } from './overlay-scrollbar';
 import { showToast } from './notify';
 import { suppressNativeContextMenu } from './context-menu';
 import { renderSidebarList } from './home-side';
-import { collectAllConnections, editConnection, findConnectionItem, handleConnectionClick, setEditConnectDelegate, type ConnectionItem } from './home-dashboard-left';
+import {
+  collectAllConnections,
+  editConnection,
+  findConnectionItem,
+  handleConnectionClick,
+  setEditConnectDelegate,
+  showGroupContextMenu,
+  showGroupModal,
+  type ConnectionItem,
+} from './home-dashboard-left';
+import {
+  assignConnectionsToGroup,
+  createGroup,
+  loadGroupMap,
+  loadGroupOrder,
+  setGroupColor,
+} from './connection-groups';
+import { attachConnectionDrag } from './connection-drag';
+import { pruneSelection, resolveRowClick } from './connection-selection';
 import { setSSHConnectHandler, type SSHConnectionConfig } from './ssh';
 import { setRemoteConnectHandler, type RemoteServerInfo } from './remote';
 import { makeNewButtons, runNewConnectionAction, type NewConnectionKind } from './connection-sidebar';
 import { applyNbPalette } from './nb-palette';
-import { setSettings, isWindowsPlatform, isLinuxPlatform } from './app-state';
+import { setSettings, settings, isWindowsPlatform, isLinuxPlatform } from './app-state';
 
 export const CONNECTIONS_WINDOW_LABEL = 'connections';
 
@@ -173,6 +191,12 @@ export function initConnectionsWindow(): void {
     document.body.appendChild(dragRegion);
   }
 
+  // Search and "new group" share a row: the group is a property of this list,
+  // not a connection kind, so it cannot ride the new-connection grid below
+  // (those actions are forwarded to the main window, which owns sessions).
+  const toolbar = document.createElement('div');
+  toolbar.className = 'cn-toolbar';
+
   const searchWrap = document.createElement('div');
   searchWrap.className = 'home-side-search cn-search';
   searchWrap.innerHTML = `<span class="home-side-search-icon"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg></span>`;
@@ -182,7 +206,15 @@ export function initConnectionsWindow(): void {
   searchInput.placeholder = t('homeSearchPlaceholder');
   searchInput.setAttribute('aria-label', t('homeSearchPlaceholder'));
   searchWrap.appendChild(searchInput);
-  document.body.appendChild(searchWrap);
+  toolbar.appendChild(searchWrap);
+
+  const newGroupBtn = document.createElement('button');
+  newGroupBtn.type = 'button';
+  newGroupBtn.className = 'cn-new-group';
+  newGroupBtn.textContent = `+ ${t('homeGroupNew')}`;
+  newGroupBtn.title = t('homeGroupNew');
+  toolbar.appendChild(newGroupBtn);
+  document.body.appendChild(toolbar);
 
   // New-connection buttons delegate to the main window (this window has no
   // terminal to host a session).
@@ -202,10 +234,85 @@ export function initConnectionsWindow(): void {
   createOverlayScrollbar({ viewport: listScroll, container: listScroll });
   document.body.appendChild(listScroll);
 
+  // ── Selection bar ──
+  // In the flow between the list and the footer, not floating over it: an overlay
+  // would cover the last rows, and those rows are what the selection is about.
+  const selBar = document.createElement('div');
+  selBar.className = 'cn-selbar';
+  selBar.hidden = true;
+
+  const selCount = document.createElement('span');
+  selCount.className = 'cn-selbar-count';
+  selBar.appendChild(selCount);
+
+  const moveBtn = document.createElement('button');
+  moveBtn.type = 'button';
+  moveBtn.className = 'cn-selbar-btn';
+  moveBtn.textContent = t('connectionMoveToGroup');
+  selBar.appendChild(moveBtn);
+
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'cn-selbar-btn';
+  clearBtn.textContent = t('connectionClearSelection');
+  selBar.appendChild(clearBtn);
+
+  document.body.appendChild(selBar);
+
   const footer = document.createElement('div');
   footer.className = 'cn-footer';
   footer.textContent = t('connectionsWindowHint');
   document.body.appendChild(footer);
+
+  // ── Multi-select ──
+  // A plain click still opens the connection; ⌘/Ctrl adds a row to the selection
+  // and Shift takes a range. See connection-selection.ts for the rules.
+  const picked = new Set<string>();
+  let anchor: string | null = null;
+
+  const syncSelection = (): void => {
+    selBar.hidden = picked.size === 0;
+    selCount.textContent = picked.size === 0
+      ? ''
+      : L(`已选 ${picked.size} 项`, `${picked.size} selected`);
+  };
+
+  /** Repaint the highlight in place — a full re-render would drop the scroll position. */
+  const paintSelection = (): void => {
+    for (const row of Array.from(listScroll.querySelectorAll<HTMLElement>('.home-side-row'))) {
+      const key = row.dataset.key;
+      row.classList.toggle('hsr-picked', !!key && picked.has(key));
+    }
+  };
+
+  /** A connection that was deleted elsewhere must not linger in the count. */
+  const dropStalePicks = (): void => {
+    const live = collectAllConnections().map((item) => item.key);
+    const kept = pruneSelection([...picked], live);
+    picked.clear();
+    for (const key of kept) picked.add(key);
+    if (anchor && !live.includes(anchor)) anchor = null;
+  };
+
+  const moveKeys = (keys: readonly string[], group: string | null): void => {
+    if (keys.length === 0) return;
+    const map = loadGroupMap();
+    // Dragging a row back onto the group it already sits in changes nothing and
+    // must not re-render (or emit) for it.
+    if (!keys.some((key) => (map[key] ?? null) !== group)) return;
+    assignConnectionsToGroup(keys, group);
+    picked.clear();
+    anchor = null;
+    afterMutation();
+  };
+
+  const newGroup = (): void => {
+    showGroupModal('', '', (name, color) => {
+      createGroup(name);
+      if (color) setGroupColor(name, color);
+      afterMutation();
+    });
+  };
 
   // This window's own mutations (edit/delete) also have to re-render the main
   // window, whose home view and toolbar read the same shared store.
@@ -215,6 +322,8 @@ export function initConnectionsWindow(): void {
   };
 
   const refresh = (): void => {
+    dropStalePicks();
+    syncSelection();
     renderSidebarList(listScroll, groupHeader, searchInput.value.trim(), {
       onSelect: (item: ConnectionItem) => {
         // The main window opens the session; keep this list open as a launcher.
@@ -227,8 +336,42 @@ export function initConnectionsWindow(): void {
       // dev-only credential-recovery item, whose backend command this window is
       // deliberately not granted.
       onEdit: (item) => editConnection(item, afterMutation),
+      isRowSelected: (key) => picked.has(key),
+      onRowClick: (item, mods, visibleKeys) => {
+        const outcome = resolveRowClick(visibleKeys, { selection: [...picked], anchor }, item.key, mods);
+        picked.clear();
+        for (const key of outcome.selection) picked.add(key);
+        anchor = outcome.anchor;
+        syncSelection();
+        paintSelection();
+        return outcome.connect;
+      },
+      onGroupContextMenu: (event, group) => {
+        // The ungrouped bucket is the list's root, not a group: nothing to rename.
+        if (group === null) return;
+        showGroupContextMenu(event, group, afterMutation);
+      },
     });
   };
+
+  moveBtn.onclick = (event) => {
+    event.stopPropagation();
+    showMoveMenu(moveBtn, loadGroupOrder(), (group) => moveKeys([...picked], group));
+  };
+  clearBtn.onclick = () => {
+    picked.clear();
+    anchor = null;
+    syncSelection();
+    paintSelection();
+  };
+  newGroupBtn.onclick = () => newGroup();
+
+  // Rows are draggable onto a group header (or onto any row inside one).
+  attachConnectionDrag(listScroll, {
+    getSelection: () => [...picked],
+    dragLabel: (count) => L(`${count} 个连接`, `${count} connection${count === 1 ? '' : 's'}`),
+    onDrop: (group, keys) => moveKeys(keys, group),
+  });
 
   // This window shows the edit dialogs in place, but a session still belongs to the
   // main window, so every dialog's "connect" path is delegated there. Matching on
@@ -270,6 +413,63 @@ export function initConnectionsWindow(): void {
 
   refresh();
   void revealAfterPaint(getCurrentWindow().label);
+}
+
+/** Bilingual text for the few strings that carry a live count (t() takes no args). */
+const L = (zh: string, en: string): string => (settings?.language === 'zh' ? zh : en);
+
+/**
+ * Popup listing every group, for moving a selection without dragging.
+ *
+ * Opens upward from the selection bar so it never covers the rows the user just
+ * picked, and closes on the first pointer press outside — including the press
+ * that opens it again.
+ */
+function showMoveMenu(
+  anchorEl: HTMLElement,
+  groups: string[],
+  onPick: (group: string | null) => void,
+): void {
+  document.querySelector('.home-card-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'home-card-menu cn-move-menu';
+  menu.setAttribute('role', 'menu');
+
+  const close = (): void => {
+    menu.remove();
+    document.removeEventListener('pointerdown', outside, true);
+    document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('resize', close);
+  };
+  const outside = (event: Event): void => {
+    const target = event.target as Node;
+    if (!menu.contains(target) && !anchorEl.contains(target)) close();
+  };
+  const onKey = (event: KeyboardEvent): void => {
+    if (event.key === 'Escape') { event.preventDefault(); close(); anchorEl.focus(); }
+  };
+
+  const entries: [string, string | null][] = [
+    ...groups.map((g): [string, string | null] => [g, g]),
+    [t('homeGroupUngrouped'), null],
+  ];
+  for (const [label, value] of entries) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'home-card-menu-item';
+    item.textContent = `→ ${label}`;
+    item.onclick = () => { close(); onPick(value); };
+    menu.appendChild(item);
+  }
+
+  document.body.appendChild(menu);
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 4))}px`;
+  menu.style.top = `${Math.max(4, rect.top - menu.offsetHeight - 4)}px`;
+
+  document.addEventListener('pointerdown', outside, true);
+  document.addEventListener('keydown', onKey, true);
+  window.addEventListener('resize', close);
 }
 
 function createTitleBar(): HTMLElement {

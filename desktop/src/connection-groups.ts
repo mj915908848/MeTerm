@@ -84,6 +84,36 @@ export function removeConnectionGroup(connectionKey: string): void {
   saveGroupMap(map);
 }
 
+/**
+ * Move several connections in one write. `groupName` of `null` ungroups them.
+ *
+ * The per-key setters re-read and re-write the whole map on every call, which is
+ * fine for one row and wrong for a multi-row drag: the list would re-render
+ * halfway through the batch, and a failure between two writes would leave the
+ * user with half the selection moved. One read, one write.
+ */
+export function assignConnectionsToGroup(
+  connectionKeys: readonly string[],
+  groupName: string | null,
+): void {
+  if (connectionKeys.length === 0) return;
+  const map = loadGroupMap();
+  for (const key of connectionKeys) {
+    if (groupName) map[key] = groupName;
+    else delete map[key];
+  }
+  saveGroupMap(map);
+  // Ensure the destination exists in the order list, so a group that only ever
+  // received dragged rows still renders in a stable position.
+  if (groupName) {
+    const order = loadGroupOrder();
+    if (!order.includes(groupName)) {
+      order.push(groupName);
+      saveGroupOrder(order);
+    }
+  }
+}
+
 export function getConnectionGroup(connectionKey: string): string | undefined {
   return loadGroupMap()[connectionKey];
 }
