@@ -210,6 +210,17 @@ make desktop-run-dev              # 构建、签名并打开 MeTerm Dev.app（co
 该目标不会打开或覆盖已安装的正式版 `MeTerm.app`。后续重建需保持同一签名身份，
 以确保开发 Keychain 的访问要求仍与应用匹配。
 
+预期签名证书的 CN 与 Team ID 会在构建时从本机钥匙串解析
+（`scripts/dev-relay-provenance.sh`），并以 `METERM_DEV_SIGNER_CN` /
+`METERM_DEV_TEAM_ID` 注入，因此证书名中的个人 Apple ID 与账号 Team ID 都不会
+写入仓库。两个目标都会自动获取；若缺失，代码仍可编译，但在执行任何高权限操作前
+会直接失败关闭。可先查看将要使用的身份，或指定其他证书：
+
+```bash
+bash scripts/dev-relay-provenance.sh --check
+METERM_DEV_SIGNER_CN='Apple Development: you@example.com (XXXXXXXXXX)' make desktop-dev
+```
+
 只有 `desktop-build-dev` 会同时启用 `development-mobile-control` 与
 `development-credential-recovery`。Release 构建会拒绝该恢复 feature；导入命令执行前还会
 校验当前运行的确实是指定签名身份的 `MeTerm Dev.app`。

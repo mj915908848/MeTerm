@@ -23,17 +23,17 @@ use super::relay_credentials::{
 pub(crate) const CONFIGURE_FLAG: &str = "--configure-dev-relay";
 const MAX_INPUT_BYTES: u64 = 512;
 const MAX_METADATA_BYTES: u64 = 64 * 1024;
-// Local fork override: this checkout is signed by its own Apple Development
-// certificate, so the expected team must match it rather than upstream's.
+// The expected identity is the developer's own Apple Development certificate,
+// so neither the certificate CN (which embeds a personal Apple ID) nor the team
+// it belongs to belongs in the (published) source tree. Both are injected at
+// build time instead: `make desktop-dev` / `make desktop-build-dev` derive them
+// from the local keychain, and a build without them fails closed here rather
+// than weakening the signer check.
+//
 // Compiled only with `debug_assertions` + `development-mobile-control` on macOS,
 // so distributable builds are unaffected.
-const DEVELOPMENT_TEAM_ID: &str = "FR5ZQXNN46";
-// The full certificate CN contains the developer's personal Apple ID, so it is
-// injected at build time instead of living in the (published) source tree.
-// `make desktop-dev` / `make desktop-build-dev` derive it from the local
-// keychain; a build without it fails closed here rather than weakening the
-// signer check.
 const DEVELOPMENT_SIGNER_CN: Option<&str> = option_env!("METERM_DEV_SIGNER_CN");
+const DEVELOPMENT_TEAM_ID: Option<&str> = option_env!("METERM_DEV_TEAM_ID");
 
 fn development_signer_cn() -> Result<&'static str, String> {
     DEVELOPMENT_SIGNER_CN
@@ -43,6 +43,23 @@ fn development_signer_cn() -> Result<&'static str, String> {
             "development signer identity was not embedded at build time; build through \
              `make desktop-dev` / `make desktop-build-dev`, or export METERM_DEV_SIGNER_CN \
              with the full Apple Development certificate CN before building"
+                .to_string()
+        })
+}
+
+fn development_team_id() -> Result<&'static str, String> {
+    DEVELOPMENT_TEAM_ID
+        .map(str::trim)
+        .filter(|team| {
+            team.len() == 10
+                && team
+                    .bytes()
+                    .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+        })
+        .ok_or_else(|| {
+            "development team identifier was not embedded at build time; build through \
+             `make desktop-dev` / `make desktop-build-dev`, or export METERM_DEV_TEAM_ID \
+             with the Apple Development certificate team ID before building"
                 .to_string()
         })
 }
@@ -165,6 +182,7 @@ fn configure_from_socket() -> Result<(), String> {
 
 pub(crate) fn validate_development_app_identity() -> Result<(), String> {
     let signer_cn = development_signer_cn()?;
+    let team_id = development_team_id()?;
     let executable = std::env::current_exe()
         .and_then(std::fs::canonicalize)
         .map_err(|_| "cannot resolve the current development app executable".to_string())?;
@@ -182,7 +200,7 @@ pub(crate) fn validate_development_app_identity() -> Result<(), String> {
     let verification = Command::new("/usr/bin/codesign")
         .args(["--verify", "--deep", "--strict"])
         .arg(format!(
-            "-R=identifier \"com.meterm.dev\" and anchor apple generic and certificate leaf[subject.OU] = \"{DEVELOPMENT_TEAM_ID}\" and certificate leaf[subject.CN] = \"{signer_cn}\""
+            "-R=identifier \"com.meterm.dev\" and anchor apple generic and certificate leaf[subject.OU] = \"{team_id}\" and certificate leaf[subject.CN] = \"{signer_cn}\""
         ))
         .arg(app)
         .output()
@@ -207,7 +225,7 @@ pub(crate) fn validate_development_app_identity() -> Result<(), String> {
             .any(|line| line.strip_prefix("Authority=") == Some(signer_cn))
         || !signature_text
             .lines()
-            .any(|line| line.strip_prefix("TeamIdentifier=") == Some(DEVELOPMENT_TEAM_ID))
+            .any(|line| line.strip_prefix("TeamIdentifier=") == Some(team_id))
     {
         return Err("unexpected MeTerm Dev signing identity".to_string());
     }

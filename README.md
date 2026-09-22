@@ -216,6 +216,19 @@ This target never opens or overwrites an installed production `MeTerm.app`.
 Use the same signing identity on later rebuilds so development Keychain access
 continues to match the app's designated requirement.
 
+The expected signer common name and team ID are resolved from the local
+keychain at build time (`scripts/dev-relay-provenance.sh`) and injected as
+`METERM_DEV_SIGNER_CN` / `METERM_DEV_TEAM_ID`, so neither the personal Apple ID
+embedded in the certificate name nor the account's team ID is committed to the
+repository. Both targets derive them automatically; a build without them
+compiles but fails closed before any privileged action. To inspect what will be
+used, or to point at a different certificate:
+
+```bash
+bash scripts/dev-relay-provenance.sh --check
+METERM_DEV_SIGNER_CN='Apple Development: you@example.com (XXXXXXXXXX)' make desktop-dev
+```
+
 `desktop-build-dev` is the only supported target that enables the
 `development-credential-recovery` feature (together with
 `development-mobile-control`). The feature is rejected in Release builds and

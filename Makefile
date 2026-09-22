@@ -2,6 +2,12 @@
 
 METERM_LOCAL_SIGNING_IDENTITY ?= MeTerm Dev Local Signing
 
+# The development signing identity is derived from the local keychain at build
+# time rather than committed: the certificate CN embeds a personal Apple ID and
+# the team ID it belongs to is account specific. Shared by `desktop-dev` and
+# `desktop-build-dev`; see scripts/dev-relay-provenance.sh.
+METERM_DEV_PROVENANCE_SH = $(CURDIR)/scripts/dev-relay-provenance.sh
+
 dev:
 	@echo "Building backend..."
 	@cd backend && go build -o /tmp/meterm-server .
@@ -26,7 +32,12 @@ desktop-sidecar:
 	cd backend && go build -o ../desktop/src-tauri/binaries/meterm-server-$$(rustc --print host-tuple) .
 
 desktop-dev:
-	cd desktop && METERM_DEV_SIGNER_CN="$$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development:/{print $$2; exit}')" npm run tauri dev -- --features development-mobile-control --config '{"identifier":"com.meterm.dev","productName":"MeTerm Dev"}'
+	@set -eu; \
+		cd desktop; \
+		cn=$$(bash $(METERM_DEV_PROVENANCE_SH) --cn); \
+		team=$$(bash $(METERM_DEV_PROVENANCE_SH) --team-id); \
+		echo "desktop-dev: signing as $$cn (team $$team)" >&2; \
+		METERM_DEV_SIGNER_CN="$$cn" METERM_DEV_TEAM_ID="$$team" npm run tauri dev -- --features development-mobile-control --config '{"identifier":"com.meterm.dev","productName":"MeTerm Dev"}'
 
 # Stable self-signed identity for ordinary local UI/Agent/terminal validation.
 # Deliberately excludes development-mobile-control and credential recovery;
@@ -52,24 +63,28 @@ desktop-run-local: desktop-build-local
 # from /Applications/MeTerm.app. Stable signing keeps the dev-only Keychain ACL
 # usable across rebuilds without invoking any distribution/notarization flow.
 desktop-build-dev:
-	cd desktop && METERM_DEV_SIGNER_CN="$$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development:/{print $$2; exit}')" npm run tauri build -- --debug --bundles app --no-sign --features development-mobile-control,development-credential-recovery --config '{"identifier":"com.meterm.dev","productName":"MeTerm Dev","bundle":{"createUpdaterArtifacts":false}}'
 	@set -eu; \
-		identity="$$(security find-identity -v -p codesigning | awk '/"Apple Development:/{print $$2; exit}')"; \
-		test -n "$$identity" || { echo "Apple Development signing identity not found" >&2; exit 1; }; \
+		cd desktop; \
+		cn="$$(bash $(METERM_DEV_PROVENANCE_SH) --cn)"; \
+		team="$$(bash $(METERM_DEV_PROVENANCE_SH) --team-id)"; \
+		echo "desktop-build-dev: signing as $$cn (team $$team)" >&2; \
+		METERM_DEV_SIGNER_CN="$$cn" METERM_DEV_TEAM_ID="$$team" npm run tauri build -- --debug --bundles app --no-sign --features development-mobile-control,development-credential-recovery --config '{"identifier":"com.meterm.dev","productName":"MeTerm Dev","bundle":{"createUpdaterArtifacts":false}}'
+	@set -eu; \
+		cn="$$(bash $(METERM_DEV_PROVENANCE_SH) --cn)"; \
+		team="$$(bash $(METERM_DEV_PROVENANCE_SH) --team-id)"; \
+		identity="$$(bash $(METERM_DEV_PROVENANCE_SH) --identity)"; \
 		codesign --force --timestamp=none --options runtime \
 			--entitlements desktop/src-tauri/Entitlements.plist \
 			--sign "$$identity" --identifier com.meterm.dev \
 			'desktop/src-tauri/target/debug/bundle/macos/MeTerm Dev.app'; \
-		cn="$$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development:/{print $$2; exit}')"; \
-		test -n "$$cn" || { echo "Apple Development certificate CN not found" >&2; exit 1; }; \
 		codesign --verify --deep --strict \
-			-R="identifier \"com.meterm.dev\" and anchor apple generic and certificate leaf[subject.OU] = \"FR5ZQXNN46\" and certificate leaf[subject.CN] = \"$$cn\"" \
+			-R="identifier \"com.meterm.dev\" and anchor apple generic and certificate leaf[subject.OU] = \"$$team\" and certificate leaf[subject.CN] = \"$$cn\"" \
 			'desktop/src-tauri/target/debug/bundle/macos/MeTerm Dev.app'; \
 		actual_team="$$(codesign -dv --verbose=4 \
 			'desktop/src-tauri/target/debug/bundle/macos/MeTerm Dev.app/Contents/MacOS/meterm' 2>&1 | \
 			awk -F= '/^TeamIdentifier=/{print $$2; exit}')"; \
-		test "$$actual_team" = "$${APPLE_TEAM_ID:-FR5ZQXNN46}" || { \
-			echo "MeTerm Dev signing team mismatch" >&2; exit 1; \
+		test "$$actual_team" = "$$team" || { \
+			echo "MeTerm Dev signing team mismatch: expected $$team, found $${actual_team:-<none>}" >&2; exit 1; \
 		}
 
 # Full mobile-control validation must run the signed bundle, not the unsigned
