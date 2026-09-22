@@ -61,6 +61,22 @@ function getPanelBounds(): { min: number; max: number } {
 
 // ── Public API ──
 
+/**
+ * Re-render the window toolbar so its JumpServer button reflects the panel's
+ * open/closed state. The button is the only other view of that state, and
+ * nothing else re-renders the toolbar when the panel is opened from the
+ * dropdown or closed from the panel's own ✕ — the button kept its last
+ * highlight until some unrelated event rebuilt the toolbar.
+ *
+ * Imported lazily: toolbar.ts pulls in view-manager/session-actions, which
+ * would close a static dependency cycle.
+ */
+function notifyToolbarPanelState(): void {
+  void import('./toolbar')
+    .then(({ renderToolbarActions }) => renderToolbarActions())
+    .catch(() => { /* toolbar not mounted (pop-out / early load) */ });
+}
+
 export function isJumpServerPanelOpen(): boolean {
   return panelEl !== null && panelEl.style.display !== 'none';
 }
@@ -82,6 +98,10 @@ export function toggleJumpServerPanel(config?: JumpServerConfig): void {
 export function openJumpServerPanel(config: JumpServerConfig): void {
   const mainContent = document.getElementById('main-content');
   if (!mainContent) return;
+
+  // Captured before the panel is displayed: re-opening an already-open panel
+  // with another connection is not a toolbar-visible state change.
+  const wasOpen = isJumpServerPanelOpen();
 
   // Restore saved width
   const saved = localStorage.getItem(LS_KEY);
@@ -114,21 +134,30 @@ export function openJumpServerPanel(config: JumpServerConfig): void {
   if (!resizeHandleEl.parentElement) mainContent.appendChild(resizeHandleEl);
   if (!panelEl.parentElement) mainContent.appendChild(panelEl);
   resizeHandleEl.style.display = '';
+
+  if (!wasOpen) notifyToolbarPanelState();
 }
 
 export function closeJumpServerPanel(): void {
+  // Read before hiding — the toolbar button has to lose its highlight, no
+  // matter whether the panel was closed from its own ✕, the toolbar dropdown,
+  // or a logout-triggered teardown.
+  const wasOpen = isJumpServerPanelOpen();
   if (panelEl) panelEl.style.display = 'none';
   if (resizeHandleEl) resizeHandleEl.style.display = 'none';
   currentConfig = null;
+  if (wasOpen) notifyToolbarPanelState();
 }
 
 export function destroyJumpServerPanel(): void {
+  const wasOpen = isJumpServerPanelOpen();
   panelEl?.remove();
   resizeHandleEl?.remove();
   panelEl = null;
   resizeHandleEl = null;
   currentConfig = null;
   stopDocking();
+  if (wasOpen) notifyToolbarPanelState();
 }
 
 // ── Window docking (pop-out mode) ──

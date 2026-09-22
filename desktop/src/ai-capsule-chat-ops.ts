@@ -43,6 +43,14 @@ export interface ChatOpsHost {
   closeHistory(instance: AICapsuleInstance): void;
   closeChatHistory(instance: AICapsuleInstance): void;
   updateButtonHighlight(instance: AICapsuleInstance): void;
+  /**
+   * Announce that the chat side panel changed between open / minimized /
+   * closed. The toolbar's AI button is a second view of the same flag, so
+   * every state change has to go through here — otherwise the button keeps
+   * its last highlight when the panel was closed by anything other than the
+   * toolbar itself (panel ✕, minimize, Esc, history popup).
+   */
+  notifyChatToggled(): void;
   updateChatTitle(instance: AICapsuleInstance, title?: string): void;
   appendUserMessage(
     instance: AICapsuleInstance,
@@ -283,6 +291,7 @@ export function openChat(instance: AICapsuleInstance, host: ChatOpsHost): void {
   host.closeHistory(instance);
   host.closeChatHistory(instance);
   host.updateButtonHighlight(instance);
+  host.notifyChatToggled();
   syncBarPlaceholder(instance);
   // Refit terminal to new available height
   TerminalRegistry.resizeAll();
@@ -318,6 +327,7 @@ export function minimizeChat(instance: AICapsuleInstance, host: ChatOpsHost): vo
   instance.chatOpen = false;
   instance.chatMinimized = true;
   host.updateButtonHighlight(instance);
+  host.notifyChatToggled();
   syncBarPlaceholder(instance);
   TerminalRegistry.resizeAll();
 }
@@ -367,6 +377,7 @@ export function closeChatAndSave(instance: AICapsuleInstance, host: ChatOpsHost)
   instance.reasoningBuffer = '';
   host.updateChatTitle(instance);
   host.updateButtonHighlight(instance);
+  host.notifyChatToggled();
   syncBarPlaceholder(instance);
   TerminalRegistry.resizeAll();
 }

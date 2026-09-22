@@ -254,6 +254,7 @@ class AICapsuleManagerClass {
       closeHistory: (inst) => this.closeHistory(inst),
       closeChatHistory: (inst) => this.closeChatHistory(inst),
       updateButtonHighlight: (inst) => this.updateButtonHighlight(inst),
+      notifyChatToggled: () => document.dispatchEvent(new CustomEvent('ai-chat-toggled')),
       updateChatTitle: (inst, title) => this.updateChatTitle(inst, title),
       appendUserMessage: (inst, text, images) => this.appendUserMessage(inst, text, images),
       showAgentPulse: (inst) => this.showAgentPulse(inst),
@@ -299,19 +300,23 @@ class AICapsuleManagerClass {
     syncBarPlaceholderFn(instance);
   }
 
+  // ─── Chat panel ops ──────────────────────────────────────────
+  // The 'ai-chat-toggled' announcement that keeps the toolbar's AI button in
+  // sync is dispatched by the ops layer itself (host.notifyChatToggled), so
+  // *every* caller is covered — including the chat panel's own header buttons
+  // (✕ / −), which call the ops functions directly and never went through
+  // these wrappers.
+
   private openChat(instance: AICapsuleInstance): void {
     openChatFn(instance, this.getChatOpsHost());
-    document.dispatchEvent(new CustomEvent('ai-chat-toggled'));
   }
 
   private minimizeChat(instance: AICapsuleInstance): void {
     minimizeChatFn(instance, this.getChatOpsHost());
-    document.dispatchEvent(new CustomEvent('ai-chat-toggled'));
   }
 
   private closeChatAndSave(instance: AICapsuleInstance): void {
     closeChatAndSaveFn(instance, this.getChatOpsHost());
-    document.dispatchEvent(new CustomEvent('ai-chat-toggled'));
   }
 
   // ─── Public: toolbar "agent" button entry point ──────────────

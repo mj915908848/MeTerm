@@ -41,9 +41,13 @@ const needsCustomControls = isWindowsPlatform || isLinuxPlatform;
 
 let isAlwaysOnTop = false;
 
-// Re-render the toolbar when the AI chat sidebar opens/closes from anywhere
-// (sidebar close button, Ctrl+Enter, etc.) so the agent button's active state
-// stays in sync. Registered once, lazily, from renderToolbarActions.
+// Re-render the toolbar when the AI chat side panel opens / minimizes / closes
+// from anywhere — the panel's own ✕ and − buttons, Esc in the AI bar, the
+// history popup, auto-open on connect — so the agent button's active state can
+// never go stale. The announcement is dispatched by ai-capsule-chat-ops.ts on
+// every state change. Registered once, lazily, from renderToolbarActions.
+// (The JumpServer button is kept in sync the same way, by the panel calling
+// renderToolbarActions directly — see jumpserver-panel.ts.)
 let _aiChatToggleHooked = false;
 
 async function toggleAlwaysOnTop(): Promise<void> {
@@ -425,8 +429,11 @@ export function renderToolbarActions(): void {
       agentBtn.title = t('toolbarAiAgent');
       agentBtn.innerHTML = `<span class="ai-agent-text">AI</span>`;
       agentBtn.onclick = () => {
+        // Every open/minimize/close of the chat panel announces
+        // 'ai-chat-toggled' from the ops layer (see ai-capsule-chat-ops.ts), so
+        // the button repaints through the listener registered above — including
+        // when the panel is closed from its own header ✕ or by Esc.
         AICapsuleManager.toggleChatSidebar(agentSessionId);
-        renderToolbarActions();
       };
       toolbarRightEl.appendChild(agentBtn);
     }
