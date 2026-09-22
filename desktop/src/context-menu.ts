@@ -1,10 +1,11 @@
 /**
- * context-menu.ts — Context menus (tab, shell, terminal)
+ * context-menu.ts — Context menus (tab, shell, terminal, form field)
  *
  * Extracted from main.ts. Contains:
  * - showTabContextMenu()
  * - showShellContextMenu()
  * - showCustomContextMenu()
+ * - showEditableContextMenu()
  * - getAvailableShells() / cachedShells
  */
 
@@ -15,9 +16,13 @@ import { AICapsuleManager } from './ai-capsule';
 import { getAllLeaves, countLeaves, findLeafById } from './split-pane';
 import { StatusBar } from './status-bar';
 import { t } from './i18n';
+import { buildFieldMenu, isFieldInputType } from './editable-menu-model';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
-import { writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
+import {
+  readText as clipboardReadText,
+  writeText as clipboardWriteText,
+} from '@tauri-apps/plugin-clipboard-manager';
 import { getSelection, performCopy, performPaste } from './clipboard-actions';
 import { activateTab, showHomeView, openSettings, syncLockIconForActiveTab } from './view-manager';
 import { doSplitPane, createNewSession, closeAllSessions } from './session-actions';
@@ -383,12 +388,183 @@ export function showShellContextMenu(event: MouseEvent, anchor?: HTMLElement): v
   });
 }
 
+// ── Form fields: the app's own editing menu ──
+
+export type EditableField = HTMLInputElement | HTMLTextAreaElement;
+
+/**
+ * The text field that owns this right-click, or null when the element is not one.
+ *
+ * xterm keeps a hidden textarea for keyboard input. It must never be mistaken for
+ * a form field: that would replace the terminal's own menu (copy / paste / split /
+ * close session) with the four text commands. `performPaste` excludes it for the
+ * same reason.
+ *
+ * `<select>` is deliberately not a field here — the platform's own menu is the
+ * only useful one for a dropdown, and the app has nothing to add to it.
+ */
+export function editableFieldAt(target: EventTarget | null): EditableField | null {
+  if (target instanceof HTMLTextAreaElement) {
+    return target.classList.contains('xterm-helper-textarea') ? null : target;
+  }
+  if (target instanceof HTMLInputElement && isFieldInputType(target.type)) return target;
+  return null;
+}
+
+/**
+ * The field's selection, or the caret at the end when the type has none.
+ *
+ * `selectionStart` is `null` — and `setSelectionRange` throws — for input types
+ * that carry no selection (number, date, …). Those types are still worth serving
+ * because paste into them works.
+ */
+function fieldSelection(field: EditableField): { start: number; end: number } {
+  try {
+    const start = field.selectionStart;
+    const end = field.selectionEnd;
+    if (typeof start === 'number' && typeof end === 'number') return { start, end };
+  } catch {
+    // Thrown by types that do not implement the selection API.
+  }
+  const end = field.value.length;
+  return { start: end, end };
+}
+
+/**
+ * Replace `range` with `text` and leave the caret after it.
+ *
+ * Mirrors what `performPaste` does for a field, but takes the range explicitly:
+ * the menu button steals focus when it is pressed, so re-reading the selection at
+ * that point would find nothing.
+ */
+function replaceFieldSelection(
+  field: EditableField,
+  range: { start: number; end: number },
+  text: string,
+): void {
+  if (field.readOnly || field.disabled) return;
+  // Focus first: setting a selection on a blurred field leaves no visible caret,
+  // so the edit would look like it happened somewhere else.
+  field.focus();
+  field.value = field.value.slice(0, range.start) + text + field.value.slice(range.end);
+  const caret = range.start + text.length;
+  try {
+    field.setSelectionRange(caret, caret);
+  } catch {
+    // Same unsupported types as above — the value still changed.
+  }
+  // Dialogs listen for `input` (the SSH/JumpServer port boxes sanitise their
+  // digits there, and the dirty check reads the field), so a programmatic
+  // `.value` write has to announce itself.
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+/**
+ * Draw the app's own menu for a text field, replacing WKWebView's.
+ *
+ * Every entry is a plain field edit against the selection captured when the menu
+ * opened: no WebKit menu means cut/copy/paste/select-all have to actually work
+ * here, or the fix would cost the user functionality rather than restore it.
+ */
+export function showEditableContextMenu(event: MouseEvent, field: EditableField): void {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const existing = document.getElementById('custom-context-menu');
+  if (existing) existing.remove();
+
+  // Snapshot while the field still owns the selection: pressing a menu button
+  // moves focus away from it.
+  const range = fieldSelection(field);
+
+  const menu = document.createElement('div');
+  menu.id = 'custom-context-menu';
+  menu.className = 'custom-context-menu';
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+
+  const items = buildFieldMenu({
+    hasSelection: range.end > range.start,
+    hasText: field.value.length > 0,
+    editable: !field.readOnly && !field.disabled,
+  });
+
+  const cleanup = () => {
+    menu.remove();
+    document.removeEventListener('click', cleanup, true);
+    window.removeEventListener('blur', cleanup);
+  };
+
+  for (const entry of items) {
+    const item = document.createElement('button');
+    item.className = 'custom-context-menu-item';
+    item.type = 'button';
+    item.textContent = t(entry.labelKey);
+    item.disabled = entry.disabled;
+    item.onclick = () => {
+      cleanup();
+      // A rejected clipboard call would otherwise surface as an unhandled
+      // rejection — the window may simply not be granted the clipboard plugin.
+      const failed = (error: unknown) => console.error('[context-menu] clipboard failed:', error);
+      switch (entry.command) {
+        case 'cut':
+          void clipboardWriteText(field.value.slice(range.start, range.end))
+            .then(() => replaceFieldSelection(field, range, ''))
+            .catch(failed);
+          break;
+        case 'copy':
+          void clipboardWriteText(field.value.slice(range.start, range.end)).catch(failed);
+          break;
+        case 'paste':
+          void clipboardReadText()
+            .then((text) => { if (text) replaceFieldSelection(field, range, text); })
+            .catch(failed);
+          break;
+        case 'selectAll':
+          field.focus();
+          try {
+            field.select();
+          } catch {
+            replaceFieldSelection(field, { start: 0, end: field.value.length }, '');
+          }
+          break;
+      }
+    };
+    menu.appendChild(item);
+  }
+
+  document.body.appendChild(menu);
+
+  // Boundary detection
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > viewportWidth) {
+    menu.style.left = `${Math.max(6, viewportWidth - rect.width - 6)}px`;
+  }
+  if (rect.bottom > viewportHeight) {
+    menu.style.top = `${Math.max(6, viewportHeight - rect.height - 6)}px`;
+  }
+
+  document.addEventListener('click', cleanup, true);
+  window.addEventListener('blur', cleanup);
+}
+
 // ── Terminal context menu ──
 
 export function showCustomContextMenu(event: MouseEvent): void {
   const target = event.target as HTMLElement | null;
-  // Allow native context menu for input fields (copy/paste/cut/select all)
-  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) {
+  // Text fields get the app's own cut/copy/paste/select-all menu. Letting them
+  // keep WKWebView's puts a browser menu — Look Up, Translate, Inspect Element —
+  // inside an app dialog, which is the complaint the connection window's menu
+  // already answered.
+  const field = editableFieldAt(target);
+  if (field) {
+    showEditableContextMenu(event, field);
+    return;
+  }
+  // A dropdown keeps the native menu: there is nothing the app could add to it.
+  if (target instanceof HTMLSelectElement) {
     return;
   }
   // Let AI chat panel handle its own context menu (suppress system menu but don't show terminal menu)
@@ -564,25 +740,28 @@ export function showCustomContextMenu(event: MouseEvent): void {
 // ── Utility windows: never the WebView's own menu ──
 
 /**
- * Suppress the WebView's built-in context menu in a utility window.
+ * Replace the WebView's built-in context menu in a utility window.
  *
- * The main window replaces the menu with the app's own (showCustomContextMenu).
- * A window that registers nothing — the connections window, for one — gets
- * WKWebView's built-in menu instead: "Reload" and "Inspect Element". That reads
- * as a browser page rather than an app, and "Reload" would discard the list the
- * user is working in.
+ * The main window answers with the app's own menu (showCustomContextMenu); a
+ * window that registers nothing — the connections window, for one — got
+ * WKWebView's instead: "Reload" and "Inspect Element". That reads as a browser
+ * page rather than an app, and "Reload" would discard the list the user is
+ * working in.
  *
- * Inputs keep the native menu so copy / paste / select-all still work — the same
- * exception the main window makes.
+ * Text fields are routed to the app's editing menu rather than exempted: they
+ * used to keep the native one, which is what still put a browser menu (Look Up /
+ * Translate / Inspect Element) on the 添加 JumpServer dialog's server-address box.
+ * A dropdown is the one exception that stays native — the app has nothing to add.
  */
 export function suppressNativeContextMenu(): void {
   document.addEventListener('contextmenu', (event) => {
     const target = event.target as HTMLElement | null;
-    if (
-      target instanceof HTMLInputElement ||
-      target instanceof HTMLTextAreaElement ||
-      target instanceof HTMLSelectElement
-    ) {
+    const field = editableFieldAt(target);
+    if (field) {
+      showEditableContextMenu(event, field);
+      return;
+    }
+    if (target instanceof HTMLSelectElement) {
       return;
     }
     event.preventDefault();

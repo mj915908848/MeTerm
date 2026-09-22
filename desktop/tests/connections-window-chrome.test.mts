@@ -10,6 +10,10 @@
  * The rows are not the problem — they call preventDefault themselves and show the
  * app menu. What is left is everything else, hence one document-level guard per
  * window.
+ *
+ * Text fields are not an exception to that guard; they are routed to the app's
+ * editing menu (see editable-context-menu.test.mts). Only a dropdown keeps the
+ * platform menu.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -38,22 +42,25 @@ test('the connection window suppresses the WebView context menu', () => {
   );
 });
 
-test('the suppressor still lets inputs use the native menu', () => {
+test('the suppressor answers fields itself instead of letting the WebView do it', () => {
   const body = bodyAfter(read('context-menu.ts'), 'export function suppressNativeContextMenu');
-  for (const el of ['HTMLInputElement', 'HTMLTextAreaElement', 'HTMLSelectElement']) {
-    assert.ok(
-      body.includes(el),
-      `${el} must opt out so copy / paste / select-all keep working`,
-    );
-  }
+  assert.ok(
+    body.includes('editableFieldAt(target)'),
+    'a text field has to be recognised, not waved through to the WebView menu',
+  );
+  assert.ok(
+    body.includes('HTMLSelectElement'),
+    'a dropdown is the one element that keeps the platform menu',
+  );
   assert.ok(
     /event\.preventDefault\(\)/.test(body),
     'everything else must be prevented, which is what hides the WebView menu',
   );
-  // The early return has to come before the suppress call, or inputs lose theirs.
+  // Field handling must come first, or fields fall into the blanket preventDefault
+  // and lose their menu entirely.
   assert.ok(
-    body.indexOf('preventDefault') > body.indexOf('HTMLInputElement'),
-    'the input exception must be checked before preventing',
+    body.indexOf('editableFieldAt') < body.indexOf('preventDefault'),
+    'the field branch must be checked before preventing',
   );
 });
 
