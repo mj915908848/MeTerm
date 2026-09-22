@@ -15,8 +15,18 @@ import {
   type ToolContext,
 } from './ai-tools-core';
 import { executeAgentCommand, withSessionPtyLock } from './ai-tools-shell';
-import { createWatchLifecycle, watchTimeoutSeconds } from './ai-terminal-watch-lifecycle';
-import { detectInteractiveState } from './ai-tools-prompt-detect';
+import {
+  createWatchLifecycle,
+  watchTimeoutSeconds,
+  precheckWatch,
+  lastMatchingLine,
+  tailOf,
+  WATCH_DETECT_SILENCE_MS,
+  WATCH_DETECT_TAIL_CHARS,
+  WATCH_PROMPT_SETTLE_MS,
+  WATCH_RECENT_INPUT_GUARD_MS,
+} from './ai-terminal-watch-lifecycle';
+import { detectInteractiveState, endsWithShellPrompt } from './ai-tools-prompt-detect';
 import { resolveSingleKey } from './ai-tools-keys';
 import { waitAutoDetectedReason } from './ai-tool-i18n';
 
@@ -701,6 +711,7 @@ export function createWatchTerminalTool(): ToolHandler {
         'Observe terminal output live for a running command/process. Returns a structured [status: ...] header identical to run_command, plus the collected output.\n' +
         '\n' +
         'Returns when ANY of the following happens:\n' +
+        '  0. The terminal is ALREADY in the state you asked about when the call arrives (the shell is back at its prompt, the awaited pattern is already on screen, or a password / Y-n prompt is already showing) → returns immediately, elapsed 0s, with the current screen as its body. No waiting.\n' +
         '  1. Shell returns to idle (command finished) → status: completed\n' +
         '  2. A password / Y-n / generic input prompt is detected → status: waiting_password / waiting_confirm / waiting_input\n' +
         '  3. The terminal enters a full-screen TUI → status: tui\n' +
@@ -758,6 +769,64 @@ export function createWatchTerminalTool(): ToolHandler {
         }
       }
 
+      // ── Fast path: decide from state we can read RIGHT NOW ────────
+      // Everything below this point waits for a future event, and none
+      // of those events are replayed: onShellIdle is a broadcast rather
+      // than a sticky flag, and onOutput only fires for bytes that have
+      // not arrived yet. So when the command ALREADY finished, waiting
+      // is guaranteed dead time — the old code burned the full
+      // idle_timeout (15s by default) and then answered
+      // `idle_no_signal` with an empty body, even though the finished
+      // result was sitting on screen the whole time.
+      const screenTail = tailOf(
+        stripAnsi(TerminalRegistry.serializeBuffer(pane.sessionId) ?? '').replace(/\r/g, ''),
+      );
+      const tailIsPrompt = endsWithShellPrompt(screenTail);
+      const hookInjected = !!mt.shellState.hookInjected;
+      const phase = mt.shellState.phase ?? 'unknown';
+      const screenBody = truncateOutput(screenTail.trim(), TOKEN_BUDGET.perToolOutputChars);
+
+      // With the shell hook present, phase is authoritative and this
+      // guard is unnecessary. Without it (SSH host without the hook,
+      // PowerShell) a prompt-shaped tail is our only evidence — and it
+      // is only evidence of a FINISHED command when nothing was typed
+      // just now. Right after input the visible prompt is still the old
+      // one, and the command it was typed for may not have started.
+      const recentInput = Date.now() - (mt.shellState.lastUserInputAt || 0) < WATCH_RECENT_INPUT_GUARD_MS;
+      const tailProvesIdle = !hookInjected && !recentInput && tailIsPrompt;
+
+      const pre = precheckWatch({ hookInjected, phase, tail: screenTail, pattern: regex, tailIsPrompt: tailProvesIdle });
+      if (pre.kind === 'pattern_matched') {
+        return `${panePrefix}[status: pattern_matched, elapsed: 0s, match: ${JSON.stringify(pre.match)}]`
+          + `\n${screenBody || '(no output)'}`
+          + '\n[note: returned immediately — the pattern was already present on screen before the watch began.]';
+      }
+      if (pre.kind === 'completed') {
+        const why = pre.source === 'shell-hook'
+          ? 'shell integration reports the prompt is up, so no foreground command owns the terminal'
+          : 'the visible tail is a shell prompt and no shell-integration hook is available';
+        return `${panePrefix}[status: completed, elapsed: 0s, exit: ${mt.shellState.lastExitCode}]`
+          + `\n${screenBody || '(no output)'}`
+          + `\n[note: returned immediately — ${why}. The body above is the CURRENT screen, not a live capture.]`;
+      }
+
+      // The screen may already be blocked on a password / Y-n prompt.
+      // Those states are authoritative whenever they appeared, so a
+      // watcher that never receives another byte must not report
+      // idle_no_signal. Only consulted while the shell is NOT idle —
+      // when it is idle we already returned above, and stale prompt
+      // text from a finished command must not masquerade as a live one.
+      if (phase !== 'ready') {
+        const existing = detectInteractiveState(tailOf(screenTail, WATCH_DETECT_TAIL_CHARS), false);
+        if (existing.state === 'waiting_password' || existing.state === 'waiting_confirm') {
+          const infoLine = existing.promptInfo
+            ? `\n[prompt_info: ${JSON.stringify(existing.promptInfo)}]`
+            : '';
+          return `${panePrefix}[status: ${existing.state}, elapsed: 0s, prompt: ${JSON.stringify(existing.matchedLine)}]`
+            + `${infoLine}\n${screenBody || '(no output)'}\n${buildNextStepHint(existing.state)}`;
+        }
+      }
+
       type FinishReason =
         | 'aborted'
         | 'timeout'
@@ -789,6 +858,12 @@ export function createWatchTerminalTool(): ToolHandler {
         let idleTimer: ReturnType<typeof setTimeout>;
         let detectorTimer: ReturnType<typeof setInterval>;
         const startTime = Date.now();
+        /** Timestamp of the last byte we appended (idle/detector pacing). */
+        let lastOutputAt = Date.now();
+        /** Did ANY new output arrive during this watch window? */
+        let hadOutput = false;
+        /** Has the detector already run for the current quiet period? */
+        let detectorChecked = false;
 
         const cleanup = () => {
           resolved = true;
@@ -823,7 +898,15 @@ export function createWatchTerminalTool(): ToolHandler {
             ? `\n[prompt_info: ${JSON.stringify(promptInfo)}]`
             : '';
           const omitted = lifecycle.wasTruncated ? '\n[Earlier output omitted; retained latest 65536 characters]' : '';
-          resolve(`${panePrefix}${header}${promptInfoLine}${omitted}\n${truncated || '(no output)'}`);
+          // No new bytes arrived, but the screen may still hold exactly
+          // what the caller is after — answering "(no output)" for a
+          // terminal that is visibly full of text tells the model
+          // nothing and forces an extra read_terminal round-trip.
+          const body = truncated
+            || (screenBody
+              ? `${screenBody}\n[note: no new output during the watch window — showing the current screen.]`
+              : '(no output)');
+          resolve(`${panePrefix}${header}${promptInfoLine}${omitted}\n${body}`);
         };
         const lifecycle = createWatchLifecycle(ctx.abortSignal, watchTimeoutSeconds(args.timeout) * 1000, finalize);
 
@@ -848,6 +931,31 @@ export function createWatchTerminalTool(): ToolHandler {
               return;
             }
           } catch { /* ignore */ }
+
+          const silentMs = Date.now() - lastOutputAt;
+          if (silentMs < WATCH_DETECT_SILENCE_MS) {
+            // Still streaming: a detector run now would read a
+            // half-written line and could fire on a partial prompt.
+            // Re-arm so the next quiet period gets one fresh check.
+            detectorChecked = false;
+            return;
+          }
+          // One check per quiet period — the old loop re-scanned the
+          // entire (up to 64 KB) buffer every 400ms for no benefit.
+          if (detectorChecked) return;
+          detectorChecked = true;
+
+          // Hookless completion. Without OSC 7768 (SSH into a host where
+          // the hook could not be injected, PowerShell, failed injection)
+          // no shell-idle event will ever arrive, so a quiet prompt tail
+          // is the best "the command finished" evidence available. This
+          // is the same last-resort rule run_command already applies.
+          if (!hookInjected && hadOutput && silentMs >= WATCH_PROMPT_SETTLE_MS
+            && endsWithShellPrompt(lifecycle.output)) {
+            finalize('completed');
+            return;
+          }
+
           const det = detectInteractiveState(lifecycle.output, false);
           if (det.state === 'waiting_password' || det.state === 'waiting_confirm' || det.state === 'waiting_input') {
             finalize(det.state, det.matchedLine, det.promptInfo);
@@ -858,17 +966,20 @@ export function createWatchTerminalTool(): ToolHandler {
         const unsubOutput = TerminalRegistry.onOutput(pane.sessionId, (data) => {
           if (resolved) return;
           lifecycle.append(data);
+          hadOutput = true;
+          lastOutputAt = Date.now();
           resetIdleTimer(); // output received → reset idle countdown
 
           // Check caller-supplied pattern first — it wins over detector.
+          // Scanned across the whole tail (not just the last 5 lines) so
+          // a banner that arrived a few lines above the cursor still
+          // matches.
           if (regex) {
-            const lines = stripAnsi(lifecycle.output).split('\n');
-            for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
-              if (regex.test(lines[i])) {
-                matchedLine = lines[i].trim();
-                finalize('pattern_matched');
-                return;
-              }
+            const match = lastMatchingLine(tailOf(stripAnsi(lifecycle.output)), regex);
+            if (match) {
+              matchedLine = match;
+              finalize('pattern_matched');
+              return;
             }
           }
         });

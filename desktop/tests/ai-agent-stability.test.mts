@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createWatchLifecycle, WATCH_BUFFER_LIMIT, watchTimeoutSeconds } from '../src/ai-terminal-watch-lifecycle.ts';
+import {
+  createWatchLifecycle,
+  WATCH_BUFFER_LIMIT,
+  watchTimeoutSeconds,
+  precheckWatch,
+  lastMatchingLine,
+  tailOf,
+  WATCH_DETECT_SILENCE_MS,
+  WATCH_DETECT_TAIL_CHARS,
+  WATCH_PROMPT_SETTLE_MS,
+  WATCH_RECENT_INPUT_GUARD_MS,
+} from '../src/ai-terminal-watch-lifecycle.ts';
 import { buildTaskRetention, isTaskRetention } from '../src/ai-agent-retention.ts';
 import type { ChatMessage } from '../src/ai-provider.ts';
 import { trimHistory, compressContext, shouldAutoCompact } from '../src/ai-agent-history.ts';
@@ -26,25 +37,71 @@ function extractFactory(file: string, name: string): string {
   return factory.getText(parsed).replace('export ', '');
 }
 
+// Minimal stand-in for ai-tools-prompt-detect's endsWithShellPrompt. The harness
+// cannot import that module (it pulls in the extensionless frontend graph), so
+// the predicate is mirrored here with the same shape as the real one.
+const endsWithShellPromptStub = (buffer: string): boolean => {
+  const lines = buffer.replace(/\r/g, '').split('\n').filter(l => l.trim().length > 0);
+  if (lines.length === 0) return false;
+  const last = lines[lines.length - 1];
+  if (!/[$#%>»]\s*$/.test(last)) return false;
+  return !/password|passphrase|密码|yes\/no|y\/n/i.test(last);
+};
+
 // Exercise the real tool factory with isolated terminal/PTY dependencies,
 // without booting the desktop UI or a remote shell.
-function watchHarness() {
+function watchHarness(overrides: {
+  /** Serialized (already visible) screen content the fake terminal reports. */
+  screen?: string;
+  hookInjected?: boolean;
+  phase?: string;
+  /** Timestamp of the last keystroke/agent input, 0 = never. */
+  lastUserInputAt?: number;
+  detect?: () => { state: string; matchedLine?: string };
+} = {}) {
   const js = ts.transpile(extractFactory('ai-tools-command.ts', 'createWatchTerminalTool'), { target: ts.ScriptTarget.ES2021 });
   const outputs = new Set<(data: string) => void>();
   const idles = new Set<() => void>();
   let locked = false;
-  const terminal = { transport: { connected: true }, terminal: { buffer: { active: { type: 'normal' } } }, shellState: { lastExitCode: 0 } };
+  const screen = overrides.screen ?? '';
+  const terminal = {
+    transport: { connected: true },
+    terminal: { buffer: { active: { type: 'normal' } } },
+    shellState: {
+      lastExitCode: 0,
+      hookInjected: overrides.hookInjected ?? false,
+      phase: overrides.phase ?? 'unknown',
+      lastUserInputAt: overrides.lastUserInputAt ?? 0,
+    },
+  };
   const registry = {
     get: () => terminal,
+    serializeBuffer: () => screen,
     onOutput: (_: string, fn: (data: string) => void) => { outputs.add(fn); return () => outputs.delete(fn); },
     onShellIdle: (_: string, fn: () => void) => { idles.add(fn); return () => idles.delete(fn); },
   };
   // The factory's module-level collaborators are not part of the extraction.
-  const create = new Function('TerminalRegistry', 'resolvePaneTarget', 'paneHeaderFor', 'PANE_PARAM_SCHEMA', 'withSessionPtyLock', 'stripAnsi', 'truncateOutput', 'TOKEN_BUDGET', 'detectInteractiveState', 'createWatchLifecycle', 'watchTimeoutSeconds', js + '\nreturn createWatchTerminalTool();');
-  const tool = create(registry, () => ({ ok: true, pane: { sessionId: 'test' } }), () => '', {},
+  const create = new Function(
+    'TerminalRegistry', 'resolvePaneTarget', 'paneHeaderFor', 'PANE_PARAM_SCHEMA',
+    'withSessionPtyLock', 'stripAnsi', 'truncateOutput', 'TOKEN_BUDGET',
+    'detectInteractiveState', 'endsWithShellPrompt', 'buildNextStepHint',
+    'precheckWatch', 'lastMatchingLine', 'tailOf',
+    'WATCH_DETECT_SILENCE_MS', 'WATCH_DETECT_TAIL_CHARS', 'WATCH_PROMPT_SETTLE_MS',
+    'WATCH_RECENT_INPUT_GUARD_MS',
+    'createWatchLifecycle', 'watchTimeoutSeconds',
+    js + '\nreturn createWatchTerminalTool();',
+  );
+  const tool = create(
+    registry, () => ({ ok: true, pane: { sessionId: 'test' } }), () => '', {},
     async (_: string, fn: () => Promise<string>) => { locked = true; try { return await fn(); } finally { locked = false; } },
     (s: string) => s, (s: string) => s, { perToolOutputChars: 100000 },
-    () => ({ state: 'none' }), createWatchLifecycle, watchTimeoutSeconds);
+    overrides.detect ?? (() => ({ state: 'active' })), endsWithShellPromptStub,
+    (status: string) => `[hint ${status}]`,
+    precheckWatch, lastMatchingLine, tailOf,
+    WATCH_DETECT_SILENCE_MS, WATCH_DETECT_TAIL_CHARS, WATCH_PROMPT_SETTLE_MS,
+    WATCH_RECENT_INPUT_GUARD_MS,
+    createWatchLifecycle, watchTimeoutSeconds,
+  );
   return { tool, outputs, idles, get locked() { return locked; } };
 }
 
@@ -81,6 +138,101 @@ test('real watch retains silence return behavior', async () => {
   const h = watchHarness();
   assert.match(await h.tool.execute({ idle_timeout: 3 }, {}), /status: idle_no_signal/);
   assert.equal(h.outputs.size + h.idles.size, 0); assert.equal(h.locked, false);
+});
+
+// ─── watch_terminal: the "result is already there" fast path ─────────
+// The watcher only ever waited for FUTURE events (OSC 7768 shell-idle, new
+// output, the idle timeout, the deadline) and none of those are replayed. A
+// command that finished BEFORE the watch began therefore made the caller sit
+// out the whole idle timeout and then answer idle_no_signal with an empty
+// body, even though the finished result was on screen the entire time.
+
+test('watch precheck finishes at once on authoritative shell state', () => {
+  const prompt = 'user@host ~ % ';
+  assert.deepEqual(
+    precheckWatch({ hookInjected: true, phase: 'ready', tail: prompt, pattern: null, tailIsPrompt: true }),
+    { kind: 'completed', source: 'shell-hook' });
+  // A foreground job still owns the PTY → must wait, prompt-looking tail or not.
+  assert.deepEqual(
+    precheckWatch({ hookInjected: true, phase: 'agent_executing', tail: prompt, pattern: null, tailIsPrompt: true }),
+    { kind: 'proceed' });
+  // No shell integration (SSH host without the hook) → the visible tail is
+  // the only evidence available.
+  assert.deepEqual(
+    precheckWatch({ hookInjected: false, phase: 'unknown', tail: prompt, pattern: null, tailIsPrompt: true }),
+    { kind: 'completed', source: 'prompt-tail' });
+  assert.deepEqual(
+    precheckWatch({ hookInjected: false, phase: 'unknown', tail: 'still building...', pattern: null, tailIsPrompt: false }),
+    { kind: 'proceed' });
+});
+
+test('watch precheck lets an explicit pattern outrank shell state', () => {
+  const tail = 'step 1\nBUILD SUCCESSFUL\nuser@host ~ %';
+  assert.deepEqual(
+    precheckWatch({ hookInjected: true, phase: 'ready', tail, pattern: /BUILD SUCCESSFUL/, tailIsPrompt: true }),
+    { kind: 'pattern_matched', match: 'BUILD SUCCESSFUL' });
+  assert.equal(lastMatchingLine(tail, /nope/), null);
+  // A /g pattern must not resume mid-string on a second call.
+  const global = /SUCCESSFUL/g;
+  assert.equal(lastMatchingLine(tail, global), 'BUILD SUCCESSFUL');
+  assert.equal(lastMatchingLine(tail, global), 'BUILD SUCCESSFUL');
+});
+
+test('tailOf keeps a line-aligned tail and passes short text through', () => {
+  assert.equal(tailOf('short', 100), 'short');
+  assert.equal(tailOf(`${'x'.repeat(50)}\nFINAL LINE\n`, 20), 'FINAL LINE\n');
+});
+
+test('watch returns at once when the command already finished', async () => {
+  const h = watchHarness({ screen: 'README.md\nsrc\nuser@host ~ %', hookInjected: true, phase: 'ready' });
+  const started = Date.now();
+  const result = await h.tool.execute({}, {});
+  assert.ok(Date.now() - started < 500, 'must not burn the idle timeout');
+  assert.match(result, /status: completed, elapsed: 0s/);
+  assert.ok(result.includes('README.md'), 'the current screen is returned as the body');
+  assert.equal(h.outputs.size + h.idles.size, 0);
+  assert.equal(h.locked, false, 'the fast path must not take the PTY lock');
+});
+
+test('watch returns at once when the awaited pattern is already on screen', async () => {
+  const h = watchHarness({ screen: 'BUILD SUCCESSFUL in 12s\nuser@host ~ %' });
+  const result = await h.tool.execute({ pattern: 'BUILD SUCCESSFUL' }, {});
+  assert.match(result, /status: pattern_matched, elapsed: 0s/);
+  assert.ok(result.includes('BUILD SUCCESSFUL in 12s'));
+  assert.equal(h.locked, false);
+});
+
+test('watch reports a prompt that was already waiting instead of idling out', async () => {
+  const h = watchHarness({
+    screen: '[sudo] password for mj: ',
+    detect: () => ({ state: 'waiting_password', matchedLine: '[sudo] password for mj:' }),
+  });
+  const result = await h.tool.execute({}, {});
+  assert.match(result, /status: waiting_password, elapsed: 0s/);
+  assert.equal(h.locked, false);
+});
+
+test('watch accepts a bare prompt as completion when no shell hook exists', async () => {
+  const h = watchHarness({ screen: 'user@host ~ %', lastUserInputAt: 0 });
+  const result = await h.tool.execute({}, {});
+  assert.match(result, /status: completed, elapsed: 0s/);
+  assert.ok(result.includes('no shell-integration hook is available'));
+});
+
+test('watch does not read the stale prompt as a finished command right after input', async () => {
+  // Same screen as above, but input landed a moment ago: that prompt is the
+  // OLD one and the command it was typed for may not have started yet.
+  const h = watchHarness({ screen: 'user@host ~ %', lastUserInputAt: Date.now() });
+  const result = await h.tool.execute({ idle_timeout: 3 }, {});
+  assert.match(result, /status: idle_no_signal/, 'must still wait instead of claiming completion');
+});
+
+test('watch without new output still returns the visible screen', async () => {
+  const h = watchHarness({ screen: 'line one\nline two' });
+  const result = await h.tool.execute({ idle_timeout: 3 }, {});
+  assert.match(result, /status: idle_no_signal/);
+  assert.ok(result.includes('line one'));
+  assert.ok(result.includes('no new output during the watch window'));
 });
 
 test('actual fallback and hard trim retain task state and complete tool pairs', () => {
