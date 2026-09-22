@@ -1,5 +1,51 @@
 # MeTerm 更新记录
 
+## v0.2.17
+
+### 新功能
+
+- **服务器信息面板可直接看 swap、负载与进程** — 内存监控下方新增 swap（远端脚本采集 `/proc/meminfo` 或 `vm.swapusage`，按「已用 / 总量」显示并带进度条，完全没有 swap 的主机显示 0/0），运行天数下方新增 1 / 5 / 15 分钟负载（取不到就整行不渲染）。文件管理抽屉里的进程表搬进面板，成为内存与网络图之间的固定高度小窗，只留命令 / 内存% / CPU% 三列 —— 面板默认 280px，再放 PID、用户与运行时间会把命令列挤到只剩几个字符 —— 超过一半的数值标红。抽屉的「进程」标签页与刷新按钮随之取消，进程与系统信息现在由面板同一拍拉取，不会各刷各的。
+- **网络监控优先展示物理网卡** — 网卡选择器按 物理（`en*` / `eth*` / `em*` / `wl*` / `ww*` / `bond*` / `team*`）→ 未识别 → 虚拟与隧道（`docker0`、`veth*`、`br-*`、`cni`、`tun`、`utun` …）排序，默认选中排第一的那块。此前直接取内核列出的第一块，在跑容器的宿主机上那常常是 `docker0`。用户手动选过的网卡只要还在就继续胜出。
+
+### 问题修复 / 优化
+
+- **服务器信息面板限定为 SSH 会话** — 本机会话没有远端，堡垒机会话的 Koko 连接没有 exec 通道（其文件浏览器走的是同一条已认证终端连接上复用的 SFTP 子系统），两者此前都会看到一份没有意义的数据。现在这两种会话的工具栏不再出现入口，面板自身也隐藏并停止轮询，而不是在面板里显示一句「仅对 SSH 会话可用」。
+- **堡垒机会话不再拿到本机数据冒充远端** — 后端原先以 `exec_type != "ssh"` 判断，会把堡垒机会话送进本机信息分支，用 MeTerm 自己机器的 hostname、系统与架构冒充远端资产。现在堡垒机单独返回 `SERVER_INFO_UNSUPPORTED`，只有本机会话走本机分支。
+- **文本输入框右键改用应用自己的菜单** — 「添加 JumpServer」对话框的服务器地址框右键会弹出 WebKit 的系统菜单（Look Up / Translate / Search with Bing / Inspect Element / AutoFill 等，无论界面语言始终是英文）。原因是上一版给辅助窗口装菜单抑制器时显式豁免了 input / textarea / select 以保住复制粘贴，而主窗口有同一处一模一样的豁免 —— 输入框成了最后一块漏出浏览器菜单的地方。现在文本框统一弹出应用自己的四项菜单（剪切 / 复制 / 粘贴 / 全选），主窗口与各辅助窗口共用同一套判定。下拉框仍走系统原生菜单（应用无可加项），终端区域完全不受影响。编辑按打开菜单那一刻快照的选区执行（菜单按钮会抢走焦点），写值后会主动通知输入框，因此 SSH / JumpServer 端口框的数字清洗与「有未保存改动」检查照常生效。
+- **堡垒机资产窗口「连接」不再失败** — 在堡垒机窗口里选好账户点连接会登录不上，而侧边栏同一入口正常：同一件事两条路，只有走事件的那条被拦。窗口把连接请求转发给主窗口时，校验器要求 `account.privileged` 必须是布尔，而后端账户对象根本没有这个字段，序列化时该键被丢掉，转发命令直接返回错误，窗口底栏只剩一句 `invalid JumpServer browser connection request`。现在校验器接受该字段缺失、出现时仍必须是布尔，窗口侧则固定发送布尔值；未知字段依旧被拒，载荷长不出新字段。（账户列表里的 root 徽章仍不显示 —— 给后端加上这个字段，会让账户解析在字段类型意外时整批失败，不值得冒这个险。）
+
+### 验证
+
+- 前端单测 310 项全通过（新增 17 项：服务器信息面板与网卡排序 6、文本框右键菜单 9、堡垒机连接载荷 2）、`npx tsc --noEmit` 无错误、`npm run build` 通过、`cargo check --lib` 通过
+- 守卫测试均以「改回问题形态、确认确实失败」验证过，之后逐字节还原；Rust 侧新增的 `connect_asset_accepts_an_account_without_a_privileged_flag` 实测通过，把校验器改回旧写法后如期失败
+- 三个提交各自单独跑过类型检查与全量测试（299 → 308 → 310，无失败），确保逐提交可编译
+- 尚未实测：真实 SSH 会话上面板的 swap / 负载 / 进程小窗（本机无法构造远端），以及堡垒机资产窗口的实际登录（需要可用的堡垒机账号）
+
+---
+
+## Changelog (English)
+
+### What's New
+
+- **The server-info panel now shows swap, load and processes** — Swap sits under memory (the remote script reads `/proc/meminfo` or `vm.swapusage`, shown as used/total with a progress bar, and 0/0 on a host with no swap) and the 1/5/15-minute load averages sit under uptime, dropped entirely when a host reports none. The file drawer's process table moved into the panel as a fixed-height box between the memory rows and the network chart, keeping three columns (command / mem% / CPU%) — the panel is 280px by default and PID, user and elapsed time would leave the command column a few characters wide — with anything over half shown in red. The drawer's Processes tab and refresh button are gone, and the panel now polls processes and system info on the same tick instead of the two drifting apart.
+- **The network chart prefers the physical adapter** — The selector orders names physical (`en*` / `eth*` / `em*` / `wl*` / `ww*` / `bond*` / `team*`) → unclassified → virtual and tunnel (`docker0`, `veth*`, `br-*`, `cni`, `tun`, `utun` …) and defaults to the first of those. It used to take whatever the kernel listed first, which on a container host is often `docker0`. A NIC the user picked by hand keeps winning while it still exists.
+
+### Bug Fixes
+
+- **The server-info panel is SSH-only** — A local session has no remote side, and a JumpServer session's Koko connection carries no exec channel (its file browser multiplexes an SFTP subsystem on the authenticated terminal connection instead), yet both used to show a panel of numbers that meant nothing. Neither now gets a toolbar entry, and the panel itself hides and stops polling rather than rendering an "SSH sessions only" line inside it.
+- **A JumpServer session no longer receives local data dressed up as the remote asset** — The backend branched on `exec_type != "ssh"`, which routed a JumpServer session into the local-information path and labelled MeTerm's own hostname, OS and architecture as the remote asset's. JumpServer now answers `SERVER_INFO_UNSUPPORTED`, and only a local session takes the local branch.
+- **Text fields get the app's own right-click menu** — Right-clicking the server-address box in the 添加 JumpServer dialog popped WebKit's system menu (Look Up / Translate / Search with Bing / Inspect Element / AutoFill, all in English whatever the UI language). The cause was the previous window-wide suppressor exempting input / textarea / select to keep copy-paste working, with the main window carrying the very same exemption — text fields were the last place the browser menu leaked through. The main window and the utility windows now share one rule and show the app's own four entries (cut / copy / paste / select all). A dropdown keeps the platform menu (the app has nothing to add) and the terminal is entirely unaffected. Edits apply to the selection snapshotted when the menu opened (the menu button steals focus) and announce themselves to the field, so the SSH/JumpServer port boxes still sanitise digits and the unsaved-changes check still fires.
+- **Connecting from the JumpServer asset window works again** — Picking an account and connecting in the asset window failed to log in while the same entry point in the sidebar worked: one action, two paths, and only the event path was blocked. When the window forwards the request to the main window, the validator demanded a boolean `account.privileged`, but the backend's account object has no such field — JSON dropped the key, the forward command returned an error, and the status bar showed nothing but `invalid JumpServer browser connection request`. The validator now accepts a missing flag and still requires a boolean when present, and the window always sends a boolean. Unknown keys stay refused, so the payload cannot grow fields. (The root badge in the account list still does not show: adding that field to the backend would make account parsing fail wholesale if an endpoint ever typed it differently, which is not worth the risk.)
+
+### Validation
+
+- Front-end unit tests: 310 passing (17 new: 6 for the server-info panel and NIC ordering, 9 for the field context menu, 2 for the JumpServer connect payload), `npx tsc --noEmit` clean, `npm run build` succeeded, `cargo check --lib` clean
+- Every guard was validated by restoring the problem form and watching it fail, then restored byte-for-byte; the new Rust test `connect_asset_accepts_an_account_without_a_privileged_flag` passes and fails as expected when the validator is put back
+- Each of the three commits was type-checked and tested on its own (299 → 308 → 310, no failures), so every intermediate tree builds
+- Not yet verified on real hardware: the panel's swap / load / process box against a live SSH host (no remote available here), and an actual login from the JumpServer asset window (needs a working JumpServer account)
+
+---
+
 ## v0.2.16
 
 ### 新功能
