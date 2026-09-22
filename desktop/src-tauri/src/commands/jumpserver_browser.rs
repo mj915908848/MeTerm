@@ -58,6 +58,13 @@ fn optional_safe_text(value: Option<&Value>, max_len: usize) -> bool {
             .is_some_and(|text| text.len() <= max_len && !text.chars().any(char::is_control))
 }
 
+/// A flag the account endpoint may or may not report. Absent is fine, but a
+/// present one must really be a boolean — a string "true" would mean the child
+/// found a new way to shape this payload.
+fn optional_safe_bool(value: Option<&Value>) -> bool {
+    value.is_none() || value.and_then(Value::as_bool).is_some()
+}
+
 fn bounded_json(value: &Value, depth: usize) -> bool {
     if depth > 8 {
         return false;
@@ -161,11 +168,16 @@ fn validate_connect_asset(payload: &Value) -> Result<(), String> {
                     .is_some_and(|value| bounded_json(value, 0))
         })
         && account.is_some_and(|account| {
+            // `privileged` is display metadata (`Account` in server/jumpserver/mod.rs
+            // does not even carry it), so requiring it here rejected every single
+            // connection attempt from this window: the browser sent `undefined`, JSON
+            // dropped the key, and the user got "登录不上" with only a status-bar line
+            // to explain it. Optional when absent, a real boolean when present.
             has_only_keys(account, &["id", "name", "username", "privileged"])
                 && safe_resource_id(account.get("id"))
                 && safe_display_text(account.get("name"), 512)
                 && safe_display_text(account.get("username"), 512)
-                && account.get("privileged").and_then(Value::as_bool).is_some()
+                && optional_safe_bool(account.get("privileged"))
         });
     valid
         .then_some(())
@@ -233,5 +245,42 @@ mod tests {
         let mut invalid = rpc;
         invalid["params"]["pageSize"] = json!(1000);
         assert!(validate_forwarded_event(RPC_REQUEST, &invalid).is_err());
+    }
+
+    #[test]
+    fn connect_asset_accepts_an_account_without_a_privileged_flag() {
+        let connect = |account: Value| {
+            json!({
+                "configName": "production",
+                "asset": {
+                    "id": "01234567-89ab-cdef-0123-456789abcdef",
+                    "name": "192.168.200.236-项目报表",
+                    "address": "192.168.200.236",
+                    "platform": { "id": 1, "name": "Linux" },
+                    "protocols": [{ "id": 1, "name": "ssh", "port": 22 }],
+                },
+                "account": account,
+            })
+        };
+        let base = json!({ "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "name": "root", "username": "root" });
+
+        // The account endpoint does not report `privileged`, so the browser used to
+        // send `undefined` and JSON dropped the key — every connection from the
+        // asset-browser window was rejected. Absent has to be allowed.
+        assert!(validate_forwarded_event(CONNECT_ASSET, &connect(base.clone())).is_ok());
+
+        let mut flagged = base.clone();
+        flagged["privileged"] = json!(true);
+        assert!(validate_forwarded_event(CONNECT_ASSET, &connect(flagged)).is_ok());
+
+        // Present but not a boolean is still a malformed payload.
+        let mut wrong_type = base.clone();
+        wrong_type["privileged"] = json!("true");
+        assert!(validate_forwarded_event(CONNECT_ASSET, &connect(wrong_type)).is_err());
+
+        // And unknown keys stay refused, so the payload cannot grow fields.
+        let mut extra = base;
+        extra["secret"] = json!("hunter2");
+        assert!(validate_forwarded_event(CONNECT_ASSET, &connect(extra)).is_err());
     }
 }

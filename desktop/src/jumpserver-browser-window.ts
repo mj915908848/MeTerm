@@ -1029,11 +1029,20 @@ function renderAssetBrowser(config: JumpServerBrowserConfig): void {
       statusBar.style.color = '';
       statusBar.textContent = `Connecting to ${asset.name || asset.address}...`;
 
-      // Emit event to main window for SSH connection
+      // Emit event to main window for SSH connection.
+      // `privileged` has to be a real boolean: the account endpoint does not
+      // report it, and an `undefined` value is dropped from the payload by JSON
+      // serialization — which the owner's validator rejected outright, so every
+      // "连接" from this window failed silently apart from a status-bar line.
       await forwardBrowserEvent('jumpserver-connect-asset', {
         configName: config.name,
         asset: { id: asset.id, name: asset.name, address: asset.address, platform: asset.platform, protocols: asset.protocols },
-        account: { id: account.id, name: account.name, username: account.username, privileged: account.privileged },
+        account: {
+          id: account.id,
+          name: account.name,
+          username: account.username,
+          privileged: account.privileged === true,
+        },
       });
 
       statusBar.textContent = `Connected: ${asset.name || asset.address}`;
