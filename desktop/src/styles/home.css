@@ -1542,6 +1542,15 @@ html[data-theme="light"] .home-dash-group-chevron:hover {
   box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.15),
               0 0 0 2px rgba(var(--accent-rgb), 0.25);
 }
+/* A reserved group name is refused by the store, so the dialog has to say why
+   rather than closing on a name it will not use. */
+.group-modal-error {
+  margin-top: -8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--danger, #e74c3c);
+}
+.group-modal-error[hidden] { display: none; }
 
 /* Color picker in modal */
 .group-color-picker {

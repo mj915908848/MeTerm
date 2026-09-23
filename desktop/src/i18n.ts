@@ -778,6 +778,7 @@ export interface Translations {
   homeGroupExpand: string;
   homeGroupDuplicate: string;
   homeGroupNewName: string;
+  homeGroupNameReserved: string;
   homeRecentActivity: string;
   homeRecentRemove: string;
   homeFooterVersion: string;
@@ -1556,6 +1557,7 @@ const translations: Record<Language, Translations> = {
     homeGroupExpand: 'Expand',
     homeGroupDuplicate: 'Duplicate Group',
     homeGroupNewName: 'Group Name',
+    homeGroupNameReserved: 'Names starting with “__” are reserved by the app. Please pick another.',
     homeRecentActivity: 'Recent Activity',
     homeRecentRemove: 'Remove from history',
     homeFooterVersion: 'MeTerm v{version}',
@@ -2364,6 +2366,7 @@ const translations: Record<Language, Translations> = {
     homeGroupExpand: '展开',
     homeGroupDuplicate: '复制分组',
     homeGroupNewName: '分组名称',
+    homeGroupNameReserved: '以“__”开头的名称由应用保留，请换一个。',
     homeRecentActivity: '最近活跃',
     homeRecentRemove: '从历史记录中移除',
     homeFooterVersion: 'MeTerm v{version}',

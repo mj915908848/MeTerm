@@ -48,6 +48,7 @@ import {
   jumpserverKey,
   createGroup,
   renameGroup,
+  isReservedGroupName,
   deleteGroup,
   assignConnectionsToGroup,
   removeConnectionGroup,
@@ -954,6 +955,17 @@ export function showGroupModal(
   nameInput.value = currentName;
   body.appendChild(nameInput);
 
+  // Validation has to be visible: a reserved name is refused by `createGroup` /
+  // `renameGroup`, so accepting the dialog and closing silently would look like
+  // the group was created and then lost. See `isReservedGroupName`.
+  const nameError = document.createElement('div');
+  nameError.className = 'group-modal-error';
+  nameError.hidden = true;
+  body.appendChild(nameError);
+
+  const clearNameError = () => { nameError.hidden = true; nameError.textContent = ''; };
+  nameInput.oninput = clearNameError;
+
   let selectedColor = currentColor;
   const colorPicker = document.createElement('div');
   colorPicker.className = 'group-color-picker';
@@ -996,6 +1008,13 @@ export function showGroupModal(
   confirmBtn.onclick = () => {
     const name = nameInput.value.trim();
     if (!name) return;
+    if (isReservedGroupName(name)) {
+      nameError.textContent = t('homeGroupNameReserved');
+      nameError.hidden = false;
+      nameInput.focus();
+      nameInput.select();
+      return;
+    }
     overlay.remove();
     onConfirm(name, selectedColor);
   };
@@ -1028,7 +1047,15 @@ function startInlineRename(nameSpan: HTMLElement, groupName: string, refreshView
   const commit = () => {
     const newName = input.value.trim();
     if (newName && newName !== groupName) {
-      renameGroup(groupName, newName);
+      // Inline rename bypasses the modal, so it has to carry the check itself.
+      // And it has to *say* so: the input is about to be replaced by the
+      // re-render, so a refusal with no message reads as "my typing was ignored".
+      // See `isReservedGroupName`.
+      if (isReservedGroupName(newName)) {
+        showToast({ title: t('homeGroupRename'), body: t('homeGroupNameReserved') });
+      } else {
+        renameGroup(groupName, newName);
+      }
     }
     refreshView();
   };

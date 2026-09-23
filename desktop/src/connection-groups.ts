@@ -25,7 +25,9 @@ export function loadGroupOrder(): string[] {
     const raw = localStorage.getItem(GROUP_ORDER_KEY);
     if (raw) {
       const parsed: string[] = JSON.parse(raw);
-      // Filter out any __type:* entries that may have been saved erroneously
+      // Filter out any __type:* entries that may have been saved erroneously.
+      // New ones can no longer be created — see `isReservedGroupName` — but a
+      // store written before that existed may still hold them.
       return parsed.filter(name => !name.startsWith('__type:'));
     }
   } catch {}
@@ -34,6 +36,40 @@ export function loadGroupOrder(): string[] {
 
 export function saveGroupOrder(order: string[]): void {
   localStorage.setItem(GROUP_ORDER_KEY, JSON.stringify(order));
+}
+
+/**
+ * Names the app owns rather than the user.
+ *
+ * Every internal id in this feature lives in the `__` namespace:
+ * `__ungrouped__` is the sentinel bucket for connections that belong to no group
+ * (used by `home-side.ts`, `connection-drag.ts` and `connection-sort.ts`), and
+ * `__type:<kind>` is the dashboard's id for the per-kind cards it draws out of
+ * that same bucket (`home-dashboard-left.ts`), which `loadGroupOrder` filters
+ * back out.
+ *
+ * Both sentinels are compared **by value**, so a user group that takes one is
+ * not merely odd-looking — it is unreachable:
+ *
+ *   - a group named `__type:ssh` is dropped by `loadGroupOrder`, so it never
+ *     gets a dashboard card and its connections disappear from the dashboard;
+ *   - a group named `__ungrouped__` is indistinguishable from "no group", so its
+ *     rows merge into the root bucket and the group itself never appears.
+ *
+ * Neither failure reports anything when it happens: the name is accepted, the
+ * group is written, and the damage only surfaces later as rows in the wrong
+ * place. Hence a hard "no" at the two places a name can be chosen.
+ *
+ * Names already in storage are deliberately *not* migrated: renaming or
+ * unassigning a user's connections to tidy up a sentinel would be a real data
+ * loss, where leaving a merely-odd group is not. `loadGroupOrder` already
+ * tolerates the `__type:*` leftovers it used to accept.
+ */
+const RESERVED_GROUP_PREFIX = '__';
+
+/** Is this one of the app's own names rather than one a user may own? */
+export function isReservedGroupName(name: string): boolean {
+  return name.startsWith(RESERVED_GROUP_PREFIX);
 }
 
 // ─── Connection → Group mapping ───
@@ -120,16 +156,32 @@ export function getConnectionGroup(connectionKey: string): string | undefined {
 
 // ─── Group management ───
 
-export function createGroup(name: string): void {
+/**
+ * Create a group. Returns false — writing nothing — for a reserved name: see
+ * `isReservedGroupName`. The callers that matter validate first so the user gets
+ * a message; this is the backstop that stops a programmatic caller from quietly
+ * creating a group the rest of the app cannot address.
+ */
+export function createGroup(name: string): boolean {
+  if (isReservedGroupName(name)) return false;
   const order = loadGroupOrder();
   if (!order.includes(name)) {
     order.push(name);
     saveGroupOrder(order);
   }
+  return true;
 }
 
-export function renameGroup(oldName: string, newName: string): void {
-  if (oldName === newName) return;
+/**
+ * Rename a group. Returns false for a reserved name.
+ *
+ * The refused case is not cosmetic: the rename would re-point every connection
+ * of the group at a name the app reads as one of its own sentinels, which is a
+ * data-loss shape (the rows become unaddressable) rather than a bad label.
+ */
+export function renameGroup(oldName: string, newName: string): boolean {
+  if (oldName === newName) return true;
+  if (isReservedGroupName(newName)) return false;
   migrateGroupSort(oldName, newName);
   // Update order
   const order = loadGroupOrder();
@@ -143,6 +195,7 @@ export function renameGroup(oldName: string, newName: string): void {
     if (map[key] === oldName) map[key] = newName;
   }
   saveGroupMap(map);
+  return true;
 }
 
 export function deleteGroup(name: string): void {
