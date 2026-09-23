@@ -90,7 +90,21 @@ if [ -f /proc/uptime ]; then echo "UPTIME_SECS=$(cut -d. -f1 /proc/uptime 2>/dev
 ///    truncated name for every process with an argument. The exchange format has
 ///    a space-joined command (`parse_process_output` reads `fields[5..]`), so the
 ///    tail was being dropped on the way in, not on the way out.
-const PROCESS_LIST_CMD: &str = r#"out=$(ps -eo pid,user,%cpu,%mem,etime,comm --sort=-%cpu --no-headers 2>/dev/null | head -40); if [ -n "$out" ]; then printf '%s\n' "$out"; else bsd=$(ps aux 2>/dev/null | awk 'NR>1 && $1 !~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]/' | sort -k3 -rn | head -40); if [ -n "$bsd" ]; then printf '%s\n' "$bsd" | awk '{c=$11; for (i=12;i<=NF;i++) c=c" "$i; sub(/.*\//,"",c); printf "%s %s %s %s - %s\n", $2, $1, $3, $4, c}'; else ps -o pid,user,comm 2>/dev/null | awk '$1 ~ /^[0-9]+$/ {c=$3; for (i=4;i<=NF;i++) c=c" "$i; sub(/.*\//,"",c); printf "%s %s - - - %s\n", $1, $2, c}' | head -40; fi; fi"#;
+/// 7. …and they take the leading directory off **before** joining, not after.
+///    `sub(/.*\//,"",c)` is greedy, so running it on the assembled line eats
+///    everything up to the last slash *anywhere* in it: `/usr/bin/python
+///    /srv/app.py` became `app.py` and `/usr/bin/java -jar /opt/app/app.jar`
+///    became `app.jar` — the guard in §6 traded a truncated *argument* for a
+///    truncated *name*, on the very commands that carry a path argument. The
+///    strip is therefore applied to the first field of the command only, which
+///    is the one field `ps` may print as a path; the rest is verbatim.
+///    Only the `ps aux` branch can be caught by a test: `comm` (§5's last
+///    branch) carries no arguments, so there the two orders are
+///    indistinguishable — that branch is aligned for consistency, not because a
+///    mutation would show it. The one that is observable is pinned in
+///    `tests/process-list-cmd-portability.test.mts` by running the command
+///    against a stub `ps`, not by asserting its text.
+const PROCESS_LIST_CMD: &str = r#"out=$(ps -eo pid,user,%cpu,%mem,etime,comm --sort=-%cpu --no-headers 2>/dev/null | head -40); if [ -n "$out" ]; then printf '%s\n' "$out"; else bsd=$(ps aux 2>/dev/null | awk 'NR>1 && $1 !~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]/' | sort -k3 -rn | head -40); if [ -n "$bsd" ]; then printf '%s\n' "$bsd" | awk '{c=$11; sub(/.*\//,"",c); for (i=12;i<=NF;i++) c=c" "$i; printf "%s %s %s %s - %s\n", $2, $1, $3, $4, c}'; else ps -o pid,user,comm 2>/dev/null | awk '$1 ~ /^[0-9]+$/ {c=$3; sub(/.*\//,"",c); for (i=4;i<=NF;i++) c=c" "$i; printf "%s %s - - - %s\n", $1, $2, c}' | head -40; fi; fi"#;
 
 /// Names this very poll spawns itself — see `parse_process_output`. `sort` is
 /// here for the BSD branch of the fallback, which pipes through it to order by

@@ -46,6 +46,10 @@ const COMMAND = extractCommand();
  * - `busybox_lax` — the harder variant the review raised: `ps aux` exits 0 but
  *   prints BusyBox's own `PID USER COMMAND`, so the branch can only be stopped by
  *   the shape of the rows, not by the exit status.
+ * - `bsd_paths` / `comm_paths` — the *second* review question: the name has to be
+ *   taken off its directory before the arguments are joined, not after, or a
+ *   command like `/usr/bin/java -jar /opt/app/app.jar` loses its name to a greedy
+ *   strip that reaches the last slash in the whole line.
  */
 const PS_STUB = `#!/bin/sh
 mode="$FAKE_PS"
@@ -110,6 +114,35 @@ case "$mode" in
         exit 0 ;;
       *) exit 1 ;;
     esac ;;
+  bsd_paths)
+    # ps aux rows whose command carries a path *argument* — the flavour that made
+    # the old "join everything, then strip up to the last slash" eat the name.
+    case "$args" in
+      *-eo*) exit 1 ;;
+      *aux*)
+        printf '%s\\n' \\
+          "USER       PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND" \\
+          "root         1  0.1  0.2  12345  1234 ?        Ss   10:00   0:01 /sbin/init" \\
+          "app         77  9.0  1.0  10000  2000 ?        S    10:00   0:05 /usr/bin/java -jar /opt/app/app.jar" \\
+          "py          78  3.0  1.0  10000  2000 ?        S    10:00   0:05 /usr/bin/python /srv/app.py --config /etc/app.conf" \\
+          "ng          79  1.0  1.0  10000  2000 ?        S    10:00   0:05 nginx -c /etc/nginx/nginx.conf"
+        exit 0 ;;
+      *) exit 1 ;;
+    esac ;;
+  comm_paths)
+    # The degraded branch on a BSD/macOS host, whose ps -o comm prints a full
+    # path (Linux prints a bare name) — same ordering question, second branch.
+    case "$args" in
+      *-eo*) exit 1 ;;
+      *aux*) printf "ps: illegal option -- a\\n" >&2; exit 1 ;;
+      *-o*)
+        printf '%s\\n' \\
+          "PID   USER     COMMAND" \\
+          "    1 root     /sbin/launchd" \\
+          "   42 root     /usr/bin/java"
+        exit 0 ;;
+      *) exit 1 ;;
+    esac ;;
 esac
 exit 1
 `;
@@ -158,6 +191,44 @@ test('a BSD row keeps the whole command line, not just its first word', { skip }
     nginx!.slice(5).join(' '), 'nginx: worker',
     '`ps aux` puts the command line in the trailing fields; reading only one of them truncated it',
   );
+});
+
+test('a path argument in a BSD row does not cost the process its name', { skip }, () => {
+  // `sub(/.*\//,"",c)` is greedy: run over the assembled line it reaches the
+  // *last* slash anywhere in it, so `/usr/bin/java -jar /opt/app/app.jar` came
+  // back as `app.jar` — the §6 fix traded a truncated argument for a truncated
+  // name on exactly the commands that carry a path. The strip belongs on the
+  // first field, before the join.
+  const byPid = new Map(rowsFor('bsd_paths').map(f => [fields(f)[0], fields(f)]));
+  assert.equal(byPid.size, 4, 'three processes plus init, minus the header');
+
+  assert.equal(
+    byPid.get('77')?.slice(5).join(' '), 'java -jar /opt/app/app.jar',
+    'the name keeps its own path stripped; the arguments keep theirs',
+  );
+  assert.equal(
+    byPid.get('78')?.slice(5).join(' '), 'python /srv/app.py --config /etc/app.conf',
+    'a second path *argument* must not be read as part of the name',
+  );
+  assert.equal(
+    byPid.get('79')?.slice(5).join(' '), 'nginx -c /etc/nginx/nginx.conf',
+    'a relative name with a path argument is left alone',
+  );
+  assert.equal(
+    byPid.get('1')?.slice(5).join(' '), 'init',
+    'and a plain `/sbin/init` still loses its directory, as before',
+  );
+});
+
+test('the degraded branch strips the directory from `comm` the same way', { skip }, () => {
+  // Second branch, same *shape* — but not the same guard: `comm` carries no
+  // arguments, so joining after the strip and stripping after the join produce
+  // the same answer here and no mutation can tell them apart. What this pins is
+  // the part that is observable on a BSD/macOS host: `ps -o comm` prints a path
+  // where Linux prints a bare name, and the panel is supposed to show the name.
+  const rows = rowsFor('comm_paths').map(fields);
+  assert.deepEqual(rows.map(f => f.slice(5).join(' ')), ['launchd', 'java']);
+  assert.equal(rows[0][2], '-', 'the degraded branch still marks %CPU unknown');
 });
 
 test('BusyBox, whose `ps aux` errors out, still gets a process list', { skip }, () => {
