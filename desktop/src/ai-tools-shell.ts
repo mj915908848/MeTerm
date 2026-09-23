@@ -121,11 +121,15 @@ export function withSessionPtyLock<T>(
  * `PROMPT_COMMAND` entries, which is why the extension below follows the shape
  * the variable already has (bash 5.1+ arrays included).
  *
- * `fish` and `powershell` deliberately still emit 3 fields: both are
- * unverifiable from this repo's test environment (no `fish`/`pwsh` binary, no
- * CI coverage), and a syntax error in an injected hook is *masked* — the
- * 7766 detect marker fires before the `eval`, so `hookInjected` would flip
- * true while the hook is dead. Add them only together with a way to verify.
+ * `fish` and `powershell` deliberately still emit 3 fields: a syntax error in an
+ * injected hook is *masked* (the 7766 detect marker fires before the `eval`, so
+ * `hookInjected` would flip true while the hook is dead), so the extra field is
+ * only worth adding where the hook can be *run*, not merely read. `fish` is now
+ * run for real by `tests/shell-hook-injection.test.mts` whenever a `fish` binary
+ * is on PATH — which is why the injected line is kept free of anything fish
+ * cannot parse (see `hostGuardCommand`) — but that binary is absent in CI, so
+ * treat the fish path as verified-where-available rather than covered. `pwsh`
+ * is neither run nor verified anywhere.
  */
 function buildShellHook(shellType: string): string {
   switch (shellType) {
@@ -544,6 +548,41 @@ export function injectShellHook(sessionId: string): boolean {
   return _injectShellHookImpl(sessionId, mt, host.status === 'known' ? host.value : undefined);
 }
 
+/**
+ * "Is the shell that is about to run this really our host?", as one command that
+ * every shell MeTerm supports can run.
+ *
+ * The comparison has to happen where the command *lands* — that is the whole
+ * point — but the shape it used to be written in (`__meterm_id=…; if [ … ];
+ * then …; fi`) is not something the three dialects agree on, and fish is the
+ * loud one: it parses the entire line before running any of it, so a single
+ * construct it does not know costs the session the hook outright
+ * (`__meterm_id=…` → *Unsupported use of '='*). A guard that only works in the
+ * shells that do not need it is not a guard.
+ *
+ * So the comparison is delegated to a POSIX `sh` we start ourselves, and the
+ * foreground shell is left with `sh -c '<script>' meterm '<expected>'` — a
+ * command, one argument, and the `&&` the caller already needs. The expected
+ * value travels as `$1` rather than as interpolated text, so a hostname holding
+ * quotes or `$` is inert.
+ *
+ * The exit status is the whole protocol: 0 means "ours, go ahead", and anything
+ * else means the 7766 refusal has already been printed and the caller's `&&`
+ * skips the install. Keeping the refusal inside the guard — rather than in an
+ * `else` branch after the body — is deliberate: it then cannot be triggered by
+ * an unrelated non-zero status from inside the install.
+ *
+ * `HOST_IDENTITY_EXPR` is interpolated unchanged, so the drift guard that pins
+ * it against `server_info::HOST_IDENTITY_CMD` keeps working.
+ */
+function hostGuardCommand(expectedHost: string, detectId: string): string {
+  const script =
+    `${HOST_IDENTITY_EXPR}; `
+    + `if [ "$__meterm_id" = "$1" ]; then exit 0; fi; `
+    + `printf '\\033]7766;${detectId};${HOOK_FOREIGN_HOST_CODE}\\007'; exit 1`;
+  return `sh -c '${escapeShellSingle(script)}' meterm '${escapeShellSingle(expectedHost)}'`;
+}
+
 function _injectShellHookImpl(
   sessionId: string,
   mt: ReturnType<typeof TerminalRegistry.get> & {},
@@ -555,24 +594,6 @@ function _injectShellHookImpl(
   const fishHook = buildShellHook('fish');
   const detectId = `det_${Date.now().toString(36)}`;
 
-  // Single-line polyglot: `test -n` guards ensure only the matching branch runs.
-  // __meterm_hook_ready guard: skip if Go sidecar already installed the hook.
-  const body = [
-    ` test -n "$ZSH_VERSION" && test -z "$__meterm_hook_ready" &&`,
-    `printf '\\033]7766;${detectId};1\\007' &&`,
-    `eval '${escapeShellSingle(zshHook)}' &&`,
-    `setopt HIST_IGNORE_SPACE 2>/dev/null;`,
-    `test -n "$BASH_VERSION" && test -z "$__meterm_hook_ready" &&`,
-    `printf '\\033]7766;${detectId};0\\007' &&`,
-    `eval '${escapeShellSingle(bashHook)}' &&`,
-    `history -d $HISTCMD 2>/dev/null;`,
-    `export HISTCONTROL="\${HISTCONTROL:+\$HISTCONTROL:}ignorespace";`,
-    `test -n "$FISH_VERSION" && test -z "$__meterm_hook_ready" &&`,
-    `printf '\\033]7766;${detectId};2\\007' &&`,
-    `eval '${escapeShellSingle(fishHook)}';`,
-    `printf '\\0338\\033[0J\\033[0m\\r\\033[2K'`,
-  ].join(' ');
-
   // Whose shell is this, really? `expectedHost` is the answer from the exec
   // channel — the host we dialled; the shell that runs this line answers for
   // wherever the user's foreground prompt actually is. When the two disagree the
@@ -581,16 +602,62 @@ function _injectShellHookImpl(
   // of being marked hooked with another machine's cwd, exit codes and durations —
   // and `hookInjected` is exactly what switches the screen-tail fallbacks off.
   // Unguarded when there is nothing to compare against — see `HostIdentity`.
-  const cmd = expectedHost === undefined
-    ? body
-    : `${HOST_IDENTITY_EXPR}; if [ "$__meterm_id" = '${escapeShellSingle(expectedHost)}' ];`
-      + `then ${body}; `
-      + `else printf '\\033]7766;${detectId};${HOOK_FOREIGN_HOST_CODE}\\007'; fi`;
+  //
+  // The check is spliced into each branch as its first `&&` operand, which keeps
+  // every dialect happy without any grouping or re-quoting: `sh -c '<script>'
+  // meterm '<expected>'` is one command whose *status* is the answer, and a
+  // refusal prints the 7766 marker and exits non-zero, so the branch stops
+  // before it can install anything. The alternatives do not survive fish —
+  // `guard && eval '<body>'` re-escapes the body's own quotes into `'''`, which
+  // fish reads as an unbalanced string, and `( guard && body )` / `{ …; }` have
+  // no fish equivalent at all.
+  //
+  // Exactly one branch can be taken in any real shell — `$ZSH_VERSION`,
+  // `$BASH_VERSION` and `$FISH_VERSION` are mutually exclusive — so the check
+  // costs one `sh` per injection rather than three, and a refusal produces one
+  // marker, not three. Empty when there is nothing to compare against, which
+  // reproduces the unguarded command byte for byte.
+  const guard = expectedHost === undefined
+    ? ''
+    : `${hostGuardCommand(expectedHost, detectId)} && `;
+
+  // Single-line polyglot: `test -n` guards ensure only the matching branch runs.
+  // __meterm_hook_ready guard: skip if Go sidecar already installed the hook.
+  const body = [
+    ` test -n "$ZSH_VERSION" && ${guard}test -z "$__meterm_hook_ready" &&`,
+    `printf '\\033]7766;${detectId};1\\007' &&`,
+    `eval '${escapeShellSingle(zshHook)}' &&`,
+    `setopt HIST_IGNORE_SPACE 2>/dev/null;`,
+    `test -n "$BASH_VERSION" && ${guard}test -z "$__meterm_hook_ready" &&`,
+    `printf '\\033]7766;${detectId};0\\007' &&`,
+    `eval '${escapeShellSingle(bashHook)}' &&`,
+    `history -d $HISTCMD 2>/dev/null;`,
+    // Two things about this line, both consequences of fish parsing the *whole*
+    // injected line before running any of it:
+    //
+    //   - `${HISTCONTROL:+…}` is a bash/zsh idiom fish cannot parse at all
+    //     (`${` is "not a valid variable in fish"), and a construct in a branch
+    //     fish never takes still costs every fish session the hook. `"$HISTCONTROL:
+    //     ignorespace"` is the same list either way — an unset variable
+    //     contributes an empty entry, which every reader of `HISTCONTROL` skips.
+    //   - Fixing that also *runs* the line in fish for the first time ever, so it
+    //     is gated on the shells that have a `HISTCONTROL`: exporting a
+    //     bash-only variable into a fish session is a change to a remote host's
+    //     environment, and the point of this pass is to make fish work, not to
+    //     make it different. (`$BASH_VERSION$ZSH_VERSION` is empty in fish, so
+    //     the `test` fails there — the concatenation is the portable way to ask
+    //     "either of these?".)
+    `test -n "$BASH_VERSION$ZSH_VERSION" && export HISTCONTROL="$HISTCONTROL:ignorespace";`,
+    `test -n "$FISH_VERSION" && ${guard}test -z "$__meterm_hook_ready" &&`,
+    `printf '\\033]7766;${detectId};2\\007' &&`,
+    `eval '${escapeShellSingle(fishHook)}';`,
+    `printf '\\0338\\033[0J\\033[0m\\r\\033[2K'`,
+  ].join(' ');
 
   // Switch to alternate screen buffer BEFORE sending.
   mt.terminal.write('\x1b[?1049h');
 
-  TerminalRegistry.sendInput(sessionId, '\x15' + cmd + '\n');
+  TerminalRegistry.sendInput(sessionId, '\x15' + body + '\n');
 
   const restoreScreen = () => {
     mt.terminal.write('\x1b[?1049l');

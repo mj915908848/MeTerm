@@ -18,14 +18,21 @@ import { readFileSync } from 'node:fs';
  *
  *   - `src-tauri/src/server/server_info.rs` — `HOST_IDENTITY_CMD`, run on the
  *     exec channel and printed back.
- *   - `src/ai-tools-shell.ts` — `HOST_IDENTITY_EXPR`, evaluated inside the shell
- *     the injection lands in, and compared with that answer.
+ *   - `src/ai-tools-shell.ts` — `HOST_IDENTITY_EXPR`, evaluated by a POSIX `sh`
+ *     that the injected command starts itself (`hostGuardCommand`), against the
+ *     answer the exec channel gave.
  *
  * This drift is the worst kind to catch late: if the two expressions stop
  * matching, nothing errors — every injection simply looks like a foreign host
  * and is refused, on every session, leaving the AI features degraded with an
  * empty log. Hence a test that reads both files and compares their text. (The
  * repo's other hook pins are text-based too; see `shell-hook-drift.test.mts`.)
+ *
+ * What cannot be checked by reading two files is whether the comparison *runs*:
+ * the guard is handed to `sh -c`, but the shell that has to parse the whole
+ * line is zsh, bash or fish. `shell-hook-injection.test.mts` therefore executes
+ * the generated command in every shell it can find — fish included, where the
+ * previous `__meterm_id=…; if …; then …; fi` form did not even parse.
  */
 
 const SRC = (rel: string): string => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8');
@@ -100,9 +107,22 @@ test('the identity is machine-id | hostname | boot_id, in that order', () => {
 
 test('the injection actually compares before it types anything', () => {
   assert.ok(
-    AI_SHELL.includes('${HOST_IDENTITY_EXPR}; if [ "$__meterm_id" = '),
+    AI_SHELL.includes('${HOST_IDENTITY_EXPR}; '),
     'the expression has to be interpolated into the very command that gets typed — declaring it '
     + 'and never using it would leave the whole guard inert while this test stayed green',
+  );
+  assert.ok(
+    AI_SHELL.includes('if [ "$__meterm_id" = "$1" ]'),
+    'the comparison must happen *where the command lands*, and it must run in a POSIX sh we start '
+    + '(`sh -c`), with the expected identity arriving as `$1`. The bash-only form it used to have '
+    + '(`__meterm_id=…; if …; then`) is not what zsh and fish agree on, and fish — which parses '
+    + 'the whole line before running any of it — rejected it outright, so every fish session lost '
+    + 'the guard *and* the hook behind it',
+  );
+  assert.ok(
+    AI_SHELL.includes("sh -c '"),
+    'the check has to be delegated to `sh -c`; evaluating it in the foreground shell is the thing '
+    + 'that could not be made to work in three dialects at once',
   );
   assert.ok(
     AI_SHELL.includes('HOOK_FOREIGN_HOST_CODE'),

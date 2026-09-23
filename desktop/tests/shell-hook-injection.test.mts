@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import ts from 'typescript';
 
 /**
@@ -16,7 +19,12 @@ function extractSection(): string {
   const start = source.indexOf('function buildShellHook(');
   const end = source.indexOf('// ─── Command Execution Waiters');
   assert.ok(start > 0 && end > start, 'injection section markers not found');
-  return source.slice(start, end).replace(/\bexport /g, '');
+  // Un-export the sliced declarations — the slice is evaluated as one script,
+  // not a module. Anchored to the start of a line so it cannot reach inside the
+  // *strings*: `export HISTCONTROL=…` in the injected body is not decoration,
+  // it is the only form of that assignment fish can parse, and stripping it here
+  // would have the tests parse and run a command production never sends.
+  return source.slice(start, end).replace(/^export /gm, '');
 }
 
 const SECTION_JS = ts.transpileModule(extractSection(), {
@@ -86,6 +94,7 @@ function harness(opts: HarnessOptions = {}) {
        injectShellHook, injectionBlocked, buildShellHook,
        hookState: _injectionState, BACKOFF: HOOK_RETRY_BACKOFF_MS, TIMEOUT: HOOK_INJECTION_TIMEOUT_MS,
        hostIdentity: _hostIdentity, FOREIGN_CODE: HOOK_FOREIGN_HOST_CODE,
+       HOST_IDENTITY_EXPR,
      };`,
   )(
     registry,
@@ -119,6 +128,7 @@ function harness(opts: HarnessOptions = {}) {
     FOREIGN_CODE: number;
     BACKOFF: number[];
     TIMEOUT: number;
+    HOST_IDENTITY_EXPR: string;
   };
 
   /** Run every timer registered *now*, leaving newly-created ones for the next pass. */
@@ -456,8 +466,20 @@ test('an identified host guards the command with its identity', async () => {
     'the injected command has to compute the identity *where it lands* — that is the shell under suspicion',
   );
   assert.ok(
-    h.inputs[0].includes('"$__meterm_id" = \'abc123|mac|boot-7\''),
+    h.inputs[0].includes('if [ "$__meterm_id" = "$1" ]'),
     'and compare it against the answer from the exec channel; this comparison is the entire guard',
+  );
+  assert.ok(
+    h.inputs[0].includes("meterm 'abc123|mac|boot-7'"),
+    'the expected identity arrives as an argument to that comparison, so a hostname holding quotes '
+    + 'or `$` is inert rather than being read as shell syntax',
+  );
+  assert.equal(
+    (h.inputs[0].match(/sh -c '/g) ?? []).length,
+    3,
+    'the check is delegated to a POSIX `sh` — a shell every dialect can drive — and it has to ride '
+    + 'along in *every* branch (`zsh`, `bash`, `fish`), since only the foreground shell knows which '
+    + 'one it is. A branch that ships without it is a branch that installs on a nested ssh\'s host',
   );
   assert.match(
     h.inputs[0],
@@ -494,7 +516,7 @@ test('the identity is asked once per session and reused by every later attempt',
 
   assert.equal(h.inputs.length, 2, 'the retry really did re-inject');
   assert.deepEqual(h.probeCalls, ['ssh_host_identity:s1'], 'the answer is reused, not re-asked per attempt');
-  assert.ok(h.inputs[1].includes('"$__meterm_id" = \'abc123|mac|boot-7\''), 'and the retry is guarded too');
+  assert.ok(h.inputs[1].includes("meterm 'abc123|mac|boot-7'"), 'and the retry is guarded too');
 });
 
 test('a foreign-host report stops the chain instead of retrying into it', async () => {
@@ -532,4 +554,196 @@ test('leaving the nested shell lets the next attempt install the hook', async ()
   const [, again] = latestMarker(h);
   again(1);
   assert.equal(h.mt.shellState.hookInjected, true, 'which lands once the prompt on screen is really ours');
+});
+
+// ── §6: the line is *typed into a shell*, so that shell's parser gets a vote ─
+//
+// Everything above drives the machinery with a stubbed terminal: the command is
+// built and then asserted as text. That is precisely the gap the host-identity
+// guard fell into. `__meterm_id="$(…)"` is a bash assignment, and fish does not
+// merely fail to *run* an unknown command — it parses the whole line before
+// running any of it, so the line died before the first `printf`. The outcome was
+// not a weaker guard but no feature at all: no 7766 marker (not even a 9), so
+// the handshake timed out, the retry chain spent its budget on the same parse
+// error, and every fish session ended hookless. The body had the same trap —
+// `export HISTCONTROL="${HISTCONTROL:+…}"` sits in a branch fish never takes and
+// still cost it the hook.
+//
+// Reading the generated string cannot catch that. So these tests hand it to the
+// shells themselves: parsed in each, then run for real — on our own host, where
+// the hook must land, and against a stranger's identity, where nothing may.
+//
+// `sh` is included for the parse check only: no MeTerm hook targets it, and on
+// macOS it *is* bash, so its branch code is not a portable thing to assert.
+
+const SHELLS: Array<[string, string[]]> = [
+  ['bash', ['bash', '/bin/bash']],
+  ['zsh', ['zsh', '/bin/zsh']],
+  ['sh', ['sh', '/bin/sh']],
+  // Absent in CI, present when a developer has one — which is the only place
+  // the fish branch can be exercised at all.
+  ['fish', ['fish', '/opt/homebrew/bin/fish', '/usr/local/bin/fish', '/opt/local/bin/fish']],
+];
+
+/** The shell's binary, or null when this machine does not have it. */
+function availableShell(candidates: string[]): string | null {
+  for (const bin of candidates) {
+    const probe = spawnSync(bin, ['-c', 'exit 0'], { stdio: 'pipe' });
+    if (!probe.error && probe.status === 0) return bin;
+  }
+  return null;
+}
+
+/** Parse-only check: the shell's complaint, or null when the line is well-formed. */
+function syntaxComplaint(shell: string, script: string): string | null {
+  const file = join(mkdtempSync(join(tmpdir(), 'meterm-inject-')), 'line');
+  writeFileSync(file, script);
+  const parsed = spawnSync(shell, ['-n', file], { encoding: 'utf8', stdio: 'pipe' });
+  if (parsed.status === 0) return null;
+  return `${parsed.stderr ?? ''}`.replace(/\s+/g, ' ').trim();
+}
+
+/** The command the injection would type, exactly as `sendInput` receives it. */
+async function generatedCommand(hostIdentity: string | null): Promise<string> {
+  const h = harness({ hostIdentity });
+  h.mod.injectShellHook('s1');
+  await h.settle();
+  assert.equal(h.inputs.length, 1, 'the injection should have gone out');
+  assert.equal(h.inputs[0][0], '\x15', 'and be prefixed with Ctrl-U');
+  return h.inputs[0].slice(1);
+}
+
+/** Every `OSC 7766;id;code` the shell emitted, as the `code` field. */
+function detectCodes(output: string): string[] {
+  return [...output.matchAll(/\]7766;([^\x07]*)\x07/g)].map((match) => match[1].split(';').pop() ?? '');
+}
+
+const IDENTITY_EXPR = harness().mod.HOST_IDENTITY_EXPR;
+const FOREIGN_CODE = harness().mod.FOREIGN_CODE;
+
+test('the identity expression really produces a usable value on this machine', () => {
+  // Not a tautology: the guard compares two computations of this expression, so
+  // if it could not run here, "our host passes" below would be untestable.
+  const shell = availableShell(['sh', '/bin/sh']);
+  assert.ok(shell, 'these tests need a POSIX sh');
+  const probe = spawnSync(shell, ['-c', `${IDENTITY_EXPR}; printf %s "$__meterm_id"`], { encoding: 'utf8' });
+  assert.equal(probe.status, 0, `the expression must run under sh: ${probe.stderr}`);
+  assert.ok((probe.stdout ?? '').length > 0, 'an empty identity would make every host look foreign');
+});
+
+test('the generated injection parses in every shell MeTerm supports', async () => {
+  const scripts = {
+    unguarded: await generatedCommand(null),
+    guarded: await generatedCommand('abc123|mac|boot-7'),
+  };
+
+  for (const [name, candidates] of SHELLS) {
+    const shell = availableShell(candidates);
+    if (!shell) continue;
+    for (const [kind, script] of Object.entries(scripts)) {
+      assert.equal(
+        syntaxComplaint(shell, script),
+        null,
+        `the ${kind} injection must parse in ${name}. A construct the foreground shell does not `
+        + `know is not a degraded guard or a lost statistic — fish rejects the *entire line* before `
+        + `running any of it, so the session gets nothing and the retry chain repeats it.`,
+      );
+    }
+  }
+});
+
+/**
+ * The end-to-end claim, in the shells that actually matter: identity checked, on
+ * the shell that runs it, with the hook landing on one branch and nothing
+ * landing on a stranger.
+ *
+ * The probe after the injection is not decoration — the 7766 detect marker is
+ * emitted *before* the hook is `eval`ed, so a marker alone would also be
+ * produced by a hook that failed to parse. Asking the shell whether the hook
+ * function exists is what separates "installed" from "announced".
+ */
+test('the hook lands on our own host and never on a stranger', async () => {
+  const ourIdentity = spawnSync(
+    availableShell(['sh', '/bin/sh'])!,
+    ['-c', `${IDENTITY_EXPR}; printf %s "$__meterm_id"`],
+    { encoding: 'utf8' },
+  ).stdout ?? '';
+
+  const branch = {
+    bash: { code: '0', probe: 'declare -F __meterm_precmd >/dev/null && echo LANDED || echo ABSENT' },
+    zsh: { code: '1', probe: '(( $+functions[__meterm_precmd] )) && echo LANDED || echo ABSENT' },
+    fish: { code: '2', probe: 'functions -q __meterm_postcmd; and echo LANDED; or echo ABSENT' },
+  } as const;
+
+  for (const [shellType, spec] of Object.entries(branch)) {
+    const shell = availableShell(SHELLS.find(([name]) => name === shellType)![1]);
+    if (!shell) continue;
+
+    const accepted = spawnSync(shell, ['-c', `${await generatedCommand(ourIdentity)}\n${spec.probe}`], {
+      encoding: 'utf8', timeout: 30_000,
+    });
+    const acceptedOut = `${accepted.stdout ?? ''}${accepted.stderr ?? ''}`;
+    assert.match(acceptedOut, /LANDED/, `${shellType}: the hook has to install where the host matches`);
+    assert.deepEqual(
+      detectCodes(acceptedOut),
+      [spec.code],
+      `${shellType} must report its own branch code exactly once — a second marker would mean the `
+      + `host check ran more than once per injection`,
+    );
+    assert.equal(
+      (accepted.stderr ?? '').trim(), '',
+      `${shellType} must not have to complain about anything on the way: ${accepted.stderr}`,
+    );
+
+    const refused = spawnSync(
+      shell,
+      ['-c', `${await generatedCommand('some-other-host|elsewhere|boot-0')}\n${spec.probe}`],
+      { encoding: 'utf8', timeout: 30_000 },
+    );
+    const refusedOut = `${refused.stdout ?? ''}${refused.stderr ?? ''}`;
+    assert.match(
+      refusedOut, /ABSENT/,
+      `${shellType}: a mismatch means the command has landed on a nested ssh's host, where installing `
+      + `the hook is worse than staying hookless — this session would then be marked injected while `
+      + `its cwd, exit codes and durations describe the other machine`,
+    );
+    assert.deepEqual(
+      detectCodes(refusedOut),
+      [String(FOREIGN_CODE)],
+      `${shellType} must answer a mismatch with the foreign-host code and nothing else`,
+    );
+  }
+});
+
+/**
+ * A line fish can finally parse also *runs* in fish for the first time ever, and
+ * that is a change to somebody else's server. `HISTCONTROL` is read by bash and
+ * zsh, means nothing to fish, and exporting it there would turn "make the hook
+ * work in fish" into "make fish's environment different" — the sort of side
+ * effect that is invisible until it isn't. Hence the `$BASH_VERSION$ZSH_VERSION`
+ * gate, and hence a test that pins both sides of it.
+ */
+test('the history-control export reaches bash and zsh, but not fish', async () => {
+  const cmd = await generatedCommand(null);
+
+  const bash = availableShell(['bash', '/bin/bash']);
+  if (bash) {
+    const probed = spawnSync(bash, ['-c', `${cmd}\nprintf '<%s>' "$HISTCONTROL"`], { encoding: 'utf8' });
+    assert.match(
+      probed.stdout ?? '', /<[^>]*ignorespace>/,
+      'the whole point of the export is that the injected line is kept out of bash history',
+    );
+  }
+
+  const fish = availableShell(SHELLS.find(([name]) => name === 'fish')![1]);
+  if (fish) {
+    const probed = spawnSync(
+      fish, ['-c', `${cmd}\nset -q HISTCONTROL; and echo LEAKED; or echo CLEAN`], { encoding: 'utf8' },
+    );
+    assert.match(
+      probed.stdout ?? '', /CLEAN/,
+      'fish has no HISTCONTROL to set — a variable that only bash and zsh read must not appear in a '
+      + 'fish session\'s environment just because the line is finally able to run there',
+    );
+  }
 });
