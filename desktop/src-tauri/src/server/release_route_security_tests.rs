@@ -358,32 +358,59 @@ async fn scope_less_release_device_keeps_only_base_self_service_routes() {
     assert_eq!(after_revoke.status(), StatusCode::UNAUTHORIZED);
 }
 
+/// The contract artifact, at the path the README documents.
+fn control_broker_contract_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../docs/control-broker-contract-v1.json")
+}
+
+/// Is this build one that **must** carry the contract artifact?
+///
+/// The artifact is not part of this tree: `docs/control-broker-contract-v1.json`
+/// and the whole `control-broker/` workspace the README documents are absent from
+/// every public ref (verified against `main` and v0.2.3…v0.2.12). `include_str!`
+/// therefore made this test target fail to COMPILE for anyone running
+/// `cargo test` — not just this test, the entire suite — so the guard reads the
+/// file at runtime and skips when it is genuinely not there.
+///
+/// A skip that announces itself only on stderr is, in practice, silent: cargo
+/// captures the output of passing tests, so `cargo test` in CI shows nothing at
+/// all. That is the right default for a tree that cannot have the artifact, and
+/// the wrong one for a tree that is supposed to (an internal checkout, a
+/// release build, a future restore), where losing the file would drop the guard
+/// without a single red mark. Those builds say so explicitly:
+/// `METERM_REQUIRE_CONTROL_BROKER_CONTRACT=1` turns the absence into a failure.
+fn control_broker_contract_required() -> bool {
+    std::env::var("METERM_REQUIRE_CONTROL_BROKER_CONTRACT").as_deref() == Ok("1")
+}
+
 /// Guards the Control Broker contract: every mobile network capability stays
 /// fail-closed until the independent broker release gate is complete.
 ///
-/// The contract artifact itself is **not part of this tree**. `docs/control-
-/// broker-contract-v1.json` and the whole `control-broker/` workspace the README
-/// documents are absent from every public ref (verified against `main` and
-/// v0.2.3…v0.2.12), so `include_str!` made this test target fail to COMPILE for
-/// anyone running `cargo test` — not just this test, the entire suite. Reading
-/// the file at runtime keeps the suite compiling, while any tree that does ship
-/// the contract (an internal checkout, a future restore) still gets the full
-/// check. Absence is never silent: it prints the path and the reason to stderr
-/// (visible with `cargo test -- --nocapture`).
+/// Reads the artifact at runtime — see `control_broker_contract_required()` for
+/// why, and for the opt-in that stops the absence from being silent in a build
+/// that must ship it.
 ///
 /// The half of the guard that needs no artifact moved to
 /// `mobile_network_scopes_are_fail_closed_by_default`, which always runs.
 #[test]
 fn control_broker_contract_keeps_all_mobile_network_scopes_fail_closed() {
-    let contract_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../docs/control-broker-contract-v1.json");
+    let contract_path = control_broker_contract_path();
     let Ok(raw) = std::fs::read_to_string(&contract_path) else {
+        assert!(
+            !control_broker_contract_required(),
+            "METERM_REQUIRE_CONTROL_BROKER_CONTRACT=1 but {} is missing — this \
+             checkout is supposed to ship the Control Broker contract, and a \
+             skipped guard is indistinguishable from a passing one",
+            contract_path.display()
+        );
         eprintln!(
             "SKIP control_broker_contract_keeps_all_mobile_network_scopes_fail_closed: \
              {} is not part of this tree (the control-broker/ workspace the README \
              documents is absent from every public ref too). Fail-closed scope \
              enforcement is still covered by \
-             mobile_network_scopes_are_fail_closed_by_default.",
+             mobile_network_scopes_are_fail_closed_by_default. Set \
+             METERM_REQUIRE_CONTROL_BROKER_CONTRACT=1 to make this absence fail.",
             contract_path.display()
         );
         return;
@@ -489,4 +516,23 @@ fn control_broker_contract_keeps_all_mobile_network_scopes_fail_closed() {
 fn mobile_network_scopes_are_fail_closed_by_default() {
     assert!(device_auth::supported_scopes().is_empty());
     assert!(device_auth::default_scopes().is_empty());
+}
+
+/// Pins the two facts that make the runtime-read skip acceptable, so that a
+/// change to either one shows up as a failing test instead of as a guard that
+/// quietly stopped guarding: the path is the README-documented artifact, and
+/// "required" can never mean "require something that is not there".
+#[test]
+fn the_contract_guard_points_at_the_documented_artifact() {
+    let path = control_broker_contract_path();
+    assert!(
+        path.ends_with("docs/control-broker-contract-v1.json"),
+        "the guard must look at the artifact the README documents, got {}",
+        path.display()
+    );
+    assert!(
+        !control_broker_contract_required() || path.exists(),
+        "a build that requires the Control Broker contract must ship it ({})",
+        path.display()
+    );
 }
