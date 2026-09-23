@@ -154,21 +154,40 @@ test('the process box still gets a full page of rows after filtering', () => {
 // The fallback is not an exotic path: it is what every host without GNU procps
 // runs — BusyBox, and BSD/macOS, whose `ps` has no `--sort` at all. It shipped
 // with neither a cap nor an ordering, so those hosts got the *entire* process
-// table piped back (the parser's `.take(30)` runs after the transfer) and a "top
-// 30" that was really "the first 30 rows of ps aux".
-test('the portability fallback is capped and CPU-ordered too', () => {
+// table piped back (the parser's `.take(30)` runs after the transfer).
+//
+// What is pinned here is the *cost* half of the contract — how much leaves the
+// host per tick. Which rows each branch actually selects is settled against a
+// stubbed `ps` in `process-list-cmd-portability.test.mts`; that half cannot be
+// read off the command text, and reading it off the text is how a fallback that
+// assumed BSD field positions in BusyBox output stayed green for two commits.
+test('every process branch caps its own output before it crosses the wire', () => {
   const cmd = rustConst('PROCESS_LIST_CMD');
-  const fallback = cmd.split('else ')[1] ?? '';
-  assert.ok(fallback, 'the portable branch must stay — most hosts are not GNU procps');
-  assert.ok(fallback.includes('head -'), 'the fallback must cap its output as well');
-  assert.ok(/sort\s+-k3\s+-rn/.test(fallback), 'the fallback must order by %CPU (field 3)');
+  for (const flavour of ['ps -eo', 'ps aux', 'ps -o pid,user,comm']) {
+    assert.ok(cmd.includes(flavour), `missing branch for a host that only speaks ${flavour}`);
+  }
   assert.equal(
     cmd.split('head -40').length - 1,
-    2,
-    'both branches need the cap, at the same size as the common path',
+    3,
+    'each branch needs the cap, at the same size as the common path',
+  );
+});
+
+// Only an input that really carries a `%CPU` column may be ordered by it: BusyBox
+// has no such column, so a `sort -k3 -rn` there would rank every process by
+// whatever column 3 happens to be — a fabricated Top-CPU list rather than none.
+test('only the branch with a real %CPU column ranks by %CPU', () => {
+  const afterAux = rustConst('PROCESS_LIST_CMD').split('ps aux')[1] ?? '';
+  const bsd = afterAux.split('ps -o pid,user,comm')[0] ?? '';
+  const degraded = afterAux.split('ps -o pid,user,comm')[1] ?? '';
+
+  assert.ok(/sort\s+-k3\s+-rn/.test(bsd), 'the BSD branch orders by %CPU (field 3)');
+  assert.ok(
+    bsd.indexOf("awk 'NR>1") < bsd.indexOf('sort'),
+    'the header has to be dropped before sorting, or it is sorted into the list as a bogus row',
   );
   assert.ok(
-    fallback.indexOf("awk 'NR>1'") < fallback.indexOf('sort'),
-    'the header has to be dropped before sorting, or it is sorted into the list as a bogus row',
+    !/sort\s+-k3\s+-rn/.test(degraded),
+    'the degraded branch has no %CPU to order by, so it must not order at all',
   );
 });

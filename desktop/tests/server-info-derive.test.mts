@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
+import ts from 'typescript';
 import {
   cpuUsageFromTicks,
   formatLoadAverage,
@@ -239,4 +240,61 @@ test('a counter vector of unexpected length yields no percentage', () => {
 // No jiffies elapsed between the samples means there is no ratio to compute.
 test('identical samples yield no percentage', () => {
   assert.equal(cpuUsageFromTicks([1, 2, 3, 4, 5, 6, 7], [1, 2, 3, 4, 5, 6, 7]), null);
+});
+
+// ── A metric the host cannot report is not a zero ──
+//
+// BusyBox `ps` has no `%CPU`/`%MEM` column at all, so the collector sends the
+// unknown marker and the parser turns it into `null` instead of `0.0`. The panel
+// prints whatever number it is handed, so a fabricated zero would read as
+// "measured, and idle" on every row — the same kind of lie as the ranking built
+// from column 3 of a format that has no column 3. `—` is what this panel already
+// uses everywhere else for a value it does not have.
+
+/** `processMetric` is a pure helper and stays unexported, so lift just its body. */
+const processMetric = (() => {
+  const ast = ts.createSourceFile(
+    'drawer-system-info.ts', read('drawer-system-info.ts'), ts.ScriptTarget.Latest, true,
+  );
+  const node = ast.statements.find((n): n is ts.FunctionDeclaration =>
+    ts.isFunctionDeclaration(n) && n.name?.text === 'processMetric');
+  assert.ok(node, 'processMetric was not found in drawer-system-info.ts');
+  // `new Function` does not strip types, so the sliced body has to be compiled
+  // first — otherwise the annotation on the parameter is a syntax error.
+  const js = ts.transpileModule(node!.getText(), {
+    compilerOptions: { target: ts.ScriptTarget.ES2021 },
+  }).outputText;
+  return new Function(`${js}; return processMetric;`)() as
+    (value: number | null | undefined) => { text: string; high: boolean };
+})();
+
+test('a metric the host cannot report renders as unknown, not as zero', () => {
+  assert.deepEqual(processMetric(null), { text: '—', high: false });
+  assert.deepEqual(processMetric(undefined), { text: '—', high: false });
+});
+
+test('a reported metric still renders to one decimal', () => {
+  assert.deepEqual(processMetric(0), { text: '0.0', high: false });
+  assert.deepEqual(processMetric(42.55), { text: '42.5', high: false });
+});
+
+test('the high-usage flag needs a real number above the threshold', () => {
+  assert.deepEqual(processMetric(80.2), { text: '80.2', high: true });
+  assert.equal(processMetric(null).high, false, 'an unknown value cannot be flagged high');
+});
+
+// Cross-language parity: Rust decides that the marker means unknown, TS decides
+// that unknown prints as `—`. Neither half is visible from the other file, and a
+// rename on either side degrades the panel silently rather than failing.
+test('the collector sends the same marker the parser and the panel agree on', () => {
+  assert.match(
+    rustSource,
+    /const PROCESS_LIST_CMD: &str = r#".*? - - - /s,
+    'the degraded branch must send the unknown marker for the columns the host lacks',
+  );
+  assert.match(
+    rustSource,
+    /if raw == "-" \{\s*serde_json::Value::Null/,
+    'and the parser must turn that marker into null rather than 0.0',
+  );
 });

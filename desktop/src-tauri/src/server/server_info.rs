@@ -61,11 +61,41 @@ if [ -f /proc/uptime ]; then echo "UPTIME_SECS=$(cut -d. -f1 /proc/uptime 2>/dev
 ///    "top 30" that was really "the first 30 rows". Both now match the common
 ///    path. The header has to be dropped *before* the sort — `sort -rn` would
 ///    otherwise leave the `USER PID %CPU …` line in the middle of the list as a
-///    bogus row — and field 3 is `%CPU` in `ps aux` on both flavours.
-const PROCESS_LIST_CMD: &str = r#"out=$(ps -eo pid,user,%cpu,%mem,etime,comm --sort=-%cpu --no-headers 2>/dev/null | head -40); if [ -n "$out" ]; then printf '%s\n' "$out"; else ps aux 2>/dev/null | awk 'NR>1' | sort -k3 -rn | head -40 | awk '{c=$11; sub(/.*\//,"",c); printf "%s %s %s %s - %s\n", $2, $1, $3, $4, c}'; fi"#;
+///    bogus row.
+/// 5. That fallback was still one command wearing two hosts' assumptions:
+///    `ps aux` with `$3` as `%CPU` is the BSD/procps layout, and BusyBox is
+///    neither. Its `ps` documents `-o COL1,COL2=HEADER [-T]` and nothing else —
+///    the BSD letter cluster is not part of its interface — so on Alpine and in
+///    containers `ps aux` fails outright (stderr is dropped, so the branch
+///    returned nothing at all and the panel came back empty), and a host whose
+///    `ps aux` happens to print *something* would have had that something read
+///    through BSD field positions. The three flavours are now told apart by the
+///    shape of what came back, not by the command that produced it:
+///
+///    - GNU `ps -eo … --sort` answers first and is the only scan on the common
+///      path; an empty capture is exactly the "not GNU" signal.
+///    - `ps aux` rows are accepted only if `$1` is not a number *and* `$2` is,
+///      i.e. `USER PID`. A BusyBox-style `PID USER COMMAND` fails that test on
+///      every row (`$1` is the pid), and so does a header, so the branch can no
+///      longer misread one layout as the other.
+///    - With neither available, the list degrades to `ps -o pid,user,comm`, the
+///      one spelling all three flavours share. BusyBox cannot supply `%CPU` or
+///      `%MEM` at all, so those columns are sent as `-` — see
+///      `parse_process_output`, which turns the marker into `null` and the panel
+///      into `—`. A list without a ranking is honest; a ranking built from
+///      column 3 of a format that does not have one is not.
+/// 6. Both fallback branches rebuild `COMMAND` from every remaining field, not
+///    from the first one alone. `ps aux` puts the whole command line in the last
+///    column, so `$11` cut `nginx: worker` down to `nginx:` — the panel showed a
+///    truncated name for every process with an argument. The exchange format has
+///    a space-joined command (`parse_process_output` reads `fields[5..]`), so the
+///    tail was being dropped on the way in, not on the way out.
+const PROCESS_LIST_CMD: &str = r#"out=$(ps -eo pid,user,%cpu,%mem,etime,comm --sort=-%cpu --no-headers 2>/dev/null | head -40); if [ -n "$out" ]; then printf '%s\n' "$out"; else bsd=$(ps aux 2>/dev/null | awk 'NR>1 && $1 !~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]/' | sort -k3 -rn | head -40); if [ -n "$bsd" ]; then printf '%s\n' "$bsd" | awk '{c=$11; for (i=12;i<=NF;i++) c=c" "$i; sub(/.*\//,"",c); printf "%s %s %s %s - %s\n", $2, $1, $3, $4, c}'; else ps -o pid,user,comm 2>/dev/null | awk '$1 ~ /^[0-9]+$/ {c=$3; for (i=4;i<=NF;i++) c=c" "$i; sub(/.*\//,"",c); printf "%s %s - - - %s\n", $1, $2, c}' | head -40; fi; fi"#;
 
 /// Names this very poll spawns itself — see `parse_process_output`. `sort` is
-/// here for the portable branch, which pipes through it to order by `%CPU`.
+/// here for the BSD branch of the fallback, which pipes through it to order by
+/// `%CPU`; the degraded branch that BusyBox takes has no `sort` at all, and the
+/// name is kept for the flavour that does.
 const SELF_SPAWNED_NAMES: [&str; 4] = ["ps", "awk", "head", "sort"];
 
 /// Rows kept for the panel's process box (after filtering).
@@ -368,6 +398,21 @@ fn parse_cpu_ticks(value: &str) -> Option<Vec<u64>> {
     fields.iter().map(|v| v.parse::<u64>().ok()).collect()
 }
 
+/// One metric column, with "the host could not tell us" kept distinct from zero.
+///
+/// `-` is what `PROCESS_LIST_CMD`'s degraded branch sends for `%CPU`/`%MEM`, and
+/// it becomes JSON `null` so the panel can print `—`. Everything else keeps the
+/// long-standing behaviour of an unparseable value scoring `0.0`: that path is
+/// reached by a malformed row, where inventing `null` would hide a parse problem
+/// behind a rendering decision.
+fn optional_metric(raw: &str) -> serde_json::Value {
+    if raw == "-" {
+        serde_json::Value::Null
+    } else {
+        serde_json::json!(raw.parse::<f64>().unwrap_or(0.0))
+    }
+}
+
 /// Parse process list output — matches Go parseProcessOutput, plus a guard that
 /// drops the poll's own processes.
 ///
@@ -380,6 +425,12 @@ fn parse_cpu_ticks(value: &str) -> Option<Vec<u64>> {
 /// (`00:00`) is the same artifact for any process, and the three helper names are
 /// dropped by name too, because the BusyBox fallback has no usable `etime` and
 /// reports `-`.
+///
+/// `-` is the interchange format's "this host cannot supply the column" marker,
+/// so `time` carries it on both fallback branches and `cpu`/`mem` carry it on the
+/// degraded one (see `PROCESS_LIST_CMD`). It must not collapse into `0.0` for the
+/// metrics: the panel prints whatever it is given, so a fabricated zero reads as
+/// "measured, and idle" on every row. `optional_metric` keeps the two apart.
 fn parse_process_output(output: &str) -> Vec<serde_json::Value> {
     output
         .lines()
@@ -397,8 +448,8 @@ fn parse_process_output(output: &str) -> Vec<serde_json::Value> {
             Some(serde_json::json!({
                 "pid": fields[0].parse::<i32>().unwrap_or(0),
                 "user": fields[1],
-                "cpu": fields[2].parse::<f64>().unwrap_or(0.0),
-                "mem": fields[3].parse::<f64>().unwrap_or(0.0),
+                "cpu": optional_metric(fields[2]),
+                "mem": optional_metric(fields[3]),
                 "time": fields[4],
                 "command": fields[5..].join(" "),
             }))
@@ -478,6 +529,22 @@ mod tests {
         assert_eq!(rows[0]["time"], "-");
     }
 
+    /// 降级分支的 `-` 不能被折叠成 `0.0`。
+    ///
+    /// 面板会把拿到的数字照原样打印，所以一个凭空造的 0 读起来是"量过了，而且是
+    /// 空闲" —— 每一行都这么说，而宿主的 `%CPU` 其实根本拿不到。这正是这次要
+    /// 消灭的那类假数据，只不过换了个位置：先是不该有的排名，再是不该有的 0。
+    #[test]
+    fn parse_process_output_keeps_unknown_metrics_distinct_from_zero() {
+        let out = "   42 root - - - nginx\n";
+        let rows = parse_process_output(out);
+        assert_eq!(rows.len(), 1, "降级格式（cpu/mem/etime 皆为 `-`）须被接受");
+        assert_eq!(rows[0]["command"], "nginx");
+        assert!(rows[0]["cpu"].is_null(), "拿不到就是 null，不是 0.0");
+        assert!(rows[0]["mem"].is_null(), "拿不到就是 null，不是 0.0");
+        assert_eq!(rows[0]["time"], "-");
+    }
+
     /// 面板只展示 30 行；命令侧多取 10 行（head -40）供过滤后仍凑满。
     #[test]
     fn parse_process_output_caps_rows_at_the_panel_limit() {
@@ -499,10 +566,6 @@ mod tests {
             "常见路径只该跑一次 ps：探测 + 真跑等于每拍两遍全扫 /proc"
         );
         assert!(
-            PROCESS_LIST_CMD.contains("ps aux"),
-            "BusyBox 回退分支须保留"
-        );
-        assert!(
             !PROCESS_LIST_CMD.contains("||"),
             "管道 || 回退是死代码：退出码取自 head，恒为 0"
         );
@@ -510,35 +573,75 @@ mod tests {
             PROCESS_LIST_CMD.contains("head -40"),
             "过滤会吃掉几行，命令侧须多取"
         );
+        assert!(
+            PROCESS_LIST_CMD.contains("ps aux") && PROCESS_LIST_CMD.contains("ps -o pid,user,comm"),
+            "两条回退分支都要在：BSD 宿主与 BusyBox 的接口不同，缺一条就有宿主拿不到列表"
+        );
     }
 
-    /// 回退分支不是配角：所有没有 GNU `ps` 的宿主都走它 —— BusyBox，以及 BSD/macOS
-    /// （它们的 `ps` 根本没有 `--sort`）。它曾经既无上限也不排序：整张进程表过 SSH
-    /// （`parse_process_output` 里的 `.take(30)` 在传输之后，拦不住），面板拿到的
-    /// 「Top 30」其实是「`ps aux` 前 30 行」。
+    /// BSD 分支只能按**形状**认领 `ps aux`，不能按"我们跑的就是 ps aux"认领。
+    ///
+    /// `$1` 非数字且 `$2` 是数字 = `USER PID`。BusyBox 的 `ps` 若吐出 `PID USER
+    /// COMMAND`，每一行都在第一条上就落榜（`$1` 就是 pid），表头也在第一条上落榜；
+    /// 于是同一条命令在两种宿主上不会再互相冒充。
     #[test]
-    fn portability_fallback_is_capped_and_cpu_ordered_too() {
-        let fallback = PROCESS_LIST_CMD
-            .split("else ")
+    fn portable_fallback_only_claims_rows_that_really_are_bsd_ps_aux() {
+        let bsd = PROCESS_LIST_CMD
+            .split("ps aux")
             .nth(1)
-            .expect("回退分支必须还在");
+            .expect("BSD 分支必须还在");
         assert!(
-            fallback.contains("head -40"),
-            "回退分支同样要限流：整张进程表不该过 SSH"
+            bsd.contains("$1 !~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/"),
+            "必须按 USER PID 的形状认行，否则 BusyBox 的 PID USER COMMAND 会被按 BSD 列位读"
         );
         assert!(
-            fallback.contains("sort -k3 -rn"),
-            "回退分支必须按 %CPU 排序，否则「Top 30」是伪称"
+            bsd.contains("$3 ~ /^[0-9]/"),
+            "第 3 列本身也须是数字，否则它就不是 %CPU"
         );
+    }
+
+    /// 降级分支：BusyBox 拿不到 `%CPU`/`%MEM`，那就**不要排名**，只给列表。
+    ///
+    /// 这正是被换掉的那一版最大的问题：它用 `ps aux | … | sort -k3 -rn | head -40`
+    /// 顶替，而 BusyBox 的 `ps` 只文档化 `-o COL1,COL2=HEADER [-T]`。于是"坏掉的
+    /// 空列表"被换成了"坏掉的假 Top CPU" —— 面板上每一行的第 3 列都是别的进程的
+    /// 某个字段。没有排名是诚实，假排名不是。
+    #[test]
+    fn degraded_branch_offers_a_list_without_pretending_to_rank_it() {
+        let degraded = PROCESS_LIST_CMD
+            .split("ps -o pid,user,comm")
+            .nth(1)
+            .expect("降级分支必须还在");
+        assert!(
+            !degraded.contains("sort -k3 -rn"),
+            "拿不到 %CPU 就不能按第 3 列排名"
+        );
+        assert!(
+            degraded.contains("- - -"),
+            "缺的三列必须以 `-` 占位，由 parse_process_output 转成 null 而不是 0"
+        );
+        assert!(
+            degraded.contains("| head -40"),
+            "降级分支同样要限流：整张进程表不该过 SSH"
+        );
+    }
+
+    /// 三条分支各自都要有上限（`.take(30)` 在传输之后，拦不住）。
+    #[test]
+    fn every_process_branch_is_capped_before_it_leaves_the_host() {
         assert_eq!(
             PROCESS_LIST_CMD.matches("head -40").count(),
-            2,
-            "两条分支各自都要有上限"
+            3,
+            "GNU / BSD / 降级 三条分支各自都要有上限"
         );
-        // 表头必须先剥再排：非数字的表头在 `sort -rn` 下会被排到末尾，进程少的宿主
-        // 上（少于 40 行）它就会留在 head -40 的结果里变成一行假进程。
-        let strip_header = fallback.find("awk 'NR>1'").expect("先剥表头");
-        let order_by_cpu = fallback.find("sort -k3 -rn").expect("再排序");
+    }
+
+    /// 表头必须先剥再排：非数字的表头在 `sort -rn` 下会被排到末尾，进程少的宿主
+    /// 上（少于 40 行）它就会留在 head -40 的结果里变成一行假进程。
+    #[test]
+    fn the_bsd_branch_drops_its_header_before_sorting() {
+        let strip_header = PROCESS_LIST_CMD.find("awk 'NR>1").expect("先剥表头");
+        let order_by_cpu = PROCESS_LIST_CMD.find("sort -k3 -rn").expect("再排序");
         assert!(strip_header < order_by_cpu, "剥表头必须排在排序之前");
     }
 

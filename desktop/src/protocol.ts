@@ -192,8 +192,13 @@ export interface SysInfoResponse {
 export interface ProcessInfo {
   pid: number;
   user: string;
-  cpu: number;
-  mem: number;
+  /**
+   * `null` when the host cannot report the column at all — BusyBox `ps` has no
+   * `%CPU`/`%MEM`, and the Rust side sends the `-` marker through as `null`
+   * rather than as `0` (`optional_metric`). The panel renders `—`.
+   */
+  cpu: number | null;
+  mem: number | null;
   time: string;
   command: string;
 }

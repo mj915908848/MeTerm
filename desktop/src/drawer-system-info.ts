@@ -310,6 +310,20 @@ function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElemen
 }
 
 /**
+ * `%CPU`/`%MEM` for one row — or `—` when the host could not supply it.
+ *
+ * The Rust side sends `null` for a column the host has no way to report (BusyBox
+ * `ps` has neither), rather than a `0` that would read as "measured, and idle" on
+ * every single row. `—` is what the rest of this panel already uses for a value
+ * it does not have. `high-usage` only means something for a real number, so it
+ * stays off in that case.
+ */
+function processMetric(value: number | null | undefined): { text: string; high: boolean } {
+  if (typeof value !== 'number') return { text: '—', high: false };
+  return { text: value.toFixed(1), high: value > 50 };
+}
+
+/**
  * The process list used to live in the file drawer's own tab; it now renders as
  * a small box inside the panel, between the memory rows and the network chart.
  *
@@ -325,10 +339,12 @@ function renderProcessBox(instance: SysInfoFields): string {
   const procs = instance.processes ?? [];
   const rows = procs.map(p => {
     const cmd = escapeHtml(String(p.command));
+    const mem = processMetric(p.mem);
+    const cpu = processMetric(p.cpu);
     return `<tr>
       <td class="sip-proc-cmd" title="${cmd}">${cmd}</td>
-      <td class="sip-proc-num${p.mem > 50 ? ' high-usage' : ''}">${p.mem.toFixed(1)}</td>
-      <td class="sip-proc-num${p.cpu > 50 ? ' high-usage' : ''}">${p.cpu.toFixed(1)}</td>
+      <td class="sip-proc-num${mem.high ? ' high-usage' : ''}">${mem.text}</td>
+      <td class="sip-proc-num${cpu.high ? ' high-usage' : ''}">${cpu.text}</td>
     </tr>`;
   }).join('');
 
