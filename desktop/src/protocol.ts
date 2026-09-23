@@ -165,7 +165,19 @@ export interface SysInfoResponse {
   uptime_seconds: number;
   cpu_model: string;
   cpu_cores: number;
-  cpu_usage: number;
+  /**
+   * Share of CPU time spent busy, percent. Absent when there is no usable
+   * number yet: a Linux host reports raw counters instead (see `cpu_ticks`),
+   * and the first poll after a session opens has nothing to subtract from.
+   */
+  cpu_usage?: number;
+  /**
+   * Raw cumulative `/proc/stat` counters, in the kernel's own order:
+   * `user nice system idle iowait irq softirq`. The panel derives `cpu_usage`
+   * from two consecutive samples — which is why the remote script no longer
+   * sleeps a second to take its own pair.
+   */
+  cpu_ticks?: number[];
   mem_total: number;
   mem_used: number;
   /** Swap in bytes; absent on hosts that report no swap at all. */

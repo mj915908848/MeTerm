@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs';
 import {
+  cpuUsageFromTicks,
   formatLoadAverage,
   nicKind,
   orderNicNames,
@@ -170,6 +171,7 @@ test('the remote collector reports swap and load under the keys the UI reads', (
     ['SWAP_TOTAL', 'swap_total'],
     ['SWAP_USED', 'swap_used'],
     ['LOADAVG', 'load_avg'],
+    ['CPU_TICKS', 'cpu_ticks'],
   ] as const) {
     assert.ok(
       rustSource.includes(`"${key}" =>`),
@@ -184,4 +186,57 @@ test('the remote collector reports swap and load under the keys the UI reads', (
       `the sysinfo script must emit ${key}`,
     );
   }
+});
+
+// ── CPU usage comes from two samples, not from a remote `sleep 1` ──
+//
+// The script used to sample /proc/stat twice a second apart inside the SSH
+// command, which held the exec channel open for a full second on every poll.
+// The panel now subtracts one poll's counters from the previous one: the same
+// two-reading arithmetic, over a real 5s window.
+
+// The first poll of a session has nothing to subtract from. A placeholder is
+// what the tile shows then — 0% would read as "the host is idle".
+test('the first CPU sample of a session has no percentage', () => {
+  assert.equal(cpuUsageFromTicks(null, [100, 10, 50, 1000, 20, 5, 3]), null);
+  assert.equal(cpuUsageFromTicks(undefined, [100, 10, 50, 1000, 20, 5, 3]), null);
+  assert.equal(cpuUsageFromTicks([100, 10, 50, 1000, 20, 5, 3], undefined), null);
+});
+
+// Same definition as the shell it replaced: busy is `user + system`, the
+// divisor is the sum of all seven counters.
+test('CPU usage is the busy share of the counter deltas', () => {
+  const prev = [100, 10, 50, 1000, 20, 5, 3];
+  const cur = [110, 10, 60, 1200, 20, 5, 3];
+  const before = [...prev];
+  const usage = cpuUsageFromTicks(prev, cur);
+  assert.ok(usage !== null, 'a pair of samples must produce a number');
+  assert.ok(Math.abs(usage - (20 / 220) * 100) < 1e-9, `expected 20/220, got ${usage}`);
+  assert.deepEqual(prev, before, 'the inputs must not be mutated');
+});
+
+// Parity guard: nice, irq, softirq and iowait sit on the idle side of the
+// ratio, exactly as in the old shell. Changing this silently redefines a number
+// operators read off the panel, so it is pinned here on purpose.
+test('only user and system time count as busy', () => {
+  assert.equal(cpuUsageFromTicks([0, 0, 0, 0, 0, 0, 0], [0, 50, 0, 50, 50, 0, 0]), 0);
+  assert.ok(Math.abs((cpuUsageFromTicks([0, 0, 0, 0, 0, 0, 0], [100, 0, 0, 100, 0, 0, 0]) ?? -1) - 50) < 1e-9);
+});
+
+// A reboot (or any counter that went backwards) makes the difference negative:
+// every percentage derived from it would be fiction, so none is reported.
+test('a counter that went backwards yields no percentage', () => {
+  assert.equal(cpuUsageFromTicks([500, 0, 0, 900, 0, 0, 0], [10, 0, 0, 20, 0, 0, 0]), null);
+});
+
+// A vector of the wrong length cannot be mapped onto the kernel's field order,
+// which is what makes a silently wrong percentage possible.
+test('a counter vector of unexpected length yields no percentage', () => {
+  assert.equal(cpuUsageFromTicks([1, 2, 3], [4, 5, 6]), null);
+  assert.equal(cpuUsageFromTicks([1, 2, 3, 4, 5, 6, 7, 8], [1, 2, 3, 4, 5, 6, 7, 9]), null);
+});
+
+// No jiffies elapsed between the samples means there is no ratio to compute.
+test('identical samples yield no percentage', () => {
+  assert.equal(cpuUsageFromTicks([1, 2, 3, 4, 5, 6, 7], [1, 2, 3, 4, 5, 6, 7]), null);
 });

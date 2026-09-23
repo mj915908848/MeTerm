@@ -68,7 +68,7 @@ test('switching to a session without remote server info stops polling and hides 
 // open() fires one request directly, bypassing the syncToActiveSession guard, so
 // the gate has to be repeated here or a local session still gets a request.
 test('requestSysInfo refuses sessions without remote server info', () => {
-  const body = methodBody(panel, '  private requestSysInfo(): void {');
+  const body = methodBody(panel, '  private requestSysInfo(forceProcesses = false): void {');
   const guard = body.indexOf('!hasRemoteServerInfo(sessionId)');
   assert.ok(guard > 0, 'requestSysInfo must gate on hasRemoteServerInfo');
   assert.ok(

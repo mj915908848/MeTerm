@@ -68,3 +68,51 @@ export function pickDefaultNic(names: string[], current?: string): string {
   if (current && names.includes(current)) return current;
   return orderNicNames(names)[0] ?? '';
 }
+
+/**
+ * Indexes inside the `/proc/stat` counter vector. Busy is `user + system`, the
+ * same pair the shell this replaced summed (`u = $1 + $3` of
+ * `user nice system idle iowait irq softirq`).
+ */
+const CPU_USER = 0;
+const CPU_SYSTEM = 2;
+const CPU_COUNTERS = 7;
+
+/**
+ * CPU busy share between two consecutive `/proc/stat` samples, in percent.
+ *
+ * The remote script used to `sleep 1` and take both readings itself, which held
+ * its SSH exec channel open for a whole second every poll; the panel now pairs
+ * one poll's sample with the previous one. Same arithmetic, but the window is a
+ * real poll interval (5s) instead of one second, so the number is an interval
+ * average rather than a jittery instantaneous reading.
+ *
+ * The definition of "busy" is deliberately unchanged from the script: only
+ * `user + system` counts, and `nice`/`irq`/`softirq`/`iowait` sit on the idle
+ * side of the ratio. Changing it would silently redefine a number an operator
+ * already reads off the panel.
+ *
+ * Returns null when there is nothing to subtract: no previous sample (the first
+ * poll after a session opens — the panel shows a placeholder rather than a
+ * confident 0%), a counter vector of unexpected length, or a counter that went
+ * backwards (reboot, or a wrap) — all cases where any percentage derived from
+ * it would be fiction.
+ */
+export function cpuUsageFromTicks(
+  prev: number[] | null | undefined,
+  cur: number[] | null | undefined,
+): number | null {
+  if (!prev || !cur || prev.length !== CPU_COUNTERS || cur.length !== CPU_COUNTERS) {
+    return null;
+  }
+  let busy = 0;
+  let total = 0;
+  for (let i = 0; i < CPU_COUNTERS; i++) {
+    const delta = cur[i] - prev[i];
+    if (!Number.isFinite(delta) || delta < 0) return null;
+    total += delta;
+    if (i === CPU_USER || i === CPU_SYSTEM) busy += delta;
+  }
+  if (total <= 0) return null;
+  return Math.max(0, Math.min(100, (busy / total) * 100));
+}

@@ -38,6 +38,8 @@ export interface DrawerInstance {
   processes: ProcessInfo[] | null;
   prevNetIfaces: NetIfaceInfo[] | null;
   prevNetTimestamp: number;
+  /** Previous CPU sample; the panel derives cpu_usage from the delta. */
+  prevCpuTicks: number[] | null;
   netHistory: Map<string, NetRatePoint[]>;
   selectedNic: string;
   serverConnectionInfo: { host: string; username: string; port: number } | null;
@@ -107,6 +109,7 @@ class DrawerManagerClass {
       processes: null,
       prevNetIfaces: null,
       prevNetTimestamp: 0,
+      prevCpuTicks: null,
       netHistory: new Map(),
       selectedNic: '',
       serverConnectionInfo: null,

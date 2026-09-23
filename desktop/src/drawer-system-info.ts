@@ -7,7 +7,7 @@
 import type { SysInfoResponse, ProcessInfo, ProcessListResponse, ServerInfoResponse, NetIfaceInfo } from './protocol';
 import { t } from './i18n';
 import { escapeHtml } from './status-bar';
-import { formatLoadAverage, orderNicNames, pickDefaultNic, swapPercent } from './server-info-derive';
+import { cpuUsageFromTicks, formatLoadAverage, orderNicNames, pickDefaultNic, swapPercent } from './server-info-derive';
 
 export interface NetRatePoint {
   ts: number;
@@ -24,6 +24,8 @@ export interface SysInfoFields {
   processes: ProcessInfo[] | null;
   prevNetIfaces: NetIfaceInfo[] | null;
   prevNetTimestamp: number;
+  /** Previous CPU sample; `cpu_usage` is derived from the delta, see below. */
+  prevCpuTicks: number[] | null;
   netHistory: Map<string, NetRatePoint[]>;
   selectedNic: string;
 }
@@ -132,7 +134,16 @@ export function renderNetChart(instance: SysInfoFields): string {
   </div>`;
 }
 
-export function renderProgressBar(percent: number): string {
+/**
+ * `percent` is optional because CPU can be genuinely unknown for one poll: a
+ * Linux host sends raw counters, and the first sample of a session has nothing
+ * to subtract from. Painting that as 0% would read as "idle", so it renders a
+ * placeholder bar instead.
+ */
+export function renderProgressBar(percent: number | undefined): string {
+  if (percent === undefined || !Number.isFinite(percent)) {
+    return `<div class="sysinfo-progress"><div class="sysinfo-progress-fill" style="width:0%"></div><span class="sysinfo-progress-text">—</span></div>`;
+  }
   const pct = Math.max(0, Math.min(100, percent));
   const colorClass = pct > 90 ? 'critical' : pct > 70 ? 'warning' : '';
   return `<div class="sysinfo-progress ${colorClass}"><div class="sysinfo-progress-fill" style="width:${pct}%"></div><span class="sysinfo-progress-text">${pct.toFixed(0)}%</span></div>`;
@@ -208,7 +219,7 @@ function renderCompactSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElement
   // No connection info in compact mode — just tiles in a single column
   serverInfoEl.innerHTML = `
     <div class="si-tiles">
-      ${renderTile('CPU', `${(info.cpu_usage ?? 0).toFixed(0)}%`, info.cpu_usage ?? 0)}
+      ${renderTile('CPU', info.cpu_usage === undefined ? '—' : `${info.cpu_usage.toFixed(0)}%`, info.cpu_usage ?? 0)}
       ${renderTile('MEM', `${memPct.toFixed(0)}%`, memPct)}
       ${diskTiles}
       ${renderTile('UP', formatUptime(info.uptime_seconds ?? 0))}
@@ -268,7 +279,7 @@ function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElemen
     <div class="server-info-item">
       <div class="server-info-label">${t('serverInfoCPU')} · ${escapeHtml(String(info.cpu_cores ?? 0))} cores</div>
       <div class="server-info-value server-info-value-small">${escapeHtml(String(info.cpu_model ?? ''))}</div>
-      ${renderProgressBar(info.cpu_usage ?? 0)}
+      ${renderProgressBar(info.cpu_usage)}
     </div>
     <div class="server-info-item">
       <div class="server-info-label">${t('serverInfoMemory')}</div>
@@ -372,6 +383,14 @@ export function renderSysInfo(instance: SysInfoFields): void {
 export function handleServerInfoResponse(instance: SysInfoFields, data: ServerInfoResponse): void {
   if (data.type === 'sysinfo') {
     const sysInfo = data as SysInfoResponse;
+    // Pair this sample with the previous one to get a real interval average —
+    // the remote script no longer sleeps a second to take its own pair (see
+    // cpuUsageFromTicks). A host that reports a direct percentage (macOS `top`)
+    // has no cpu_ticks and keeps its own value.
+    const usage = cpuUsageFromTicks(instance.prevCpuTicks, sysInfo.cpu_ticks);
+    instance.prevCpuTicks = sysInfo.cpu_ticks ?? null;
+    if (usage !== null) sysInfo.cpu_usage = usage;
+    else if (sysInfo.cpu_ticks) sysInfo.cpu_usage = undefined;
     instance.sysInfo = sysInfo;
     updateNetHistory(instance, sysInfo.net_ifaces || []);
     renderSysInfo(instance);

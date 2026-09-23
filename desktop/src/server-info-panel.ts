@@ -31,6 +31,15 @@ const DEFAULT_WIDTH = 280;
 /** Matches the compact breakpoint in drawer-system-info.ts. */
 const COMPACT_BREAKPOINT = 104;
 const SYSINFO_INTERVAL_MS = 5000;
+/**
+ * The process box is a list, not a gauge: CPU, memory and network are worth
+ * watching every few seconds, a top-30 `ps` snapshot is not. Every `processes`
+ * request is a full `/proc` scan on the remote host, so it goes out on every
+ * Nth tick instead — plus immediately whenever the panel is asked for fresh
+ * context (session switched, window back in the foreground).
+ */
+const PROCESS_INTERVAL_MS = 30000;
+const PROCESS_EVERY_TICKS = PROCESS_INTERVAL_MS / SYSINFO_INTERVAL_MS;
 
 function clampWidth(w: number): number {
   const max = Math.min(MAX_WIDTH, Math.floor(window.innerWidth * 0.5));
@@ -68,6 +77,8 @@ class ServerInfoPanelClass {
   private compact = false;
   private _open = false;
   private timer: number | null = null;
+  /** Ticks since the process list was last asked for — see PROCESS_EVERY_TICKS. */
+  private processTick = 0;
 
   /** User intent: has the panel been pinned open? */
   isOpen(): boolean {
@@ -149,6 +160,10 @@ class ServerInfoPanelClass {
     // after a close()/open() cycle — same session, so `changed` is false, but
     // close() had already cleared the interval and the panel froze on stale data.
     this.startPolling();
+    // Another session means different data behind every row, and the process
+    // list is polled slowly now — waiting for its next turn would show the
+    // previous session's processes (or nothing) for up to 30s.
+    if (changed) this.requestSysInfo(true);
     this.render();
   }
 
@@ -229,7 +244,7 @@ class ServerInfoPanelClass {
     }
   }
 
-  private requestSysInfo(): void {
+  private requestSysInfo(forceProcesses = false): void {
     const sessionId = this.sessionId;
     if (!this._open || !sessionId) return;
     // Polling has to be gated here too, not just in syncToActiveSession(): open()
@@ -237,11 +252,41 @@ class ServerInfoPanelClass {
     // for sysinfo it cannot answer.
     if (!hasRemoteServerInfo(sessionId)) return;
     const fileManager = DrawerManager.getFileManager(sessionId);
-    // Both halves of the panel refresh on the same tick: the process box lives
-    // in this panel now, so nothing else polls it.
+    // sysinfo is the gauge and goes out every tick. The process box lives in
+    // this panel too, but nothing else polls it — so it still rides the same
+    // tick, just far more rarely.
     fileManager?.requestServerInfo('sysinfo');
-    fileManager?.requestServerInfo('processes');
+    const due = forceProcesses || this.processTick % PROCESS_EVERY_TICKS === 0;
+    this.processTick++;
+    if (due) fileManager?.requestServerInfo('processes');
   }
+
+  /**
+   * Nothing on screen means nothing to poll. The panel used to ignore that:
+   * minimised, or with another app in front, it kept sending two SSH commands
+   * every 5s for numbers nobody could see.
+   *
+   * The resume side deliberately does not re-ask "is the window focused?" — it
+   * is driven by three independent signals (focus, visibility, any click), so
+   * one missed or misreported event cannot leave the panel frozen forever.
+   */
+  private onHiddenChange = (): void => {
+    if (document.hidden) this.stopPolling();
+    else this.resumePolling();
+  };
+
+  private onWindowBlur = (): void => {
+    this.stopPolling();
+  };
+
+  private resumePolling = (): void => {
+    if (!this._open) return;
+    // startPolling() no-ops while the timer runs, so of the signals that arrive
+    // together only the first one triggers the catch-up request.
+    const wasStopped = this.timer === null;
+    this.startPolling();
+    if (wasStopped) this.requestSysInfo(true);
+  };
 
   /** Compact/expanded layout follows the panel's own width. */
   private syncCompactLayout(): void {
@@ -293,6 +338,14 @@ class ServerInfoPanelClass {
     panel.appendChild(resizer);
 
     window.addEventListener('meterm-server-conn-updated', this.onConnUpdated);
+
+    // Polling is paused whenever there is nothing on screen to update; these are
+    // the signals that say it is back (see resumePolling). Handler identities are
+    // stable, so registering the same one twice would still be a no-op.
+    document.addEventListener('visibilitychange', this.onHiddenChange);
+    window.addEventListener('blur', this.onWindowBlur);
+    window.addEventListener('focus', this.resumePolling);
+    document.addEventListener('pointerdown', this.resumePolling, true);
 
     this.panel = panel;
   }
