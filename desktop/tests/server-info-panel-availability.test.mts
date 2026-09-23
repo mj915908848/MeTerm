@@ -67,13 +67,24 @@ test('switching to a session without remote server info stops polling and hides 
 
 // open() fires one request directly, bypassing the syncToActiveSession guard, so
 // the gate has to be repeated here or a local session still gets a request.
+// It used to be a second copy of the same conditions; it is now the one shared
+// predicate, which is also what keeps the resume signals (focus, visibility,
+// click) from restarting the poll behind a hidden panel.
 test('requestSysInfo refuses sessions without remote server info', () => {
   const body = methodBody(panel, '  private requestSysInfo(forceProcesses = false): void {');
-  const guard = body.indexOf('!hasRemoteServerInfo(sessionId)');
-  assert.ok(guard > 0, 'requestSysInfo must gate on hasRemoteServerInfo');
+  const gate = body.indexOf('this.canPoll()');
+  assert.ok(gate > 0, 'requestSysInfo must ask the shared gate');
   assert.ok(
-    guard < body.indexOf("requestServerInfo('sysinfo')"),
+    gate < body.indexOf("requestServerInfo('sysinfo')"),
     'the guard must precede the request, not follow it',
+  );
+
+  // "Has a remote side" is decided inside that gate, so every entry point shares
+  // one answer instead of four drifting copies of it.
+  const predicate = methodBody(panel, '  private canPoll(): boolean {');
+  assert.ok(
+    predicate.includes('hasRemoteServerInfo(this.sessionId)'),
+    'canPoll must decide the session kind itself',
   );
 });
 

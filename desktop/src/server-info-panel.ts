@@ -159,7 +159,9 @@ class ServerInfoPanelClass {
     // already running, and calling it only on `changed` left the timer stopped
     // after a close()/open() cycle — same session, so `changed` is false, but
     // close() had already cleared the interval and the panel froze on stale data.
-    this.startPolling();
+    // canPoll() still gates it: this path also runs for a background window, and
+    // a timer started there would poll with nothing visible at all.
+    if (this.canPoll()) this.startPolling();
     // Another session means different data behind every row, and the process
     // list is polled slowly now — waiting for its next turn would show the
     // previous session's processes (or nothing) for up to 30s.
@@ -244,13 +246,38 @@ class ServerInfoPanelClass {
     }
   }
 
+  /**
+   * Is there anything on screen that a poll could update?
+   *
+   * One gate for every path that can (re)start the timer. The check used to live
+   * only in `syncToActiveSession()`, which is enough to *stop* polling but not to
+   * keep it stopped: the resume signals (focus, visibility, any click) asked
+   * `_open` only, and `_open` stays true while the home / gallery view has the
+   * dock hidden. Clicking anywhere on the dashboard therefore restarted two SSH
+   * commands per tick for a panel that was `display: none` — "nothing visible
+   * means nothing to poll" held for the path that hid the panel, and not for the
+   * ones that could bring it back.
+   */
+  private canPoll(): boolean {
+    if (!this._open) return false;
+    if (document.hidden) return false;
+    // Home / gallery display no session even though the SSH tab behind them is
+    // still open (see syncToActiveSession) — nothing of it is on screen.
+    if (isHomeView || isGalleryView) return false;
+    if (this.panel && this.panel.style.display === 'none') return false;
+    // Also covers a null session, and a local / JumpServer one: no remote exec
+    // channel means nothing to ask.
+    return hasRemoteServerInfo(this.sessionId);
+  }
+
   private requestSysInfo(forceProcesses = false): void {
+    // Gated here as well as at the timer: open() and a session switch each fire a
+    // request directly, so "nothing is on screen" has to hold for every caller —
+    // not only for the path that remembered to stop the timer.
+    if (!this.canPoll()) return;
     const sessionId = this.sessionId;
-    if (!this._open || !sessionId) return;
-    // Polling has to be gated here too, not just in syncToActiveSession(): open()
-    // fires one request directly, and a local/JumpServer session would be asked
-    // for sysinfo it cannot answer.
-    if (!hasRemoteServerInfo(sessionId)) return;
+    // canPoll() already ruled a null session out; this is for the type.
+    if (!sessionId) return;
     const fileManager = DrawerManager.getFileManager(sessionId);
     // sysinfo is the gauge and goes out every tick. The process box lives in
     // this panel too, but nothing else polls it — so it still rides the same
@@ -269,6 +296,8 @@ class ServerInfoPanelClass {
    * The resume side deliberately does not re-ask "is the window focused?" — it
    * is driven by three independent signals (focus, visibility, any click), so
    * one missed or misreported event cannot leave the panel frozen forever.
+   * `canPoll()` still reads `document.hidden`, which is the flag
+   * `onHiddenChange` itself reacts to, so the two cannot disagree for long.
    */
   private onHiddenChange = (): void => {
     if (document.hidden) this.stopPolling();
@@ -280,7 +309,12 @@ class ServerInfoPanelClass {
   };
 
   private resumePolling = (): void => {
-    if (!this._open) return;
+    // Not just `_open`: the signals below also fire while the dock is hidden
+    // behind the home / gallery view (or its own close button), and a timer
+    // restarted there polls for numbers nobody can see until the visibility
+    // change that hid it fires again — which it will not, because the panel was
+    // hidden by a view switch, not by the window.
+    if (!this.canPoll()) return;
     // startPolling() no-ops while the timer runs, so of the signals that arrive
     // together only the first one triggers the catch-up request.
     const wasStopped = this.timer === null;

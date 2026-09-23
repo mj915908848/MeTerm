@@ -19,27 +19,54 @@ const read = (name: string): string =>
   readFileSync(new URL(`../src/${name}`, import.meta.url), 'utf8');
 
 const SYNC_SIGNATURE = '  syncToActiveSession(): void {';
+const CAN_POLL_SIGNATURE = '  private canPoll(): boolean {';
 
-/**
- * Slice `syncToActiveSession()` out of the class and re-open it as a plain
- * function: the body only touches module-level bindings and `this`, so calling it
- * with `.call(standInThis)` drives the real logic without booting the module
- * (which would drag in Tauri APIs).
- */
-function syncFunctionSource(): string {
-  const source = read('server-info-panel.ts');
-  const start = source.indexOf(SYNC_SIGNATURE);
-  assert.ok(start >= 0, `server-info-panel.ts no longer declares ${SYNC_SIGNATURE.trim()}`);
-  const end = source.indexOf('\n  }', start);
-  assert.ok(end > start, 'closing brace of syncToActiveSession() not found');
-  const method = source
-    .slice(start, end)
-    .trimStart()
-    .replace('syncToActiveSession(): void {', 'syncToActiveSession() {');
-  return `function ${method}\n}`;
+/** The member's own parameter list, so default parameters survive the re-open. */
+function paramList(body: string, name: string): string {
+  const open = body.indexOf('(', body.indexOf(name));
+  assert.ok(open > 0, `${name} has no parameter list`);
+  let depth = 0;
+  for (let i = open; i < body.length; i++) {
+    if (body[i] === '(') depth += 1;
+    else if (body[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return body.slice(open, i + 1);
+    }
+  }
+  throw new Error(`unbalanced parameter list for ${name}`);
 }
 
-const compiled = ts.transpileModule(syncFunctionSource(), {
+/**
+ * Slice a member out of the class and re-open it as a plain function: the body
+ * only touches module-level bindings and `this`, so calling it with
+ * `.call(standInThis)` drives the real logic without booting the module (which
+ * would drag in Tauri APIs).
+ *
+ * `syncToActiveSession()` now asks the same `canPoll()` the polling paths use, so
+ * both are sliced and driven together: handing the sync path a hand-written stub
+ * of the gate would be exactly the kind of "each half looks right" test that let
+ * the home/gallery regression through in the first place.
+ */
+function methodSource(source: string, signature: string, name: string): string {
+  const start = source.indexOf(signature);
+  assert.ok(start >= 0, `server-info-panel.ts no longer declares ${signature.trim()}`);
+  const end = source.indexOf('\n  }', start);
+  assert.ok(end > start, `closing brace of ${signature.trim()} not found`);
+  const body = source.slice(start, end).trimStart();
+  const params = paramList(body, name);
+  const brace = body.indexOf('{', body.indexOf(params) + params.length);
+  return `function ${name}${params} ${body.slice(brace)}\n}`;
+}
+
+function panelSource(): string {
+  const source = read('server-info-panel.ts');
+  return [
+    methodSource(source, CAN_POLL_SIGNATURE, 'canPoll'),
+    methodSource(source, SYNC_SIGNATURE, 'syncToActiveSession'),
+  ].join('\n\n');
+}
+
+const compiled = ts.transpileModule(panelSource(), {
   compilerOptions: { target: ts.ScriptTarget.ES2021 },
 }).outputText;
 
@@ -63,28 +90,33 @@ function syncPanel(state: {
     'TabManager',
     'hasRemoteServerInfo',
     'TerminalRegistry',
-    `${compiled}; return syncToActiveSession;`,
+    'document',
+    `${compiled}; return { canPoll, syncToActiveSession };`,
   );
-  const fn = build(
+  const methods = build(
     state.home,
     state.gallery,
     { getActiveSessionId: () => state.sessionId },
     () => state.ssh,
     { resizeAll: () => { calls.push('resizeAll'); } },
-  ) as () => void;
+    { hidden: false },
+  );
 
   const panel = { style: { display: '' } };
-  fn.call({
+  const self = {
     _open: true,
     sessionId: state.sessionId,
     panel,
     infoEl: null,
     compact: false,
+    timer: null,
     releaseContainer: () => { calls.push('releaseContainer'); },
     stopPolling: () => { calls.push('stopPolling'); },
     startPolling: () => { calls.push('startPolling'); },
     render: () => { calls.push('render'); },
-  });
+    canPoll: methods.canPoll,
+  };
+  methods.syncToActiveSession.call(self);
 
   return { display: panel.style.display, calls };
 }
