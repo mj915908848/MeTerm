@@ -53,10 +53,20 @@ if [ -f /proc/uptime ]; then echo "UPTIME_SECS=$(cut -d. -f1 /proc/uptime 2>/dev
 ///    question for free: an empty capture is exactly the condition the probe was
 ///    looking for, so the portable branch still runs and the common path pays
 ///    for one scan instead of two.
-const PROCESS_LIST_CMD: &str = r#"out=$(ps -eo pid,user,%cpu,%mem,etime,comm --sort=-%cpu --no-headers 2>/dev/null | head -40); if [ -n "$out" ]; then printf '%s\n' "$out"; else ps aux 2>/dev/null | awk 'NR>1 {c=$11; sub(/.*\//,"",c); printf "%s %s %s %s - %s\n", $2, $1, $3, $4, c}'; fi"#;
+/// 4. The portable branch is not an afterthought: it is what every host without
+///    GNU `ps` runs — BusyBox, and BSD/macOS, whose `ps` has no `--sort` at all.
+///    It used to carry no cap and no ordering, so those hosts got the *entire*
+///    process table piped back over SSH (the `.take(30)` in
+///    `parse_process_output` runs after the transfer, not before it) and a
+///    "top 30" that was really "the first 30 rows". Both now match the common
+///    path. The header has to be dropped *before* the sort — `sort -rn` would
+///    otherwise leave the `USER PID %CPU …` line in the middle of the list as a
+///    bogus row — and field 3 is `%CPU` in `ps aux` on both flavours.
+const PROCESS_LIST_CMD: &str = r#"out=$(ps -eo pid,user,%cpu,%mem,etime,comm --sort=-%cpu --no-headers 2>/dev/null | head -40); if [ -n "$out" ]; then printf '%s\n' "$out"; else ps aux 2>/dev/null | awk 'NR>1' | sort -k3 -rn | head -40 | awk '{c=$11; sub(/.*\//,"",c); printf "%s %s %s %s - %s\n", $2, $1, $3, $4, c}'; fi"#;
 
-/// Names this very poll spawns itself — see `parse_process_output`.
-const SELF_SPAWNED_NAMES: [&str; 3] = ["ps", "awk", "head"];
+/// Names this very poll spawns itself — see `parse_process_output`. `sort` is
+/// here for the portable branch, which pipes through it to order by `%CPU`.
+const SELF_SPAWNED_NAMES: [&str; 4] = ["ps", "awk", "head", "sort"];
 
 /// Rows kept for the panel's process box (after filtering).
 const PROCESS_ROW_LIMIT: usize = 30;
@@ -213,11 +223,7 @@ fn parse_sysinfo_output(output: &str) -> serde_json::Value {
                 // the two sides. Any other arity cannot be mapped onto it —
                 // drop the sample and let the panel show a placeholder rather
                 // than compute a confident wrong number.
-                let ticks: Vec<u64> = val
-                    .split_whitespace()
-                    .filter_map(|v| v.parse::<u64>().ok())
-                    .collect();
-                if ticks.len() == 7 {
+                if let Some(ticks) = parse_cpu_ticks(val) {
                     info["cpu_ticks"] = ticks.into();
                 }
             }
@@ -287,6 +293,22 @@ fn is_sub_second_age(etime: &str) -> bool {
     matches!(etime, "00:00" | "0:00")
 }
 
+/// `/proc/stat`'s `cpu` row → its seven cumulative counters, in kernel order.
+///
+/// All-or-nothing on purpose. Filtering the unparsable fields out and then
+/// checking the length *looks* equivalent and is not: one corrupt middle field is
+/// dropped, the survivors still number seven, and the sample is accepted with
+/// every later counter read one place too far — a confident wrong percentage
+/// instead of the placeholder the arity check is there to produce. Seven tokens,
+/// seven numbers, or nothing.
+fn parse_cpu_ticks(value: &str) -> Option<Vec<u64>> {
+    let fields: Vec<&str> = value.split_whitespace().collect();
+    if fields.len() != 7 {
+        return None;
+    }
+    fields.iter().map(|v| v.parse::<u64>().ok()).collect()
+}
+
 /// Parse process list output — matches Go parseProcessOutput, plus a guard that
 /// drops the poll's own processes.
 ///
@@ -331,16 +353,18 @@ mod tests {
     use super::*;
 
     /// 面板每 5s 轮询一次「进程」，若不排除自身，`ps` 会以约 100% 假 CPU 稳居第一行
-    /// （截图里的红色 `ps 100.0`）。这三行就是那次轮询自己 spawn 的 ps/awk/head。
+    /// （截图里的红色 `ps 100.0`）。这四行就是那次轮询自己 spawn 的 ps/awk/sort/head
+    /// —— `sort` 只出现在回退分支（`ps aux | … | sort -k3 -rn | head -40`）。
     #[test]
     fn parse_process_output_drops_the_polls_own_helpers() {
         let out = "\
   1234 root 100.0  0.0 00:00 ps\n\
   1235 root  40.0  0.0 00:00 awk\n\
-  1236 root  20.0  0.0 00:00 head\n";
+  1236 root  30.0  0.0 00:00 sort\n\
+  1237 root  20.0  0.0 00:00 head\n";
         assert!(
             parse_process_output(out).is_empty(),
-            "轮询自身 spawn 的 ps/awk/head 不得进入面板"
+            "轮询自身 spawn 的 ps/awk/sort/head 不得进入面板"
         );
     }
 
@@ -429,6 +453,36 @@ mod tests {
         );
     }
 
+    /// 回退分支不是配角：所有没有 GNU `ps` 的宿主都走它 —— BusyBox，以及 BSD/macOS
+    /// （它们的 `ps` 根本没有 `--sort`）。它曾经既无上限也不排序：整张进程表过 SSH
+    /// （`parse_process_output` 里的 `.take(30)` 在传输之后，拦不住），面板拿到的
+    /// 「Top 30」其实是「`ps aux` 前 30 行」。
+    #[test]
+    fn portability_fallback_is_capped_and_cpu_ordered_too() {
+        let fallback = PROCESS_LIST_CMD
+            .split("else ")
+            .nth(1)
+            .expect("回退分支必须还在");
+        assert!(
+            fallback.contains("head -40"),
+            "回退分支同样要限流：整张进程表不该过 SSH"
+        );
+        assert!(
+            fallback.contains("sort -k3 -rn"),
+            "回退分支必须按 %CPU 排序，否则「Top 30」是伪称"
+        );
+        assert_eq!(
+            PROCESS_LIST_CMD.matches("head -40").count(),
+            2,
+            "两条分支各自都要有上限"
+        );
+        // 表头必须先剥再排：非数字的表头在 `sort -rn` 下会被排到末尾，进程少的宿主
+        // 上（少于 40 行）它就会留在 head -40 的结果里变成一行假进程。
+        let strip_header = fallback.find("awk 'NR>1'").expect("先剥表头");
+        let order_by_cpu = fallback.find("sort -k3 -rn").expect("再排序");
+        assert!(strip_header < order_by_cpu, "剥表头必须排在排序之前");
+    }
+
     /// sysinfo 脚本不得再为了采样 CPU 而 sleep：那一秒会把 exec 通道一直占着
     /// （5s 一拍的 ~20% 占空比）。改吐原始计数器，由面板用相邻两拍算差值。
     #[test]
@@ -472,5 +526,24 @@ mod tests {
     #[test]
     fn parse_sysinfo_output_still_accepts_a_direct_cpu_usage() {
         assert_eq!(parse_sysinfo_output("CPU_USAGE=42.5\n")["cpu_usage"], 42.5);
+    }
+
+    /// 上面那组用例漏掉的正是最阴的一种：8 个 token 坏一个**中间**字段。旧实现先
+    /// `filter_map(parse.ok())` 再查 `len() == 7`，过滤后恰好还剩 7 个 → 被当成合法
+    /// 采样，而面板是按位置相减的 → 之后每个计数器都错开一位，算出看着合理的错值。
+    /// 现在要求恰好 7 个 token 且逐个解析成功，任一处失败就整条丢掉。
+    #[test]
+    fn parse_sysinfo_output_rejects_a_sample_that_field_filtering_would_rescue() {
+        assert!(
+            parse_sysinfo_output("CPU_TICKS=100 bad 20 30 400 50 6 7\n")
+                .get("cpu_ticks")
+                .is_none(),
+            "坏一个中间字段不得靠「过滤后仍剩 7 个」蒙混过关"
+        );
+        // 直接对着解析器再钉一遍这条规则（含长度不足与空串）。
+        assert_eq!(parse_cpu_ticks("100 20 30 400 50 6 7"), Some(vec![100, 20, 30, 400, 50, 6, 7]));
+        assert_eq!(parse_cpu_ticks("100 bad 20 30 400 50 6 7"), None);
+        assert_eq!(parse_cpu_ticks("100 20 30 400 50 6"), None);
+        assert_eq!(parse_cpu_ticks(""), None);
     }
 }

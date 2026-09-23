@@ -150,3 +150,25 @@ test('the process box still gets a full page of rows after filtering', () => {
     'the filters drop a few rows, so the command must over-fetch (head -40)',
   );
 });
+
+// The fallback is not an exotic path: it is what every host without GNU procps
+// runs — BusyBox, and BSD/macOS, whose `ps` has no `--sort` at all. It shipped
+// with neither a cap nor an ordering, so those hosts got the *entire* process
+// table piped back (the parser's `.take(30)` runs after the transfer) and a "top
+// 30" that was really "the first 30 rows of ps aux".
+test('the portability fallback is capped and CPU-ordered too', () => {
+  const cmd = rustConst('PROCESS_LIST_CMD');
+  const fallback = cmd.split('else ')[1] ?? '';
+  assert.ok(fallback, 'the portable branch must stay — most hosts are not GNU procps');
+  assert.ok(fallback.includes('head -'), 'the fallback must cap its output as well');
+  assert.ok(/sort\s+-k3\s+-rn/.test(fallback), 'the fallback must order by %CPU (field 3)');
+  assert.equal(
+    cmd.split('head -40').length - 1,
+    2,
+    'both branches need the cap, at the same size as the common path',
+  );
+  assert.ok(
+    fallback.indexOf("awk 'NR>1'") < fallback.indexOf('sort'),
+    'the header has to be dropped before sorting, or it is sorted into the list as a bogus row',
+  );
+});
