@@ -1,15 +1,17 @@
 /**
- * The status bar is what tells you *which machine you are on*, how far away it
- * is, and how many sessions you have open — user@host, latency, session count.
+ * The status bar is on screen only while there is something to report:
+ * connecting, reconnecting, a failure, a file transfer, a running AI turn.
+ * A session that connected and then just sat there is not an event, so the bar
+ * retracts to 0 and #app takes the 24px row back.
  *
- * It used to be permanently visible. A later refactor made the whole bar
- * auto-hide and forgot to whitelist the plain `connected` state, so the moment a
- * session settled down the bar collapsed to 0 and all three capsules went with
- * it. The connection still worked; the readout just disappeared. These guards
- * pin the visibility rule and the capsule contents that depend on it.
- *
- * The bar only collapses when there is genuinely nothing to describe — no
- * session at all (the home view). Everything else keeps it on screen.
+ * History, because this has flip-flopped: v0.2.11 made the bar auto-hide;
+ * 2026-09-22 whitelisted the plain `connected` state at the owner's request
+ * (the readout vanishing felt like a missing feature); 2026-09-23 the owner
+ * asked for the auto-hide behaviour back, explicitly as "only shows up when
+ * something is wrong, stays away the rest of the time". Do not re-add
+ * `connected` to the predicate below without asking again — and note the
+ * latency capsule only ever renders while `connected`, so collapsing also
+ * means the latency samples stop (guarded in status-bar-latency-gate.test.mts).
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -84,7 +86,11 @@ class El {
 
   setAttribute(key: string, value: string): void { this.attrs[key] = value; }
   getAttribute(key: string): string | null { return this.attrs[key] ?? null; }
-  querySelector(): El { return new El(); }
+  // A freshly created element has no descendants, so `null` is the honest
+  // answer — returning a throwaway El would send renderTransferCapsule() down
+  // its in-place update branch and leave the capsule's markup empty, i.e. the
+  // assertion below would test nothing.
+  querySelector(): El | null { return null; }
   querySelectorAll(): El[] { return []; }
   focus(): void {}
   blur(): void {}
@@ -161,40 +167,67 @@ function boot(): Harness {
 
 // ─── Guards ───────────────────────────────────────────────────────
 
-test('a settled connection keeps the bar and its three capsules on screen', () => {
+test('a settled connection leaves the bar (and its 24px row) out of the way', () => {
   const { container, app, statusBar } = boot();
 
-  // Nothing open yet (the home view) — the bar stays collapsed.
+  // Nothing open yet (the home view) — the bar is collapsed.
   assert.equal(container.classList.contains('status-collapsed'), true);
   assert.equal(app.classList.contains('app-status-collapsed'), true);
 
   statusBar.setConnection('connected', 'bruceli@192.168.0.150');
 
-  // Connected is a state worth describing: the bar must come back.
-  assert.equal(container.classList.contains('status-collapsed'), false,
-    'a connected session must not collapse the status bar');
-  assert.equal(app.classList.contains('app-status-collapsed'), false,
-    'the #app grid row must be restored with the bar');
+  // A healthy session is not an event: the row goes back to #app.
+  assert.equal(container.classList.contains('status-collapsed'), true,
+    'a settled connection must not pin the bar on screen');
+  assert.equal(app.classList.contains('app-status-collapsed'), true,
+    'the reserved grid row must be reclaimed together with the bar');
 
+  // The readout is still built and kept current in the DOM — it is the row
+  // height that hides it, so the capsules are already right when the bar
+  // comes back for an error or a transfer.
   const connection = find(container, 'capsule-connection');
   assert.ok(connection, 'the connection capsule must exist');
   assert.match(connection.innerHTML, /bruceli@192\.168\.0\.150/);
-
-  statusBar.setLatency(3);
-  const latency = find(container, 'capsule-latency');
-  assert.ok(latency, 'latency must be shown while connected');
-  assert.match(latency.innerHTML, /3ms/);
-  assert.match(latency.innerHTML, /latency-value good/, '3ms is a good-quality link');
 
   statusBar.setSessionCount(4);
   const sessions = find(container, 'capsule-sessions');
   assert.ok(sessions, 'more than one session must be counted');
   assert.match(sessions.innerHTML, /4/);
 
-  // Closing everything retracts the bar again.
+  // Closing everything keeps it collapsed.
   statusBar.setConnection('disconnected');
   assert.equal(container.classList.contains('status-collapsed'), true);
   assert.equal(app.classList.contains('app-status-collapsed'), true);
+});
+
+test('the bar comes back while something is in flight, capsules and all', () => {
+  const { container, statusBar } = boot();
+  statusBar.setConnection('connected', 'bruceli@192.168.0.150');
+  assert.equal(container.classList.contains('status-collapsed'), true);
+
+  statusBar.setTransfer({ direction: 'upload', fileCount: 1, progress: 40 });
+  assert.equal(container.classList.contains('status-collapsed'), false,
+    'a transfer in flight is worth the row');
+
+  statusBar.setLatency(3);
+  const latency = find(container, 'capsule-latency');
+  assert.ok(latency, 'latency must be shown while the bar is on screen');
+  assert.match(latency.innerHTML, /3ms/);
+  assert.match(latency.innerHTML, /latency-value good/, '3ms is a good-quality link');
+
+  const transfer = find(container, 'capsule-transfer');
+  assert.ok(transfer, 'the transfer capsule must be there');
+  assert.match(transfer.innerHTML, /40%/);
+});
+
+test('a running AI turn keeps the bar on screen too', () => {
+  const { container, statusBar } = boot();
+  statusBar.setConnection('connected', 'bruceli@192.168.0.150');
+
+  statusBar.setAIActive(true);
+  assert.equal(container.classList.contains('status-collapsed'), false,
+    'an AI turn is something happening — show it');
+  assert.ok(find(container, 'capsule-ai'));
 });
 
 test('latency and session capsules stay off when they have nothing to say', () => {

@@ -90,6 +90,11 @@ class StatusBarClass {
   private transferHideTimer: ReturnType<typeof setTimeout> | null = null;
   private aiExitTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** Whether the bar is on screen right now. Written only by
+   *  updateVisibility(), read by doPing()/the pong listener to decide
+   *  whether a latency reading is worth taking at all. */
+  private visible = false;
+
   // Saved event listener references for cleanup
   private initialized = false;
   private transferListener: EventListener | null = null;
@@ -537,26 +542,48 @@ class StatusBarClass {
   }
 
   /**
-   * Show the status bar whenever there is a session to describe — a live
-   * connection (with its latency / session-count capsules), a connection in
-   * progress, an error, a file transfer, or a running AI turn. Only the
-   * session-less state (nothing open, i.e. the home view) collapses the bar
-   * to 0 so the reserved 24px row is reclaimed.
+   * The bar is a readout of *what is happening right now*, not a permanent
+   * fixture: it is on screen while something is in flight or wrong —
+   * connecting, reconnecting, a failure, a file transfer, a running AI turn —
+   * and retracts to 0 the rest of the time. A healthy session that just sits
+   * there is not an event, so its 24px row goes back to #app.
+   *
+   * Collapsing is also the signal to stop *measuring*: the 5s ping only exists
+   * to feed the latency capsule next to the connection label, so with the bar
+   * away there is nothing to ping for (this also keeps us from opening an SSH
+   * channel on the remote host every 5s just to update a number nobody sees).
+   * The samples and the last value are dropped with it, so the capsule can
+   * never flash a previous session's number on the way back.
    */
   private updateVisibility(): void {
     if (!this.container) return;
     const s = this.state;
     const show =
-      s.connectionStatus === 'connected' ||
       s.connectionStatus === 'connecting' ||
       s.connectionStatus === 'reconnecting' ||
       s.connectionStatus === 'error' ||
       s.transfer != null ||
       s.aiActive ||
       this.activeTransfers.size > 0;
+
+    const wasVisible = this.visible;
+    this.visible = show;
+
     this.container.classList.toggle('status-collapsed', !show);
     // Also collapse the #app grid row so the reserved 24px space is reclaimed.
     document.getElementById('app')?.classList.toggle('app-status-collapsed', !show);
+
+    if (!show) {
+      // Nothing on screen to describe — stop accumulating latency (the 5s
+      // interval keeps ticking but doPing() turns into a no-op).
+      this.latencyHistory = [];
+      if (this.state.latencyMs !== null) this.setLatency(null);
+      return;
+    }
+
+    // Coming back on screen: don't make the user wait a whole ping interval
+    // before the first reading appears.
+    if (!wasVisible) this.doPing();
   }
 
   // ── Latency Monitor ────────────────────────────────────────
@@ -579,6 +606,11 @@ class StatusBarClass {
     }
 
     this.pongListener = ((e: CustomEvent<{ sessionId: string; rtt: number }>) => {
+      // A pong can be in flight (or be triggered by input on another terminal)
+      // at the moment the bar collapses. updateVisibility() has just dropped
+      // the window — letting this one back in would leave a stale number
+      // waiting to be shown the next time the bar reappears.
+      if (!this.visible) return;
       this.latencyHistory.push(e.detail.rtt);
       if (this.latencyHistory.length > 5) this.latencyHistory.shift();
       const avg = Math.round(this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length);
@@ -596,6 +628,11 @@ class StatusBarClass {
 
   private doPing(): void {
     if (!this.getActiveSessionId || !this.sendPingFn) return;
+    // The bar is not on screen → the capsule is not on screen → there is
+    // nothing to measure. (Keepalive is not this ping's job: TerminalRegistry
+    // pings every live terminal on its own 30s timer so background tabs don't
+    // get dropped by the server's 90s idle rule.)
+    if (!this.visible) return;
     const sessionId = this.getActiveSessionId();
     if (sessionId) {
       this.sendPingFn(sessionId);
