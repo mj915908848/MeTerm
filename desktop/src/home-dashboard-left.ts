@@ -44,6 +44,7 @@ import {
   loadGroupMap,
   loadGroupOrder,
   visibleGroupName,
+  getConnectionGroup,
   sshKey,
   remoteKey,
   jumpserverKey,
@@ -830,6 +831,20 @@ export function showConnectionContextMenu(
   const moving = moveKeys && moveKeys.length > 0 ? [...moveKeys] : [item.key];
   const suffix = moving.length > 1 ? ` (${moving.length})` : '';
 
+  /**
+   * Would this destination change nothing at all?
+   *
+   * The entry for a row's own group used to be hidden by comparing that group
+   * with the group of the row under the cursor — correct while a menu could only
+   * move one row, and wrong as soon as it can move a selection: with rows picked
+   * in A and B and the cursor on an A row, every B row could no longer be moved
+   * into A, which is the one destination the user was most likely reaching for.
+   * The question is per *batch*: hide a destination only when the whole batch is
+   * already there.
+   */
+  const targetsNothing = (target: string | null): boolean =>
+    moving.every((key) => (getConnectionGroup(key) ?? null) === target);
+
   const groups = loadGroupOrder();
   if (groups.length > 0 || currentGroup) {
     const divider = document.createElement('div');
@@ -837,7 +852,7 @@ export function showConnectionContextMenu(
     menu.appendChild(divider);
 
     for (const g of groups) {
-      if (g === currentGroup) continue;
+      if (targetsNothing(g)) continue;
       const moveItem = document.createElement('button');
       moveItem.className = 'home-card-menu-item';
       moveItem.textContent = `→ ${g}${suffix}`;
@@ -849,7 +864,7 @@ export function showConnectionContextMenu(
       menu.appendChild(moveItem);
     }
 
-    if (currentGroup || moving.length > 1) {
+    if (!targetsNothing(null)) {
       const ungroup = document.createElement('button');
       ungroup.className = 'home-card-menu-item';
       ungroup.textContent = `→ ${t('homeGroupUngrouped')}${suffix}`;
