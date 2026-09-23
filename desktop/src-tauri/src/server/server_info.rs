@@ -27,8 +27,26 @@ if [ -f /proc/net/dev ]; then awk '/^ *[a-z]/ && !/^ *lo:/ {gsub(/:/, " "); prin
 if [ -f /proc/uptime ]; then echo "UPTIME_SECS=$(cut -d. -f1 /proc/uptime 2>/dev/null)"; elif command -v sysctl >/dev/null 2>&1; then bt=$(sysctl -n kern.boottime 2>/dev/null|sed 's/.*sec = \([0-9]*\).*/\1/');now=$(date +%s);echo "UPTIME_SECS=$((now-bt))"; else echo "UPTIME_SECS=0"; fi
 "#;
 
-/// Process list command (matches Go's processListCmd).
-const PROCESS_LIST_CMD: &str = "ps -eo pid,user,%cpu,%mem,etime,comm --sort=-%cpu --no-headers 2>/dev/null | head -30 || ps -eo pid,user,%cpu,%mem,etime,comm -r 2>/dev/null | tail -n +2 | head -30";
+/// Process list command — raw rows only; the self/transient filtering lives in
+/// `parse_process_output` where it can be unit tested.
+///
+/// Two fixes over the inherited Go shape:
+///
+/// 1. The old tail was `| head -30 || ps … -r | tail -n +2 | head -30`. That
+///    fallback was dead code — a pipeline's exit status is its LAST command's,
+///    and `head` always exits 0, so the first `ps` failing never reached it. A
+///    BusyBox host (Alpine/containers: no `--sort`, no BSD `-r`) silently got an
+///    empty list. Probing with `if` asks `ps` directly, so the portable branch
+///    actually runs.
+/// 2. `head -30` moved to `head -40`: the two guard filters in
+///    `parse_process_output` drop a few rows, and the box should still get 30.
+const PROCESS_LIST_CMD: &str = r#"if ps -eo pid,user,%cpu,%mem,etime,comm --sort=-%cpu --no-headers >/dev/null 2>&1; then ps -eo pid,user,%cpu,%mem,etime,comm --sort=-%cpu --no-headers 2>/dev/null; else ps aux 2>/dev/null | awk 'NR>1 {c=$11; sub(/.*\//,"",c); printf "%s %s %s %s - %s\n", $2, $1, $3, $4, c}'; fi | head -40"#;
+
+/// Names this very poll spawns itself — see `parse_process_output`.
+const SELF_SPAWNED_NAMES: [&str; 3] = ["ps", "awk", "head"];
+
+/// Rows kept for the panel's process box (after filtering).
+const PROCESS_ROW_LIMIT: usize = 30;
 
 /// Handle MsgServerInfo request. Returns the response as a protocol message.
 pub async fn handle_server_info(session: &Session, payload: &[u8]) -> Vec<u8> {
@@ -232,13 +250,38 @@ fn parse_sysinfo_output(output: &str) -> serde_json::Value {
     info
 }
 
-/// Parse process list output — matches Go parseProcessOutput.
+/// `ps -o etime` renders an age under one second as `00:00` (some builds emit
+/// `0:00`) — i.e. "this process was born for the snapshot", which is exactly the
+/// set whose `%CPU` is meaningless. Covers the shell running the pipeline, whose
+/// name we cannot filter without hiding real long-running shells.
+fn is_sub_second_age(etime: &str) -> bool {
+    matches!(etime, "00:00" | "0:00")
+}
+
+/// Parse process list output — matches Go parseProcessOutput, plus a guard that
+/// drops the poll's own processes.
+///
+/// `ps` reports `%CPU` as (utime+stime)/elapsed, so a process that has been alive
+/// for a few milliseconds scores whatever fraction of that time it burned. This
+/// poll spawns `ps` (which scans every /proc entry), `awk` and `head`, and the
+/// shell running the pipeline: all of them are born milliseconds before the
+/// snapshot, so they scored ~100% and — with `--sort=-%cpu` — took the top of the
+/// list. The panel showed a red `ps 100.0` every 5s poll. A sub-second `etime`
+/// (`00:00`) is the same artifact for any process, and the three helper names are
+/// dropped by name too, because the BusyBox fallback has no usable `etime` and
+/// reports `-`.
 fn parse_process_output(output: &str) -> Vec<serde_json::Value> {
     output
         .lines()
         .filter_map(|line| {
             let fields: Vec<&str> = line.split_whitespace().collect();
             if fields.len() < 6 {
+                return None;
+            }
+            // Deliberate tradeoff: a genuinely long-running `ps`/`awk`/`head` is
+            // hidden too. They are transient helpers in practice, and a visible
+            // false 100% costs the panel far more credibility than a hidden one.
+            if is_sub_second_age(fields[4]) || SELF_SPAWNED_NAMES.contains(&fields[5]) {
                 return None;
             }
             Some(serde_json::json!({
@@ -250,5 +293,107 @@ fn parse_process_output(output: &str) -> Vec<serde_json::Value> {
                 "command": fields[5..].join(" "),
             }))
         })
+        .take(PROCESS_ROW_LIMIT)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 面板每 5s 轮询一次「进程」，若不排除自身，`ps` 会以约 100% 假 CPU 稳居第一行
+    /// （截图里的红色 `ps 100.0`）。这三行就是那次轮询自己 spawn 的 ps/awk/head。
+    #[test]
+    fn parse_process_output_drops_the_polls_own_helpers() {
+        let out = "\
+  1234 root 100.0  0.0 00:00 ps\n\
+  1235 root  40.0  0.0 00:00 awk\n\
+  1236 root  20.0  0.0 00:00 head\n";
+        assert!(
+            parse_process_output(out).is_empty(),
+            "轮询自身 spawn 的 ps/awk/head 不得进入面板"
+        );
+    }
+
+    /// 名字黑名单优先于时长：跑了 10 分钟的 `ps` 也照样丢掉。
+    /// 这是刻意的取舍（真·长跑 ps/awk 被一起藏掉），在此固化契约。
+    #[test]
+    fn parse_process_output_drops_even_a_long_running_ps() {
+        let out = "  1234 root 99.0  0.0 10:23 ps\n";
+        assert!(
+            parse_process_output(out).is_empty(),
+            "ps 按名字过滤，与 etime 长短无关"
+        );
+    }
+
+    /// 跑这条命令的父 shell 不能进名字黑名单（那会连真实的忙 shell 一起藏掉），
+    /// 它靠「不足 1 秒的 etime」被滤掉；两种零填充写法都要认。
+    #[test]
+    fn parse_process_output_drops_sub_second_helpers_by_age_not_by_name() {
+        let out = "\
+  1234 root 60.0  0.0 00:00 bash\n\
+  1235 root 30.0  0.0  0:00 sh\n\
+  1236 root  0.1  0.2 00:01 bash\n";
+        let rows = parse_process_output(out);
+        assert_eq!(rows.len(), 1, "只该留下活过 1 秒的那个 bash");
+        assert_eq!(rows[0]["command"], "bash");
+        assert_eq!(rows[0]["time"], "00:01");
+    }
+
+    /// 真实进程要完整留下，且列映射不能错位（comm 含空格时 command 须保留全名）。
+    #[test]
+    fn parse_process_output_keeps_real_processes_with_correct_columns() {
+        let out = "\
+  900 root 12.5  3.2 01:02:03 nginx: worker\n\
+  901 www   0.0  0.5 00:20 bash\n";
+        let rows = parse_process_output(out);
+        assert_eq!(rows.len(), 2, "真实进程不得被过滤");
+        assert_eq!(rows[0]["pid"], 900);
+        assert_eq!(rows[0]["cpu"], 12.5);
+        assert_eq!(rows[0]["mem"], 3.2);
+        assert_eq!(rows[0]["time"], "01:02:03");
+        assert_eq!(rows[0]["command"], "nginx: worker");
+        assert_eq!(rows[1]["command"], "bash");
+    }
+
+    /// BusyBox/Alpine 回退分支没有 etime（占位 `-`），不能因此被当成瞬时进程丢掉。
+    #[test]
+    fn parse_process_output_accepts_busybox_fallback_rows() {
+        let out = "     42 root  3.0  1.0 - nginx\n";
+        let rows = parse_process_output(out);
+        assert_eq!(rows.len(), 1, "回退格式（etime=-）须被接受");
+        assert_eq!(rows[0]["command"], "nginx");
+        assert_eq!(rows[0]["time"], "-");
+    }
+
+    /// 面板只展示 30 行；命令侧多取 10 行（head -40）供过滤后仍凑满。
+    #[test]
+    fn parse_process_output_caps_rows_at_the_panel_limit() {
+        let out: String = (0..45)
+            .map(|i| format!("  {} root 0.1 0.1 10:00 svc{}\n", 1000 + i, i))
+            .collect();
+        assert_eq!(parse_process_output(&out).len(), PROCESS_ROW_LIMIT);
+    }
+
+    /// 命令形状守卫：`||` 回退是死代码（管道退出码取 head 的 0，永远走不到），
+    /// 必须用 `if` 直接问 `ps`；多取到 40 行。
+    #[test]
+    fn process_list_cmd_probes_ps_instead_of_piping_a_dead_fallback() {
+        assert!(
+            PROCESS_LIST_CMD.starts_with("if ps "),
+            "须用 if 探测 ps 能力，不能靠管道 || 回退"
+        );
+        assert!(
+            PROCESS_LIST_CMD.contains(" else "),
+            "BusyBox 回退分支须保留"
+        );
+        assert!(
+            !PROCESS_LIST_CMD.contains("||"),
+            "管道 || 回退是死代码：退出码取自 head，恒为 0"
+        );
+        assert!(
+            PROCESS_LIST_CMD.trim_end().ends_with("head -40"),
+            "过滤会吃掉几行，命令侧须多取"
+        );
+    }
 }
