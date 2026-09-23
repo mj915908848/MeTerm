@@ -3,6 +3,7 @@
  * Loaded when URL contains ?window=about.
  */
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { suppressNativeContextMenu } from './context-menu';
 import { revealAfterPaint } from './window-utils';
 import { getVersion } from '@tauri-apps/api/app';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -26,6 +27,11 @@ function resolveThemeAttr(colorScheme: string): string {
 }
 
 export function initAboutWindow(): void {
+  // The About box is almost all inert text, so a right-click landed on the
+  // WebView's own menu ("Reload" / "Inspect Element") — a browser's menu on a
+  // page that only exists to show a version number. Nothing here needs the
+  // platform menu; there are no form fields, so the suppressor simply drops it.
+  suppressNativeContextMenu();
   initLanguage();
   const settings = loadSettings();
   setLanguage(settings.language);

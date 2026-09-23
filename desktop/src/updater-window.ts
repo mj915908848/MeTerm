@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { LogicalSize } from '@tauri-apps/api/dpi';
 import { emit, listen } from '@tauri-apps/api/event';
 import { revealAfterPaint } from './window-utils';
+import { suppressNativeContextMenu } from './context-menu';
 import { loadSettings, resolveIsDark } from './themes';
 import { initLanguage, setLanguage, t } from './i18n';
 import { applyVibrancy } from './appearance';
@@ -121,6 +122,10 @@ function createCustomTitleBar(title: string, onClose?: () => void): HTMLElement 
 }
 
 export function initUpdaterWindow(): void {
+  // The update window shows release notes and a couple of buttons; the one thing
+  // it must not offer is the WebView's own "Reload", which would restart the
+  // download it is in the middle of reporting.
+  suppressNativeContextMenu();
   initLanguage();
   const settings = loadSettings();
   setLanguage(settings.language);

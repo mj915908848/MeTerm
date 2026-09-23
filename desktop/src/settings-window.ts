@@ -7,6 +7,7 @@ import {
   flushSettingsSecrets,
 } from './themes';
 import { createSettingsPanel } from './settings';
+import { suppressNativeContextMenu } from './context-menu';
 import { initLanguage, setLanguage, t } from './i18n';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -68,6 +69,15 @@ function createCustomTitleBar(): HTMLElement {
 }
 
 export function initSettingsWindow(): void {
+  // Without this every right-click the app does not handle itself — a slider, a
+  // button, the tab strip, empty space — fell through to WKWebView's own menu:
+  // "Reload" and "Inspect Element", in English, in a window that is not a browser.
+  // "Reload" would also throw away the settings on screen. Text fields are not
+  // exempted: they get the app's own cut / copy / paste / select all, which works
+  // here because the settings window's capability already allows the clipboard
+  // (capabilities/default.json). A dropdown keeps the platform menu — see
+  // suppressNativeContextMenu().
+  suppressNativeContextMenu();
   initLanguage();
   let settings = loadSettings();
   setLanguage(settings.language);
