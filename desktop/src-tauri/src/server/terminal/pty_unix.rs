@@ -464,7 +464,10 @@ fn create_bash_hooks(dir: &std::path::Path) {
              __meterm_cmd_start=\"$EPOCHSECONDS\"\n\
            fi\n\
          }\n\
-         trap '__meterm_preexec' DEBUG\n\
+         # 用户 .bashrc 已在上面 source 过,所以这里看到的是用户 rc 之后的真实状态:\n\
+         # bash 只允许一个 DEBUG trap 且没有追加写法,直接装会永久删掉用户已有的\n\
+         # (bash-preexec / 审计钩子),所以只在没人用时才装;代价是 duration_ms 报 0。\n\
+         if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi\n\
          __meterm_precmd(){\n\
            local e=$?\n\
            local c\n\
@@ -496,7 +499,12 @@ fn create_bash_hooks(dir: &std::path::Path) {
            printf '\\033]7768;%d;%s;%s;%d\\007' \"$e\" \"$PWD\" \"$c\" \"$dur\"\n\
            __meterm_in_prompt=0\n\
          }\n\
-         PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"\n\
+         # PROMPT_COMMAND 可以就地扩写,但 bash 5.1+ 允许它是数组,而标量赋值会把整个\n\
+         # 数组换掉(用户第 2..n 项静默消失),所以按它本来的形态扩写。\n\
+         case \"$(declare -p PROMPT_COMMAND 2>/dev/null)\" in\n\
+           'declare -a'*) PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\") ;;\n\
+           *) PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;;\n\
+         esac\n\
          export HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\"\n",
     );
 
@@ -556,6 +564,20 @@ mod tests {
         assert!(bashrc.contains("__meterm_precmd"));
         assert!(bashrc.contains("7766;meterm_init;0"));
         assert!(bashrc.contains("PROMPT_COMMAND"));
+        // 非破坏性:用户 .bashrc 先被 source,bash 只有一个 DEBUG trap,
+        // 所以只能在没有时安装;PROMPT_COMMAND 按原有形态(标量/数组)扩写。
+        assert!(
+            bashrc.contains("if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi"),
+            "本地 bashrc 不得覆盖用户已有的 DEBUG trap"
+        );
+        assert!(
+            bashrc.contains("declare -a'*)"),
+            "本地 bashrc 须识别数组形态的 PROMPT_COMMAND"
+        );
+        assert!(
+            bashrc.contains("PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\")"),
+            "数组分支须保留用户已有元素"
+        );
         // Agent 镜像产物(M2):hooks JSON + 转发脚本落地,.bashrc 末尾追加 claude 包装函数。
         assert!(std::path::Path::new(&dir)
             .join("meterm-claude-hooks.json")

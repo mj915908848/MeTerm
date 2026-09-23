@@ -944,6 +944,17 @@ pub async fn test_connection(config: &SshConfig) -> Result<SshAuthUsed, String> 
 /// meant password-bearing prompt answers were recorded on exactly the sessions
 /// that matter most. `tests/shell-hook-drift.test.mts` pins the policy on every
 /// verifiable emitter.
+///
+/// Installing the hook must not cost the remote shell something it already had.
+/// bash allows **one** `DEBUG` trap and offers no append form, so this hook only
+/// installs its own when `trap -p DEBUG` is empty; the price is that a
+/// `bash-preexec`-owning host reports `duration_ms=0` instead of losing that
+/// trap. `PROMPT_COMMAND` *is* extendable in place, but bash 5.1+ lets it be an
+/// array and a scalar assignment replaces the whole array — dropping the user's
+/// 2nd..nth entries — so the extension follows whichever shape it found. The
+/// same two guards are duplicated in `pty_unix.rs` (proxy `.bashrc`, which
+/// sources the user's rc first) and in `ai-tools-shell.ts`'s fallback injection;
+/// `hook_tests` here and the drift test pin them on every emitter.
 pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meterm_cmd_running=0; __meterm_in_prompt=0; \
                 __meterm_preexec(){ \
                 [ -n \"${COMP_LINE:-}\" ] && return; \
@@ -984,8 +995,10 @@ pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meter
                 zmodload zsh/datetime 2>/dev/null; \
                 autoload -Uz add-zsh-hook 2>/dev/null && { add-zsh-hook preexec __meterm_preexec; add-zsh-hook precmd __meterm_precmd; }; \
                 elif [ -n \"${BASH_VERSION:-}\" ]; then \
-                trap '__meterm_preexec' DEBUG; \
-                PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"; fi; \
+                if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi; \
+                case \"$(declare -p PROMPT_COMMAND 2>/dev/null)\" in 'declare -a'*) \
+                PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\") ;; \
+                *) PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;; esac; fi; \
                 if [ -n \"${ZSH_VERSION:-}\" ]; then setopt HIST_IGNORE_SPACE 2>/dev/null; \
                 elif [ -n \"${BASH_VERSION:-}\" ]; then export HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\"; fi; \
                 printf '\\033[A\\033[2K\\r'; stty echo\n";
@@ -1017,6 +1030,39 @@ mod hook_tests {
         assert!(HOOK.contains("add-zsh-hook preexec __meterm_preexec"), "zsh needs preexec");
         assert!(HOOK.contains("trap '__meterm_preexec' DEBUG"), "bash needs the DEBUG-trap preexec");
         assert!(HOOK.contains("zmodload zsh/datetime"), "zsh EPOCHREALTIME needs zsh/datetime");
+    }
+
+    /// bash has exactly one `DEBUG` trap and no "append" form, so installing
+    /// ours unconditionally would *delete* whatever the remote shell already
+    /// had — `bash-preexec`, audit/telemetry hooks — permanently, on a host this
+    /// app does not own. The guard is what makes the hook non-destructive; a
+    /// hookless bash simply reports `duration_ms=0`, which is the cheaper loss.
+    #[test]
+    fn ssh_hook_never_displaces_the_users_debug_trap() {
+        assert!(
+            HOOK.contains("if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi;"),
+            "the bash DEBUG trap must be installed only when the shell has none"
+        );
+    }
+
+    /// `PROMPT_COMMAND` is extensible in place, but bash 5.1+ allows it to be an
+    /// *array*, and a scalar assignment replaces the whole array — silently
+    /// dropping the user's 2nd..nth entries. The hook has to detect the shape
+    /// it found and extend in that same shape.
+    #[test]
+    fn ssh_hook_extends_prompt_command_in_whatever_shape_it_found() {
+        assert!(
+            HOOK.contains("declare -a'*)"),
+            "an array PROMPT_COMMAND must be extended element-wise"
+        );
+        assert!(
+            HOOK.contains("PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\")"),
+            "the array branch must keep every existing element"
+        );
+        assert!(
+            HOOK.contains("PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""),
+            "the scalar branch must keep prepending to the existing string"
+        );
     }
 
     /// ECHO is switched off for the injection; the hook must switch it back on

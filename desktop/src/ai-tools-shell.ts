@@ -113,6 +113,13 @@ export function withSessionPtyLock<T>(
  * `EPOCHREALTIME` is split into seconds/microseconds and each half prefixed
  * with `10#` — otherwise a fraction like `012345` would be read as *octal*).
  *
+ * Installing it must not cost the user something they already had: bash allows
+ * exactly one `DEBUG` trap, so ours is installed only when the shell has none
+ * (see the bash branch). A `duration_ms` of 0 is cheaper than deleting a remote
+ * server's `bash-preexec` / audit hook — and cheaper than silently dropping
+ * `PROMPT_COMMAND` entries, which is why the extension below follows the shape
+ * the variable already has (bash 5.1+ arrays included).
+ *
  * `fish` and `powershell` deliberately still emit 3 fields: both are
  * unverifiable from this repo's test environment (no `fish`/`pwsh` binary, no
  * CI coverage), and a syntax error in an injected hook is *masked* — the
@@ -176,8 +183,19 @@ function buildShellHook(shellType: string): string {
         `[ "$dur" -lt 0 ] 2>/dev/null&&dur=0;fi;fi;`,
         `__meterm_cmd_running=0;__meterm_in_prompt=0;`,
         `printf '\\033]7768;%d;%s;%s;%d\\007' "$e" "$PWD" "$c" "$dur"; };`,
-        `trap '__meterm_preexec' DEBUG;`,
-        `PROMPT_COMMAND="__meterm_precmd\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"`,
+        // One DEBUG trap per shell and no "append" form: installing ours would
+        // *delete* whatever was there — `bash-preexec` and everything built on
+        // it, audit/telemetry hooks — permanently, on a host this app does not
+        // own. Without our trap `__meterm_cmd_running` stays 0, so the payload's
+        // `duration_ms` is 0 and only the "long command finished" push is lost.
+        `if [ -z "$(trap -p DEBUG)" ];then trap '__meterm_preexec' DEBUG;fi; `,
+        // `PROMPT_COMMAND` can be extended safely, but only in the shape it
+        // already has: bash 5.1+ allows an array, and a scalar assignment
+        // replaces the whole array — silently dropping the user's 2nd..nth
+        // entries. Both branches keep everything that was already there.
+        `case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in 'declare -a'*) `,
+        `PROMPT_COMMAND=(__meterm_precmd "\${PROMPT_COMMAND[@]}");; `,
+        `*) PROMPT_COMMAND="__meterm_precmd\${PROMPT_COMMAND:+;$PROMPT_COMMAND}";; esac`,
       ].join('');
   }
 }

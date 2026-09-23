@@ -179,6 +179,57 @@ for (const emitter of VERIFIABLE) {
 }
 
 /**
+ * The install itself must be non-destructive, and this is the part the
+ * `includes("trap '__meterm_preexec' DEBUG")` assertion above cannot see: that
+ * substring is *also* present in the guarded form, so it stays green either way.
+ *
+ * Two separate ways an unconditional install costs the user something:
+ *
+ *   - bash allows exactly one `DEBUG` trap and has no append form, so `trap …
+ *     DEBUG` *deletes* whatever was there — `bash-preexec` and everything built
+ *     on it, audit/telemetry hooks — permanently, on a host this app does not
+ *     own. A skipped install only costs `duration_ms` (0), which is why the
+ *     guard is the right trade.
+ *   - `PROMPT_COMMAND` *is* extensible in place, but bash 5.1+ lets it be an
+ *     array, and a scalar assignment replaces the whole array — silently
+ *     dropping the user's 2nd..nth entries. So the shape has to be detected.
+ *
+ * `pty_unix.rs`'s bash rc makes this the worst case rather than the mildest: it
+ * sources the user's real `.bashrc` *first*, so whatever the user installed is
+ * guaranteed to be sitting there when our lines run.
+ *
+ * The `\\?` on each quote is not decoration: `ssh.rs` and `pty_unix.rs` embed
+ * this shell code inside Rust string literals, so the source text on disk holds
+ * `\"` where `ai-tools-shell.ts` holds `"`.
+ */
+const DEBUG_TRAP_GUARD = /if\s*\[\s*-z\s*\\?"\$\(trap -p DEBUG\)\\?"\s*\]\s*;?\s*then\s*trap\s+'__meterm_preexec'\s+DEBUG/;
+
+for (const emitter of VERIFIABLE) {
+  test(`${emitter.name}: installs without displacing what the user already had`, () => {
+    assert.match(
+      emitter.source,
+      DEBUG_TRAP_GUARD,
+      `${emitter.path}: the DEBUG trap must be installed only when \`trap -p DEBUG\` is empty. `
+      + `An unconditional install permanently deletes the host's own trap (bash-preexec and `
+      + `everything built on it) on a machine this app does not own; losing only duration_ms is `
+      + `the cheaper price.`,
+    );
+    assert.ok(
+      emitter.source.includes('declare -p PROMPT_COMMAND'),
+      `${emitter.path}: PROMPT_COMMAND must be extended in the shape it was found`,
+    );
+    assert.ok(
+      emitter.source.includes("declare -a'*)"),
+      `${emitter.path}: without the array branch a bash 5.1+ PROMPT_COMMAND array is replaced whole`,
+    );
+    assert.ok(
+      emitter.source.includes('PROMPT_COMMAND=(__meterm_precmd'),
+      `${emitter.path}: the array branch must prepend ours and keep every existing element`,
+    );
+  });
+}
+
+/**
  * The emitters that are deliberately still 3-field. Both are unverifiable here
  * (no `pwsh` binary, no CI coverage, no `fish`), and a syntax error inside an
  * injected hook is masked — the OSC 7766 detect marker fires *before* the
