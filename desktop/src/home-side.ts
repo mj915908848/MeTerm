@@ -15,6 +15,7 @@ import {
 } from './home-dashboard-left';
 import {
   loadGroupMap,
+  visibleGroupName,
   loadGroupOrder,
   loadGroupCollapsed,
   toggleGroupCollapsed,
@@ -100,7 +101,10 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
 
   const buckets = new Map<string, ConnectionItem[]>();
   for (const item of all) {
-    const g = groupMap[item.key] || UNGROUPED;
+    // Read through `visibleGroupName`: a connection still filed under a name the
+    // app owns (see `connection-groups.ts`) is shown as ungrouped rather than
+    // under a header the group list refuses to address.
+    const g = visibleGroupName(groupMap[item.key]) || UNGROUPED;
     if (!buckets.has(g)) buckets.set(g, []);
     buckets.get(g)!.push(item);
   }

@@ -25,10 +25,21 @@ export function loadGroupOrder(): string[] {
     const raw = localStorage.getItem(GROUP_ORDER_KEY);
     if (raw) {
       const parsed: string[] = JSON.parse(raw);
-      // Filter out any __type:* entries that may have been saved erroneously.
-      // New ones can no longer be created — see `isReservedGroupName` — but a
-      // store written before that existed may still hold them.
-      return parsed.filter(name => !name.startsWith('__type:'));
+      // The whole `__` namespace is the app's, so none of it is a group a user
+      // can be shown or can move a row into — see `isReservedGroupName`.
+      //
+      // This used to filter only `__type:*`, which left a second hole: a stored
+      // `__ungrouped__` stayed in the order, so it could be listed as a "move to
+      // group" target and picked out of a group `<select>`, and the write would
+      // then put connections back into the name that means "no group at all".
+      // The storage guard below (`setConnectionGroup`,
+      // `assignConnectionsToGroup`) refuses that write; this is the other half —
+      // never offering it in the first place.
+      //
+      // A name already in storage is *not* rewritten: dropping it from this list
+      // only affects what is rendered. Its connections are still reachable, and
+      // are shown as ungrouped — see `visibleGroupName`.
+      return parsed.filter(name => !isReservedGroupName(name));
     }
   } catch {}
   return [];
@@ -58,18 +69,42 @@ export function saveGroupOrder(order: string[]): void {
  *
  * Neither failure reports anything when it happens: the name is accepted, the
  * group is written, and the damage only surfaces later as rows in the wrong
- * place. Hence a hard "no" at the two places a name can be chosen.
+ * place. Hence a hard "no" at the two places a name can be *chosen*
+ * (`createGroup` / `renameGroup`) and at the two places one can be *written*
+ * (`setConnectionGroup` / `assignConnectionsToGroup`) — the second pair is what
+ * keeps a future caller from re-creating the same data through a different door.
  *
- * Names already in storage are deliberately *not* migrated: renaming or
- * unassigning a user's connections to tidy up a sentinel would be a real data
- * loss, where leaving a merely-odd group is not. `loadGroupOrder` already
- * tolerates the `__type:*` leftovers it used to accept.
+ * Names already in storage are deliberately *not* renamed or unassigned:
+ * rewriting a user's connections to tidy up a sentinel would be a real data
+ * loss, where leaving a merely-odd group is not. They are instead *read* as
+ * ungrouped (`visibleGroupName`), which puts their rows back in a bucket the
+ * user can see and drag them out of — the group name itself is app-owned and
+ * simply stops being rendered.
  */
 const RESERVED_GROUP_PREFIX = '__';
 
 /** Is this one of the app's own names rather than one a user may own? */
 export function isReservedGroupName(name: string): boolean {
   return name.startsWith(RESERVED_GROUP_PREFIX);
+}
+
+/**
+ * The group a connection is *rendered* under, given what is stored for it.
+ *
+ * `null` means "ungrouped", the same answer a connection with no assignment at
+ * all gets. A stored reserved name answers `null` too, and that is the whole
+ * point: a connection left behind by a version that let a user take
+ * `__type:ssh` (or `__ungrouped__`) would otherwise be filed under a group the
+ * rest of the app cannot address — `loadGroupOrder` filters those out, so the
+ * dashboard drew no card for it and its rows could not be reached from the UI at
+ * all. Read as ungrouped, the rows land in the visible ungrouped bucket / type
+ * cards, and the existing "move to group" entry repairs the map entry with a
+ * plain write.
+ *
+ * Storage is not touched here — see the comment on `isReservedGroupName`.
+ */
+export function visibleGroupName(stored: string | null | undefined): string | null {
+  return stored && !isReservedGroupName(stored) ? stored : null;
 }
 
 // ─── Connection → Group mapping ───
@@ -102,7 +137,21 @@ export function jumpserverKey(name: string): string {
 
 // ─── CRUD operations ───
 
+/**
+ * Assign one connection to a group.
+ *
+ * Refuses a reserved name — see `isReservedGroupName`. Guarding only
+ * `createGroup` / `renameGroup` left this door open: any caller could put a
+ * connection *into* `__type:ssh` without ever creating a group by that name, and
+ * the map entry is the half that makes the rows unaddressable. Nothing is
+ * written when the name is refused, so a caller that offers only names from
+ * `loadGroupOrder` (all of them, after this change) can never hit it.
+ */
 export function setConnectionGroup(connectionKey: string, groupName: string): void {
+  if (isReservedGroupName(groupName)) {
+    console.warn('[groups] refusing to file a connection under a reserved name:', groupName);
+    return;
+  }
   const map = loadGroupMap();
   map[connectionKey] = groupName;
   saveGroupMap(map);
@@ -127,12 +176,21 @@ export function removeConnectionGroup(connectionKey: string): void {
  * fine for one row and wrong for a multi-row drag: the list would re-render
  * halfway through the batch, and a failure between two writes would leave the
  * user with half the selection moved. One read, one write.
+ *
+ * A reserved destination is refused as a whole — see `isReservedGroupName`.
+ * `null` is not a name but the absence of one, so "ungroup" stays available and
+ * is in fact the one way *out* of a name that got stored before the guard
+ * existed; refusing it would strand those rows for good.
  */
 export function assignConnectionsToGroup(
   connectionKeys: readonly string[],
   groupName: string | null,
 ): void {
   if (connectionKeys.length === 0) return;
+  if (groupName && isReservedGroupName(groupName)) {
+    console.warn('[groups] refusing to move connections into a reserved name:', groupName);
+    return;
+  }
   const map = loadGroupMap();
   for (const key of connectionKeys) {
     if (groupName) map[key] = groupName;
@@ -150,8 +208,16 @@ export function assignConnectionsToGroup(
   }
 }
 
+/**
+ * The group a connection is filed under, as callers should read it.
+ *
+ * Normalized through `visibleGroupName`, so every reader — the edit dialogs that
+ * pre-select a group, the row menu that decides which "move to" entries are
+ * no-ops — agrees with what the list and the dashboard render. Only the storage
+ * layer itself wants the raw entry, and it reads the map directly.
+ */
 export function getConnectionGroup(connectionKey: string): string | undefined {
-  return loadGroupMap()[connectionKey];
+  return visibleGroupName(loadGroupMap()[connectionKey]) ?? undefined;
 }
 
 // ─── Group management ───

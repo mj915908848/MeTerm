@@ -129,6 +129,12 @@ function boot(): Harness {
       loadGroupMap: () => groups,
       loadGroupOrder: () => ['prod'],
       setGroupColor: () => {},
+      // Stub of the real one: a `__` name is the app's own bookkeeping, never a
+      // group a user can see (see connection-groups.ts). The move path compares a
+      // row's group through it, so a mock without it throws where the real helper
+      // returns null.
+      visibleGroupName: (stored: string | null | undefined) =>
+        (typeof stored === 'string' && !stored.startsWith('__') ? stored : null),
     },
     './connection-drag': {
       attachConnectionDrag: (_list: El, options: any) => { harness.dragOptions = options; return () => {}; },

@@ -106,6 +106,11 @@ function render(opts: RenderOptions): {
       loadGroupOrder: () => opts.order ?? [],
       loadGroupCollapsed: () => new Set(opts.collapsed ?? []),
       toggleGroupCollapsed: () => {},
+      // Stub of the real helper: the app's own `__` names are not groups a user
+      // can see, so the renderer reads an assignment through it (see
+      // connection-groups.ts).
+      visibleGroupName: (stored: string | null | undefined) =>
+        (stored && !stored.startsWith('__') ? stored : null),
     },
   };
 

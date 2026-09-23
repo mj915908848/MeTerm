@@ -43,6 +43,7 @@ import {
 import {
   loadGroupMap,
   loadGroupOrder,
+  visibleGroupName,
   sshKey,
   remoteKey,
   jumpserverKey,
@@ -219,7 +220,13 @@ export function renderGroupsSection(query: string, refreshView: () => void): voi
   const ungrouped: ConnectionItem[] = [];
 
   for (const item of filteredItems) {
-    const groupName = groupMap[item.key];
+    // `visibleGroupName`, not the raw entry: a connection filed under a name the
+    // app owns (`__type:ssh` from a version that accepted one) has no card here
+    // — `groupOrder` filters those names out — so reading it raw would drop the
+    // row off the dashboard with no way to get it back. Read as ungrouped it
+    // lands in the per-type card below, which is a bucket the row menu can move
+    // it out of.
+    const groupName = visibleGroupName(groupMap[item.key]);
     if (groupName) {
       if (!grouped.has(groupName)) grouped.set(groupName, []);
       grouped.get(groupName)!.push(item);

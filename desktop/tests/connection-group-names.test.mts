@@ -19,6 +19,10 @@
  * The first test demonstrates both harms against the real store (writing the
  * order straight into storage, the way a pre-fix build would have), so the
  * refusals asserted after it are provably load-bearing rather than defensive.
+ * The last three cover the rest of the path in the same spirit: the two writers
+ * that take a name from a caller, the reader every renderer goes through, and the
+ * group list — plus the one repair path a store that already holds a sentinel has
+ * (`assignConnectionsToGroup`), because a refusal alone would strand those rows.
  *
  * connection-groups.ts is transpiled into a sandbox rather than imported, because
  * its `./connection-sort` specifier is extensionless (a bundler resolves it, node
@@ -52,18 +56,31 @@ const code = ts.transpileModule(
   { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 } },
 ).outputText;
 
+/** A refused write is the only one a developer can see at all — collect it. */
+const warnings: string[] = [];
+
 const exports: any = {};
 vm.runInNewContext(code, {
   exports,
   localStorage,
+  console: { warn: (...args: unknown[]) => { warnings.push(args.map(String).join(' ')); } },
   require: (specifier: string) => {
     if (specifier === './connection-sort') return connectionSort;
     throw new Error(`unexpected import ${specifier}`);
   },
 });
 
-const { createGroup, renameGroup, isReservedGroupName, listGroups, loadGroupMap } = exports;
-const reset = (): void => { saved.clear(); };
+const {
+  createGroup,
+  renameGroup,
+  isReservedGroupName,
+  listGroups,
+  loadGroupMap,
+  visibleGroupName,
+  getConnectionGroup,
+  setConnectionGroup,
+} = exports;
+const reset = (): void => { saved.clear(); warnings.length = 0; };
 
 const ORDER_KEY = 'meterm-connection-group-order';
 const MAP_KEY = 'meterm-connection-groups';
@@ -107,11 +124,16 @@ test('the reserved namespace is exactly what the app compares by value', () => {
   }
   // And the consumers still spell them this way — a rename there without one
   // here would leave the predicate guarding a name nobody uses.
+  //
+  // `connection-groups.ts` no longer lists `__type:` itself: the whole `__`
+  // namespace is one prefix, refused in one place (`isReservedGroupName`) and read
+  // through one helper (`visibleGroupName`), so what has to stay in step there is
+  // the prefix itself.
   const sentinels = [
     ['src/home-side.ts', "const UNGROUPED = '__ungrouped__'"],
     ['src/connection-drag.ts', "const UNGROUPED = '__ungrouped__'"],
     ['src/connection-sort.ts', "const UNGROUPED_GROUP = '__ungrouped__'"],
-    ['src/connection-groups.ts', "startsWith('__type:')"],
+    ['src/connection-groups.ts', "RESERVED_GROUP_PREFIX = '__'"],
     ['src/home-dashboard-left.ts', 'card.dataset.groupName = `__type:${type}`'],
   ] as const;
   for (const [rel, fragment] of sentinels) {
@@ -169,3 +191,77 @@ test('ordinary renames still work, and a no-op rename is not an error', () => {
   assert.equal(renameGroup('production', 'production'), true, 'renaming to itself is a no-op, not a failure');
   assert.deepEqual(groupsOf(), ['production'], 'and it must not duplicate the entry');
 });
+
+/**
+ * The refusals above guard the two places a name can be *chosen*. The three below
+ * guard the rest of the path: the writers that take a name from a caller, the
+ * reader every renderer goes through, and the group list itself. Refusing only at
+ * the dialog leaves a future caller free to file a connection straight into
+ * `__type:ssh` — and it is the map entry, not the group, that makes the row
+ * unaddressable.
+ */
+test('no writer can file a connection under a reserved name', () => {
+  reset();
+  createGroup('prod');
+
+  setConnectionGroup('ssh:a', '__type:ssh');
+  assert.deepEqual(mapOf(), {}, 'the map entry is the half that loses the row, so nothing may write one');
+  assert.deepEqual(groupsOf(), ['prod'], 'and a refused write must not add anything to the order either');
+
+  exports.assignConnectionsToGroup(['ssh:b'], '__ungrouped__');
+  assert.deepEqual(mapOf(), {}, 'the batch writer takes a name from a caller too, and must refuse it the same way');
+
+  assert.equal(warnings.length, 2, 'both refusals have to leave a trace — a silent one looks like the write worked');
+
+  // `null` is not a name but the absence of one, and it is the *only* way out of
+  // an entry that got stored before these guards existed: refusing it would
+  // strand those rows for good.
+  exports.assignConnectionsToGroup(['ssh:c'], 'prod');
+  assert.deepEqual(mapOf(), { 'ssh:c': 'prod' });
+  exports.assignConnectionsToGroup(['ssh:c'], null);
+  assert.deepEqual(mapOf(), {}, 'ungrouping still works');
+  assert.equal(warnings.length, 2, 'and it is not a refusal');
+});
+
+test('a stored reserved name reads as ungrouped, which is what makes that row reachable', () => {
+  reset();
+  saved.set(ORDER_KEY, JSON.stringify(['prod', '__type:ssh']));
+  saved.set(MAP_KEY, JSON.stringify({ 'ssh:a': '__type:ssh', 'ssh:b': 'prod' }));
+
+  assert.equal(visibleGroupName('__type:ssh'), null, 'the app reads its own names as "no group"');
+  assert.equal(visibleGroupName('__ungrouped__'), null);
+  assert.equal(visibleGroupName('prod'), 'prod', 'a real name is passed through');
+  for (const empty of [null, undefined, '']) {
+    assert.equal(visibleGroupName(empty), null, `${String(empty)} is not a group`);
+  }
+
+  // The two renderers (dashboard cards, sidebar rows) go through the same reader,
+  // so this is the answer both of them get — and the reason the row the first
+  // test shows as lost is back in a bucket the user can act on.
+  assert.equal(getConnectionGroup('ssh:a'), undefined, 'the dashboard files it under the per-kind card');
+  assert.equal(getConnectionGroup('ssh:b'), 'prod');
+
+  exports.assignConnectionsToGroup(['ssh:a'], 'prod');
+  assert.deepEqual(
+    mapOf(),
+    { 'ssh:a': 'prod', 'ssh:b': 'prod' },
+    'the ordinary "move to group" write is the repair — no migration, no silent rename',
+  );
+});
+
+test('a stored sentinel does not come back as a group the user can pick', () => {
+  reset();
+  // The order used to be filtered with `startsWith('__type:')`, which let this
+  // one through. It survived every other refusal: it is already in storage, and
+  // it is listed as a group long enough to be offered as a destination.
+  saved.set(ORDER_KEY, JSON.stringify(['prod', '__ungrouped__']));
+  saved.set(MAP_KEY, JSON.stringify({ 'ssh:a': '__ungrouped__' }));
+
+  assert.deepEqual(
+    groupsOf(),
+    ['prod'],
+    'listed here it becomes a "move to" destination and an entry in a group select — and moving a '
+    + 'row onto it writes the one name that means "no group at all"',
+  );
+});
+

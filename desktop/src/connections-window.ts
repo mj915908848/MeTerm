@@ -43,6 +43,7 @@ import {
   loadGroupMap,
   loadGroupOrder,
   setGroupColor,
+  visibleGroupName,
 } from './connection-groups';
 import { attachConnectionDrag } from './connection-drag';
 import { pruneSelection, resolveRowClick } from './connection-selection';
@@ -298,8 +299,10 @@ export function initConnectionsWindow(): void {
     if (keys.length === 0) return;
     const map = loadGroupMap();
     // Dragging a row back onto the group it already sits in changes nothing and
-    // must not re-render (or emit) for it.
-    if (!keys.some((key) => (map[key] ?? null) !== group)) return;
+    // must not re-render (or emit) for it. Compared through `visibleGroupName`
+    // for the same reason the list renders through it: a stored name the app
+    // owns reads as ungrouped, so that is the comparison the write has to match.
+    if (!keys.some((key) => visibleGroupName(map[key]) !== group)) return;
     assignConnectionsToGroup(keys, group);
     picked.clear();
     anchor = null;
