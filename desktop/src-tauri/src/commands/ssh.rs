@@ -252,3 +252,25 @@ pub fn detect_default_ssh_key() -> Option<String> {
 pub async fn check_ssh_agent() -> SshAgentStatus {
     probe_ssh_agent().await
 }
+
+/// The identity of the host this session is connected to, or `null` when the
+/// session has no remote exec channel to ask through.
+///
+/// The desktop uses this to keep the shell hook out of a *nested* ssh. After
+/// `ssh other-host`, the foreground prompt belongs to another machine, but the
+/// screen looks identical — so the caller compares this answer (from the
+/// connection we dialled) with what the shell reports and refuses to install the
+/// hook when they disagree. `null` is the ordinary answer for a local or
+/// JumpServer session, and the caller then injects unguarded as it always did.
+#[tauri::command]
+pub async fn ssh_host_identity(
+    state: State<'_, Arc<ServerState>>,
+    session_id: String,
+) -> Result<Option<String>, String> {
+    super::validate_id(&session_id)?;
+    let session = state
+        .session_manager
+        .get(&session_id)
+        .ok_or("session not found")?;
+    Ok(crate::server::server_info::probe_host_identity(&session).await)
+}

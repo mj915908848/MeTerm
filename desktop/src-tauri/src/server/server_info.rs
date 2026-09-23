@@ -71,6 +71,65 @@ const SELF_SPAWNED_NAMES: [&str; 4] = ["ps", "awk", "head", "sort"];
 /// Rows kept for the panel's process box (after filtering).
 const PROCESS_ROW_LIMIT: usize = 30;
 
+/// Identifies the host on the other end of the connection, then prints it.
+///
+/// The desktop's shell-hook injection needs this for the one case it cannot see
+/// for itself. Once the user types `ssh other-host`, the screen shows a bare
+/// shell prompt that `injectionBlocked()` reads as *ours*, so the hook gets
+/// typed into the nested shell and the session is then marked hooked with the
+/// other machine's cwd, exit codes and durations — and `hookInjected` is exactly
+/// what switches the screen-tail fallbacks off, so the AI features degrade
+/// quietly. The screen cannot tell the two shells apart; the **exec channel**
+/// can, because it is a second channel on the connection we dialled: whatever it
+/// runs, runs on the host we dialled. Compare its answer with the one the shell
+/// gives and the nested case identifies itself.
+///
+/// The value is `machine-id | hostname | boot_id`: stable within a boot,
+/// different between machines, joined into one string so that any single field
+/// differing is enough to refuse the injection. Every part is optional and
+/// stderr is dropped, so a host with none of them still yields a comparable
+/// (if degenerate) `||` rather than an error.
+///
+/// `ai-tools-shell.ts` carries the identical expression as `HOST_IDENTITY_EXPR`,
+/// and `tests/shell-hook-identity.test.mts` compares the two files' text —
+/// deliberately, because a drift here would not fail loudly: every injection
+/// would simply look like a foreign host and refuse, leaving AI features
+/// degraded with nothing in the logs. **If you change one, change the other.**
+pub(crate) const HOST_IDENTITY_CMD: &str = "__meterm_id=\"$(cat /etc/machine-id 2>/dev/null||cat /var/lib/dbus/machine-id 2>/dev/null)|$(hostname 2>/dev/null)|$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)\"; printf '%s' \"$__meterm_id\"";
+
+/// Ask the connection, rather than the screen, which host is on the other end.
+///
+/// `None` means "there is nothing to ask" and is **not** an error. A local or
+/// JumpServer session has no exec channel at all, and a probe that fails for any
+/// other reason degrades to the same answer, so the caller injects unguarded —
+/// exactly the behaviour that shipped before this guard existed. An unavailable
+/// guard must never become a missing feature.
+pub async fn probe_host_identity(session: &Session) -> Option<String> {
+    // Only a real SSH session has an exec channel on the dialled connection; a
+    // JumpServer session is SSH to Koko, which never granted us one.
+    let exec_type = session.executor_type.lock().unwrap().clone();
+    if exec_type != "ssh" {
+        return None;
+    }
+
+    let handle_guard = session.ssh_exec_handle.lock().await;
+    let handle = handle_guard.as_ref()?;
+    let ssh_handle = handle
+        .downcast_ref::<Arc<tokio::sync::Mutex<Option<russh::client::Handle<ssh::SshHandler>>>>>()?;
+
+    let output = ssh::ssh_exec(ssh_handle, HOST_IDENTITY_CMD, 5).await.ok()?;
+    let identity = output.trim();
+    // An empty capture means the command did not actually run (a shell that
+    // refused it, a channel that closed early). Reporting that as an identity
+    // would be worse than reporting nothing: the guard would compare the shell
+    // against "" and refuse every injection.
+    if identity.is_empty() {
+        None
+    } else {
+        Some(identity.to_string())
+    }
+}
+
 /// Handle MsgServerInfo request. Returns the response as a protocol message.
 pub async fn handle_server_info(session: &Session, payload: &[u8]) -> Vec<u8> {
     // Parse request type

@@ -3,6 +3,7 @@
 // shell integration or OSC 7766 markers, output capture & cleanup.
 
 import { TerminalRegistry } from './terminal';
+import { invoke } from '@tauri-apps/api/core';
 // NOTE: The previous implementation used `invoke('inject_osc_marker')`
 // to fake a completion marker after 1.5s of silence.  That hack caused
 // false positives for interactive commands (ssh/sudo password prompts,
@@ -242,6 +243,101 @@ const HOOK_INJECTION_TIMEOUT_MS = 3000;
 const _injectionState = new Map<string, HookInjectionState>();
 
 /**
+ * The 7766 code that means "the shell which ran this line is not our host".
+ * Deliberately outside 0..3, the shell-type indices `terminal-osc.ts` maps, so
+ * it can never be read as a successful handshake.
+ */
+const HOOK_FOREIGN_HOST_CODE = 9;
+
+/**
+ * The one shell expression that identifies the host on the other end: the
+ * machine id (systemd / dbus), the hostname, and the kernel boot id — stable
+ * within a boot, different between machines, compared as a single string so
+ * that any one differing field is enough to refuse. The SSH exec channel runs
+ * exactly this (`server_info::HOST_IDENTITY_CMD`);
+ * `tests/shell-hook-identity.test.mts` pins the two copies together, because a
+ * drift here would refuse every injection.
+ */
+const HOST_IDENTITY_EXPR =
+  '__meterm_id="$(cat /etc/machine-id 2>/dev/null||cat /var/lib/dbus/machine-id 2>/dev/null)'
+  + '|$(hostname 2>/dev/null)'
+  + '|$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"';
+
+/**
+ * Per-session answer to "which host is on the other end?".
+ *
+ * The screen cannot answer it: a nested `ssh` shows a bare shell prompt that the
+ * detector reads as `active` (see `injectionBlocked`), so typing into it looks
+ * exactly like typing into our own shell. The **exec channel** can: it is a
+ * second channel on the connection we dialled, so what it runs, runs on the host
+ * we dialled. Compare the two answers and the nested case identifies itself.
+ *
+ * Three states, and the third is what keeps this a guard rather than a feature:
+ *   - `known`   → inject, guarded by the value.
+ *   - `pending` → say nothing yet; the probe re-enters the injection itself.
+ *   - `none`    → nothing to ask (local / JumpServer session) or the probe
+ *                 failed: inject unguarded, exactly as before. An unavailable
+ *                 guard may not turn into a missing feature.
+ */
+type HostIdentity =
+  | { status: 'pending' }
+  | { status: 'none' }
+  | { status: 'known'; value: string };
+
+const _hostIdentity = new Map<string, HostIdentity>();
+
+/**
+ * Ask the host we are connected to for its identity — never the shell, which may
+ * be somewhere else by now. A `null` answer means "this session has no remote
+ * exec channel" (local / JumpServer), which is not a failure and is remembered
+ * as such; a rejected call is treated the same way, so a broken probe degrades
+ * to the previous unguarded behaviour instead of blocking injection entirely.
+ *
+ * Every outcome is remembered, failure included, and that is deliberate: a
+ * session with genuinely nothing to ask would otherwise be re-probed on every
+ * single attempt, and since each probe re-enters the injection, that is an
+ * endless probe loop rather than a degraded guard. The residual risk is the
+ * mirror image — if the very first probe beats the SSH exec channel's
+ * registration, the session keeps the unguarded behaviour for its lifetime,
+ * which is exactly what shipped before this guard existed.
+ */
+async function probeHostIdentity(sessionId: string): Promise<void> {
+  _hostIdentity.set(sessionId, { status: 'pending' });
+  let next: HostIdentity;
+  try {
+    const value = await invoke<string | null>('ssh_host_identity', { sessionId });
+    next = value ? { status: 'known', value } : { status: 'none' };
+  } catch {
+    next = { status: 'none' };
+  }
+  // A session that went away while we were asking must not be re-created here.
+  if (!TerminalRegistry.get(sessionId)) {
+    _hostIdentity.delete(sessionId);
+    return;
+  }
+  _hostIdentity.set(sessionId, next);
+}
+
+/**
+ * Ask, and hand control back to the injection once the answer is in.
+ *
+ * Deliberately **not** `scheduleHookRetry`, even though both are "come back
+ * later". The chain is for attempts that did not land: it books a failure,
+ * starts the clock the nested-ssh restraint measures the user's typing against,
+ * and backs off. A probe wait is none of those — nothing was sent, so there is
+ * nothing to retry and nothing to be restrained from. Routing it through the
+ * chain let a user who started typing during the (millisecond) probe window trip
+ * the restraint, which drops the entire chain and leaves the session hookless.
+ */
+function probeHostIdentityThenInject(sessionId: string): void {
+  void probeHostIdentity(sessionId).then(() => {
+    const mt = TerminalRegistry.get(sessionId);
+    if (!mt || mt.shellState.hookInjected) return;
+    injectShellHook(sessionId);
+  });
+}
+
+/**
  * Is something other than the shell currently owning the terminal?
  *
  * The injection writes `Ctrl-U` + a command line + `\n`. Typed into a program
@@ -261,10 +357,14 @@ const _injectionState = new Map<string, HookInjectionState>();
  * hook lives on the other host, its cwd / exit codes / durations would describe
  * that host, and `hookInjected` is precisely what switches the screen-tail
  * fallbacks off — so leaving the nested shell would put the agent back into the
- * state §1/§2.3 removed. Detecting nesting needs a signal we do not have cheaply;
- * restraint does not: a nested shell can only exist after the user has typed, so
- * the retry chain — the part that fires long after connect — gives up as soon as
- * the user has driven this terminal (see `scheduleHookRetry`).
+ * state §1/§2.3 removed.
+ *
+ * This function is therefore not the defence against nesting — the host-identity
+ * comparison is (`HostIdentity`, and `HOST_IDENTITY_EXPR` inside the injected
+ * command). It runs on every 7766 answer, so a nested shell reports itself as
+ * `HOOK_FOREIGN_HOST_CODE` instead of a success. The retry chain's typing
+ * restraint (see `scheduleHookRetry`) stays as the cheap backstop for the paths
+ * that never get a marker back at all.
  */
 function injectionBlocked(sessionId: string): boolean {
   try {
@@ -407,15 +507,28 @@ export function injectShellHook(sessionId: string): boolean {
     scheduleHookRetry(sessionId, true);
     return false;
   }
+  // Nothing may be typed before we know which host answers on the other end —
+  // see `HostIdentity`. This is *not* a blocked attempt: nothing was sent, so it
+  // books nothing against the chain and does not start the restraint clock. The
+  // probe re-enters this function itself once it has an answer.
+  const host = _hostIdentity.get(sessionId);
+  if (!host) {
+    probeHostIdentityThenInject(sessionId);
+    return false;
+  }
+  // A probe is already in flight; its own continuation comes back here.
+  if (host.status === 'pending') return false;
   // Committed to a real attempt: this is where the clock that the nested-ssh
   // restraint measures the user's typing against starts.
   beginInjectionChain(sessionId);
-  return _injectShellHookImpl(sessionId, mt);
+  return _injectShellHookImpl(sessionId, mt, host.status === 'known' ? host.value : undefined);
 }
 
 function _injectShellHookImpl(
   sessionId: string,
   mt: ReturnType<typeof TerminalRegistry.get> & {},
+  /** The connected host's identity, when we were able to ask for one. */
+  expectedHost?: string,
 ): boolean {
   const zshHook = buildShellHook('zsh');
   const bashHook = buildShellHook('bash');
@@ -424,7 +537,7 @@ function _injectShellHookImpl(
 
   // Single-line polyglot: `test -n` guards ensure only the matching branch runs.
   // __meterm_hook_ready guard: skip if Go sidecar already installed the hook.
-  const cmd = [
+  const body = [
     ` test -n "$ZSH_VERSION" && test -z "$__meterm_hook_ready" &&`,
     `printf '\\033]7766;${detectId};1\\007' &&`,
     `eval '${escapeShellSingle(zshHook)}' &&`,
@@ -439,6 +552,20 @@ function _injectShellHookImpl(
     `eval '${escapeShellSingle(fishHook)}';`,
     `printf '\\0338\\033[0J\\033[0m\\r\\033[2K'`,
   ].join(' ');
+
+  // Whose shell is this, really? `expectedHost` is the answer from the exec
+  // channel — the host we dialled; the shell that runs this line answers for
+  // wherever the user's foreground prompt actually is. When the two disagree the
+  // command has landed somewhere else entirely (a nested `ssh`'s remote shell),
+  // so it reports that and installs nothing: the session stays hookless instead
+  // of being marked hooked with another machine's cwd, exit codes and durations —
+  // and `hookInjected` is exactly what switches the screen-tail fallbacks off.
+  // Unguarded when there is nothing to compare against — see `HostIdentity`.
+  const cmd = expectedHost === undefined
+    ? body
+    : `${HOST_IDENTITY_EXPR}; if [ "$__meterm_id" = '${escapeShellSingle(expectedHost)}' ];`
+      + `then ${body}; `
+      + `else printf '\\033]7766;${detectId};${HOOK_FOREIGN_HOST_CODE}\\007'; fi`;
 
   // Switch to alternate screen buffer BEFORE sending.
   mt.terminal.write('\x1b[?1049h');
@@ -461,9 +588,24 @@ function _injectShellHookImpl(
   const unsub = TerminalRegistry.onOscMarker(sessionId, detectId, (code) => {
     clearTimeout(timeout);
     restoreScreen();
+    if (code === HOOK_FOREIGN_HOST_CODE) {
+      // The other host answered: the command was typed into a shell that is not
+      // the connection we dialled, so nothing was installed. Stop rather than
+      // retry — this is *evidence* that the foreground shell is nested, which is
+      // stronger than the typing heuristic `scheduleHookRetry` has to fall back
+      // on, and retrying while the user is still in that shell can only report
+      // the same thing. The next agent turn asks again from a clean state (the
+      // trade-off the restraint above already makes). The cached identity goes
+      // with it, so that re-ask probes afresh and a spurious mismatch costs one
+      // probe instead of the guard.
+      clearHookRetry(sessionId);
+      _hostIdentity.delete(sessionId);
+      return;
+    }
     // The marker is emitted inside the `test -z "$__meterm_hook_ready"` guard,
     // so receiving one means a shell branch really ran. (The old `code !== -1`
-    // test was dead: resolver() coerces NaN to 0, so code ∈ {0,1,2}.)
+    // test was dead: resolver() coerces NaN to 0, so code ∈ {0,1,2,9} — 9 is
+    // handled above and never reaches this line.)
     setShellType(sessionId, code === 1 ? 'zsh' : code === 2 ? 'fish' : 'bash');
     mt.shellState.hookInjected = true;
     clearHookRetry(sessionId);
@@ -881,4 +1023,6 @@ TerminalRegistry.onSessionDisposed((sessionId) => {
   sessionPtyTails.delete(sessionId);
   // Cancels a pending retry timer as well as the record.
   clearHookRetry(sessionId);
+  // The host identity belongs to the connection, not to the session id.
+  _hostIdentity.delete(sessionId);
 });

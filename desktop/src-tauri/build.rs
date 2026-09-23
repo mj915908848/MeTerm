@@ -10,6 +10,7 @@ const APP_COMMANDS: &[&str] = &[
     "test_ssh_connection",
     "detect_default_ssh_key",
     "check_ssh_agent",
+    "ssh_host_identity",
     "start_session_file_download",
     "control_session_file_download",
     "start_session_file_upload",
