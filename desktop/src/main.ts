@@ -254,9 +254,10 @@ async function init(): Promise<void> {
   // Register all DOM and Tauri event listeners
   setupDomEventListeners();
   setupTauriEventListeners(currentWindowLabel);
-  // Only the main window owns sessions, so it is the one that serves the
-  // connections window's open/new requests.
-  if (currentWindowLabel === 'main') setupConnectionsWindowBridge();
+  // Every app window, not just the first one: the connections launcher is a
+  // singleton, and sessions belong to whichever window opened it last — a session
+  // request names its target, and only that window acts on it.
+  setupConnectionsWindowBridge();
   setupKeyboardShortcuts();
   setupToolbarDrag();
   initPip();

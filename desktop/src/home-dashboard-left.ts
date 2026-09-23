@@ -746,17 +746,30 @@ export function findConnectionItem(
  * Run the edit flow for one connection.
  *
  * Runs in whichever window rendered the row. The standalone connections window
- * shows the same dialogs in place on purpose: the main window is often
+ * shows the same dialogs in place on purpose: the window that owns it is often
  * full-screen, i.e. on its own macOS Space, so raising it there made the
  * connections window disappear entirely.
+ *
+ * Every branch has to run `refreshView` once the dialog has saved: the store is
+ * shared between windows but the DOM is not, so the list the user is looking at
+ * keeps showing the row it was rendered from — an old name, an old host — until
+ * something re-renders it. The dialogs also announce a save on the document, which
+ * only a window running `setupDomEventListeners` (not this list's own window)
+ * listens for, so the callback is what carries the news here. A save by the
+ * JumpServer dialog already returned through this callback; SSH and remote used to
+ * return before reaching it.
+ *
+ * In the window that does run those listeners the list is now rendered twice, by
+ * two identical calls. That costs one re-render and saves telling the dialogs which
+ * window they are in, which they have no way of knowing.
  */
 export function editConnection(item: ConnectionItem, refreshView: () => void = () => {}): void {
   if (item.type === 'ssh') {
-    showSSHModal(item.raw as SSHConnectionConfig);
+    showSSHModal(item.raw as SSHConnectionConfig, () => refreshView());
     return;
   }
   if (item.type === 'remote') {
-    showRemoteEditDialog(item.raw as RemoteServerInfo);
+    showRemoteEditDialog(item.raw as RemoteServerInfo, () => refreshView());
     return;
   }
   // JumpServer: the dialog can request a connect, and a saved config changes the

@@ -639,9 +639,20 @@ export async function updateSavedPassword(name: string, newPassword: string): Pr
   await invoke('sync_update_connection_password', { id, password: newPassword });
 }
 
+/**
+ * Build the SSH connection form.
+ *
+ * `onSaved` runs after every successful save — the plain "save" and "connect and
+ * save" buttons both write the store and then announce it on the document. It
+ * exists because that announcement stays inside this window: a caller that is not
+ * the window running `setupDomEventListeners` (the standalone connection list)
+ * hears nothing and would keep rendering the row it was built from. The callback
+ * is the caller's own signal to re-render.
+ */
 function createConnectionForm(
   prefill?: SSHConnectionConfig,
   onSubmit?: (config: SSHConnectionConfig) => void,
+  onSaved?: (config: SSHConnectionConfig) => void,
 ): HTMLDivElement {
   const form = document.createElement('div');
   form.className = 'ssh-form';
@@ -1205,6 +1216,7 @@ function createConnectionForm(
     if (selectedGroup) setConnectionGroup(sshKey(config.name), selectedGroup);
     else removeConnectionGroup(sshKey(config.name));
     document.dispatchEvent(new CustomEvent('ssh-connections-changed'));
+    onSaved?.(config);
     if (onSubmit) {
       onSubmit(config);
     } else if (onConnectHandler) {
@@ -1229,6 +1241,7 @@ function createConnectionForm(
     else removeConnectionGroup(sshKey(config.name));
     clearStatus();
     document.dispatchEvent(new CustomEvent('ssh-connections-changed'));
+    onSaved?.(config);
   };
 
   const spacer = document.createElement('div');
@@ -1264,7 +1277,18 @@ function closeSSHModal(): void {
   document.querySelector('.ssh-modal-overlay')?.remove();
 }
 
-export function showSSHModal(prefill?: SSHConnectionConfig): void {
+/**
+ * Open the SSH modal.
+ *
+ * `onSaved` is passed on to the form and runs after each successful save — see
+ * `createConnectionForm`. A caller that renders a connection list uses it to
+ * re-render that list, which the save itself cannot do: the store changed, the DOM
+ * did not.
+ */
+export function showSSHModal(
+  prefill?: SSHConnectionConfig,
+  onSaved?: (config: SSHConnectionConfig) => void,
+): void {
   closeSSHModal();
 
   const overlay = document.createElement('div');
@@ -1282,7 +1306,7 @@ export function showSSHModal(prefill?: SSHConnectionConfig): void {
       onConnectHandler(config);
       closeSSHModal();
     }
-  });
+  }, onSaved);
 
   const body = document.createElement('div');
   body.className = 'ssh-modal-body';

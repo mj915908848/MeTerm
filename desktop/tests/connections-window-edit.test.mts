@@ -18,6 +18,10 @@
  *      command. A missing Tauri command is rejected silently — no error reaches
  *      the page — which is why the classification below is exhaustive rather than
  *      a spot check.
+ *   3. A save has to reach the list that opened the dialog. The store is shared
+ *      between windows but the DOM is not, and the dialogs' own
+ *      `*-connections-changed` announcement is a `document` event that only a
+ *      window running `setupDomEventListeners` — never this one — hears.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -82,16 +86,25 @@ test('the retired "please edit this" event is gone', () => {
 // ── What crosses a window boundary ──
 
 test('a delegated connect carries a type and a key, never the connection itself', () => {
-  const body = bodyAfter(read('connections-window.ts'), 'function requestConnectInMainWindow');
+  const source = read('connections-window.ts');
+  const body = bodyAfter(source, 'function requestConnectInMainWindow');
 
   assert.ok(body.includes('findConnectionItem('), 'the item must be re-resolved, not passed through');
   assert.match(
     body,
-    /emit\(EVENT_OPEN_REQUEST,\s*\{\s*type:\s*item\.type,\s*key:\s*item\.key\s*\}\)/,
+    /emitToOwner\(EVENT_OPEN_REQUEST,\s*\{\s*type:\s*item\.type,\s*key:\s*item\.key\s*\}\)/,
     'only the type and the key may be emitted',
   );
 
-  const source = read('connections-window.ts');
+  // The routing label is the one thing the shared sender is allowed to add; a
+  // credential smuggled into the payload would have to go through here.
+  const sender = bodyAfter(source, 'function emitToOwner');
+  assert.match(
+    sender,
+    /emitTo\(\s*ownerWindowLabel,\s*event,\s*\{\s*\.\.\.payload,\s*targetWindowLabel:\s*ownerWindowLabel\s*\}/,
+    'the only field added to a request is the window it is addressed to',
+  );
+
   for (const secret of ['password', 'apiToken', 'privateKey', 'proxyPassword']) {
     assert.ok(
       !source.includes(secret),
@@ -151,6 +164,47 @@ test('every dialog kind hands its connect outcome to the main window', () => {
 });
 
 // ── The row menu ──
+
+/**
+ * The hole this covers: `editConnection` took a `refreshView` and never used it
+ * on the SSH and remote branches (only JumpServer returned through it), so saving
+ * an edit closed the dialog and left the list rendering the row it was built from
+ * — an old name, an old host — until the window was re-focused. The test above
+ * could not see it: it checks that `editConnection(item, afterMutation)` is
+ * written, and a callback that is passed and never called satisfies that.
+ */
+test('an SSH or remote save reaches the list that opened the dialog', () => {
+  const edit = bodyAfter(read('home-dashboard-left.ts'), 'export function editConnection');
+
+  assert.match(
+    edit,
+    /showSSHModal\(item\.raw as SSHConnectionConfig,\s*\(\)\s*=>\s*refreshView\(\)\)/,
+    'the SSH dialog has to be given a way to say it saved',
+  );
+  assert.match(
+    edit.slice(edit.indexOf("item.type === 'remote'")),
+    /showRemoteEditDialog\(item\.raw as RemoteServerInfo,\s*\(\)\s*=>\s*refreshView\(\)\)/,
+    'the remote dialog has to be given a way to say it saved',
+  );
+
+  // Both SSH buttons save — "save" and "connect and save" — and a callback wired
+  // to only one of them is still a list that does not refresh.
+  const form = bodyAfter(read('ssh.ts'), 'function createConnectionForm(');
+  assert.equal(
+    (form.match(/onSaved\?\.\(config\)/g) ?? []).length,
+    2,
+    'every SSH save path must announce the save, not just the last one written',
+  );
+  assert.match(
+    bodyAfter(read('ssh.ts'), 'export function showSSHModal('),
+    /createConnectionForm\(prefill,[\s\S]*?onSaved\)/,
+    'showSSHModal has to pass its onSaved through, or the form has nowhere to report',
+  );
+  assert.ok(
+    bodyAfter(read('remote.ts'), 'export function showRemoteEditDialog(').includes('if (onSave) onSave('),
+    'the remote dialog already had this hook — it has to keep calling it',
+  );
+});
 
 test('the row menu offers a plain edit entry, without the dev-only extras', () => {
   const dash = read('home-dashboard-left.ts');

@@ -20,6 +20,7 @@ class El {
   innerHTML = '';
   textContent = '';
   title = '';
+  placeholder = '';
   type = '';
   value = '';
   hidden = false;
@@ -61,6 +62,16 @@ function find(root: El, name: string): El | null {
   return null;
 }
 
+/** Every element whose class list contains `name`, in document order. */
+function findAll(root: El, name: string): El[] {
+  const found: El[] = [];
+  for (const child of root.children) {
+    if (child.className.split(' ').includes(name)) found.push(child);
+    found.push(...findAll(child, name));
+  }
+  return found;
+}
+
 
 interface Harness {
   body: El;
@@ -70,15 +81,47 @@ interface Harness {
   opened: any[];
   mutated: number;
   modalOpened: number;
+  /** Every targeted request this window sent, in order. */
+  sent: { target: string; event: string; payload: any }[];
+  /** Tauri event listeners the window installed, by event name. */
+  listeners: Record<string, Array<(event: any) => void>>;
+  /** Window titles it asked for. */
+  titles: string[];
+  documentElement: { dataset: Record<string, string> };
+  /** The settings store a test can change behind `loadSettings()`. */
+  settings: { language: string; colorScheme: string };
+  store: Map<string, string>;
+  /** Items the bridge actually opened a session for. */
+  clicked: any[];
+  /** Kinds of new-connection dialog the bridge actually started. */
+  newActions: string[];
+  /** The module under test, so a test can call its other exports. */
+  mod: any;
 }
 
-function boot(): Harness {
+function boot(options: { storedOwner?: string; label?: string } = {}): Harness {
+  const label = options.label ?? 'connections';
   const body = new El();
   const renderCalls: any[] = [];
   const assigned: { keys: string[]; group: string | null }[] = [];
   const opened: any[] = [];
+  const clicked: any[] = [];
+  const newActions: string[] = [];
+  const sent: { target: string; event: string; payload: any }[] = [];
+  const listeners: Record<string, Array<(event: any) => void>> = {};
+  const titles: string[] = [];
+  const documentElement = { dataset: {} as Record<string, string> };
+  const settings = { language: 'zh', colorScheme: 'dark' };
+  const store = new Map<string, string>();
+  if (options.storedOwner) store.set('meterm-connections-owner-window', options.storedOwner);
+  /** Stands in for this window's copy of the shared app state. */
+  const appState = { language: 'zh' };
+  // Written by `setLanguage`, read by `t` — the same split the app has, so a test
+  // can tell "the language was applied" from "the language was merely loaded".
+  let language = 'zh';
   const harness: Harness = {
     body, renderCalls, dragOptions: null, assigned, opened, mutated: 0, modalOpened: 0,
+    sent, listeners, titles, documentElement, settings, store, clicked, newActions, mod: null,
   };
 
   const groups: Record<string, string> = { 'ssh:a': 'prod' };
@@ -89,20 +132,42 @@ function boot(): Harness {
 
   const mocks: Record<string, any> = {
     '@tauri-apps/api/window': {
-      getCurrentWindow: () => ({ label: 'connections', show: async () => {}, setFocus: async () => {}, close: async () => {}, startDragging: async () => {} }),
+      getCurrentWindow: () => ({
+        label,
+        show: async () => {},
+        setFocus: async () => {},
+        close: async () => {},
+        startDragging: async () => {},
+        setTitle: async (title: string) => { titles.push(title); },
+      }),
     },
     '@tauri-apps/api/webviewWindow': {
       WebviewWindow: { getByLabel: async () => null },
     },
     '@tauri-apps/api/event': {
+      // A request is addressed to one window; a broadcast is not. Both are recorded
+      // so a test can tell which one this window used.
       emit: (event: string, payload: any) => {
+        sent.push({ target: '*', event, payload });
         if (event === 'connections-open-request') opened.push(payload);
         if (event === 'connections-mutated') harness.mutated++;
       },
-      listen: async () => () => {},
+      emitTo: (target: string, event: string, payload: any) => {
+        sent.push({ target, event, payload });
+        if (event === 'connections-open-request') opened.push(payload);
+        if (event === 'connections-mutated') harness.mutated++;
+      },
+      listen: async (event: string, handler: (event: any) => void) => {
+        (listeners[event] ??= []).push(handler);
+        return () => {};
+      },
     },
-    './i18n': { initLanguage: () => {}, setLanguage: () => {}, t: (key: string) => key },
-    './themes': { loadSettings: () => ({ language: 'zh', colorScheme: 'dark' }), resolveIsDark: () => true },
+    './i18n': {
+      initLanguage: () => {},
+      setLanguage: (next: string) => { language = next; },
+      t: (key: string) => `${language}:${key}`,
+    },
+    './themes': { loadSettings: () => ({ ...settings }), resolveIsDark: () => true },
     './window-utils': { createUtilityWindow: async () => {}, revealAfterPaint: async () => {} },
     './overlay-scrollbar': { createOverlayScrollbar: () => {} },
     './notify': { showToast: () => {} },
@@ -118,7 +183,7 @@ function boot(): Harness {
       collectAllConnections: () => items,
       editConnection: () => {},
       findConnectionItem: () => undefined,
-      handleConnectionClick: () => {},
+      handleConnectionClick: (item: any) => { clicked.push(item); },
       setEditConnectDelegate: () => {},
       showGroupContextMenu: () => {},
       showGroupModal: () => { harness.modalOpened++; },
@@ -142,9 +207,19 @@ function boot(): Harness {
     './connection-selection': selection,
     './ssh': { setSSHConnectHandler: () => {} },
     './remote': { setRemoteConnectHandler: () => {} },
-    './connection-sidebar': { makeNewButtons: () => new El(), runNewConnectionAction: () => {} },
+    './connection-sidebar': {
+      makeNewButtons: () => new El(),
+      runNewConnectionAction: (kind: string) => { newActions.push(kind); },
+    },
     './nb-palette': { applyNbPalette: () => {} },
-    './app-state': { setSettings: () => {}, settings: { language: 'zh' }, isWindowsPlatform: false, isLinuxPlatform: false },
+    './app-state': {
+      // `L()` inside the window reads the language from here, so the mock has to
+      // follow `setSettings` rather than sit at its initial value.
+      setSettings: (next: { language?: string }) => { if (next.language) appState.language = next.language; },
+      settings: appState,
+      isWindowsPlatform: false,
+      isLinuxPlatform: false,
+    },
   };
 
   const code = ts.transpileModule(
@@ -163,11 +238,18 @@ function boot(): Harness {
       createElement: () => new El(),
       getElementById: () => new El(),
       body,
-      documentElement: { dataset: {} },
+      documentElement,
       addEventListener: () => {},
       removeEventListener: () => {},
       querySelector: () => null,
       querySelectorAll: () => [],
+    },
+    // Shared across this app's windows in the real thing: the opener writes the
+    // owner here and the window it creates reads it while it initialises.
+    localStorage: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: unknown) => { store.set(key, String(value)); },
+      removeItem: (key: string) => { store.delete(key); },
     },
     window: { addEventListener: () => {}, removeEventListener: () => {}, innerWidth: 400, innerHeight: 640 },
     setTimeout: () => 0,
@@ -180,6 +262,7 @@ function boot(): Harness {
   });
 
   exports.initConnectionsWindow();
+  harness.mod = exports;
   return harness;
 }
 
@@ -273,4 +356,140 @@ test('the row menu is handed the same selection the toolbar and drag see', () =>
   const viaDrag = [...h.dragOptions.getSelection()];
   assert.deepEqual(viaMenu, ['ssh:b', 'ssh:c']);
   assert.deepEqual(viaMenu, viaDrag, 'the row menu and the drag controller must not disagree');
+});
+
+// ── Which window the requests go to ──
+//
+// The launcher is a singleton but the windows that can open it are not, so every
+// request names the window it is for — the one that opened the launcher last. The
+// source-level half of this contract is in connections-window-routing.test.mts;
+// what follows is what the window actually sends.
+
+const sampleItem = { type: 'ssh', key: 'ssh:a', name: 'a', detail: '', raw: {} };
+
+test('a request is addressed to the window the launcher belongs to', () => {
+  const h = boot({ storedOwner: 'window-42' });
+  h.renderCalls[0].deps.onSelect(sampleItem);
+
+  assert.equal(h.sent.length, 1, 'one request, sent once');
+  assert.equal(h.sent[0].target, 'window-42', 'not the first window — the one that opened this launcher');
+  assert.equal(
+    h.sent[0].payload.targetWindowLabel,
+    'window-42',
+    'and it says so in the payload, which is what the receiving window checks',
+  );
+});
+
+test('a launcher nobody claimed falls back to the startup window', () => {
+  const h = boot();
+  h.renderCalls[0].deps.onSelect(sampleItem);
+  assert.equal(h.sent[0].target, 'main', 'requests went to the startup window before there was an owner, and still do');
+});
+
+test('an already-open launcher is re-pointed by the window that reuses it', () => {
+  const h = boot({ storedOwner: 'main' });
+  h.listeners['connections-owner-claim'].forEach((handler) => handler({ payload: { owner: 'window-7' } }));
+  h.renderCalls[0].deps.onSelect(sampleItem);
+
+  assert.equal(
+    h.sent[0].target,
+    'window-7',
+    'the store is read once at startup, so a takeover has to arrive as an event',
+  );
+});
+
+test('a claim that cannot name a window is refused', () => {
+  const h = boot();
+  const claim = h.listeners['connections-owner-claim'];
+  for (const owner of ['connections', 'not a label!', '', 42, null, undefined]) {
+    claim.forEach((handler) => handler({ payload: { owner } }));
+    claim.forEach((handler) => handler({ payload: null }));
+  }
+  h.renderCalls[0].deps.onSelect(sampleItem);
+
+  assert.equal(
+    h.sent[0].target,
+    'main',
+    'a launcher that owned itself, or a label no window can have, must never become the target',
+  );
+});
+
+// ── Which window may act on a request ──
+//
+// The bridge is registered in *every* app window, because any window can own the
+// launcher. That only works if the receiving side checks who a request is for —
+// otherwise one click in the launcher starts one session per open window, which is
+// a worse bug than the one it replaced. connections-window-routing.test.mts reads
+// that guard out of the source; this is the half that would really open the second
+// session, so it drives the installed listeners.
+
+test('a request addressed to another window is not acted on', async () => {
+  const h = boot({ label: 'window-5' });
+  h.mod.setupConnectionsWindowBridge();
+  const [open] = h.listeners['connections-open-request'];
+
+  await open({ payload: { type: 'ssh', key: 'ssh:a', targetWindowLabel: 'window-9' } });
+  assert.equal(h.clicked.length, 0, 'a window the request does not name has to stay out of it');
+
+  await open({ payload: { type: 'ssh', key: 'ssh:a', targetWindowLabel: 'window-5' } });
+  assert.equal(h.clicked.length, 1, 'the named window is the one that opens the session');
+  assert.equal(h.clicked[0].key, 'ssh:a', 'and it opens the connection the request names');
+});
+
+test('a new-connection request is addressed as well', async () => {
+  const h = boot({ label: 'window-5' });
+  h.mod.setupConnectionsWindowBridge();
+  const [start] = h.listeners['connections-new-request'];
+
+  await start({ payload: { kind: 'ssh', targetWindowLabel: 'window-9' } });
+  assert.deepEqual(h.newActions, [], 'one click must not open the same dialog in every window');
+
+  await start({ payload: { kind: 'ssh', targetWindowLabel: 'window-5' } });
+  assert.deepEqual(h.newActions, ['ssh']);
+});
+
+// ── Settings that arrive after the chrome was built ──
+
+test('a language change reaches the chrome that was built once', () => {
+  const h = boot();
+  assert.equal(
+    find(h.body, 'home-side-search-input')!.placeholder,
+    'zh:homeSearchPlaceholder',
+    'the chrome is written in the language that was current when it was created',
+  );
+
+  h.settings.language = 'en';
+  h.listeners['settings-changed'].forEach((handler) => handler({ payload: null }));
+
+  assert.equal(
+    find(h.body, 'home-side-search-input')!.placeholder,
+    'en:homeSearchPlaceholder',
+    'including its aria-label and placeholder, which no re-render would rebuild',
+  );
+  assert.equal(find(h.body, 'cn-new-group')!.textContent, '+ en:homeGroupNew');
+  assert.equal(find(h.body, 'cn-footer')!.textContent, 'en:connectionsWindowHint');
+
+  const [move, clear] = findAll(h.body, 'cn-selbar-btn');
+  assert.equal(move.textContent, 'en:connectionMoveToGroup');
+  assert.equal(clear.textContent, 'en:connectionClearSelection');
+
+  assert.equal(
+    h.titles[h.titles.length - 1],
+    'en:connectionsWindowTitle',
+    'the window title follows the language as well',
+  );
+});
+
+test('a theme change reaches the document element', () => {
+  const h = boot();
+  assert.equal(h.documentElement.dataset.theme, 'dark', 'the window opens on the saved theme');
+
+  h.settings.colorScheme = 'light';
+  h.listeners['settings-changed'].forEach((handler) => handler({ payload: null }));
+
+  assert.equal(
+    h.documentElement.dataset.theme,
+    'light',
+    'switching the theme in the settings window has to move this window with it',
+  );
 });
