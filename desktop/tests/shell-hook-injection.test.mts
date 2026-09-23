@@ -302,8 +302,20 @@ test('retry delays follow the backoff schedule (not a fixed re-inject loop)', as
 // that keeps firing after the user has driven the terminal can install the hook
 // on the *other* host and then mark this session as hooked — which is worse than
 // staying hookless, because `hookInjected` is what switches the screen-tail
-// fallbacks back off. A nested shell can only exist after the user has typed, so
-// the chain gives up when they do.
+// fallbacks back off.
+//
+// Two defences exist, and which one applies decides what "the user typed" is
+// allowed to mean:
+//
+// - The command's own host check (§5) answers the question outright, so a
+//   keypress is irrelevant to it.
+// - The typing restraint below is a *guess* from keystrokes, kept for the
+//   sessions that have no identity to compare against (the default harness here:
+//   `hostIdentity` unset means "no exec channel").
+//
+// The tests in this group pin the restraint where it is the only defence; the
+// guarded-session counterpart lives at the end of the group, because the
+// difference between the two is the whole point.
 
 test('a retry chain gives up once the user has driven the terminal', async () => {
   const h = harness();
@@ -334,6 +346,36 @@ test('a dropped chain does not blacklist the session: a later call injects again
   await h.settle();
   assert.equal(h.inputs.length, 2, 'a fresh call injects — a dropped chain spent nothing');
   assert.equal(h.mod.hookState.get('s1')?.failures, 0, 'and it starts with a clean budget');
+});
+
+/**
+ * The counterpart of the two tests above, and the one that matters in practice.
+ *
+ * Identical keystroke, opposite outcome — because the session here has an
+ * identity, so the command itself can tell a nested shell from ours and the
+ * keystroke has nothing to add. Leaving `vim` with `q` is typing: under the
+ * guess-only rule it cancelled the chain, and since the capture path
+ * unsubscribes from the output stream on its first attempt, nothing ever
+ * retried. A user who opened a file while the hook was being installed ended up
+ * with a session that silently had no hook for the rest of its life.
+ */
+test('a guarded session keeps retrying even though the user typed — leaving a TUI is typing too', async () => {
+  const h = harness({ hostIdentity: 'host-A' });
+  h.mod.injectShellHook('s1');
+  await h.settle();
+  assert.equal(h.inputs.length, 1, 'the initial attempt is sent');
+
+  h.runTimers(); // the 3s handshake goes unanswered -> a retry is queued
+  assert.equal(h.mod.hookState.get('s1')?.failures, 1);
+
+  h.mt.shellState.lastUserInputAt = Date.now(); // e.g. `q` out of vim
+  h.runTimers(); // the 5s backoff fires
+
+  assert.equal(
+    h.inputs.length, 2,
+    'a keystroke must not cancel a chain the command\'s own host check already guards',
+  );
+  assert.equal(h.mod.hookState.size, 1, 'the chain is still alive and accounting');
 });
 
 test('a retry whose session disappeared cleans up and does not re-inject', async () => {

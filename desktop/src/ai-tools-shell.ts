@@ -415,6 +415,11 @@ function beginInjectionChain(sessionId: string): void {
  *   or the session is gone.
  * - A sent-but-unanswered attempt is the bounded case: it spends `failures`, and
  *   once the tiers run out, a shell that never answers stops being asked.
+ *
+ * A third way out exists while the retry is in flight, and it is not a *reason an
+ * attempt failed* at all: the session may stop being ours to drive. See the
+ * restraint in the timer below — it is consulted only when the host-identity gate
+ * has nothing to say.
  */
 function scheduleHookRetry(sessionId: string, blocked: boolean): void {
   const state = _injectionState.get(sessionId) ?? {
@@ -445,17 +450,32 @@ function scheduleHookRetry(sessionId: string, blocked: boolean): void {
       _injectionState.delete(sessionId);
       return;
     }
-    // Nested-ssh restraint: the user has driven this terminal since the chain
-    // started, so the prompt on screen may belong to a shell `ssh`-nested inside
-    // it, which the detector cannot tell apart from ours (see `injectionBlocked`).
-    // Installing the hook there would mark *this* session as hooked while the hook
-    // lives on the other host — worse than staying hookless, because it also
-    // switches the screen-tail fallbacks back off. Drop the whole chain instead;
-    // the next agent turn (or a fresh capsule capture) starts a new one from a
-    // known state and injects immediately. The trade-off is deliberate: automatic
-    // retries only cover a terminal the user is not driving, and the case that
-    // needs the hook most — an agent turn — re-asks for itself.
-    if (mt.shellState.lastUserInputAt >= state.startedAt) {
+    // The restraint only runs where nothing better is available.
+    //
+    // It is a guess — "the user typed, so the prompt on screen may belong to a
+    // shell `ssh`-nested inside it" — and two things make it a bad guess to act
+    // on when we have the real answer:
+    //
+    // - A session whose connected host we identified carries a positive check in
+    //   the command itself (`HostIdentity`): it is sent only if the host it runs
+    //   on is the host we dialled, and reports `HOOK_FOREIGN_HOST_CODE` otherwise.
+    //   That answer is about the host, not about keystrokes, so it does not care
+    //   what the user typed or when.
+    // - Acting on the guess costs real installs. Leaving `vim`/`less`/`top` with
+    //   `q` is typing, and it used to drop the whole chain here — after which
+    //   nothing retried, because the capture path unsubscribes from the output
+    //   stream on its first attempt. The session stayed hookless for the rest of
+    //   its life, and the blocked-not-failed fix above (which exists precisely so
+    //   that time spent in a TUI is not punishable) was undone by a single key.
+    //
+    // The cost of dropping the guess on a guarded session: a retry that fires
+    // after the user re-nested still types the command into that prompt, and only
+    // learns from the answer that it was the wrong host. Nothing is installed, so
+    // the failure mode stays "hookless", not "hooked to the wrong machine". Note
+    // that the *first* attempt has never had this protection at all, and a
+    // password prompt is what `injectionBlocked` is for.
+    const guarded = _hostIdentity.get(sessionId)?.status === 'known';
+    if (!guarded && mt.shellState.lastUserInputAt >= state.startedAt) {
       _injectionState.delete(sessionId);
       return;
     }
