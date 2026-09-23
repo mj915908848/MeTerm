@@ -7,6 +7,22 @@ import type { TerminalTransport } from './terminal-transport';
 
 export type SessionStatus = 'connecting' | 'connected' | 'reconnecting' | 'ended' | 'notfound' | 'disconnected';
 
+/**
+ * Shell-integration phase for a session's prompt.
+ *
+ * **Only meaningful while `shellState.hookInjected` is true.** It is advanced
+ * and reset exclusively by OSC 7768 (`terminal-osc.ts`) plus the single
+ * `agent_executing` write in `TerminalRegistry.sendAgentCommand`; a session
+ * without the hook therefore sits at whatever it last was and must never be
+ * read as if it described the screen. Every reader in the codebase is gated on
+ * `hookInjected` for exactly this reason — keep it that way.
+ *
+ * The `user_active` member that used to exist here was removed: nothing ever
+ * read it, so its write path could not affect any decision while making the
+ * machine *look* like it tracked user foreground commands.
+ */
+export type ShellPhase = 'unknown' | 'ready' | 'agent_executing';
+
 export interface SessionInfo {
   id: string;
   title: string;
@@ -67,13 +83,17 @@ export interface ManagedTerminal {
   _oscMarkerResolvers: Map<string, (exitCode: number) => void>;
   /** Shell integration state — tracked via OSC 7768 prompt hook */
   shellState: {
-    phase: 'unknown' | 'ready' | 'agent_executing' | 'user_active';
+    /** See ShellPhase — hook-only; never trust it on a hookless session. */
+    phase: ShellPhase;
     lastExitCode: number;
     cwd: string;
     hookInjected: boolean;
-    lastInputSource: 'none' | 'agent' | 'user';
+    /**
+     * Timestamp of the last byte that reached the terminal from the user.
+     * The hookless completion heuristics read this to disqualify a
+     * prompt-shaped screen tail as evidence (the prompt may be the OLD one).
+     */
     lastUserInputAt: number;
-    agentCommandSeq: number;
     /** Last executed command reported by shell hook (fc -ln -1) */
     lastCommand: string;
     /** Absolute row where the current prompt starts (set by OSC 7768 shell event) */

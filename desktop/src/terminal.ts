@@ -100,6 +100,35 @@ class TerminalRegistryClass {
   /** Debounce: don't send input-triggered pings more often than every 5s */
   private lastInputPingTime = new Map<string, number>();
 
+  /**
+   * Per-session bookkeeping owned by *other* modules (ai-tools-shell's PTY lock
+   * tails and hook-retry state, ai-tools-core's shell-type cache, …). Those
+   * modules cannot import `terminal.ts`'s teardown to clean themselves up —
+   * they already import this module, so the call would have to run backwards
+   * and become a cycle. They register here instead and get told when a session
+   * goes away, from both teardown paths.
+   */
+  private sessionDisposers = new Set<(sessionId: string) => void>();
+
+  /**
+   * Register a per-session cleanup callback. Returns an unsubscribe function.
+   * Callbacks must be cheap, must not throw, and must not assume the terminal
+   * is still registered in the map.
+   */
+  onSessionDisposed(callback: (sessionId: string) => void): () => void {
+    this.sessionDisposers.add(callback);
+    return () => { this.sessionDisposers.delete(callback); };
+  }
+
+  /** Run every registered disposer for `sessionId`; a throw must not abort teardown. */
+  private notifySessionDisposed(sessionId: string): void {
+    for (const dispose of this.sessionDisposers) {
+      try {
+        dispose(sessionId);
+      } catch { /* a misbehaving disposer must not break session teardown */ }
+    }
+  }
+
   sendPing(sessionId: string): void {
     const mt = this.terminals.get(sessionId);
     if (!mt) return;
@@ -487,7 +516,7 @@ class TerminalRegistryClass {
       _hasUserInput: false,
       _transferGrace: false,
       _oscMarkerResolvers: new Map(),
-      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastInputSource: 'none', lastUserInputAt: 0, agentCommandSeq: 0, lastCommand: '', promptRow: -1, promptCol: 0 },
+      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', promptRow: -1, promptCol: 0 },
     };
 
     if (isMacPlatform && webglAddon) {
@@ -634,16 +663,11 @@ class TerminalRegistryClass {
       _dedupTime = now;
       mt._hasUserInput = true;
       mt.shellState.lastUserInputAt = Date.now();
-      if (mt.shellState.phase === 'agent_executing') {
-        mt.shellState.lastInputSource = 'user';
-      }
-      // When user presses Enter at a ready prompt, assume a command is being
-      // submitted → switch to 'user_active' so click-to-move won't fire while
-      // a foreground process is running (no preexec hook to detect this).
-      // The next precmd (OSC 7768) will reset phase back to 'ready'.
-      if (data === '\r' && mt.shellState.phase === 'ready') {
-        mt.shellState.phase = 'user_active';
-      }
+      // NOTE: the legacy state machine also moved `phase` to 'user_active' here
+      // (Enter at a ready prompt) and tagged `lastInputSource`. Both were
+      // write-only — nothing ever read them — so they are gone: they made the
+      // machine look like it tracked a user foreground command while every
+      // consumer actually gates on the OSC 7768 hook. See ShellPhase.
       sendToTerminal(mt, encodeMessage(MsgInput, new TextEncoder().encode(data)));
       // For SSH sessions: if last pong is stale, send an immediate ping to detect dead connections
       this.maybePingOnInput(mt.id);
@@ -1005,9 +1029,11 @@ class TerminalRegistryClass {
   sendAgentCommand(sessionId: string, command: string, shellType?: string): void {
     const mt = this.terminals.get(sessionId);
     if (!mt) return;
+    // Advance the hook-driven state machine. On a hookless session nothing ever
+    // resets this, which is harmless *because* every reader of `phase` is gated
+    // on `hookInjected` — the hookless completion paths use the screen tail
+    // instead. See ShellPhase in terminal-types.ts.
     mt.shellState.phase = 'agent_executing';
-    mt.shellState.lastInputSource = 'agent';
-    mt.shellState.agentCommandSeq++;
     // PowerShell does not support Ctrl+U (unix-line-discard); skip prefix to avoid ^U echo.
     const prefix = shellType === 'powershell' ? '' : '\x15';
     // Terminator: use CR (\r) to emulate a real Enter keypress, which
@@ -1113,6 +1139,14 @@ class TerminalRegistryClass {
     // Remove from registry
     this.terminals.delete(sessionId);
     this.resizeGeneration.delete(sessionId);
+    // Per-session liveness bookkeeping — `destroy()` always cleared these,
+    // `detach()` did not, so a detached-then-reused id kept its stale ping
+    // timestamps and SSH dir probe.
+    this.pingTimestamps.delete(sessionId);
+    this.lastPongTime.delete(sessionId);
+    this.lastInputPingTime.delete(sessionId);
+    clearSSHDirProbe(sessionId);
+    this.notifySessionDisposed(sessionId);
   }
 
   /**
@@ -1221,7 +1255,7 @@ class TerminalRegistryClass {
       _hasUserInput: false,
       _transferGrace: true,
       _oscMarkerResolvers: new Map(),
-      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastInputSource: 'none', lastUserInputAt: 0, agentCommandSeq: 0, lastCommand: '', promptRow: -1, promptCol: 0 },
+      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', promptRow: -1, promptCol: 0 },
     };
 
     // OSC handlers are processed by Rust OscFilter → MSG_OSC_EVENT → handleOscEvents.
@@ -1243,12 +1277,9 @@ class TerminalRegistryClass {
       _dedupTime = now;
       mt._hasUserInput = true;
       mt.shellState.lastUserInputAt = Date.now();
-      if (mt.shellState.phase === 'agent_executing') {
-        mt.shellState.lastInputSource = 'user';
-      }
-      if (data === '\r' && mt.shellState.phase === 'ready') {
-        mt.shellState.phase = 'user_active';
-      }
+      // See the create() path: `phase`/'lastInputSource' transitions were
+      // removed — write-only state that misled readers into trusting `phase`
+      // on sessions where the hook cannot maintain it.
       sendToTerminal(mt, encodeMessage(MsgInput, new TextEncoder().encode(data)));
       const listeners = this.inputListeners.get(mt.id);
       if (listeners) {
@@ -1480,6 +1511,7 @@ class TerminalRegistryClass {
     this.lastPongTime.delete(sessionId);
     this.lastInputPingTime.delete(sessionId);
     clearSSHDirProbe(sessionId);
+    this.notifySessionDisposed(sessionId);
   }
 }
 

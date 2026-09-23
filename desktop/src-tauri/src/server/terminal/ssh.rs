@@ -661,23 +661,16 @@ impl SshTerminal {
         // The hook sends OSC 7/7766/7768 before each prompt for CWD tracking
         // and command history. `stty echo` at the end restores echo.
         // OSC sequences are intercepted by Rust OscFilter — safe on all platforms.
+        //
+        // OSC 7768's payload is `exit;cwd;last_cmd[;duration_ms]`. The 4th
+        // field is optional to the filter, but the desktop's "long command
+        // finished" push (session/mod.rs `notify_events_to_publish`) *requires*
+        // it — so a 3-field hook silently disables CmdDone for the whole
+        // session. This hook therefore carries a `preexec` timer, mirroring
+        // the local pty hook in pty_unix.rs (same zsh/bash duration arithmetic,
+        // kept in sync deliberately; see the hook-drift note in that file).
         if !config.disable_hook {
-            let hook = " __meterm_precmd(){ \
-                local e=$?; local c; \
-                if [ -z \"$__meterm_hook_ready\" ]; then \
-                export __meterm_hook_ready=1; \
-                if [ -n \"$ZSH_VERSION\" ]; then printf '\\033]7766;meterm_init;1\\007'; \
-                elif [ -n \"$BASH_VERSION\" ]; then printf '\\033]7766;meterm_init;0\\007'; fi; \
-                c=''; \
-                else c=$(fc -ln -1 2>/dev/null); fi; \
-                printf '\\033]7;file://%s%s\\007' \"$(hostname)\" \"$PWD\"; \
-                printf '\\033]7768;%d;%s;%s\\007' \"$e\" \"$PWD\" \"$c\"; \
-                }; \
-                if [ -n \"$ZSH_VERSION\" ]; then \
-                autoload -Uz add-zsh-hook 2>/dev/null && add-zsh-hook precmd __meterm_precmd; \
-                elif [ -n \"$BASH_VERSION\" ]; then \
-                PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"; fi; \
-                printf '\\033[A\\033[2K\\r'; stty echo\n";
+            let hook = SHELL_INTEGRATION_HOOK;
             operation_with_timeout(
                 "terminal hook write",
                 SSH_CHANNEL_TIMEOUT,
@@ -920,6 +913,163 @@ pub async fn test_connection(config: &SshConfig) -> Result<SshAuthUsed, String> 
     term.close().await.map_err(|e| e.to_string())?;
     Ok(auth_used)
 }
+
+/// Invisible shell-integration hook written into a freshly opened SSH session.
+///
+/// Emits, before every prompt:
+///   - `OSC 7`    — CWD (`file://host/path`)
+///   - `OSC 7766` — one-shot init marker (shell type)
+///   - `OSC 7768` — `exit_code;cwd;last_cmd;duration_ms`
+///
+/// The trailing `duration_ms` is what drives the desktop's "long command
+/// finished" push (`session/mod.rs::notify_events_to_publish`, threshold
+/// `CMD_DONE_THRESHOLD_MS`). The OSC filter treats that field as **optional**
+/// (it keeps compatibility with 3-field emitters), so a hook that omits it
+/// runs fine and silently disables the feature for every SSH session — which
+/// is exactly what this one used to do. See
+/// `hook_tests::ssh_hook_emits_four_field_osc7768`.
+///
+/// The duration arithmetic is deliberately identical to the local pty hook in
+/// `pty_unix.rs`: zsh takes a float diff of `EPOCHREALTIME` (needs
+/// `zmodload zsh/datetime`), bash cannot because `$(( ))` is integer-only, so
+/// it splits seconds/microseconds and prefixes both with `10#` — otherwise a
+/// fractional part like `012345` would be parsed as *octal*. **If you change
+/// one, change the other.**
+///
+/// The trailing history-hygiene policy (`HIST_IGNORE_SPACE` for zsh,
+/// `HISTCONTROL=…:ignorespace` for bash) is likewise shared with `pty_unix.rs`
+/// and with `ai-tools-shell.ts`'s fallback injection: a command the agent — or
+/// the user answering a `sudo` prompt — prefixes with a space must not land in
+/// the remote history file. This hook used to be the only one missing it, which
+/// meant password-bearing prompt answers were recorded on exactly the sessions
+/// that matter most. `tests/shell-hook-drift.test.mts` pins the policy on every
+/// verifiable emitter.
+pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meterm_cmd_running=0; __meterm_in_prompt=0; \
+                __meterm_preexec(){ \
+                [ -n \"${COMP_LINE:-}\" ] && return; \
+                case \"${BASH_COMMAND:-}\" in __meterm_precmd*) return ;; esac; \
+                [ \"${__meterm_in_prompt:-0}\" = 1 ] && return; \
+                [ \"${__meterm_cmd_running:-0}\" = 1 ] && return; \
+                __meterm_cmd_running=1; \
+                if [ -n \"${EPOCHREALTIME:-}\" ]; then __meterm_cmd_start=\"$EPOCHREALTIME\"; \
+                else __meterm_cmd_start=\"${EPOCHSECONDS:-$SECONDS}\"; fi; \
+                }; \
+                __meterm_precmd(){ \
+                local e=$?; local c; local dur=0; \
+                __meterm_in_prompt=1; \
+                if [ -z \"${__meterm_hook_ready:-}\" ]; then \
+                export __meterm_hook_ready=1; \
+                if [ -n \"${ZSH_VERSION:-}\" ]; then printf '\\033]7766;meterm_init;1\\007'; \
+                elif [ -n \"${BASH_VERSION:-}\" ]; then printf '\\033]7766;meterm_init;0\\007'; fi; \
+                c=''; \
+                else c=$(fc -ln -1 2>/dev/null); \
+                if [ \"${__meterm_cmd_running:-0}\" = 1 ] && [ -n \"${__meterm_cmd_start:-}\" ]; then \
+                if [ -n \"${ZSH_VERSION:-}\" ]; then \
+                if [ -n \"${EPOCHREALTIME:-}\" ]; then dur=$(( (EPOCHREALTIME - __meterm_cmd_start) * 1000 )); dur=${dur%%.*}; fi; \
+                elif [ -n \"${BASH_VERSION:-}\" ]; then \
+                if [ -n \"${EPOCHREALTIME:-}\" ]; then \
+                local __s_sec=${__meterm_cmd_start%.*}; local __s_usec=${__meterm_cmd_start#*.}; \
+                local __e_sec=${EPOCHREALTIME%.*}; local __e_usec=${EPOCHREALTIME#*.}; \
+                dur=$(( (10#$__e_sec - 10#$__s_sec) * 1000 + (10#$__e_usec - 10#$__s_usec) / 1000 )); \
+                else dur=$(( (${EPOCHSECONDS:-$SECONDS} - ${__meterm_cmd_start%%.*}) * 1000 )); fi; \
+                fi; \
+                case \"$dur\" in ''|*[!0-9-]*) dur=0 ;; esac; \
+                [ \"$dur\" -lt 0 ] 2>/dev/null && dur=0; \
+                fi; fi; \
+                __meterm_cmd_running=0; __meterm_in_prompt=0; \
+                printf '\\033]7;file://%s%s\\007' \"$(hostname)\" \"$PWD\"; \
+                printf '\\033]7768;%d;%s;%s;%d\\007' \"$e\" \"$PWD\" \"$c\" \"$dur\"; \
+                }; \
+                if [ -n \"${ZSH_VERSION:-}\" ]; then \
+                zmodload zsh/datetime 2>/dev/null; \
+                autoload -Uz add-zsh-hook 2>/dev/null && { add-zsh-hook preexec __meterm_preexec; add-zsh-hook precmd __meterm_precmd; }; \
+                elif [ -n \"${BASH_VERSION:-}\" ]; then \
+                trap '__meterm_preexec' DEBUG; \
+                PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\"; fi; \
+                if [ -n \"${ZSH_VERSION:-}\" ]; then setopt HIST_IGNORE_SPACE 2>/dev/null; \
+                elif [ -n \"${BASH_VERSION:-}\" ]; then export HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\"; fi; \
+                printf '\\033[A\\033[2K\\r'; stty echo\n";
+
+#[cfg(test)]
+mod hook_tests {
+    use super::SHELL_INTEGRATION_HOOK as HOOK;
+
+    /// Regression guard: this hook silently lost the 4th OSC 7768 field, which
+    /// disabled the "long command finished" push for every SSH session (the
+    /// filter parses the field as optional, so nothing failed loudly).
+    #[test]
+    fn ssh_hook_emits_four_field_osc7768() {
+        assert!(
+            HOOK.contains("]7768;%d;%s;%s;%d\\007"),
+            "OSC 7768 must carry exit;cwd;last_cmd;duration_ms"
+        );
+        assert_eq!(
+            HOOK.matches("]7768;").count(),
+            1,
+            "exactly one OSC 7768 emitter is expected"
+        );
+    }
+
+    /// A duration can only be reported if something timestamps the command
+    /// *before* it runs, so both supported shells need a preexec-style hook.
+    #[test]
+    fn ssh_hook_installs_preexec_timing_for_both_shells() {
+        assert!(HOOK.contains("add-zsh-hook preexec __meterm_preexec"), "zsh needs preexec");
+        assert!(HOOK.contains("trap '__meterm_preexec' DEBUG"), "bash needs the DEBUG-trap preexec");
+        assert!(HOOK.contains("zmodload zsh/datetime"), "zsh EPOCHREALTIME needs zsh/datetime");
+    }
+
+    /// ECHO is switched off for the injection; the hook must switch it back on
+    /// or the session stays mute.
+    #[test]
+    fn ssh_hook_restores_echo() {
+        assert!(HOOK.trim_end().ends_with("stty echo"), "hook must end with `stty echo`");
+    }
+
+    /// The history-hygiene policy has to match the local hook (`pty_unix.rs`)
+    /// and the desktop fallback injection (`ai-tools-shell.ts`): an agent — or a
+    /// user answering a `sudo` prompt — can prefix a command with a space to
+    /// keep it out of the history file. This hook was the only emitter without
+    /// the policy, so the remote history (the one that matters) kept recording
+    /// them.
+    #[test]
+    fn ssh_hook_applies_the_shared_history_policy() {
+        assert!(
+            HOOK.contains("setopt HIST_IGNORE_SPACE"),
+            "zsh branch must ignore space-prefixed commands"
+        );
+        assert!(
+            HOOK.contains("HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\""),
+            "bash branch must append ignorespace to HISTCONTROL"
+        );
+        // Both must sit behind their shell's own version guard — a bare
+        // `setopt` under bash would just error into the session.
+        assert!(
+            HOOK.contains("if [ -n \"${ZSH_VERSION:-}\" ]; then setopt HIST_IGNORE_SPACE"),
+            "the zsh-only option must be guarded by ZSH_VERSION"
+        );
+    }
+
+    /// The hook is a *shell script*: a syntax error leaves the session hookless
+    /// AND mute (ECHO is off and `stty echo` is the last statement). Parse-only
+    /// check against every shell we claim to support.
+    #[cfg(unix)]
+    #[test]
+    fn ssh_hook_parses_in_supported_shells() {
+        use std::process::Command;
+        for sh in ["sh", "bash", "zsh"] {
+            let Ok(out) = Command::new(sh).args(["-n", "-c", HOOK]).output() else {
+                continue; // shell not installed on this machine
+            };
+            assert!(
+                out.status.success(),
+                "{sh} rejected the hook script: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+    }
+}
+
 
 #[cfg(test)]
 mod drop_tests {

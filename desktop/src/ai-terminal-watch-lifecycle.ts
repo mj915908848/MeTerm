@@ -1,3 +1,5 @@
+import type { ShellPhase } from './terminal-types';
+
 export const WATCH_BUFFER_LIMIT = 64 * 1024;
 export function watchTimeoutSeconds(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
@@ -49,7 +51,10 @@ export function createWatchLifecycle(
 // demonstrably done. It is deliberately pure so the decision is unit
 // testable without a DOM, a PTY, or a real terminal.
 
-export type ShellPhase = 'unknown' | 'ready' | 'agent_executing' | 'user_active';
+// The phase union is declared next to `shellState` (terminal-types.ts) so there
+// is exactly one definition; this module used to carry a copy, which is how a
+// state nothing reads (`user_active`) survived in one of them for so long.
+export type { ShellPhase };
 
 export type WatchPrecheck =
   | { kind: 'completed'; source: 'shell-hook' | 'prompt-tail' }
@@ -133,4 +138,58 @@ export function precheckWatch(input: {
   }
   if (input.tailIsPrompt) return { kind: 'completed', source: 'prompt-tail' };
   return { kind: 'proceed' };
+}
+
+// ─── Completion signals, single-sourced ───────────────────────────
+//
+// These three decisions used to be written out inline in
+// ai-tools-shell.ts and ai-tools-command.ts, where they had already
+// drifted: one copy checked that the hook was absent before trusting a
+// prompt-shaped screen tail, the other did not. Keep the rule in one
+// place so a wait can only ever end for a reason we agreed on.
+
+/** Exit code reported when the value did NOT come from the shell hook. */
+export const EXIT_CODE_UNKNOWN = -1;
+
+/**
+ * Did the user type within the guard window ending at `at`?
+ *
+ * Used to disqualify a prompt-shaped tail (or a prompt that just came
+ * back) as evidence: right after input the visible prompt is still the
+ * OLD one, so the command it was typed for may not even have started.
+ */
+export function userTypedRecently(lastUserInputAt: number, at: number): boolean {
+  if (!lastUserInputAt) return false;
+  return at - lastUserInputAt < WATCH_RECENT_INPUT_GUARD_MS;
+}
+
+/**
+ * Exit code to report for a finished command.
+ *
+ * `shellState.lastExitCode` has exactly one writer — the OSC 7768
+ * handler — so the value is meaningful only while the shell hook is
+ * alive. On a hookless session the field still holds its initial 0,
+ * which would report every failed command as a success. Any path that
+ * resolved from the screen rather than from the hook must say
+ * EXIT_CODE_UNKNOWN instead.
+ */
+export function exitCodeForReport(hookInjected: boolean, lastExitCode: number): number {
+  return hookInjected ? lastExitCode : EXIT_CODE_UNKNOWN;
+}
+
+/**
+ * May a prompt-shaped screen tail end a wait?
+ *
+ * Only when no shell hook can speak AND nothing was typed just now.
+ * With a hook present the answer is always no: `phase`/`onShellIdle` is
+ * authoritative, and a tail that merely *looks* like a prompt can be
+ * minutes old — worse, `lastExitCode` would then be the PREVIOUS
+ * command's exit code reported as this one's.
+ */
+export function shouldCompleteFromPromptTail(input: {
+  hookInjected: boolean;
+  recentUserInput: boolean;
+  tailIsPrompt: boolean;
+}): boolean {
+  return input.tailIsPrompt && !input.hookInjected && !input.recentUserInput;
 }

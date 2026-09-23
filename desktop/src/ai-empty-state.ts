@@ -532,8 +532,10 @@ function buildContextHeader(
     parts.push(`<span class="ai-empty-ctx-sep">·</span><span class="ai-empty-ctx-git">⎇ ${escapeHtml(hints.gitBranch)}</span>`);
   }
 
-  // Shell name — default to 'shell' if not known
-  const shellName = mt?.shellState.phase && mt.shellState.hookInjected
+  // Shell name — default to 'shell' if not known. (`phase` used to be ANDed in
+  // here, but it is hook-scoped state whose truthiness is always true; the
+  // question this line actually asks is "is the hook alive".)
+  const shellName = mt?.shellState.hookInjected
     ? (detectShellName() || 'shell')
     : 'shell';
   parts.push(`<span class="ai-empty-ctx-sep">·</span><span>${escapeHtml(shellName)}</span>`);

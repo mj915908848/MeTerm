@@ -115,6 +115,25 @@ export function isInlinePrivateKey(privateKey?: string): boolean {
     || trimmed.startsWith('PuTTY-User-Key-File-');
 }
 
+/**
+ * Drop fields that describe a *live session* rather than the connection.
+ *
+ * `skipShellHook` is derived, not chosen: `handleSSHConnect()` fills it
+ * from the global "SSH/远程会话自动注入 Shell Hook" setting, and
+ * JumpServer sessions set it in memory at connect time. It used to be
+ * persisted with the saved record, which made it win over the setting
+ * forever — the connection form only ever prefilled from the record and
+ * has no control for it, so an entry saved while the toggle was off
+ * could never get the hook again. Stripping it on write (and again on
+ * read, for records already on disk) hands authority back to the
+ * setting; JumpServer keeps setting it explicitly at connect time.
+ */
+function stripRuntimeOnlyFields(config: SSHConnectionConfig): SSHConnectionConfig {
+  const stripped = { ...config };
+  delete stripped.skipShellHook;
+  return stripped;
+}
+
 function stripSecrets(config: SSHConnectionConfig): SSHConnectionConfig {
   const {
     password: _password,
@@ -123,7 +142,7 @@ function stripSecrets(config: SSHConnectionConfig): SSHConnectionConfig {
     ...metadata
   } = config;
   if (isInlinePrivateKey(metadata.privateKey)) delete metadata.privateKey;
-  return metadata as SSHConnectionConfig;
+  return stripRuntimeOnlyFields(metadata as SSHConnectionConfig);
 }
 
 function hasLegacyPlaintext(config: SSHConnectionConfig): boolean {
@@ -205,7 +224,15 @@ export async function migrateSSHCredentials(): Promise<void> {
 export function loadSavedConnections(): SSHConnectionConfig[] {
   try {
     const raw = localStorage.getItem(SSH_CONNECTIONS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      // Normalize on read so records written by older builds (which did
+      // persist `skipShellHook`) stop overriding the settings toggle
+      // without needing a one-time migration pass. Any later write
+      // persists the cleaned shape (see stripRuntimeOnlyFields).
+      return (parsed as SSHConnectionConfig[]).map(stripRuntimeOnlyFields);
+    }
   } catch {}
   return [];
 }

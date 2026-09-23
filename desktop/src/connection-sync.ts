@@ -290,6 +290,8 @@ export function toSavedConnection(cfg: SSHConnectionConfig): SavedConnection {
     proxy_host: cfg.proxyHost,
     proxy_port: cfg.proxyPort,
     proxy_username: cfg.proxyUsername,
+    // Wire-compat only: kept in the payload schema for older mobile
+    // builds, but never acted on locally — see the import side below.
     skip_shell_hook: cfg.skipShellHook,
     multiplex_sftp: cfg.multiplexSftp,
   };
@@ -466,7 +468,10 @@ export function toSSHConnectionConfig(
   if (saved.proxy_host) cfg.proxyHost = saved.proxy_host;
   if (saved.proxy_port) cfg.proxyPort = saved.proxy_port;
   if (saved.proxy_username) cfg.proxyUsername = saved.proxy_username;
-  if (saved.skip_shell_hook) cfg.skipShellHook = saved.skip_shell_hook;
+  // `saved.skip_shell_hook` is intentionally NOT applied: it is derived
+  // from the local settings toggle on this device, never a user choice
+  // (there is no UI for it), and honoring the cloud copy resurrected a
+  // stale `true` that permanently overrode the toggle.
   if (saved.multiplex_sftp) cfg.multiplexSftp = saved.multiplex_sftp;
   return cfg;
 }

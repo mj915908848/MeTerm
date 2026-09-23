@@ -12,11 +12,18 @@ import { TerminalRegistry } from './terminal';
 import { loadSettings } from './themes';
 import {
   escapeShellSingle,
+  exitCodeFromHook,
   setShellType,
   stripAnsi,
   truncateOutput,
   TOKEN_BUDGET,
 } from './ai-tools-core';
+import {
+  EXIT_CODE_UNKNOWN,
+  WATCH_DETECT_TAIL_CHARS,
+  shouldCompleteFromPromptTail,
+  userTypedRecently,
+} from './ai-terminal-watch-lifecycle';
 import {
   detectInteractiveState,
   describeState,
@@ -82,20 +89,52 @@ export function withSessionPtyLock<T>(
 // The prompt hook (__meterm_precmd) sends OSC 7768 with exit code + CWD
 // before each prompt. This drives the state machine:
 //   unknown → ready (first OSC 7768) → agent_executing → ready (next OSC 7768)
+//
+// It is a HOOK-ONLY machine: nothing else can advance or reset it, so a
+// hookless session parks at whatever it last was. That is why every reader of
+// `phase` in this codebase is gated on `hookInjected` and why the hookless
+// completion path below reads the screen tail instead — see ShellPhase in
+// terminal-types.ts.
 
 /**
  * Build the one-line precmd hook script for a given shell type.
- * Emits OSC 7768;EXIT_CODE;CWD;LAST_CMD before each prompt.
+ * Emits `OSC 7768;EXIT_CODE;CWD;LAST_CMD;DURATION_MS` before each prompt.
+ *
+ * The trailing `duration_ms` is **not** cosmetic: the Rust side turns
+ * "duration ≥ 30s" into the "long command finished" push
+ * (`server/session/mod.rs::notify_events_to_publish`). The OSC filter parses
+ * the field as optional so 3-field hooks keep working — which is precisely how
+ * this one shipped without it and silently disabled the feature. For that
+ * reason the field is locked down by `tests/shell-hook-duration.test.mts`.
+ *
+ * Timers must be installed *before* the command runs, hence the preexec tweak
+ * per shell: zsh `add-zsh-hook preexec` (needs `zmodload zsh/datetime` for
+ * `EPOCHREALTIME`), bash a `DEBUG` trap (bash's `$(( ))` is integer-only, so
+ * `EPOCHREALTIME` is split into seconds/microseconds and each half prefixed
+ * with `10#` — otherwise a fraction like `012345` would be read as *octal*).
+ *
+ * `fish` and `powershell` deliberately still emit 3 fields: both are
+ * unverifiable from this repo's test environment (no `fish`/`pwsh` binary, no
+ * CI coverage), and a syntax error in an injected hook is *masked* — the
+ * 7766 detect marker fires before the `eval`, so `hookInjected` would flip
+ * true while the hook is dead. Add them only together with a way to verify.
  */
 function buildShellHook(shellType: string): string {
   switch (shellType) {
     case 'zsh':
       return [
-        `__meterm_precmd(){ local e=$?;`,
-        `local c;if [ -z "$__meterm_hook_ready" ];then export __meterm_hook_ready=1;c='';`,
-        `else c=$(fc -ln -1 2>/dev/null);fi;`,
-        `printf '\\033]7768;%d;%s;%s\\007' "$e" "$PWD" "$c"; };`,
-        `autoload -Uz add-zsh-hook 2>/dev/null&&add-zsh-hook precmd __meterm_precmd`,
+        `__meterm_cmd_start='';__meterm_cmd_running=0;`,
+        `__meterm_preexec(){ __meterm_cmd_running=1;`,
+        `if [ -n "\${EPOCHREALTIME:-}" ];then __meterm_cmd_start="$EPOCHREALTIME";else __meterm_cmd_start="$SECONDS";fi; };`,
+        `__meterm_precmd(){ local e=$?;local c;local dur=0;`,
+        `if [ -z "$__meterm_hook_ready" ];then export __meterm_hook_ready=1;c='';`,
+        `else c=$(fc -ln -1 2>/dev/null);`,
+        `if [ "$__meterm_cmd_running" = 1 ]&&[ -n "$__meterm_cmd_start" ]&&[ -n "\${EPOCHREALTIME:-}" ];then dur=$(( (EPOCHREALTIME - __meterm_cmd_start) * 1000 ));dur=\${dur%%.*};`,
+        `case "$dur" in ''|*[!0-9-]*) dur=0;; esac;fi;fi;`,
+        `__meterm_cmd_running=0;`,
+        `printf '\\033]7768;%d;%s;%s;%d\\007' "$e" "$PWD" "$c" "$dur"; };`,
+        `zmodload zsh/datetime 2>/dev/null;`,
+        `autoload -Uz add-zsh-hook 2>/dev/null&&{ add-zsh-hook preexec __meterm_preexec; add-zsh-hook precmd __meterm_precmd; }`,
       ].join('');
     case 'fish':
       return [
@@ -119,10 +158,25 @@ function buildShellHook(shellType: string): string {
       ].join('');
     default: // bash
       return [
-        `__meterm_precmd(){ local e=$?;`,
-        `local c;if [ -z "$__meterm_hook_ready" ];then export __meterm_hook_ready=1;c='';`,
-        `else c=$(fc -ln -1 2>/dev/null);fi;`,
-        `printf '\\033]7768;%d;%s;%s\\007' "$e" "$PWD" "$c"; };`,
+        `__meterm_cmd_start='';__meterm_cmd_running=0;__meterm_in_prompt=0;`,
+        `__meterm_preexec(){ [ -n "\${COMP_LINE:-}" ]&&return;`,
+        `case "\${BASH_COMMAND:-}" in __meterm_precmd*) return;; esac;`,
+        `[ "\${__meterm_in_prompt:-0}" = 1 ]&&return;`,
+        `[ "\${__meterm_cmd_running:-0}" = 1 ]&&return;`,
+        `__meterm_cmd_running=1;`,
+        `if [ -n "\${EPOCHREALTIME:-}" ];then __meterm_cmd_start="$EPOCHREALTIME";else __meterm_cmd_start="\${EPOCHSECONDS:-$SECONDS}";fi; };`,
+        `__meterm_precmd(){ local e=$?;local c;local dur=0;__meterm_in_prompt=1;`,
+        `if [ -z "$__meterm_hook_ready" ];then export __meterm_hook_ready=1;c='';`,
+        `else c=$(fc -ln -1 2>/dev/null);`,
+        `if [ "\${__meterm_cmd_running:-0}" = 1 ]&&[ -n "\${__meterm_cmd_start:-}" ];then if [ -n "\${EPOCHREALTIME:-}" ];then local __s_sec=\${__meterm_cmd_start%.*};local __s_usec=\${__meterm_cmd_start#*.};`,
+        `local __e_sec=\${EPOCHREALTIME%.*};local __e_usec=\${EPOCHREALTIME#*.};`,
+        `dur=$(( (10#$__e_sec - 10#$__s_sec) * 1000 + (10#$__e_usec - 10#$__s_usec) / 1000 ));`,
+        `else dur=$(( (\${EPOCHSECONDS:-$SECONDS} - \${__meterm_cmd_start%%.*}) * 1000 ));fi;`,
+        `case "$dur" in ''|*[!0-9-]*) dur=0;; esac;`,
+        `[ "$dur" -lt 0 ] 2>/dev/null&&dur=0;fi;fi;`,
+        `__meterm_cmd_running=0;__meterm_in_prompt=0;`,
+        `printf '\\033]7768;%d;%s;%s;%d\\007' "$e" "$PWD" "$c" "$dur"; };`,
+        `trap '__meterm_preexec' DEBUG;`,
         `PROMPT_COMMAND="__meterm_precmd\${PROMPT_COMMAND:+;$PROMPT_COMMAND}"`,
       ].join('');
   }
@@ -130,10 +184,94 @@ function buildShellHook(shellType: string): string {
 
 // ─── Shell Hook Injection ───────────────────────────────────────
 
-// Tracks sessions where injection has been attempted (success or failure).
-// Ensures injection is tried at most ONCE per session — prevents repeated
-// alt-screen switches that freeze the window on every AI message.
-const _injectionAttempted = new Set<string>();
+/**
+ * Per-session injection bookkeeping.
+ *
+ * Injection used to be strictly one-shot: a single `_injectionAttempted` flag
+ * meant that a failed attempt — shell still busy, slow `.zshrc`, or the
+ * injection landing while a TUI owned the screen — left that session hookless
+ * for the rest of its life, with nothing but a `!` badge to show for it. Retry
+ * with backoff instead, bounded so a genuinely hookless host is not hammered.
+ */
+interface HookInjectionState {
+  /** Attempts spent so far. A blocked attempt counts: it *is* a retry cycle. */
+  failures: number;
+  /** Pending retry timer, if one is queued. */
+  retryTimer: ReturnType<typeof setTimeout> | null;
+}
+
+/** Delays between attempts. Length + 1 = total attempts (1 initial + 3 retries). */
+const HOOK_RETRY_BACKOFF_MS = [5_000, 15_000, 60_000];
+
+/** How long the handshake waits for the 7766 detect marker. */
+const HOOK_INJECTION_TIMEOUT_MS = 3000;
+
+const _injectionState = new Map<string, HookInjectionState>();
+
+/**
+ * Is something other than the shell currently owning the terminal?
+ *
+ * The injection writes `Ctrl-U` + a command line + `\n`. Typed into a program
+ * that has taken over the screen, none of that injects anything — it feeds the
+ * text straight to that program: vim/less get a stray edit, `top` gets a bogus
+ * keystroke. Silent-2s (the trigger in `ai-capsule-terminal-capture.ts`) is
+ * equally true of `vim`, so this guard is what keeps the injection from typing
+ * into them.
+ *
+ * Known gap: a *nested* `ssh` shows the remote's prompt, which the detector
+ * reads as a bare shell prompt (`active`) — so this does not catch that case,
+ * and the injection would land on the wrong host. Detecting it needs a signal
+ * we do not have cheaply; the attempt still fails the handshake and is retried,
+ * so the cost is a lost attempt rather than a corrupted screen.
+ */
+function injectionBlocked(sessionId: string): boolean {
+  try {
+    // Checked explicitly rather than delegated: this is a safety guard, and it
+    // should not hinge on the detector's internal short-circuit order (it does
+    // return 'tui' for alt-screen today, but that is its business, not ours).
+    const altScreen = isAlternateScreen(sessionId);
+    if (altScreen) return true;
+
+    const tail = (TerminalRegistry.serializeBuffer(sessionId) ?? '')
+      .slice(-WATCH_DETECT_TAIL_CHARS);
+    return detectInteractiveState(tail, altScreen).state !== 'active';
+  } catch {
+    return false; // unreadable screen must not block injection
+  }
+}
+
+/**
+ * Book one spent attempt and queue the next, or stop once they run out.
+ * Also used for *blocked* attempts, which are the retryable case by nature:
+ * the TUI/prompt occupying the screen is usually gone seconds later.
+ */
+function scheduleHookRetry(sessionId: string): void {
+  const state = _injectionState.get(sessionId) ?? { failures: 0, retryTimer: null };
+  state.failures += 1;
+  _injectionState.set(sessionId, state);
+
+  const delay = HOOK_RETRY_BACKOFF_MS[state.failures - 1];
+  if (delay === undefined) return; // attempts exhausted
+
+  state.retryTimer = setTimeout(() => {
+    state.retryTimer = null;
+    // Session went away while we waited — drop the bookkeeping rather than
+    // retry into a dead terminal (this is the only cleanup path we get, since
+    // importing this module from terminal.ts would be a cycle).
+    if (!TerminalRegistry.get(sessionId)) {
+      _injectionState.delete(sessionId);
+      return;
+    }
+    injectShellHook(sessionId);
+  }, delay);
+}
+
+/** Forget a session's retry bookkeeping once the hook is in place. */
+function clearHookRetry(sessionId: string): void {
+  const state = _injectionState.get(sessionId);
+  if (state?.retryTimer) clearTimeout(state.retryTimer);
+  _injectionState.delete(sessionId);
+}
 
 /**
  * Inject the shell prompt hook into the terminal session (SSH/remote fallback).
@@ -150,11 +288,28 @@ const _injectionAttempted = new Set<string>();
  */
 export function injectShellHook(sessionId: string): boolean {
   const mt = TerminalRegistry.get(sessionId);
-  if (!mt || mt.shellState.hookInjected) return mt?.shellState.hookInjected ?? false;
-  if (_injectionAttempted.has(sessionId)) return false; // already tried
+  if (!mt) {
+    _injectionState.delete(sessionId);
+    return false;
+  }
+  if (mt.shellState.hookInjected) {
+    clearHookRetry(sessionId);
+    return true;
+  }
   // Check settings — user can disable SSH hook injection
   if (!loadSettings().shellHookInjection) return false;
-  _injectionAttempted.add(sessionId);
+
+  const state = _injectionState.get(sessionId);
+  // A retry is already queued; do not stack another handshake on top of it.
+  if (state?.retryTimer) return false;
+  // Every attempt spent — stop for good (matches the old one-shot behaviour,
+  // minus the part where "one shot" meant "one attempt").
+  if (state && state.failures > HOOK_RETRY_BACKOFF_MS.length) return false;
+
+  if (injectionBlocked(sessionId)) {
+    scheduleHookRetry(sessionId);
+    return false;
+  }
   return _injectShellHookImpl(sessionId, mt);
 }
 
@@ -198,14 +353,19 @@ function _injectShellHookImpl(
   const timeout = setTimeout(() => {
     unsub();
     restoreScreen();
-  }, 3000);
+    // No detect marker: the shell never ran (still busy, slow rc, echoed into
+    // a program that swallowed it). Queue another attempt.
+    scheduleHookRetry(sessionId);
+  }, HOOK_INJECTION_TIMEOUT_MS);
   const unsub = TerminalRegistry.onOscMarker(sessionId, detectId, (code) => {
     clearTimeout(timeout);
     restoreScreen();
-    if (code !== -1) {
-      setShellType(sessionId, code === 1 ? 'zsh' : code === 2 ? 'fish' : 'bash');
-      mt.shellState.hookInjected = true;
-    }
+    // The marker is emitted inside the `test -z "$__meterm_hook_ready"` guard,
+    // so receiving one means a shell branch really ran. (The old `code !== -1`
+    // test was dead: resolver() coerces NaN to 0, so code ∈ {0,1,2}.)
+    setShellType(sessionId, code === 1 ? 'zsh' : code === 2 ? 'fish' : 'bash');
+    mt.shellState.hookInjected = true;
+    clearHookRetry(sessionId);
   });
 
   return false; // hookInjected will be set asynchronously via callback
@@ -320,6 +480,14 @@ function runWaitLoop(
     let lastOutputTime = Date.now();
     let hadAnyOutput = false;
 
+    // Read fresh on every check: the hook can finish being injected, and
+    // the user can type, while this command is still in flight.
+    const hookAlive = () => !!TerminalRegistry.get(sessionId)?.shellState.hookInjected;
+    const userTypedJustNow = () => userTypedRecently(
+      TerminalRegistry.get(sessionId)?.shellState.lastUserInputAt ?? 0,
+      Date.now(),
+    );
+
     const cleanup = () => {
       if (resolved) return;
       resolved = true;
@@ -412,19 +580,27 @@ function runWaitLoop(
         // (b') Hookless shell prompt completion fallback:
         // When OSC 7768 isn't available, the buffer tail being a
         // shell prompt ("$ "/"# "/"% "/"> ") after silence is the
-        // best "command finished" signal we have. We still prefer
-        // the real hook when present, so this only fires if the
-        // OSC 7768 path didn't beat us to it within the silence
-        // window (the onShellIdle listener is still active).
-        if (endsWithShellPrompt(outputBuffer)) {
-          const mt = TerminalRegistry.get(sessionId);
+        // best "command finished" signal we have — but it is only
+        // evidence when the hook cannot speak for this session AND the
+        // prompt is not one the user just produced. With a hook present
+        // the onShellIdle listener below is authoritative, and a
+        // prompt-shaped tail would hand us the PREVIOUS command's exit
+        // code instead of this one's.
+        const tailIsPrompt = endsWithShellPrompt(outputBuffer);
+        if (shouldCompleteFromPromptTail({
+          hookInjected: hookAlive(),
+          recentUserInput: userTypedJustNow(),
+          tailIsPrompt,
+        })) {
           finish({
-            output: stripAnsi(outputBuffer),
-            // Exit code is unknown when we're relying on visual
-            // detection — signal that clearly by returning -1 so the
-            // LLM knows it can't trust a numeric exit.
-            exitCode: mt?.shellState.lastExitCode ?? -1,
-            cwd: mt?.shellState.cwd ?? '',
+            output: stripAnsi(outputBuffer)
+              + '\n[exit code unavailable: this session has no shell hook]',
+            // Visual detection can never know the real exit status, so
+            // say so instead of reporting lastExitCode — without a hook
+            // that field keeps its initial 0, which would report every
+            // failed command as a success.
+            exitCode: EXIT_CODE_UNKNOWN,
+            cwd: TerminalRegistry.get(sessionId)?.shellState.cwd ?? '',
             status: 'completed',
           });
           return;
@@ -435,12 +611,11 @@ function runWaitLoop(
       // hook AND no detector match AND no prompt tail. Return what
       // we have so the caller can decide.
       if (hadAnyOutput && silentMs >= giveUpAfterSilenceMs) {
-        const mt = TerminalRegistry.get(sessionId);
         finish({
           output: stripAnsi(outputBuffer)
             + `\n[No shell-idle signal for ${Math.round(silentMs/1000)}s; the process may still be running or waiting]`,
-          exitCode: mt?.shellState.lastExitCode ?? -1,
-          cwd: mt?.shellState.cwd ?? '',
+          exitCode: exitCodeFromHook(sessionId),
+          cwd: TerminalRegistry.get(sessionId)?.shellState.cwd ?? '',
           status: 'idle_no_signal',
         });
       }
@@ -465,11 +640,13 @@ function runWaitLoop(
 
     // ── Shell hook idle (OSC 7768) — authoritative "command done". ──
     const unsubIdle = TerminalRegistry.onShellIdle(sessionId, () => {
-      const mt = TerminalRegistry.get(sessionId);
       finish({
         output: stripAnsi(outputBuffer),
-        exitCode: mt?.shellState.lastExitCode ?? -1,
-        cwd: mt?.shellState.cwd ?? '',
+        // The 7768 handler writes lastExitCode immediately before
+        // firing this event, so this is the real exit status of the
+        // command we are waiting on.
+        exitCode: exitCodeFromHook(sessionId),
+        cwd: TerminalRegistry.get(sessionId)?.shellState.cwd ?? '',
         status: 'completed',
       });
     });
@@ -587,3 +764,20 @@ export function cleanOutput(raw: string, sentCommand?: string): string {
 
   return lines.slice(start, end).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
+
+// ─── Session teardown ────────────────────────────────────────────
+// Both maps in this module are keyed by session id and were only ever written
+// to, so a long-running window accumulated one entry per session it had ever
+// opened. Retry bookkeeping had a self-clean path (the retry timer notices a
+// dead session) but a cancelled timer never fires, and the PTY tail map had
+// none at all. Register with the registry instead of importing terminal.ts's
+// teardown — that import would be a cycle, which is exactly why this was left
+// undone.
+TerminalRegistry.onSessionDisposed((sessionId) => {
+  // Drop the serialization tail: nothing can be in flight for a session whose
+  // terminal is gone, and keeping a resolved promise alive would pin the
+  // closure chain it chained onto.
+  sessionPtyTails.delete(sessionId);
+  // Cancels a pending retry timer as well as the record.
+  clearHookRetry(sessionId);
+});

@@ -49,7 +49,11 @@ function matchesSavedMetadata(config: SSHConnectionConfig): boolean {
     && saved.proxyHost === config.proxyHost
     && saved.proxyPort === config.proxyPort
     && saved.proxyUsername === config.proxyUsername
-    && saved.skipShellHook === config.skipShellHook
+    // `skipShellHook` is deliberately NOT compared: it is a per-session
+    // runtime flag derived from the global settings toggle (and stripped
+    // from saved records — see ssh.ts stripRuntimeOnlyFields), not part
+    // of a connection's identity. Comparing it made a reconnect fall off
+    // the saved-session broker path as soon as the two sides disagreed.
     && saved.multiplexSftp === config.multiplexSftp;
 }
 

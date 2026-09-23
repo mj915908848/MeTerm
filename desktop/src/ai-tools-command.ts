@@ -6,6 +6,7 @@ import { TerminalRegistry } from './terminal';
 import {
   ToolHandler,
   TOKEN_BUDGET,
+  exitCodeFromHook,
   stripAnsi,
   truncateOutput,
   isDangerousCommand,
@@ -19,14 +20,21 @@ import {
   createWatchLifecycle,
   watchTimeoutSeconds,
   precheckWatch,
+  EXIT_CODE_UNKNOWN,
+  shouldCompleteFromPromptTail,
+  userTypedRecently,
   lastMatchingLine,
   tailOf,
   WATCH_DETECT_SILENCE_MS,
   WATCH_DETECT_TAIL_CHARS,
   WATCH_PROMPT_SETTLE_MS,
-  WATCH_RECENT_INPUT_GUARD_MS,
 } from './ai-terminal-watch-lifecycle';
 import { detectInteractiveState, endsWithShellPrompt } from './ai-tools-prompt-detect';
+import {
+  isShellPromptVisible,
+  watchForPromptReturn,
+  type PromptReturnWatch,
+} from './ai-wait-prompt-return';
 import { resolveSingleKey } from './ai-tools-keys';
 import { waitAutoDetectedReason } from './ai-tool-i18n';
 
@@ -62,6 +70,8 @@ interface PreWaitState {
   unsubInput: () => void;
   unsubIdle: () => void;
   unsubCancel: () => void;
+  /** Hookless fallback watcher (see ai-wait-prompt-return.ts). */
+  promptWatch: PromptReturnWatch | null;
   hardTimeout: ReturnType<typeof setTimeout>;
 }
 const activePreWaits = new Map<string, PreWaitState>();
@@ -75,6 +85,7 @@ function teardownPreWait(state: PreWaitState): void {
   state.unsubInput();
   state.unsubIdle();
   state.unsubCancel();
+  state.promptWatch?.cancel();
   clearTimeout(state.hardTimeout);
 }
 
@@ -142,6 +153,26 @@ function startPreWait(sessionId: string, reason: string): string {
     } catch { /* ignore */ }
   });
 
+  // Hookless fallback: OSC 7768 only ever fires when the shell hook is
+  // injected. On an SSH session without it the card would stay at
+  // "waiting" forever even though the user already typed the password
+  // and the command returned to its prompt — watch the buffer tail the
+  // same way run_command does. Only armed once the user has typed, so a
+  // prompt that was on screen all along can't complete the card.
+  const promptWatch = watchForPromptReturn(sessionId, () => receivedFired, () => {
+    const cur = activePreWaits.get(sessionId);
+    if (!cur || cur.cardId !== cardId) return;
+    activePreWaits.delete(sessionId);
+    teardownPreWait(cur);
+    try {
+      document.dispatchEvent(
+        new CustomEvent('ai-wait-for-user-input-end', {
+          detail: { cardId, status: 'completed' },
+        }),
+      );
+    } catch { /* ignore */ }
+  });
+
   // If the user clicks "Cancel" on the pre-emptive card before the
   // LLM has caught up, just dismiss the card.
   const onCancel = (e: Event) => {
@@ -186,6 +217,7 @@ function startPreWait(sessionId: string, reason: string): string {
     unsubInput,
     unsubIdle,
     unsubCancel,
+    promptWatch,
     hardTimeout,
   });
   return cardId;
@@ -792,8 +824,12 @@ export function createWatchTerminalTool(): ToolHandler {
       // is only evidence of a FINISHED command when nothing was typed
       // just now. Right after input the visible prompt is still the old
       // one, and the command it was typed for may not have started.
-      const recentInput = Date.now() - (mt.shellState.lastUserInputAt || 0) < WATCH_RECENT_INPUT_GUARD_MS;
-      const tailProvesIdle = !hookInjected && !recentInput && tailIsPrompt;
+      const recentInput = userTypedRecently(mt.shellState.lastUserInputAt || 0, Date.now());
+      const tailProvesIdle = shouldCompleteFromPromptTail({
+        hookInjected,
+        recentUserInput: recentInput,
+        tailIsPrompt,
+      });
 
       const pre = precheckWatch({ hookInjected, phase, tail: screenTail, pattern: regex, tailIsPrompt: tailProvesIdle });
       if (pre.kind === 'pattern_matched') {
@@ -802,21 +838,26 @@ export function createWatchTerminalTool(): ToolHandler {
           + '\n[note: returned immediately — the pattern was already present on screen before the watch began.]';
       }
       if (pre.kind === 'completed') {
-        const why = pre.source === 'shell-hook'
+        const fromHook = pre.source === 'shell-hook';
+        const why = fromHook
           ? 'shell integration reports the prompt is up, so no foreground command owns the terminal'
           : 'the visible tail is a shell prompt and no shell-integration hook is available';
-        return `${panePrefix}[status: completed, elapsed: 0s, exit: ${mt.shellState.lastExitCode}]`
+        // A screen-derived completion carries no exit status: with no
+        // hook, lastExitCode was never written and is stuck at 0.
+        const exit = fromHook ? exitCodeFromHook(pane.sessionId) : EXIT_CODE_UNKNOWN;
+        const exitNote = fromHook ? '' : ', exit code unavailable (no shell hook)';
+        return `${panePrefix}[status: completed, elapsed: 0s, exit: ${exit}]`
           + `\n${screenBody || '(no output)'}`
-          + `\n[note: returned immediately — ${why}. The body above is the CURRENT screen, not a live capture.]`;
+          + `\n[note: returned immediately — ${why}${exitNote}. The body above is the CURRENT screen, not a live capture.]`;
       }
 
       // The screen may already be blocked on a password / Y-n prompt.
       // Those states are authoritative whenever they appeared, so a
       // watcher that never receives another byte must not report
-      // idle_no_signal. Only consulted while the shell is NOT idle —
-      // when it is idle we already returned above, and stale prompt
-      // text from a finished command must not masquerade as a live one.
-      if (phase !== 'ready') {
+      // idle_no_signal. Only skipped when the hook has authoritatively
+      // certified the prompt above — `phase` says nothing on a hookless
+      // session (see ShellPhase), so it must not be used alone here.
+      if (!hookInjected || phase !== 'ready') {
         const existing = detectInteractiveState(tailOf(screenTail, WATCH_DETECT_TAIL_CHARS), false);
         if (existing.state === 'waiting_password' || existing.state === 'waiting_confirm') {
           const infoLine = existing.promptInfo
@@ -887,7 +928,10 @@ export function createWatchTerminalTool(): ToolHandler {
 
           let header = `[status: ${reason}, elapsed: ${elapsed}s`;
           if (reason === 'completed') {
-            header += `, exit: ${mt.shellState.lastExitCode}`;
+            // `completed` is reached either from the shell hook or from
+            // the hookless prompt-settle path; only the former can know
+            // an exit status (see exitCodeFromHook).
+            header += `, exit: ${exitCodeFromHook(pane.sessionId)}`;
           } else if (reason === 'pattern_matched' && matchedLine) {
             header += `, match: ${JSON.stringify(matchedLine)}`;
           } else if (extra) {
@@ -1077,17 +1121,33 @@ export function createWaitForUserInputTool(): ToolHandler {
       // attaching a listener that will never fire (and hanging until
       // the configured timeout).
       //
+      // Phase only ever reaches 'ready' via the OSC 7768 hook, so on a
+      // hookless session (SSH without hook injection) that check alone
+      // is not enough — the same race also has to be recognized from
+      // the visible prompt, otherwise the tool blocks until timeout.
+      //
       // We do NOT short-circuit when we just adopted a pre-wait —
       // those cases are funneled through the pre-wait's own
       // dispatchEnd, which has already happened before consumeActivePreWait
       // could find it. So if adopted is non-null, the wait is still
       // in flight by definition.
-      if (!adopted && mt.shellState.phase === 'ready') {
+      // `phase === 'ready'` is only ever written by the hook, so the hook
+      // flag must gate it as well — a hookless session has no exit code to
+      // report and must fall back to the visible-prompt check.
+      const hookAtPrompt = mt.shellState.hookInjected && mt.shellState.phase === 'ready';
+      if (!adopted && (hookAtPrompt || isShellPromptVisible(ctx.sessionId))) {
+        // phase === 'ready' only ever comes from the hook; the prompt
+        // check can also succeed on a hookless session, where no exit
+        // code exists to report.
+        const fromHook = hookAtPrompt;
+        const exit = fromHook ? exitCodeFromHook(ctx.sessionId) : EXIT_CODE_UNKNOWN;
         return (
-          `[status: completed, elapsed: 0s, exit: ${mt.shellState.lastExitCode}]\n`
+          `[status: completed, elapsed: 0s, exit: ${exit}]\n`
           + `The shell is already at its prompt — the underlying command finished `
           + `before this tool call arrived (likely because the user typed the input `
-          + `before the agent caught up). Inspect the terminal (read_terminal) if `
+          + `before the agent caught up).`
+          + (fromHook ? '' : ' No shell hook on this session, so no exit code is available.')
+          + ` Inspect the terminal (read_terminal) if `
           + `you need the command's output.`
         );
       }
@@ -1122,6 +1182,7 @@ export function createWaitForUserInputTool(): ToolHandler {
         let unsubIdle: (() => void) | null = null;
         let unsubInput: (() => void) | null = null;
         let unsubCancel: (() => void) | null = null;
+        let promptWatch: PromptReturnWatch | null = null;
         let onAbort: (() => void) | null = null;
         let deadline: ReturnType<typeof setTimeout> | null = null;
 
@@ -1149,6 +1210,7 @@ export function createWaitForUserInputTool(): ToolHandler {
           if (unsubIdle) unsubIdle();
           if (unsubInput) unsubInput();
           if (unsubCancel) unsubCancel();
+          if (promptWatch) promptWatch.cancel();
           if (deadline) clearTimeout(deadline);
           if (onAbort && ctx.abortSignal) {
             ctx.abortSignal.removeEventListener('abort', onAbort);
@@ -1221,12 +1283,38 @@ export function createWaitForUserInputTool(): ToolHandler {
           if (resolved) return;
           cleanup();
           const elapsed = Math.round((Date.now() - startedAt) / 1000);
-          const exit = mt.shellState.lastExitCode;
+          // The hook wrote lastExitCode just before firing this event.
+          const exit = exitCodeFromHook(ctx.sessionId);
           dispatchEnd('completed');
           resolve(
             `[status: completed, elapsed: ${elapsed}s, exit: ${exit}]\n`
             + `User input complete; the shell has returned to its prompt. `
             + `Inspect the terminal (read_terminal) if you need to see the result of the command that was waiting.`,
+          );
+        });
+
+        // Fallback signal for sessions WITHOUT the shell hook — the
+        // hook is what emits OSC 7768, and on SSH it must be injected
+        // (settings-dependent, and the single injection attempt can
+        // fail before the remote shell is ready). Without this the
+        // exact case this tool exists for — sudo asking for a password
+        // — left the agent blocked on an idle signal that never came,
+        // long after the user had typed and the command had finished.
+        // The user-input guard keeps a prompt that was already on
+        // screen from completing the wait prematurely.
+        promptWatch = watchForPromptReturn(ctx.sessionId, () => receivedFired, () => {
+          if (resolved) return;
+          cleanup();
+          const elapsed = Math.round((Date.now() - startedAt) / 1000);
+          // Detected from the screen, not from the hook: there is no
+          // exit status to report (and lastExitCode would be stale).
+          const exit = exitCodeFromHook(ctx.sessionId);
+          dispatchEnd('completed');
+          resolve(
+            `[status: completed, elapsed: ${elapsed}s, exit: ${exit}]\n`
+            + `The shell is back at its prompt after the user's input (detected from the `
+            + `terminal output — this session has no shell hook, so no exit code is available). `
+            + `Inspect the terminal (read_terminal) if you need to see what the command that was waiting printed.`,
           );
         });
       });

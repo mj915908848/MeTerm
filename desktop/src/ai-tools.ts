@@ -28,7 +28,6 @@ export {
   truncateOutput,
   isDangerousCommand,
   isExtremelyDangerous,
-  watchForUserInput,
   setShellType,
   getShellType,
   buildToolContext,

@@ -9,6 +9,7 @@ import { TabManager } from './tabs';
 import { getAllLeaves } from './split-pane';
 import { MESSAGE_HISTORY_MAX_CHARS } from './ai-history-budget';
 import { SYSTEM_CONTEXT_CHARS, DEFAULT_CONTEXT_LINES } from './ai-context-budget';
+import { EXIT_CODE_UNKNOWN, exitCodeForReport } from './ai-terminal-watch-lifecycle';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -259,25 +260,30 @@ export function escapeShellSingle(s: string): string {
 }
 
 /**
- * Monitor user keyboard input during agent execution.
- * Returns an object with `aborted` flag and `cleanup` unsubscribe function.
- * When the user types (non-mouse) while agent is executing, sets aborted=true.
+ * Exit code to report for a session's most recent command.
+ *
+ * `shellState.lastExitCode` is written in exactly one place — the OSC
+ * 7768 handler — so it is real only while that session's shell hook is
+ * alive. Without a hook nothing ever writes it and it keeps its initial
+ * 0, which would report every failed command as a success; report
+ * EXIT_CODE_UNKNOWN instead. Use this (not the raw field) for anything
+ * the agent reads.
  */
-export function watchForUserInput(sessionId: string): { readonly aborted: boolean; cleanup: () => void } {
-  const state = { aborted: false };
-  const unsub = TerminalRegistry.onInput(sessionId, (data) => {
-    // Ignore mouse escape sequences
-    if (data.startsWith('\x1b[<') || data.startsWith('\x1b[M')) return;
-    const mt = TerminalRegistry.get(sessionId);
-    if (mt?.shellState.phase === 'agent_executing') {
-      state.aborted = true;
-    }
-  });
-  return {
-    get aborted() { return state.aborted; },
-    cleanup: unsub,
-  };
+export function exitCodeFromHook(sessionId: string): number {
+  const mt = TerminalRegistry.get(sessionId);
+  return exitCodeForReport(
+    !!mt?.shellState.hookInjected,
+    mt?.shellState.lastExitCode ?? EXIT_CODE_UNKNOWN,
+  );
 }
+
+// NOTE (removed): `watchForUserInput()` used to live here — a keyboard watcher
+// that was meant to abort the agent's command when the user started typing. It
+// had no call site at all (only a re-export) and it keyed off
+// `phase === 'agent_executing'`, a state a hookless session never leaves, so it
+// could not have worked where it was needed. The behaviour it was written for
+// is covered by the `userTypedRecently()` guards on the completion heuristics,
+// which work with and without the hook.
 
 // ─── Shell Type Cache ────────────────────────────────────────────
 
@@ -291,6 +297,14 @@ export function setShellType(sessionId: string, shellType: string): void {
 export function getShellType(sessionId: string): string {
   return shellTypeCache.get(sessionId) ?? 'bash';
 }
+
+// The shell-type cache is keyed by session id and never had a delete, so it
+// grew by one entry per session the window had ever seen. It is only a
+// heuristic (OSC 7766 arrives once per shell, at hook install), so dropping an
+// entry when the session goes away is safe: consumers fall back to 'bash'.
+TerminalRegistry.onSessionDisposed((sessionId) => {
+  shellTypeCache.delete(sessionId);
+});
 
 // ─── Build Tool Context ──────────────────────────────────────────
 

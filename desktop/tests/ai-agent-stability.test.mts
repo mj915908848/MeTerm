@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   createWatchLifecycle,
+  EXIT_CODE_UNKNOWN,
+  exitCodeForReport,
+  shouldCompleteFromPromptTail,
+  userTypedRecently,
   WATCH_BUFFER_LIMIT,
   watchTimeoutSeconds,
   precheckWatch,
@@ -57,6 +61,8 @@ function watchHarness(overrides: {
   phase?: string;
   /** Timestamp of the last keystroke/agent input, 0 = never. */
   lastUserInputAt?: number;
+  /** Exit code the "shell hook" last reported. */
+  lastExitCode?: number;
   detect?: () => { state: string; matchedLine?: string };
 } = {}) {
   const js = ts.transpile(extractFactory('ai-tools-command.ts', 'createWatchTerminalTool'), { target: ts.ScriptTarget.ES2021 });
@@ -68,7 +74,7 @@ function watchHarness(overrides: {
     transport: { connected: true },
     terminal: { buffer: { active: { type: 'normal' } } },
     shellState: {
-      lastExitCode: 0,
+      lastExitCode: overrides.lastExitCode ?? 0,
       hookInjected: overrides.hookInjected ?? false,
       phase: overrides.phase ?? 'unknown',
       lastUserInputAt: overrides.lastUserInputAt ?? 0,
@@ -80,6 +86,12 @@ function watchHarness(overrides: {
     onOutput: (_: string, fn: (data: string) => void) => { outputs.add(fn); return () => outputs.delete(fn); },
     onShellIdle: (_: string, fn: () => void) => { idles.add(fn); return () => idles.delete(fn); },
   };
+  // Mirrors ai-tools-core's exitCodeFromHook over the injected registry:
+  // the exit code is only real while the shell hook is alive.
+  const exitCodeFromHook = (sessionId: string) => exitCodeForReport(
+    !!registry.get(sessionId)?.shellState.hookInjected,
+    registry.get(sessionId)?.shellState.lastExitCode ?? EXIT_CODE_UNKNOWN,
+  );
   // The factory's module-level collaborators are not part of the extraction.
   const create = new Function(
     'TerminalRegistry', 'resolvePaneTarget', 'paneHeaderFor', 'PANE_PARAM_SCHEMA',
@@ -89,6 +101,7 @@ function watchHarness(overrides: {
     'WATCH_DETECT_SILENCE_MS', 'WATCH_DETECT_TAIL_CHARS', 'WATCH_PROMPT_SETTLE_MS',
     'WATCH_RECENT_INPUT_GUARD_MS',
     'createWatchLifecycle', 'watchTimeoutSeconds',
+    'shouldCompleteFromPromptTail', 'userTypedRecently', 'exitCodeFromHook', 'EXIT_CODE_UNKNOWN',
     js + '\nreturn createWatchTerminalTool();',
   );
   const tool = create(
@@ -101,6 +114,7 @@ function watchHarness(overrides: {
     WATCH_DETECT_SILENCE_MS, WATCH_DETECT_TAIL_CHARS, WATCH_PROMPT_SETTLE_MS,
     WATCH_RECENT_INPUT_GUARD_MS,
     createWatchLifecycle, watchTimeoutSeconds,
+    shouldCompleteFromPromptTail, userTypedRecently, exitCodeFromHook, EXIT_CODE_UNKNOWN,
   );
   return { tool, outputs, idles, get locked() { return locked; } };
 }
@@ -114,7 +128,9 @@ test('real watch releases output/idle listeners and PTY lock on cancellation', a
 });
 test('real watch preserves pattern and shell completion behavior', async () => {
   for (const pattern of [true, false]) {
-    const h = watchHarness();
+    // hookInjected is a given for the idle-callback branch below: an OSC 7768
+    // idle signal is emitted by the hook and by nothing else.
+    const h = watchHarness({ hookInjected: !pattern });
     const result = h.tool.execute(pattern ? { pattern: 'READY' } : {}, {});
     for (const callback of h.outputs) callback('READY\n');
     if (!pattern) for (const callback of h.idles) callback();
@@ -225,6 +241,43 @@ test('watch does not read the stale prompt as a finished command right after inp
   const h = watchHarness({ screen: 'user@host ~ %', lastUserInputAt: Date.now() });
   const result = await h.tool.execute({ idle_timeout: 3 }, {});
   assert.match(result, /status: idle_no_signal/, 'must still wait instead of claiming completion');
+});
+
+test('watch reports no exit code (not a fabricated 0) on a hookless completion', async () => {
+  // shellState.lastExitCode has exactly one writer — the OSC 7768 handler —
+  // so without a hook it still holds its initial 0. Reporting that as this
+  // command's exit status claimed success for every failed command.
+  const h = watchHarness({ screen: 'user@host ~ %', lastExitCode: 0 });
+  const result = await h.tool.execute({}, {});
+  assert.match(result, /status: completed, elapsed: 0s, exit: -1/);
+  assert.match(result, /exit code unavailable \(no shell hook\)/);
+});
+
+test('watch reports the real exit code when the shell hook supplied it', async () => {
+  const h = watchHarness({
+    screen: 'user@host ~ %', hookInjected: true, phase: 'ready', lastExitCode: 7,
+  });
+  const result = await h.tool.execute({}, {});
+  assert.match(result, /status: completed, elapsed: 0s, exit: 7/);
+});
+
+test('completion signals are single-sourced: prompt tail, fresh input, exit codes', () => {
+  // Truth table for the rule shared by watch_terminal and run_command's wait
+  // loop. A prompt-shaped tail may only end a wait when no hook can speak AND
+  // nothing was typed just now.
+  assert.equal(shouldCompleteFromPromptTail({ hookInjected: false, recentUserInput: false, tailIsPrompt: true }), true);
+  assert.equal(shouldCompleteFromPromptTail({ hookInjected: true, recentUserInput: false, tailIsPrompt: true }), false);
+  assert.equal(shouldCompleteFromPromptTail({ hookInjected: false, recentUserInput: true, tailIsPrompt: true }), false);
+  assert.equal(shouldCompleteFromPromptTail({ hookInjected: false, recentUserInput: false, tailIsPrompt: false }), false);
+  // Input inside the guard window still counts as "just typed"; 0 means never.
+  assert.equal(userTypedRecently(1000, 1000 + WATCH_RECENT_INPUT_GUARD_MS - 1), true);
+  assert.equal(userTypedRecently(1000, 1000 + WATCH_RECENT_INPUT_GUARD_MS), false);
+  assert.equal(userTypedRecently(0, 5000), false);
+  // An exit code survives the round trip only when the hook reported it.
+  assert.equal(exitCodeForReport(true, 0), 0);
+  assert.equal(exitCodeForReport(true, 130), 130);
+  assert.equal(exitCodeForReport(false, 0), EXIT_CODE_UNKNOWN);
+  assert.equal(exitCodeForReport(false, 130), EXIT_CODE_UNKNOWN);
 });
 
 test('watch without new output still returns the visible screen', async () => {
