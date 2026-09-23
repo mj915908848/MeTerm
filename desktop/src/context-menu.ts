@@ -414,9 +414,11 @@ export function editableFieldAt(target: EventTarget | null): EditableField | nul
 /**
  * The field's selection, or the caret at the end when the type has none.
  *
- * `selectionStart` is `null` — and `setSelectionRange` throws — for input types
- * that carry no selection (number, date, …). Those types are still worth serving
- * because paste into them works.
+ * Every type this menu serves carries a selection, so the fallback is a guard
+ * rather than a path: it keeps a field that reports no selection (a mock, an
+ * engine that changes its mind) from turning into a thrown exception or a `NaN`
+ * edit. Types that genuinely have no selection — `number`, the date pickers — are
+ * not served at all; see `isFieldInputType`.
  */
 function fieldSelection(field: EditableField): { start: number; end: number } {
   try {
@@ -525,7 +527,9 @@ export function showEditableContextMenu(event: MouseEvent, field: EditableField)
           try {
             field.select();
           } catch {
-            replaceFieldSelection(field, { start: 0, end: field.value.length }, '');
+            // Only reachable for a type with no selection at all, which this menu
+            // does not serve (see `isFieldInputType`). Rewriting the value would
+            // not select anything, so leave the field as it is.
           }
           break;
       }

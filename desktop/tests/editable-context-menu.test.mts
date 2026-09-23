@@ -37,12 +37,16 @@ const enabled = (ctx: Parameters<typeof buildFieldMenu>[0]): string[] =>
 
 test('text-carrying inputs count as fields, the rest are left to the platform', () => {
   // No type attribute at all behaves as text, so it must not be skipped.
-  for (const type of ['', 'text', 'password', 'search', 'url', 'tel', 'email', 'number']) {
+  for (const type of ['', 'text', 'password', 'search', 'url', 'tel', 'email']) {
     assert.equal(isFieldInputType(type), true, `${type} carries editable text`);
   }
   // These have no text editing to offer — and WKWebView's menu is at least
   // harmless there, unlike on a text box.
-  for (const type of ['checkbox', 'radio', 'file', 'range', 'color', 'button', 'submit', 'hidden']) {
+  // `number` sits in this list on purpose: it carries no selection at all
+  // (`selectionStart` is null, `select()` is a no-op), so a menu whose entries act
+  // on a captured selection could not copy, cut or select anything in it, and its
+  // paste always landed at the end of the value. The platform's menu works there.
+  for (const type of ['checkbox', 'radio', 'file', 'range', 'color', 'button', 'submit', 'hidden', 'number', 'date']) {
     assert.equal(isFieldInputType(type), false, `${type} is not a text field`);
   }
 });
@@ -133,6 +137,30 @@ test("xterm's hidden textarea is never treated as a form field", () => {
   assert.ok(
     body.indexOf('xterm-helper-textarea') < body.indexOf('HTMLInputElement'),
     'the exclusion must be decided before the input branch can claim it',
+  );
+});
+
+// The remote port box used to be `type="number"` — exactly the type the model
+// above refuses to serve — so it was the one field in the app whose right-click
+// fell back to the WebView's own English menu. It is a text field with a numeric
+// keyboard and a digit filter instead, like the SSH form's port box.
+test('the remote port box is a text field, so it keeps the app menu', () => {
+  const source = read('remote.ts');
+  const start = source.indexOf('const portInput = document.createElement');
+  assert.ok(start > 0, 'the remote edit dialog must still build a port field');
+  const field = source.slice(start, source.indexOf('portGroup.appendChild(portInput)', start));
+
+  assert.ok(
+    field.includes("portInput.type = 'text'"),
+    'a number input carries no selection, which is what the model above rules out',
+  );
+  assert.ok(
+    field.includes("portInput.inputMode = 'numeric'"),
+    'the numeric keyboard is the one thing the number type was actually providing',
+  );
+  assert.ok(
+    field.includes('replace(/\\D/g'),
+    'a text field has to filter its own digits, or the port is no longer a port',
   );
 });
 

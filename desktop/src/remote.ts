@@ -566,9 +566,40 @@ export function showRemoteEditDialog(prefill?: RemoteServerInfo, onSave?: (info:
   const portLabel = document.createElement('label');
   portLabel.textContent = t('remotePort');
   const portInput = document.createElement('input');
-  portInput.type = 'number';
+  // A text field, exactly like the SSH form's port box — deliberately not
+  // `type="number"`. A number input carries no selection: `selectionStart` and
+  // `selectionEnd` are null, `setSelectionRange` throws, and `select()` is a no-op
+  // rather than an error. The app's own right-click menu is built on that selection,
+  // so on a number field copy and cut were always disabled, paste appended to the
+  // end of the value whatever the caret was doing, and "select all" did nothing at
+  // all. `inputMode` still asks for the numeric keyboard and the filter below keeps
+  // the value to digits.
+  portInput.type = 'text';
+  portInput.inputMode = 'numeric';
+  portInput.pattern = '[0-9]*';
   portInput.className = 'ssh-input';
   portInput.value = String(prefill?.port || 8080);
+  // Select all on focus so a new port replaces the default value
+  portInput.addEventListener('focus', () => portInput.select());
+  // Filter non-digits and clamp to a valid port range on input
+  portInput.addEventListener('input', () => {
+    const digits = portInput.value.replace(/\D/g, '');
+    const num = parseInt(digits, 10);
+    if (!digits || isNaN(num)) {
+      portInput.value = '';
+    } else if (num > 65535) {
+      portInput.value = '65535';
+    } else {
+      portInput.value = String(num);
+    }
+  });
+  // Restore the default on blur if empty
+  portInput.addEventListener('blur', () => {
+    const num = parseInt(portInput.value, 10);
+    if (!portInput.value || isNaN(num) || num < 1) {
+      portInput.value = '8080';
+    }
+  });
   portInput.addEventListener('keydown', (e) => e.stopPropagation());
   portInput.addEventListener('keyup', (e) => e.stopPropagation());
   portGroup.appendChild(portLabel);

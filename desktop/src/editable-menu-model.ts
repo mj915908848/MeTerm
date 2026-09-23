@@ -54,13 +54,19 @@ export interface FieldMenuContext {
 }
 
 /**
- * The input types that carry editable text — the ones where a cut/copy/paste
- * menu is meaningful. Everything else (checkbox, radio, file, range, colour,
- * button, date pickers) is left to the platform, because the app has nothing to
- * add there.
+ * The input types this menu serves: the ones whose text can be selected.
+ *
+ * `number` is deliberately absent even though the user does type into it. It has
+ * no selection API — `selectionStart`/`selectionEnd` are `null`, `setSelectionRange`
+ * throws, and `select()` does *nothing* instead of throwing — so a menu that
+ * captures a selection before it draws its entries cannot cut, copy or select all
+ * in one, and its paste lands at the end of the value wherever the caret was. The
+ * platform's own menu at least works there, so that is where those fields are left.
+ * Apple's date pickers, checkboxes, radios, file, range, colour and button inputs
+ * are left to the platform for the same reason: the app has nothing to add.
  */
 const TEXT_INPUT_TYPES = new Set([
-  'text', 'search', 'url', 'tel', 'email', 'password', 'number',
+  'text', 'search', 'url', 'tel', 'email', 'password',
 ]);
 
 /**
