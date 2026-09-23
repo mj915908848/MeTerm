@@ -240,3 +240,31 @@ test('dropping a row back where it already is changes nothing', () => {
   assert.deepEqual(h.assigned, [], 'a no-op drop must not write, re-render, or emit');
   assert.equal(h.mutated, 0);
 });
+
+/**
+ * Three controls can move picked rows — the toolbar button, a drag onto a group
+ * header, and now the row's own context menu. They must agree on what is picked.
+ *
+ * Only the last one asks through `getSelection`, and nothing checked that it was
+ * handed over: the row menu used to fall back to the row under the cursor while
+ * the button beside it moved the whole selection, so the same selection looked
+ * broken depending on which control the user reached for.
+ */
+test('the row menu is handed the same selection the toolbar and drag see', () => {
+  const h = boot();
+  const deps = h.renderCalls[0].deps;
+  const visible = ['ssh:a', 'ssh:b', 'ssh:c'];
+  const b = { type: 'ssh', key: 'ssh:b', name: 'b', detail: '', raw: {} };
+  const c = { type: 'ssh', key: 'ssh:c', name: 'c', detail: '', raw: {} };
+
+  assert.equal(typeof deps.getSelection, 'function', 'the list needs a way to ask what is picked');
+  assert.deepEqual([...deps.getSelection()], [], 'nothing is picked on open');
+
+  assert.equal(deps.onRowClick(b, { toggle: true, range: false }, visible), false);
+  assert.equal(deps.onRowClick(c, { toggle: true, range: false }, visible), false);
+
+  const viaMenu = [...deps.getSelection()];
+  const viaDrag = [...h.dragOptions.getSelection()];
+  assert.deepEqual(viaMenu, ['ssh:b', 'ssh:c']);
+  assert.deepEqual(viaMenu, viaDrag, 'the row menu and the drag controller must not disagree');
+});

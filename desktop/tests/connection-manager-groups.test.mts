@@ -1,7 +1,7 @@
 /**
  * The connection manager's list, as the grouping feature needs it.
  *
- * Three invariants that the drag-and-drop UI depends on and that are easy to
+ * Four invariants that the drag-and-drop UI depends on and that are easy to
  * break by accident:
  *
  *   1. A named group renders even when it holds nothing. It is the drop target a
@@ -12,6 +12,10 @@
  *      other way to know what it is holding.
  *   3. A plain click still connects. Selection is what the modifier keys add on
  *      top; it must never quietly become the primary action.
+ *   4. Right-clicking a row *inside* the selection offers the batch move. The
+ *      toolbar button and the drag path already move every picked row; a row menu
+ *      that moved only the row under the cursor made the same selection look
+ *      broken depending on which control the user reached for.
  *
  * home-side.ts is transpiled into a sandbox because its imports are extensionless
  * (a bundler resolves them, node does not).
@@ -66,6 +70,7 @@ interface RenderOptions {
   onRowClick?: (item: any, mods: any, visibleKeys: string[]) => boolean;
   onSelect?: (item: any) => void;
   isRowSelected?: (key: string) => boolean;
+  getSelection?: () => string[];
 }
 
 /** Render the list once and hand back the list element plus the recorded calls. */
@@ -131,6 +136,7 @@ function render(opts: RenderOptions): {
     refresh: () => {},
     getSelectedKey: () => null,
     isRowSelected: opts.isRowSelected,
+    getSelection: opts.getSelection,
     onRowClick: opts.onRowClick
       ? (item: any, mods: any, visibleKeys: string[]) => {
         rowClicks.push({ key: item.key, mods, visibleKeys });
@@ -255,4 +261,58 @@ test('a selected row is marked, and the mark survives a re-render', () => {
     isRowSelected: (key) => key === 'ssh:b',
   });
   assert.deepEqual(rows(r).map((el) => el.classList.contains('hsr-picked')), [false, true]);
+});
+
+/**
+ * The 6th argument of `showConnectionContextMenu` is the batch the "move to
+ * group" entries act on. These three cases are the whole rule, and the middle
+ * one is the one worth writing down: a right-click on a row *outside* the
+ * selection means "this row", so a stale selection must not move instead.
+ */
+const moveKeysOf = (r: { contextMenus: any[][] }): readonly string[] | undefined => r.contextMenus[0][5];
+
+test('right-clicking a row inside the selection offers the whole batch', () => {
+  const r = render({
+    items: [row('ssh:a', 'a'), row('ssh:b', 'b'), row('ssh:c', 'c')],
+    order: ['prod'],
+    getSelection: () => ['ssh:a', 'ssh:b'],
+  });
+  assert.equal(r.contextMenus.length, 0, 'no menu before anything is right-clicked');
+
+  rows(r)[0].oncontextmenu!({ preventDefault() {} });
+  assert.deepEqual(moveKeysOf(r), ['ssh:a', 'ssh:b']);
+});
+
+test('right-clicking a row outside the selection acts on that row alone', () => {
+  const r = render({
+    items: [row('ssh:a', 'a'), row('ssh:b', 'b'), row('ssh:c', 'c')],
+    order: ['prod'],
+    getSelection: () => ['ssh:a', 'ssh:b'],
+  });
+  rows(r)[2].oncontextmenu!({ preventDefault() {} });
+
+  assert.equal(
+    moveKeysOf(r),
+    undefined,
+    'a row outside the selection must fall back to the single-row path — handing over the '
+    + 'stale selection here is exactly how a batch menu moves rows the user is not pointing at',
+  );
+});
+
+test('a list with no selection concept keeps moving one row', () => {
+  const r = render({ items: [row('ssh:a', 'a')], order: ['prod'] });
+  rows(r)[0].oncontextmenu!({ preventDefault() {} });
+
+  assert.equal(moveKeysOf(r), undefined, 'GetSelection is optional; without it the menu must still work');
+});
+
+test('a single-row selection is passed through unchanged', () => {
+  const r = render({
+    items: [row('ssh:a', 'a')],
+    order: ['prod'],
+    getSelection: () => ['ssh:a'],
+  });
+  rows(r)[0].oncontextmenu!({ preventDefault() {} });
+
+  assert.deepEqual(moveKeysOf(r), ['ssh:a'], 'the suffix renders `(1)` off this length, so it must be the real list');
 });

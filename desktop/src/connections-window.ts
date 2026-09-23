@@ -337,6 +337,9 @@ export function initConnectionsWindow(): void {
       // deliberately not granted.
       onEdit: (item) => editConnection(item, afterMutation),
       isRowSelected: (key) => picked.has(key),
+      // Same selection the toolbar's "move" button and the drag path use, so the
+      // row menu, the toolbar and dragging cannot disagree about what is picked.
+      getSelection: () => [...picked],
       onRowClick: (item, mods, visibleKeys) => {
         const outcome = resolveRowClick(visibleKeys, { selection: [...picked], anchor }, item.key, mods);
         picked.clear();

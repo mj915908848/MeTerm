@@ -62,6 +62,16 @@ export interface SidebarListDeps {
   /** Multi-select: rows the owning window currently holds. */
   isRowSelected?: (key: string) => boolean;
   /**
+   * Multi-select: the keys the owning window holds right now.
+   *
+   * The row menu needs this so that "move to group" can act on the whole
+   * selection rather than the row under the cursor — see the `moveKeys`
+   * parameter of `showConnectionContextMenu`. Optional on purpose: a list with
+   * no selection concept, or a caller that does not pass it, keeps the
+   * single-row behaviour instead of silently moving nothing.
+   */
+  getSelection?: () => string[];
+  /**
    * Multi-select: called on every row click before anything opens. Returning
    * true also opens the connection — which is what an unmodified click must
    * keep doing. `visibleKeys` is the rendered row order, so a shift-click can
@@ -204,12 +214,19 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
       };
       row.oncontextmenu = (e) => {
         e.preventDefault();
+        // Only a selection that *contains* this row may act for it. Right-
+        // clicking a row outside the current selection means "just this row", and
+        // letting a stale selection move instead is exactly how a batch menu ends
+        // up moving rows the user is not pointing at.
+        const selection = deps.getSelection?.();
+        const moveKeys = selection?.includes(item.key) ? selection : undefined;
         showConnectionContextMenu(
           e,
           item,
           isUngrouped ? null : g,
           deps.refresh,
           deps.onEdit ? () => deps.onEdit!(item) : undefined,
+          moveKeys,
         );
       };
       const pinBtn = row.querySelector('.hsr-pin') as HTMLButtonElement;
