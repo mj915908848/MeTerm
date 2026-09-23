@@ -194,8 +194,23 @@ function buildShellHook(shellType: string): string {
  * with backoff instead, bounded so a genuinely hookless host is not hammered.
  */
 interface HookInjectionState {
-  /** Attempts spent so far. A blocked attempt counts: it *is* a retry cycle. */
+  /**
+   * Handshakes that were *sent* and never answered before the 3s timeout. This is
+   * the bounded case: a shell that never runs our command should stop being asked
+   * (see HOOK_RETRY_BACKOFF_MS).
+   */
   failures: number;
+  /**
+   * Consecutive attempts skipped because a program (vim/less/top) or a password
+   * prompt owned the screen. Nothing was sent, so it never spends the handshake
+   * budget — see `scheduleHookRetry`.
+   */
+  blocked: number;
+  /**
+   * When this chain started trying (ms). The chain stops once the user has driven
+   * the shell after that point — see the nested-ssh note on `injectionBlocked`.
+   */
+  startedAt: number;
   /** Pending retry timer, if one is queued. */
   retryTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -218,11 +233,20 @@ const _injectionState = new Map<string, HookInjectionState>();
  * equally true of `vim`, so this guard is what keeps the injection from typing
  * into them.
  *
- * Known gap: a *nested* `ssh` shows the remote's prompt, which the detector
- * reads as a bare shell prompt (`active`) — so this does not catch that case,
- * and the injection would land on the wrong host. Detecting it needs a signal
- * we do not have cheaply; the attempt still fails the handshake and is retried,
- * so the cost is a lost attempt rather than a corrupted screen.
+ * Known gap: a *nested* `ssh` shows the remote's prompt, which the detector reads
+ * as a bare shell prompt (`active`) — so this cannot catch that case, and typing
+ * into it with the injection would land on the wrong host. The note that used to
+ * stand here claimed "the attempt still fails the handshake, so the cost is a lost
+ * attempt"; that is wrong. The remote shell has no `__meterm_hook_ready`, so it
+ * runs the command happily and its 7766 marker comes straight back through the
+ * PTY: the handshake *succeeds*. This session would be marked hooked while the
+ * hook lives on the other host, its cwd / exit codes / durations would describe
+ * that host, and `hookInjected` is precisely what switches the screen-tail
+ * fallbacks off — so leaving the nested shell would put the agent back into the
+ * state §1/§2.3 removed. Detecting nesting needs a signal we do not have cheaply;
+ * restraint does not: a nested shell can only exist after the user has typed, so
+ * the retry chain — the part that fires long after connect — gives up as soon as
+ * the user has driven this terminal (see `scheduleHookRetry`).
  */
 function injectionBlocked(sessionId: string): boolean {
   try {
@@ -241,24 +265,79 @@ function injectionBlocked(sessionId: string): boolean {
 }
 
 /**
- * Book one spent attempt and queue the next, or stop once they run out.
- * Also used for *blocked* attempts, which are the retryable case by nature:
- * the TUI/prompt occupying the screen is usually gone seconds later.
+ * Start the retry-chain clock, leaving a running chain's clock alone.
+ *
+ * The baseline has to be "when we first tried", not "when the last attempt
+ * failed": the nested-ssh restraint in `scheduleHookRetry` asks whether the user
+ * has typed *since we started*, and typing that happened during the first
+ * handshake window — or between two retries — still means the prompt on screen
+ * may no longer be ours.
  */
-function scheduleHookRetry(sessionId: string): void {
-  const state = _injectionState.get(sessionId) ?? { failures: 0, retryTimer: null };
-  state.failures += 1;
+function beginInjectionChain(sessionId: string): void {
+  if (_injectionState.has(sessionId)) return;
+  _injectionState.set(sessionId, {
+    failures: 0,
+    blocked: 0,
+    startedAt: Date.now(),
+    retryTimer: null,
+  });
+}
+
+/**
+ * Book one attempt and queue the next.
+ *
+ * The two reasons an attempt did not land are not equivalent, and only one of
+ * them is worth bounding:
+ *
+ * - `blocked` sent *nothing*. Booking it as a failure meant four attempts spent
+ *   inside vim/less/top burned the whole budget, and `injectShellHook` then
+ *   refused for good — the session stayed hookless even after the user was back
+ *   at a normal shell prompt. Blocked waits therefore saturate at the longest
+ *   tier and keep trying (one screen read each, no I/O) until the screen frees up
+ *   or the session is gone.
+ * - A sent-but-unanswered attempt is the bounded case: it spends `failures`, and
+ *   once the tiers run out, a shell that never answers stops being asked.
+ */
+function scheduleHookRetry(sessionId: string, blocked: boolean): void {
+  const state = _injectionState.get(sessionId) ?? {
+    failures: 0,
+    blocked: 0,
+    startedAt: Date.now(),
+    retryTimer: null,
+  };
+  if (blocked) state.blocked += 1;
+  else state.failures += 1;
   _injectionState.set(sessionId, state);
 
-  const delay = HOOK_RETRY_BACKOFF_MS[state.failures - 1];
-  if (delay === undefined) return; // attempts exhausted
+  // Only the sent-and-unanswered kind can be exhausted; a blocked chain has
+  // nothing to give up on, it is waiting for the screen.
+  if (!blocked && state.failures > HOOK_RETRY_BACKOFF_MS.length) return;
+
+  const spent = blocked ? state.blocked : state.failures;
+  // `Math.min` saturates: a blocked chain keeps coming back at the last tier.
+  const delay = HOOK_RETRY_BACKOFF_MS[Math.min(spent, HOOK_RETRY_BACKOFF_MS.length) - 1];
 
   state.retryTimer = setTimeout(() => {
     state.retryTimer = null;
+    const mt = TerminalRegistry.get(sessionId);
     // Session went away while we waited — drop the bookkeeping rather than
     // retry into a dead terminal (this is the only cleanup path we get, since
     // importing this module from terminal.ts would be a cycle).
-    if (!TerminalRegistry.get(sessionId)) {
+    if (!mt) {
+      _injectionState.delete(sessionId);
+      return;
+    }
+    // Nested-ssh restraint: the user has driven this terminal since the chain
+    // started, so the prompt on screen may belong to a shell `ssh`-nested inside
+    // it, which the detector cannot tell apart from ours (see `injectionBlocked`).
+    // Installing the hook there would mark *this* session as hooked while the hook
+    // lives on the other host — worse than staying hookless, because it also
+    // switches the screen-tail fallbacks back off. Drop the whole chain instead;
+    // the next agent turn (or a fresh capsule capture) starts a new one from a
+    // known state and injects immediately. The trade-off is deliberate: automatic
+    // retries only cover a terminal the user is not driving, and the case that
+    // needs the hook most — an agent turn — re-asks for itself.
+    if (mt.shellState.lastUserInputAt >= state.startedAt) {
       _injectionState.delete(sessionId);
       return;
     }
@@ -307,9 +386,12 @@ export function injectShellHook(sessionId: string): boolean {
   if (state && state.failures > HOOK_RETRY_BACKOFF_MS.length) return false;
 
   if (injectionBlocked(sessionId)) {
-    scheduleHookRetry(sessionId);
+    scheduleHookRetry(sessionId, true);
     return false;
   }
+  // Committed to a real attempt: this is where the clock that the nested-ssh
+  // restraint measures the user's typing against starts.
+  beginInjectionChain(sessionId);
   return _injectShellHookImpl(sessionId, mt);
 }
 
@@ -354,8 +436,9 @@ function _injectShellHookImpl(
     unsub();
     restoreScreen();
     // No detect marker: the shell never ran (still busy, slow rc, echoed into
-    // a program that swallowed it). Queue another attempt.
-    scheduleHookRetry(sessionId);
+    // a program that swallowed it). Queue another attempt — this one *was* sent,
+    // so it spends the bounded handshake budget.
+    scheduleHookRetry(sessionId, false);
   }, HOOK_INJECTION_TIMEOUT_MS);
   const unsub = TerminalRegistry.onOscMarker(sessionId, detectId, (code) => {
     clearTimeout(timeout);

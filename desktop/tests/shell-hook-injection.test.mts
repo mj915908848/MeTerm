@@ -53,7 +53,7 @@ function harness(opts: HarnessOptions = {}) {
 
   const mt = {
     terminal: { write: (s: string) => writes.push(s), scrollToBottom: () => {} },
-    shellState: { hookInjected: opts.hookInjected ?? false },
+    shellState: { hookInjected: opts.hookInjected ?? false, lastUserInputAt: 0 },
   };
 
   const registry = {
@@ -99,7 +99,7 @@ function harness(opts: HarnessOptions = {}) {
     injectShellHook: (sessionId: string) => boolean;
     injectionBlocked: (sessionId: string) => boolean;
     buildShellHook: (shellType: string) => string;
-    hookState: Map<string, { failures: number; retryTimer: number | null }>;
+    hookState: Map<string, { failures: number; blocked: number; startedAt: number; retryTimer: number | null }>;
     BACKOFF: number[];
     TIMEOUT: number;
   };
@@ -184,13 +184,39 @@ test('a successful handshake marks the hook injected and stops retrying', () => 
   assert.equal(h.timers.size, 0, 'handshake timeout cleared');
 });
 
-test('a blocked injection queues a retry instead of burning the one shot', () => {
+test('a blocked injection queues a retry without spending the handshake budget', () => {
   const h = harness({ altScreen: true });
   h.mod.injectShellHook('s1');
 
   const state = h.mod.hookState.get('s1');
-  assert.equal(state?.failures, 1);
+  assert.equal(state?.failures, 0, 'nothing was sent, so nothing was spent');
+  assert.equal(state?.blocked, 1);
   assert.equal(h.timers.size, 1, 'a retry must be queued');
+});
+
+test('blocked attempts never exhaust the chain, and the hook lands once the screen frees up', () => {
+  const h = harness({ altScreen: true });
+  h.mod.injectShellHook('s1');
+
+  for (let i = 0; i < 10; i++) h.runTimers(); // a long stay inside vim/less/top
+
+  assert.deepEqual(h.inputs, [], 'nothing may be typed into the TUI');
+  assert.equal(h.mod.hookState.get('s1')?.failures, 0, 'still nothing spent');
+  assert.equal(h.timers.size, 1, 'still coming back — this chain cannot run out');
+  assert.deepEqual(
+    h.timerDelays.slice(-3),
+    [60_000, 60_000, 60_000],
+    'blocked waits saturate at the longest tier instead of running out',
+  );
+
+  h.opts.altScreen = false; // the user leaves the TUI, back at a shell prompt
+  h.runTimers();
+
+  assert.equal(h.inputs.length, 1, 'the next attempt injects');
+  const [, callback] = [...h.markerCallbacks.entries()][0];
+  callback(1);
+  assert.equal(h.mt.shellState.hookInjected, true, 'and the hook lands');
+  assert.equal(h.mod.hookState.size, 0, 'bookkeeping cleared on success');
 });
 
 test('the handshake timeout schedules another attempt', () => {
@@ -232,6 +258,43 @@ test('retry delays follow the backoff schedule (not a fixed re-inject loop)', ()
   const retryDelays = h.timerDelays.filter((d) => d !== h.mod.TIMEOUT);
   assert.deepEqual(retryDelays, h.mod.BACKOFF, 'each retry must wait longer than the last');
   assert.deepEqual(h.mod.BACKOFF, [5_000, 15_000, 60_000]);
+});
+
+// ── §4: a retry must not land on a nested `ssh`'s remote shell ───
+//
+// `injectionBlocked()` cannot tell a nested remote prompt from ours, so a retry
+// that keeps firing after the user has driven the terminal can install the hook
+// on the *other* host and then mark this session as hooked — which is worse than
+// staying hookless, because `hookInjected` is what switches the screen-tail
+// fallbacks back off. A nested shell can only exist after the user has typed, so
+// the chain gives up when they do.
+
+test('a retry chain gives up once the user has driven the terminal', () => {
+  const h = harness();
+  h.mod.injectShellHook('s1');
+  assert.equal(h.inputs.length, 1, 'the initial attempt is sent');
+
+  h.runTimers(); // the 3s handshake goes unanswered -> a retry is queued
+  assert.equal(h.mod.hookState.get('s1')?.failures, 1);
+
+  h.mt.shellState.lastUserInputAt = Date.now(); // the user typed since it started
+  h.runTimers(); // the 5s backoff fires
+
+  assert.equal(h.inputs.length, 1, 'no injection into a shell that may not be ours');
+  assert.equal(h.mod.hookState.size, 0, 'the chain is dropped, not left half spent');
+});
+
+test('a dropped chain does not blacklist the session: a later call injects again', () => {
+  const h = harness();
+  h.mod.injectShellHook('s1');
+  h.runTimers();
+  h.mt.shellState.lastUserInputAt = Date.now();
+  h.runTimers(); // gated: the chain is dropped
+  assert.equal(h.inputs.length, 1);
+
+  h.mod.injectShellHook('s1'); // e.g. the next agent turn
+  assert.equal(h.inputs.length, 2, 'a fresh call injects — a dropped chain spent nothing');
+  assert.equal(h.mod.hookState.get('s1')?.failures, 0, 'and it starts with a clean budget');
 });
 
 test('a retry whose session disappeared cleans up and does not re-inject', () => {
