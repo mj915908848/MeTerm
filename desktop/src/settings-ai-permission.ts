@@ -8,6 +8,7 @@ import { t } from './i18n';
 import { createSettingsSelect } from './custom-select';
 import {
   DEFAULT_PERMISSION_RULES,
+  validatePermissionRule,
   type PermissionMode,
   type PermissionRule,
 } from './ai-permission-rules';
@@ -142,9 +143,7 @@ export function createPermissionRulesEditor(
     cmdInput.addEventListener('keydown', (e) => e.stopPropagation());
     cmdInput.onchange = () => {
       const v = cmdInput.value.trim();
-      rule.match = { ...(rule.match ?? {}), command: v || undefined };
-      if (!rule.match.command && !rule.match.path) delete rule.match;
-      commitRules(rules);
+      updateMatcher('command', v, cmdInput);
     };
     row.appendChild(cmdInput);
 
@@ -157,9 +156,7 @@ export function createPermissionRulesEditor(
     pathInput.addEventListener('keydown', (e) => e.stopPropagation());
     pathInput.onchange = () => {
       const v = pathInput.value.trim();
-      rule.match = { ...(rule.match ?? {}), path: v || undefined };
-      if (!rule.match.command && !rule.match.path) delete rule.match;
-      commitRules(rules);
+      updateMatcher('path', v, pathInput);
     };
     row.appendChild(pathInput);
 
@@ -184,6 +181,23 @@ export function createPermissionRulesEditor(
       commitRules(rules);
     };
     row.appendChild(delBtn);
+
+    function updateMatcher(field: 'command' | 'path', value: string, input: HTMLInputElement): void {
+      const match = { ...(rule.match ?? {}), [field]: value || undefined };
+      const nextRule: PermissionRule = { ...rule };
+      if (!match.command && !match.path) delete nextRule.match;
+      else nextRule.match = match;
+
+      const error = validatePermissionRule(nextRule);
+      input.setCustomValidity(error ? t('aiPermissionRuleRegexInvalid') : '');
+      if (error) {
+        input.reportValidity();
+        return;
+      }
+      const nextRules = [...rules];
+      nextRules[index] = nextRule;
+      commitRules(nextRules);
+    }
 
     return row;
   }

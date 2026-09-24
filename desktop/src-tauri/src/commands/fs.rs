@@ -175,6 +175,22 @@ pub fn list_dir_names(path: String) -> Result<Vec<(String, bool)>, String> {
 
 // ─── Background image management ───
 
+/// Resolve an existing background candidate and return it only when the
+/// canonical file remains inside the canonical backgrounds directory.
+/// Missing paths and paths outside the directory are treated as no-ops.
+fn canonical_background_file(
+    bg_dir: &std::path::Path,
+    candidate: &std::path::Path,
+) -> Option<std::path::PathBuf> {
+    let canonical_dir = std::fs::canonicalize(bg_dir).ok()?;
+    let canonical_candidate = std::fs::canonicalize(candidate).ok()?;
+    if canonical_candidate.is_file() && canonical_candidate.starts_with(canonical_dir) {
+        Some(canonical_candidate)
+    } else {
+        None
+    }
+}
+
 #[tauri::command]
 pub async fn copy_background_image(
     app: AppHandle,
@@ -225,9 +241,8 @@ pub async fn copy_background_image(
 
     // Delete old background image if provided and it's inside our backgrounds dir
     if let Some(old) = old_path {
-        let old_p = Path::new(&old);
-        if old_p.starts_with(&bg_dir) && old_p.is_file() {
-            let _ = std::fs::remove_file(old_p);
+        if let Some(old_file) = canonical_background_file(&bg_dir, Path::new(&old)) {
+            let _ = std::fs::remove_file(old_file);
         }
     }
 
@@ -246,8 +261,9 @@ pub async fn delete_background_image(app: AppHandle, path: String) -> Result<(),
     let target = Path::new(&path);
 
     // Only delete files inside our backgrounds directory (prevent path traversal)
-    if target.starts_with(&bg_dir) && target.is_file() {
-        std::fs::remove_file(target).map_err(|e| format!("failed to delete image: {}", e))?;
+    if let Some(canonical_target) = canonical_background_file(&bg_dir, target) {
+        std::fs::remove_file(canonical_target)
+            .map_err(|e| format!("failed to delete image: {}", e))?;
     }
 
     Ok(())
@@ -293,22 +309,50 @@ pub struct AgentReadResult {
     pub too_large: bool,
 }
 
+/// Resolve Agent read paths through symlinks and keep them within the active
+/// terminal workspace unless that exact path was authorized by the UI.
+fn resolve_agent_read_path(
+    path: &str,
+    workspace_root: &str,
+    allow_outside: bool,
+) -> Result<std::path::PathBuf, String> {
+    let resolved = normalize_path(path);
+    let canonical_path = std::fs::canonicalize(&resolved)
+        .map_err(|_| format!("path not found or inaccessible: {}", resolved))?;
+    let canonical_root = std::fs::canonicalize(normalize_path(workspace_root))
+        .map_err(|_| "terminal working directory is unavailable".to_string())?;
+    if !canonical_path.starts_with(&canonical_root) && !allow_outside {
+        return Err(
+            "path resolves outside the terminal working directory; explicit confirmation is required"
+                .into(),
+        );
+    }
+    if !allow_outside
+        && is_sensitive_agent_grep_path(&canonical_path, canonical_path.is_dir())
+    {
+        return Err("path may contain credentials; explicit confirmation is required".into());
+    }
+    Ok(canonical_path)
+}
+
 /// Read a local file by absolute / `~`-prefixed path.
 /// Returns the UTF-8 content along with size + binary flag.
 /// Errors are returned as Err(String) with a human-readable message.
 #[tauri::command]
-pub fn agent_read_file(path: String, max_bytes: Option<u64>) -> Result<AgentReadResult, String> {
+pub fn agent_read_file(
+    path: String,
+    max_bytes: Option<u64>,
+    workspace_root: String,
+    allow_outside: bool,
+) -> Result<AgentReadResult, String> {
     let resolved = normalize_path(&path);
-    let p = std::path::Path::new(&resolved);
+    let p = resolve_agent_read_path(&path, &workspace_root, allow_outside)?;
 
-    if !p.exists() {
-        return Err(format!("file not found: {}", resolved));
-    }
     if !p.is_file() {
         return Err(format!("not a regular file: {}", resolved));
     }
 
-    let meta = std::fs::metadata(p).map_err(|e| format!("stat failed: {}", e))?;
+    let meta = std::fs::metadata(&p).map_err(|e| format!("stat failed: {}", e))?;
     let size = meta.len();
     let cap = max_bytes.unwrap_or(10 * 1024 * 1024); // 10 MB default
 
@@ -321,7 +365,7 @@ pub fn agent_read_file(path: String, max_bytes: Option<u64>) -> Result<AgentRead
         });
     }
 
-    let bytes = std::fs::read(p).map_err(|e| format!("read failed: {}", e))?;
+    let bytes = std::fs::read(&p).map_err(|e| format!("read failed: {}", e))?;
 
     // Binary detection: any NUL byte in the first 4KB.
     let head = &bytes[..bytes.len().min(4096)];
@@ -546,12 +590,11 @@ pub fn agent_list_directory(
     path: String,
     show_hidden: Option<bool>,
     max_entries: Option<usize>,
+    workspace_root: String,
+    allow_outside: bool,
 ) -> Result<AgentDirListing, String> {
     let resolved = normalize_path(&path);
-    let p = std::path::Path::new(&resolved);
-    if !p.exists() {
-        return Err(format!("directory not found: {}", resolved));
-    }
+    let p = resolve_agent_read_path(&path, &workspace_root, allow_outside)?;
     if !p.is_dir() {
         return Err(format!("not a directory: {}", resolved));
     }
@@ -616,15 +659,13 @@ pub fn agent_glob_search(
     pattern: String,
     cwd: String,
     max_results: Option<usize>,
+    workspace_root: String,
+    allow_outside: bool,
 ) -> Result<Vec<GlobMatch>, String> {
     use globset::{GlobBuilder, GlobMatcher};
     use walkdir::WalkDir;
 
-    let resolved = normalize_path(&cwd);
-    let root = std::path::Path::new(&resolved);
-    if !root.exists() {
-        return Err(format!("cwd not found: {}", resolved));
-    }
+    let root = resolve_agent_read_path(&cwd, &workspace_root, allow_outside)?;
 
     let cap = max_results.unwrap_or(200).min(2000);
 
@@ -637,7 +678,7 @@ pub fn agent_glob_search(
 
     let mut hits: Vec<GlobMatch> = Vec::new();
 
-    let walker = WalkDir::new(root)
+    let walker = WalkDir::new(&root)
         .follow_links(false)
         .max_depth(20)
         .into_iter()
@@ -672,7 +713,7 @@ pub fn agent_glob_search(
         if entry.depth() == 0 {
             continue;
         }
-        let rel = entry.path().strip_prefix(root).unwrap_or(entry.path());
+        let rel = entry.path().strip_prefix(&root).unwrap_or(entry.path());
         let rel_str = rel.to_string_lossy();
         if matcher.is_match(rel.as_os_str()) || matcher.is_match(rel_str.as_ref()) {
             hits.push(GlobMatch {
@@ -699,6 +740,127 @@ pub struct GrepResult {
     pub truncated: bool,
 }
 
+/// Keep recursive Agent search away from common credential stores and files.
+/// Directory names are excluded at any depth; sensitive filenames and key/
+/// certificate extensions are excluded wherever they appear.
+fn is_sensitive_agent_grep_path(path: &std::path::Path, is_dir: bool) -> bool {
+    const CREDENTIAL_DIRS: &[&str] = &[".ssh", ".gnupg", ".aws", ".kube", ".docker"];
+    const CREDENTIAL_PATHS: &[&[&str]] = &[
+        &[".config", "google-chrome"],
+        &[".config", "chromium"],
+        &[".config", "microsoft-edge"],
+        &[".config", "bravesoftware", "brave-browser"],
+        &[".config", "gcloud"],
+        &[".mozilla", "firefox"],
+        &[".local", "share", "keyrings"],
+        &["library", "application support", "google", "chrome"],
+        &["library", "application support", "chromium"],
+        &["library", "application support", "microsoft", "edge"],
+        &["library", "application support", "bravesoftware", "brave-browser"],
+        &["library", "application support", "firefox", "profiles"],
+        &["library", "safari"],
+        &["library", "containers", "com.apple.safari"],
+        &["appdata", "local", "google", "chrome", "user data"],
+        &["appdata", "local", "microsoft", "edge", "user data"],
+        &["appdata", "roaming", "mozilla", "firefox", "profiles"],
+        &["appdata", "roaming", "microsoft", "credentials"],
+        &["appdata", "local", "microsoft", "credentials"],
+        &["appdata", "local", "microsoft", "vault"],
+    ];
+
+    let components: Vec<String> = path
+        .components()
+        .map(|component| component.as_os_str().to_string_lossy().to_ascii_lowercase())
+        .collect();
+    if components.iter().any(|component| {
+        CREDENTIAL_DIRS
+            .iter()
+            .any(|sensitive_dir| component.as_str() == *sensitive_dir)
+    }) || CREDENTIAL_PATHS.iter().any(|sequence| {
+        components.windows(sequence.len()).any(|window| {
+            window
+                .iter()
+                .zip(sequence.iter())
+                .all(|(component, expected)| component.as_str() == *expected)
+        })
+    }) {
+        return true;
+    }
+
+    if is_dir {
+        return false;
+    }
+
+    let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let file_name = file_name.to_ascii_lowercase();
+
+    if file_name.starts_with(".env")
+        || file_name.starts_with(".secret")
+        || file_name.starts_with(".token")
+        || file_name.starts_with(".credentials")
+        || matches!(
+            file_name.as_str(),
+            ".netrc"
+                | ".npmrc"
+                | ".pypirc"
+                | ".git-credentials"
+                | "auth.json"
+                | "credentials"
+                | "credential"
+                | "secrets"
+                | "token"
+                | "password"
+                | "passwords"
+                | "id_rsa"
+                | "id_ed25519"
+                | "id_ecdsa"
+                | "id_dsa"
+                | "terraform.tfstate"
+        )
+        || ["credentials.", "credential.", "secrets.", "token.", "secret", "password"]
+            .iter()
+            .any(|prefix| file_name.starts_with(*prefix))
+        || ["id_rsa.", "id_ed25519.", "id_ecdsa.", "id_dsa."]
+            .iter()
+            .any(|prefix| file_name.starts_with(*prefix))
+    {
+        return true;
+    }
+
+    let extension = std::path::Path::new(&file_name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default();
+    matches!(
+        extension,
+        "pem"
+            | "key"
+            | "p8"
+            | "p12"
+            | "pfx"
+            | "der"
+            | "crt"
+            | "cer"
+            | "jks"
+            | "keystore"
+            | "p7b"
+            | "p7c"
+    ) || file_name.ends_with(".tfstate")
+        || file_name.ends_with(".tfstate.backup")
+}
+
+/// Detect PEM private-key blocks even when the containing file has an
+/// otherwise innocuous name or extension.
+fn contains_private_key_header(bytes: &[u8]) -> bool {
+    let sample = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]).to_ascii_lowercase();
+    sample.lines().any(|line| {
+        let line = line.trim();
+        line.starts_with("-----begin ") && line.ends_with(" private key-----")
+    })
+}
+
 /// Recursive content search via the `regex` crate. Skips binaries
 /// (any file containing a NUL byte in the first 4 KB) and junk dirs.
 /// `glob` optionally constrains which files are scanned.
@@ -709,15 +871,20 @@ pub fn agent_grep_search(
     glob: Option<String>,
     case_insensitive: Option<bool>,
     max_hits: Option<usize>,
+    workspace_root: String,
+    allow_outside: bool,
 ) -> Result<GrepResult, String> {
     use globset::{GlobBuilder, GlobMatcher};
     use regex::RegexBuilder;
     use walkdir::WalkDir;
 
-    let resolved = normalize_path(&path);
-    let root = std::path::Path::new(&resolved);
-    if !root.exists() {
-        return Err(format!("path not found: {}", resolved));
+    let root = resolve_agent_read_path(&path, &workspace_root, allow_outside)?;
+    if !allow_outside && is_sensitive_agent_grep_path(&root, root.is_dir()) {
+        return Ok(GrepResult {
+            hits: Vec::new(),
+            files_scanned: 0,
+            truncated: false,
+        });
     }
 
     let cap = max_hits.unwrap_or(100).min(1000);
@@ -743,16 +910,21 @@ pub fn agent_grep_search(
     let mut files_scanned: u32 = 0;
     let mut truncated = false;
 
-    let walker = WalkDir::new(root)
+    let walker = WalkDir::new(&root)
         .follow_links(false)
         .max_depth(20)
         .into_iter()
         .filter_entry(|e| {
             let name = e.file_name().to_string_lossy();
+            let is_dir = e.file_type().is_dir();
+            let relative = e.path().strip_prefix(&root).unwrap_or(e.path());
+            if e.depth() > 0 && is_sensitive_agent_grep_path(relative, is_dir) {
+                return false;
+            }
             if e.depth() == 0 {
                 return true;
             }
-            if e.file_type().is_dir() {
+            if is_dir {
                 !matches!(
                     name.as_ref(),
                     ".git"
@@ -792,6 +964,9 @@ pub fn agent_grep_search(
         }
         let head = &bytes[..bytes.len().min(4096)];
         if head.contains(&0u8) {
+            continue;
+        }
+        if contains_private_key_header(&bytes) && !(allow_outside && entry.depth() == 0) {
             continue;
         }
         let content = match std::str::from_utf8(&bytes) {

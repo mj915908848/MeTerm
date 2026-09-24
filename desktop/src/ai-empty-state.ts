@@ -66,6 +66,8 @@ async function detectProjectHints(cwd: string, isSSH: boolean): Promise<ProjectH
       const r = await invoke<AgentReadResult>('agent_read_file', {
         path,
         maxBytes: 1024,
+        workspaceRoot: cwd,
+        allowOutside: false,
       });
       return r.content ?? '';
     } catch {

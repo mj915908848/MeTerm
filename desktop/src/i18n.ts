@@ -350,6 +350,7 @@ export interface Translations {
   aiPermissionRuleTool: string;
   aiPermissionRuleCmdMatch: string;
   aiPermissionRulePathMatch: string;
+  aiPermissionRuleRegexInvalid: string;
   aiAuditLog: string;
   aiAuditLogOpen: string;
   aiAuditLogEmpty: string;
@@ -1147,16 +1148,17 @@ const translations: Record<Language, Translations> = {
     aiPermissionModeAcceptAll: 'Accept all',
     aiPermissionModePlan: 'Plan (read-only)',
     aiPermissionModeBypass: 'Bypass (no prompts)',
-    aiPermissionModeHint: 'Overrides the trust level. Plan mode disables every write tool.',
+    aiPermissionModeHint: 'Overrides the trust level. Plan mode denies writes; sensitive or out-of-workspace reads require confirmation.',
     aiPermissionRules: 'Permission Rules',
     aiPermissionRulesAdd: 'Add rule',
-    aiPermissionRulesNone: 'No custom rules. Defaults: deny writes to ~/.ssh & .env, allow read-only git/ls/cat.',
+    aiPermissionRulesNone: 'No custom rules. Sensitive or out-of-workspace reads require confirmation; shell commands require confirmation in Accept safe mode.',
     aiPermissionActionAllow: 'Allow',
     aiPermissionActionDeny: 'Deny',
     aiPermissionActionAsk: 'Ask',
     aiPermissionRuleTool: 'Tool',
     aiPermissionRuleCmdMatch: 'Command regex',
     aiPermissionRulePathMatch: 'Path regex',
+    aiPermissionRuleRegexInvalid: 'Invalid regular expression. Fix it before saving this rule.',
     aiAuditLog: 'Agent Audit Log',
     aiAuditLogOpen: 'Open audit log',
     aiAuditLogEmpty: '(No audit entries yet)',
@@ -1956,16 +1958,17 @@ const translations: Record<Language, Translations> = {
     aiPermissionModeAcceptAll: '全部接受',
     aiPermissionModePlan: '计划模式(只读)',
     aiPermissionModeBypass: '绕过(不提示)',
-    aiPermissionModeHint: '覆盖信任级别。计划模式禁用所有写入工具。',
+    aiPermissionModeHint: '覆盖信任级别。计划模式拒绝写入；读取敏感路径或工作目录外的文件需要确认。',
     aiPermissionRules: '权限规则',
     aiPermissionRulesAdd: '添加规则',
-    aiPermissionRulesNone: '无自定义规则。默认:禁止写入 ~/.ssh 和 .env,允许只读的 git/ls/cat。',
+    aiPermissionRulesNone: '无自定义规则。读取敏感路径或工作目录外的文件需要确认；Accept safe 模式下执行 shell 命令需要确认。',
     aiPermissionActionAllow: '允许',
     aiPermissionActionDeny: '拒绝',
     aiPermissionActionAsk: '询问',
     aiPermissionRuleTool: '工具',
     aiPermissionRuleCmdMatch: '命令正则',
     aiPermissionRulePathMatch: '路径正则',
+    aiPermissionRuleRegexInvalid: '正则表达式无效，请修正后再保存规则。',
     aiAuditLog: 'Agent 审计日志',
     aiAuditLogOpen: '查看审计日志',
     aiAuditLogEmpty: '(暂无审计记录)',

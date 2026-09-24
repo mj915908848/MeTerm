@@ -19,6 +19,7 @@ import {
   TOKEN_BUDGET, injectShellHook,
   TodoState,
 } from './ai-tools';
+import { localReadApprovalKey } from './ai-tools-core';
 import type { TodoItem } from './ai-tools-todo';
 import { TerminalRegistry } from './terminal';
 import { loadSettings } from './themes';
@@ -45,6 +46,7 @@ import { isTerminalInterruption } from './ai-terminal-interruption';
 import { resetAgentNotificationThrottle } from './ai-notifications';
 import {
   decidePermission,
+  requiresReadScopeConfirmation,
   trustLevelToMode,
   DEFAULT_PERMISSION_RULES,
   type PermissionMode,
@@ -55,6 +57,35 @@ import {
 export type { TerminalContext } from './ai-agent-context';
 export { gatherContext } from './ai-agent-context';
 export type { AgentEvent } from './ai-agent-events';
+
+const SCOPED_READ_TOOLS = new Set(['read_file', 'grep_search', 'glob_search', 'list_directory']);
+
+function rememberAuthorizedReadPath(
+  toolName: string,
+  args: Record<string, unknown>,
+  context: ReturnType<typeof buildToolContext>,
+  allowScopeBypass: boolean,
+): void {
+  if (!allowScopeBypass || !SCOPED_READ_TOOLS.has(toolName) || !context.approvedReadPaths) return;
+
+  const paneNumber = Number(args.pane);
+  const pane = Number.isInteger(paneNumber) && paneNumber > 0
+    ? context.panes.find((item) => item.paneNumber === paneNumber)
+    : context.panes.find((item) => item.isDefaultTarget) ?? context.panes[0];
+  if (Number.isInteger(paneNumber) && paneNumber > 0 && !pane) return;
+
+  const rawPath = toolName === 'glob_search' ? args.cwd : args.path;
+  const requested = typeof rawPath === 'string' && rawPath.trim()
+    ? rawPath.trim()
+    : toolName === 'read_file'
+      ? ''
+      : pane?.cwd ?? '';
+  if (!requested) return;
+
+  const cwd = toolName === 'read_file' ? context.cwd : pane?.cwd ?? context.cwd;
+  const key = localReadApprovalKey(requested, cwd);
+  if (key) context.approvedReadPaths.add(key);
+}
 
 // ─── Agent Callbacks ────────────────────────────────────────────
 // All fields except onToken/onComplete/onError are optional so that
@@ -845,12 +876,17 @@ export class ToolAgent {
             handler,
             permMode,
             permRules,
+            toolCtx,
           );
           if (perm.kind === 'deny') {
             decisions.set(toolCall.id, { kind: 'reject', message: perm.reason });
             continue;
           }
           if (perm.kind === 'allow') {
+            const allowScopeBypass = permMode === 'acceptAll'
+              || permMode === 'bypass'
+              || requiresReadScopeConfirmation(toolCall.function.name, args, toolCtx);
+            rememberAuthorizedReadPath(toolCall.function.name, args, toolCtx, allowScopeBypass);
             decisions.set(toolCall.id, { kind: 'run', args });
             continue;
           }
@@ -886,13 +922,60 @@ export class ToolAgent {
             continue;
           }
           if (typeof approved === 'string') {
+            const approvedArgs = { ...args, command: approved };
+            const approvedToolCall: ToolCall = {
+              ...toolCall,
+              function: {
+                ...toolCall.function,
+                arguments: JSON.stringify(approvedArgs),
+              },
+            };
+            const approvedHook = await hooks.emitPreToolUse({
+              sessionId,
+              toolCall: approvedToolCall,
+              args: approvedArgs,
+            });
+            if (approvedHook.deny) {
+              decisions.set(toolCall.id, {
+                kind: 'reject',
+                message: approvedHook.deny.reason,
+              });
+              continue;
+            }
+            // A hook that changes the command after the confirmation would
+            // make the executed command differ from what the user approved.
+            if (approvedHook.replaceArgs
+              && JSON.stringify(approvedHook.replaceArgs) !== JSON.stringify(approvedArgs)) {
+              decisions.set(toolCall.id, {
+                kind: 'reject',
+                message: 'A pre-tool hook changed the approved command. Review and approve the final command again.',
+              });
+              continue;
+            }
+            const finalArgs = approvedHook.replaceArgs ?? approvedArgs;
+            const finalPermission = decidePermission(
+              toolCall.function.name,
+              finalArgs,
+              handler,
+              permMode,
+              permRules,
+              toolCtx,
+            );
+            if (finalPermission.kind === 'deny') {
+              decisions.set(toolCall.id, { kind: 'reject', message: finalPermission.reason });
+              continue;
+            }
             decisions.set(toolCall.id, {
               kind: 'run',
-              args: { ...args, command: approved },
+              args: finalArgs,
             });
             continue;
           }
           // approved === true
+          const allowScopeBypass = permMode === 'acceptAll'
+            || permMode === 'bypass'
+            || requiresReadScopeConfirmation(toolCall.function.name, args, toolCtx);
+          rememberAuthorizedReadPath(toolCall.function.name, args, toolCtx, allowScopeBypass);
           decisions.set(toolCall.id, { kind: 'run', args });
         }
 

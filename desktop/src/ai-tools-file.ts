@@ -15,7 +15,7 @@
 // path which runs `head` / `cat <<EOF` over the live PTY.
 
 import { invoke } from '@tauri-apps/api/core';
-import { ToolHandler } from './ai-tools-core';
+import { resolveLocalToolPath, ToolHandler } from './ai-tools-core';
 import { executeViaTerminal } from './ai-tools-shell';
 
 interface AgentReadResult {
@@ -84,11 +84,15 @@ export function createReadFileTool(): ToolHandler {
       }
 
       // Local: invoke the Rust command (bypasses Tauri fs scope).
+      const localPath = resolveLocalToolPath(path, ctx.cwd);
+      if (!localPath) return 'Error: cannot resolve a relative path because the terminal working directory is unavailable.';
       try {
         const result = await invoke<AgentReadResult>('agent_read_file', {
-          path,
+          path: localPath,
           // 10 MB cap matches the previous behavior.
           maxBytes: 10 * 1024 * 1024,
+          workspaceRoot: ctx.cwd,
+          allowOutside: ctx.approvedReadPaths?.has(localPath) ?? false,
         });
 
         if (result.too_large) {
@@ -175,9 +179,11 @@ export function createWriteFileTool(): ToolHandler {
       }
 
       // Local: invoke the Rust command (bypasses Tauri fs scope).
+      const localPath = resolveLocalToolPath(filePath, ctx.cwd);
+      if (!localPath) return 'Error: cannot resolve a relative path because the terminal working directory is unavailable.';
       try {
         const written = await invoke<number>('agent_write_file', {
-          path: filePath,
+          path: localPath,
           content,
         });
         return `File written successfully: ${filePath} (${written} bytes)`;

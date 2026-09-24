@@ -5,14 +5,14 @@
 //! (token 持有者本就可经会话协议全盘读写,此处不新增攻击面)。端点(Bearer 鉴权组):
 //! - `GET  /api/files/list?path=~&hidden=0&limit=5000`
 //! - `GET  /api/files/download?path=`(流式,Content-Disposition RFC5987 文件名)
-//! - `POST /api/files/upload?path=&overwrite=0`(原始字节流;临时文件+原子 rename;
-//!   同名默认自动加 ` (N)` 后缀,`overwrite=1` 就地覆盖——文本编辑器保存用)
+//! - `POST /api/files/upload?path=&overwrite=0`(原始字节流;临时文件+原子 no-clobber rename;
+//!   同名默认自动加 ` (N)` 后缀,`overwrite=1` 原子替换——文本编辑器保存用)
 //! - `POST /api/files/op` `{op: mkdir|rename|delete, path, new_path?}`
 //!
 //! 纪律:
 //! - 路径经 [`file_handler::expand_tilde`] 展开(`~`/`~/...`);空路径 400;
 //! - 阻塞 fs 调用(read_dir / 元数据批量)放 `spawn_blocking`,不占 async 线程;
-//! - 上传先写同目录 `.meterm-upload-*.part` 再 rename(同卷原子,失败清理残件);
+//! - 上传先写同目录 `.meterm-upload-*.part` 再 no-clobber 原子落位(失败清理残件);
 //! - rename 目标已存在 → 409(不静默覆盖);delete 目录递归。
 
 use std::path::{Path, PathBuf};
@@ -39,6 +39,9 @@ fn resolve(path: &str) -> Result<String, Response> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return Err(err(StatusCode::BAD_REQUEST, "path must not be empty"));
+    }
+    if trimmed.contains('\0') {
+        return Err(err(StatusCode::BAD_REQUEST, "path must not contain NUL"));
     }
     Ok(expand_tilde(trimmed))
 }
@@ -219,7 +222,7 @@ pub struct UploadQuery {
     pub overwrite: bool,
 }
 
-/// 上传:body 原始字节流 → 同目录 `.part` 临时文件 → 原子 rename 落位。
+/// 上传:body 原始字节流 → 同目录 `.part` 临时文件 → 原子落位。
 /// 成功响应 `{name, path}`(自动加后缀时手机据此刷新展示)。
 /// 该路由在注册处 `DefaultBodyLimit::disable()`(axum 默认 2MB 上限对文件传输无意义)。
 pub async fn files_upload(Query(q): Query<UploadQuery>, body: Body) -> Response {
@@ -235,12 +238,7 @@ pub async fn files_upload(Query(q): Query<UploadQuery>, body: Body) -> Response 
         Ok(m) if m.is_dir() => {}
         _ => return err(StatusCode::BAD_REQUEST, "parent directory does not exist"),
     }
-    let final_path = if q.overwrite {
-        target
-    } else {
-        unique_target(&target).await
-    };
-    // 临时文件与目标同目录:rename 同卷原子;uuid 防并发上传互踩。
+    // 临时文件与目标同目录;uuid 防并发上传互踩。
     let tmp = dir.join(format!(".meterm-upload-{}.part", uuid::Uuid::new_v4()));
     let mut f = match tokio::fs::File::create(&tmp).await {
         Ok(f) => f,
@@ -273,13 +271,32 @@ pub async fn files_upload(Query(q): Query<UploadQuery>, body: Body) -> Response 
         return err(StatusCode::INTERNAL_SERVER_ERROR, format!("flush: {}", e));
     }
     drop(f);
-    if let Err(e) = tokio::fs::rename(&tmp, &final_path).await {
-        let _ = tokio::fs::remove_file(&tmp).await;
-        return err(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("finalize: {}", e),
-        );
-    }
+    let final_path = if q.overwrite {
+        if let Err(e) = tokio::fs::rename(&tmp, &target).await {
+            let _ = tokio::fs::remove_file(&tmp).await;
+            return err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("finalize: {}", e),
+            );
+        }
+        target
+    } else {
+        match commit_upload_without_overwrite(&tmp, &target).await {
+            Ok(path) => {
+                // A successful no-clobber rename moves the complete upload into
+                // place. This best-effort cleanup is harmless if it already moved.
+                let _ = tokio::fs::remove_file(&tmp).await;
+                path
+            }
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&tmp).await;
+                return err(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("finalize without overwrite: {}", e),
+                );
+            }
+        }
+    };
     let name = final_path
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
@@ -287,12 +304,15 @@ pub async fn files_upload(Query(q): Query<UploadQuery>, body: Body) -> Response 
     Json(json!({ "name": name, "path": final_path.display().to_string() })).into_response()
 }
 
-/// 同名冲突自动唯一化:`name.ext` → `name (1).ext` → `name (2).ext` …(上限 999,
-/// 极端情况退回 uuid 后缀,保证总能落盘)。
-async fn unique_target(target: &Path) -> PathBuf {
-    if !matches!(tokio::fs::try_exists(target).await, Ok(true)) {
-        return target.to_path_buf();
+/// 原子地以 no-clobber rename 提交上传文件;
+/// 撞名时按 UI 约定尝试 `name (N).ext`,再退回 UUID 名称。
+async fn commit_upload_without_overwrite(tmp: &Path, target: &Path) -> std::io::Result<PathBuf> {
+    match rename_upload_candidate(tmp, target).await {
+        Ok(()) => return Ok(target.to_path_buf()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e),
     }
+
     let dir = target.parent().unwrap_or(Path::new("."));
     let stem = target
         .file_stem()
@@ -304,11 +324,29 @@ async fn unique_target(target: &Path) -> PathBuf {
         .unwrap_or_default();
     for n in 1..=999u32 {
         let candidate = dir.join(format!("{} ({}){}", stem, n, ext));
-        if !matches!(tokio::fs::try_exists(&candidate).await, Ok(true)) {
-            return candidate;
+        match rename_upload_candidate(tmp, &candidate).await {
+            Ok(()) => return Ok(candidate),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
         }
     }
-    dir.join(format!("{}-{}{}", stem, uuid::Uuid::new_v4(), ext))
+
+    loop {
+        let candidate = dir.join(format!("{}-{}{}", stem, uuid::Uuid::new_v4(), ext));
+        match rename_upload_candidate(tmp, &candidate).await {
+            Ok(()) => return Ok(candidate),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+async fn rename_upload_candidate(source: &Path, destination: &Path) -> std::io::Result<()> {
+    let source = source.to_path_buf();
+    let destination = destination.to_path_buf();
+    tokio::task::spawn_blocking(move || rename_without_overwrite(&source, &destination))
+        .await
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
 }
 
 // ---------------------------------------------------------------------------
@@ -368,13 +406,86 @@ fn op_blocking(op: &str, path: &str, new_path: Option<&str>) -> Result<(), (Stat
             let Some(np) = new_path else {
                 return Err((StatusCode::BAD_REQUEST, "rename requires new_path".into()));
             };
-            if Path::new(np).exists() {
-                return Err((StatusCode::CONFLICT, format!("{}: already exists", np)));
+            match rename_without_overwrite(Path::new(path), Path::new(np)) {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                    Err((StatusCode::CONFLICT, format!("{}: already exists", np)))
+                }
+                Err(e) => Err(io(e)),
             }
-            std::fs::rename(path, np).map_err(io)
         }
         other => Err((StatusCode::BAD_REQUEST, format!("unknown op: {}", other))),
     }
+}
+
+/// Rename a file or directory only when the destination is absent. The OS
+/// primitive makes the existence check and rename one atomic operation.
+#[cfg(target_os = "linux")]
+fn rename_without_overwrite(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let source = std::ffi::CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn rename_without_overwrite(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let source = std::ffi::CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+    let result = unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn rename_without_overwrite(source: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        fn MoveFileW(existing_file_name: *const u16, new_file_name: *const u16) -> i32;
+    }
+
+    let mut source = source.as_os_str().encode_wide().collect::<Vec<_>>();
+    let mut destination = destination.as_os_str().encode_wide().collect::<Vec<_>>();
+    if source.contains(&0) || destination.contains(&0) {
+        return Err(std::io::Error::from(std::io::ErrorKind::InvalidInput));
+    }
+    source.push(0);
+    destination.push(0);
+    let result = unsafe { MoveFileW(source.as_ptr(), destination.as_ptr()) };
+    if result != 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn rename_without_overwrite(_source: &Path, _destination: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
 }
 
 // ---------------------------------------------------------------------------

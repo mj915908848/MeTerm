@@ -96,6 +96,24 @@ export interface ToolContext {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   todoState?: import('./ai-tools-todo').TodoStateRef;
+  /** Exact local read paths authorized by the permission decision. */
+  approvedReadPaths?: Set<string>;
+}
+
+/** Resolve relative local tool paths against the selected terminal pane cwd. */
+export function resolveLocalToolPath(path: string, cwd: string): string | null {
+  const value = path.trim();
+  if (!value) return null;
+  if (value.startsWith('~') || value.startsWith('/') || value.startsWith('\\')
+    || /^[a-z]:[\\/]/i.test(value)) return value;
+  const base = cwd.trim();
+  if (!base) return null;
+  return `${base.replace(/[\\/]+$/, '')}/${value}`;
+}
+
+/** Build the same lexical key used by local filesystem tools for approvals. */
+export function localReadApprovalKey(path: string, cwd: string): string | null {
+  return resolveLocalToolPath(path, cwd);
 }
 
 /**
@@ -365,6 +383,7 @@ export function buildToolContext(sessionId: string): ToolContext {
     shellType: defaultPane.shellType,
     cwd: defaultPane.cwd,
     panes,
+    approvedReadPaths: new Set<string>(),
   };
 }
 

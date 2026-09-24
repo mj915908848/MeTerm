@@ -18,6 +18,7 @@ import {
   ToolContext,
   resolvePaneTarget,
   escapeShellSingle,
+  resolveLocalToolPath,
   truncateOutput,
   TOKEN_BUDGET,
 } from './ai-tools-core';
@@ -90,11 +91,15 @@ export function createListDirectoryTool(): ToolHandler {
 
       if (!pane.isSSH) {
         // Local: structured listing via Rust.
+        const localPath = resolveLocalToolPath(path, pane.cwd);
+        if (!localPath) return 'Error: cannot resolve a relative path because the terminal working directory is unavailable.';
         try {
           const result = await invoke<AgentDirListing>('agent_list_directory', {
-            path,
+            path: localPath,
             showHidden,
             maxEntries,
+            workspaceRoot: pane.cwd,
+            allowOutside: ctx.approvedReadPaths?.has(localPath) ?? false,
           });
           return formatListing(result);
         } catch (e) {
@@ -203,7 +208,10 @@ export function createGlobSearchTool(): ToolHandler {
       const target = resolvePaneTarget(ctx, args.pane);
       if (!target.ok) return `Error: ${target.error}`;
       const pane = target.pane;
-      const cwd = String(args.cwd ?? '').trim() || pane.cwd || '.';
+      const requestedCwd = String(args.cwd ?? '').trim() || pane.cwd || '.';
+      const localCwd = pane.isSSH ? requestedCwd : resolveLocalToolPath(requestedCwd, pane.cwd);
+      if (!localCwd) return 'Error: cannot resolve a relative path because the terminal working directory is unavailable.';
+      const cwd = localCwd;
 
       if (!pane.isSSH) {
         try {
@@ -211,6 +219,8 @@ export function createGlobSearchTool(): ToolHandler {
             pattern,
             cwd,
             maxResults,
+            workspaceRoot: pane.cwd,
+            allowOutside: ctx.approvedReadPaths?.has(cwd) ?? false,
           });
           return formatGlobMatches(matches, pattern, cwd, matches.length >= maxResults);
         } catch (e) {
@@ -298,7 +308,10 @@ export function createGrepSearchTool(): ToolHandler {
       const target = resolvePaneTarget(ctx, args.pane);
       if (!target.ok) return `Error: ${target.error}`;
       const pane = target.pane;
-      const root = String(args.path ?? '').trim() || pane.cwd || '.';
+      const requestedRoot = String(args.path ?? '').trim() || pane.cwd || '.';
+      const localRoot = pane.isSSH ? requestedRoot : resolveLocalToolPath(requestedRoot, pane.cwd);
+      if (!localRoot) return 'Error: cannot resolve a relative path because the terminal working directory is unavailable.';
+      const root = localRoot;
       const glob = typeof args.glob === 'string' ? args.glob.trim() : '';
       const caseInsensitive = args.case_insensitive === true;
       const maxHits = Math.min(Math.max(Number(args.max_hits) || 100, 1), 1000);
@@ -311,6 +324,8 @@ export function createGrepSearchTool(): ToolHandler {
             glob: glob || null,
             caseInsensitive,
             maxHits,
+            workspaceRoot: pane.cwd,
+            allowOutside: ctx.approvedReadPaths?.has(root) ?? false,
           });
           return formatGrepResult(result, pattern, root);
         } catch (e) {
@@ -323,8 +338,9 @@ export function createGrepSearchTool(): ToolHandler {
       const safePat = escapeShellSingle(pattern);
       const ci = caseInsensitive ? '-i' : '';
       const includeArg = glob ? `--include='${escapeShellSingle(glob)}'` : '';
-      const excludeDirs = `--exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target --exclude-dir=dist --exclude-dir=build --exclude-dir=.next`;
-      const cmd = `grep -RnE ${ci} ${includeArg} ${excludeDirs} '${safePat}' '${safeRoot}' 2>/dev/null | head -n ${maxHits}`;
+      const excludeDirs = `--exclude-dir=.git --exclude-dir=node_modules --exclude-dir=target --exclude-dir=dist --exclude-dir=build --exclude-dir=.next --exclude-dir=.ssh --exclude-dir=.gnupg --exclude-dir=.aws --exclude-dir=.kube --exclude-dir=.docker`;
+      const excludeFiles = `--exclude='.env*' --exclude='.secret*' --exclude='.token*' --exclude='.credentials*' --exclude='password*' --exclude=.netrc --exclude=.npmrc --exclude=.pypirc --exclude=.git-credentials --exclude=auth.json --exclude=credentials --exclude='credentials.*' --exclude=credential --exclude='credential.*' --exclude=secrets --exclude='secrets.*' --exclude=token --exclude='token.*' --exclude='secret*' --exclude='id_rsa*' --exclude='id_ed25519*' --exclude='id_ecdsa*' --exclude='id_dsa*' --exclude='*.pem' --exclude='*.key' --exclude='*.p8' --exclude='*.p12' --exclude='*.pfx' --exclude='*.der' --exclude='*.crt' --exclude='*.cer' --exclude='*.jks' --exclude='*.keystore' --exclude='*.p7b' --exclude='*.p7c' --exclude='*.tfstate*`;
+      const cmd = `grep -rnE ${ci} ${includeArg} ${excludeDirs} ${excludeFiles} '${safePat}' '${safeRoot}' 2>/dev/null | head -n ${maxHits}`;
       try {
         const out = await executeViaTerminal(pane.sessionId, cmd, 60, pane.shellType);
         const hits: GrepHit[] = [];
