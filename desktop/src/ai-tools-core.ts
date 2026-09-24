@@ -10,6 +10,7 @@ import { getAllLeaves } from './split-pane';
 import { MESSAGE_HISTORY_MAX_CHARS } from './ai-history-budget';
 import { SYSTEM_CONTEXT_CHARS, DEFAULT_CONTEXT_LINES } from './ai-context-budget';
 import { EXIT_CODE_UNKNOWN, exitCodeForReport } from './ai-terminal-watch-lifecycle';
+import { onTerminalSessionDisposed } from './terminal-session-lifecycle';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -302,7 +303,7 @@ export function getShellType(sessionId: string): string {
 // grew by one entry per session the window had ever seen. It is only a
 // heuristic (OSC 7766 arrives once per shell, at hook install), so dropping an
 // entry when the session goes away is safe: consumers fall back to 'bash'.
-TerminalRegistry.onSessionDisposed((sessionId) => {
+onTerminalSessionDisposed((sessionId) => {
   shellTypeCache.delete(sessionId);
 });
 

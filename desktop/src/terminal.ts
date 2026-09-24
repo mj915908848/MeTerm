@@ -45,6 +45,10 @@ import { InlineCompletion } from './cmd-completion';
 import { globalCompletionIndex } from './cmd-completion-data';
 import { setupClickToMoveCursor } from './terminal-click-move';
 import { registerWebglContextLossFallback, scheduleTerminalRendererRecovery } from './terminal-render-recovery';
+import {
+  onTerminalSessionDisposed,
+  notifyTerminalSessionDisposed,
+} from './terminal-session-lifecycle';
 
 /**
  * Detect xterm.js auto-responses to terminal queries (DA, DECRQM, DSR,
@@ -101,14 +105,10 @@ class TerminalRegistryClass {
   private lastInputPingTime = new Map<string, number>();
 
   /**
-   * Per-session bookkeeping owned by *other* modules (ai-tools-shell's PTY lock
-   * tails and hook-retry state, ai-tools-core's shell-type cache, …). Those
-   * modules cannot import `terminal.ts`'s teardown to clean themselves up —
-   * they already import this module, so the call would have to run backwards
-   * and become a cycle. They register here instead and get told when a session
-   * goes away, from both teardown paths.
+   * Per-session cleanup is shared through a small lifecycle module so consumers
+   * can register during module evaluation without reading this registry through
+   * an import cycle.
    */
-  private sessionDisposers = new Set<(sessionId: string) => void>();
 
   /**
    * Register a per-session cleanup callback. Returns an unsubscribe function.
@@ -116,17 +116,12 @@ class TerminalRegistryClass {
    * is still registered in the map.
    */
   onSessionDisposed(callback: (sessionId: string) => void): () => void {
-    this.sessionDisposers.add(callback);
-    return () => { this.sessionDisposers.delete(callback); };
+    return onTerminalSessionDisposed(callback);
   }
 
   /** Run every registered disposer for `sessionId`; a throw must not abort teardown. */
   private notifySessionDisposed(sessionId: string): void {
-    for (const dispose of this.sessionDisposers) {
-      try {
-        dispose(sessionId);
-      } catch { /* a misbehaving disposer must not break session teardown */ }
-    }
+    notifyTerminalSessionDisposed(sessionId);
   }
 
   sendPing(sessionId: string): void {

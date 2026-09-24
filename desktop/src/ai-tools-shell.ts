@@ -32,6 +32,7 @@ import {
   type InteractiveState,
   type PromptInfo,
 } from './ai-tools-prompt-detect';
+import { onTerminalSessionDisposed } from './terminal-session-lifecycle';
 
 // ─── Per-session PTY lock ─────────────────────────────────────────
 // The orchestrator parallelizes any tools whose handler is marked
@@ -1100,10 +1101,9 @@ export function cleanOutput(raw: string, sentCommand?: string): string {
 // to, so a long-running window accumulated one entry per session it had ever
 // opened. Retry bookkeeping had a self-clean path (the retry timer notices a
 // dead session) but a cancelled timer never fires, and the PTY tail map had
-// none at all. Register with the registry instead of importing terminal.ts's
-// teardown — that import would be a cycle, which is exactly why this was left
-// undone.
-TerminalRegistry.onSessionDisposed((sessionId) => {
+// none at all. Register through the cycle-free lifecycle module so cleanup can
+// be installed without reading TerminalRegistry before it initializes.
+onTerminalSessionDisposed((sessionId) => {
   // Drop the serialization tail: nothing can be in flight for a session whose
   // terminal is gone, and keeping a resolved promise alive would pin the
   // closure chain it chained onto.

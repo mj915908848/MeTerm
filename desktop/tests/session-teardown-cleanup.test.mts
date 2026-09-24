@@ -21,6 +21,19 @@ import ts from 'typescript';
 
 const TERMINAL_SRC = readFileSync(new URL('../src/terminal.ts', import.meta.url), 'utf8');
 const AI_SHELL_SRC = readFileSync(new URL('../src/ai-tools-shell.ts', import.meta.url), 'utf8');
+const LIFECYCLE_SRC = readFileSync(new URL('../src/terminal-session-lifecycle.ts', import.meta.url), 'utf8');
+const lifecycleJavaScript = ts.transpile(LIFECYCLE_SRC, {
+  module: ts.ModuleKind.ESNext,
+  target: ts.ScriptTarget.ES2022,
+});
+const lifecycleModuleUrl = `data:text/javascript;base64,${Buffer.from(lifecycleJavaScript).toString('base64')}`;
+const {
+  notifyTerminalSessionDisposed,
+  onTerminalSessionDisposed,
+} = await import(lifecycleModuleUrl) as {
+  notifyTerminalSessionDisposed: (sessionId: string) => void;
+  onTerminalSessionDisposed: (listener: (sessionId: string) => void) => () => void;
+};
 
 /** Pull a class method's body out of `terminal.ts` as a standalone function. */
 function loadMethod<T>(
@@ -80,6 +93,7 @@ function fakeTerminal() {
 function harness() {
   const disposed: string[] = [];
   const probed: string[] = [];
+  const sessionDisposers = new Set<(sessionId: string) => void>();
 
   const registry: Record<string, unknown> = {
     inputListeners: new Map([['s1', new Set([() => {}])]]),
@@ -90,11 +104,25 @@ function harness() {
     pingTimestamps: new Map([['s1', 111]]),
     lastPongTime: new Map([['s1', 222]]),
     lastInputPingTime: new Map([['s1', 333]]),
-    sessionDisposers: new Set<(sessionId: string) => void>(),
   };
 
-  const onSessionDisposed = loadMethod<(cb: (id: string) => void) => () => void>('onSessionDisposed', ['callback']);
-  const notifySessionDisposed = loadMethod<(id: string) => void>('notifySessionDisposed', ['sessionId']);
+  const onSessionDisposed = loadMethod<(cb: (id: string) => void) => () => void>(
+    'onSessionDisposed', ['callback'], {
+      onTerminalSessionDisposed: (callback: (id: string) => void) => {
+        sessionDisposers.add(callback);
+        return () => { sessionDisposers.delete(callback); };
+      },
+    },
+  );
+  const notifySessionDisposed = loadMethod<(id: string) => void>(
+    'notifySessionDisposed', ['sessionId'], {
+      notifyTerminalSessionDisposed: (sessionId: string) => {
+        for (const dispose of sessionDisposers) {
+          try { dispose(sessionId); } catch { /* exercised below */ }
+        }
+      },
+    },
+  );
   registry.notifySessionDisposed = notifySessionDisposed;
   registry.onSessionDisposed = onSessionDisposed;
 
@@ -161,6 +189,23 @@ test('onSessionDisposed returns a working unsubscribe', () => {
   assert.deepEqual(seen, [], 'an unsubscribed disposer must not be called');
 });
 
+test('the cycle-free lifecycle channel isolates and unregisters listeners', () => {
+  const seen: string[] = [];
+  const offThrowing = onTerminalSessionDisposed(() => { throw new Error('bad listener'); });
+  const off = onTerminalSessionDisposed((id) => seen.push(id));
+
+  try {
+    notifyTerminalSessionDisposed('s1');
+    off();
+    notifyTerminalSessionDisposed('s2');
+  } finally {
+    offThrowing();
+    off();
+  }
+
+  assert.deepEqual(seen, ['s1']);
+});
+
 // ── the disposers registered by the modules that own the maps ─────
 
 /**
@@ -169,8 +214,13 @@ test('onSessionDisposed returns a working unsubscribe', () => {
  * the assertion is on the real callback body rather than on a copy of it.
  */
 function loadAiShellDisposer() {
-  const at = AI_SHELL_SRC.indexOf('TerminalRegistry.onSessionDisposed(');
-  assert.ok(at > 0, 'ai-tools-shell.ts must register a session disposer');
+  const at = AI_SHELL_SRC.indexOf('onTerminalSessionDisposed(');
+  assert.ok(at > 0, 'ai-tools-shell.ts must register through the cycle-free lifecycle module');
+  assert.equal(
+    AI_SHELL_SRC.includes('TerminalRegistry.onSessionDisposed('),
+    false,
+    'ai-tools-shell.ts must not read the TerminalRegistry import at module evaluation time',
+  );
   const end = AI_SHELL_SRC.indexOf('});', at);
   assert.ok(end > at, 'the registration block must be terminated by `});`');
   const block = AI_SHELL_SRC.slice(at, end + 3);
@@ -180,8 +230,8 @@ function loadAiShellDisposer() {
   const hostIdentity = new Map<string, unknown>([['s1', { status: 'known', value: 'abc' }]]);
   const cleared: string[] = [];
 
-  new Function('TerminalRegistry', 'sessionPtyTails', 'clearHookRetry', '_hostIdentity', block)(
-    { onSessionDisposed: (cb: (sessionId: string) => void) => { registered.push(cb); } },
+  new Function('onTerminalSessionDisposed', 'sessionPtyTails', 'clearHookRetry', '_hostIdentity', block)(
+    (cb: (sessionId: string) => void) => { registered.push(cb); },
     sessionPtyTails,
     (sessionId: string) => { cleared.push(sessionId); },
     hostIdentity,
@@ -224,14 +274,19 @@ test('the shell-type cache is released with the session', () => {
   // Keys are session ids, and the map never had a delete — one entry per
   // session the window had ever opened.
   const core = readFileSync(new URL('../src/ai-tools-core.ts', import.meta.url), 'utf8');
-  const at = core.indexOf('TerminalRegistry.onSessionDisposed(');
-  assert.ok(at > 0, 'ai-tools-core.ts must register a disposer for shellTypeCache');
+  const at = core.indexOf('onTerminalSessionDisposed(');
+  assert.ok(at > 0, 'ai-tools-core.ts must register through the cycle-free lifecycle module');
+  assert.equal(
+    core.includes('TerminalRegistry.onSessionDisposed('),
+    false,
+    'ai-tools-core.ts must not read the TerminalRegistry import at module evaluation time',
+  );
   const block = core.slice(at, core.indexOf('});', at) + 3);
 
   const cache = new Map<string, string>([['s1', 'zsh']]);
   const registered: Array<(id: string) => void> = [];
-  new Function('TerminalRegistry', 'shellTypeCache', block)(
-    { onSessionDisposed: (cb: (id: string) => void) => { registered.push(cb); } },
+  new Function('onTerminalSessionDisposed', 'shellTypeCache', block)(
+    (cb: (id: string) => void) => { registered.push(cb); },
     cache,
   );
   assert.equal(registered.length, 1, 'exactly one disposer is expected');
