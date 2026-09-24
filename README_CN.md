@@ -187,21 +187,8 @@ cd desktop && npm install && cd ..
 make desktop-dev
 ```
 
-若只做本地界面、Agent 与终端功能测试，可创建名为
-`MeTerm Dev Local Signing` 的自签名代码签名证书，然后使用：
-
-```bash
-make desktop-run-local            # 使用固定的本地签名构建并打开 MeTerm Dev
-make desktop-build-local          # 只构建并签名，不打开
-METERM_LOCAL_SIGNING_IDENTITY='…' make desktop-run-local   # 换用其他本地证书
-```
-
-该目标不启用手机控制或开发凭据恢复；这些高权限验证仍必须使用下面的
-Apple Development 签名目标。固定的本地签名可避免每次重建都因临时签名变化而被
-钥匙串识别成新的应用。
-
-在 macOS 上验证手机完整远控或中继时，不要使用未签名的热更新可执行文件，
-应运行隔离且经过 Apple Development 签名的开发包：
+日常开发可用 `make desktop-dev` 热更新。若要测试签名后的调试包、手机控制或开发凭据恢复，
+使用隔离且经过 Apple Development 签名的开发包：
 
 ```bash
 make desktop-run-dev              # 构建、签名并打开 MeTerm Dev.app（com.meterm.dev）

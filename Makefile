@@ -1,6 +1,4 @@
-.PHONY: dev backend frontend build clean desktop-sidecar desktop-dev desktop-build-local desktop-run-local desktop-build-dev desktop-run-dev desktop-build build-frontend desktop-dev-win desktop-dev-win-rebuild desktop-build-win release-macos release-macos-arm64 release-macos-x86_64 release-macos-all
-
-METERM_LOCAL_SIGNING_IDENTITY ?= MeTerm Dev Local Signing
+.PHONY: dev backend frontend build clean desktop-sidecar desktop-dev desktop-build-dev desktop-run-dev desktop-build build-frontend desktop-dev-win desktop-dev-win-rebuild desktop-build-win release-macos release-macos-arm64 release-macos-x86_64 release-macos-all
 
 # The development signing identity is derived from the local keychain at build
 # time rather than committed: the certificate CN embeds a personal Apple ID and
@@ -38,26 +36,6 @@ desktop-dev:
 		team=$$(bash $(METERM_DEV_PROVENANCE_SH) --team-id); \
 		echo "desktop-dev: signing as $$cn (team $$team)" >&2; \
 		METERM_DEV_SIGNER_CN="$$cn" METERM_DEV_TEAM_ID="$$team" npm run tauri dev -- --features development-mobile-control --config '{"identifier":"com.meterm.dev","productName":"MeTerm Dev"}'
-
-# Stable self-signed identity for ordinary local UI/Agent/terminal validation.
-# Deliberately excludes development-mobile-control and credential recovery;
-# those security-sensitive features remain Apple Development-only below.
-desktop-build-local:
-	cd desktop && npm run tauri build -- --debug --bundles app --no-sign --config '{"identifier":"com.meterm.dev","productName":"MeTerm Dev","bundle":{"createUpdaterArtifacts":false}}'
-	@set -eu; \
-		identity='$(METERM_LOCAL_SIGNING_IDENTITY)'; \
-		cert_sha1="$$(security find-identity -v -p codesigning "$${HOME}/Library/Keychains/login.keychain-db" | awk -v name="$$identity" 'index($$0, "\"" name "\"") { print tolower($$2); exit }')"; \
-		test -n "$$cert_sha1" || { echo "Local signing certificate not found: $$identity" >&2; exit 1; }; \
-		codesign --force --timestamp=none --options runtime \
-			--entitlements desktop/src-tauri/Entitlements.plist \
-			--sign "$$cert_sha1" --identifier com.meterm.dev \
-			'desktop/src-tauri/target/debug/bundle/macos/MeTerm Dev.app'; \
-		codesign --verify --deep --strict \
-			-R="identifier \"com.meterm.dev\" and certificate leaf = H\"$$cert_sha1\"" \
-			'desktop/src-tauri/target/debug/bundle/macos/MeTerm Dev.app'
-
-desktop-run-local: desktop-build-local
-	open -n 'desktop/src-tauri/target/debug/bundle/macos/MeTerm Dev.app'
 
 # Local UI/device validation only: Apple Development-signed Debug app, isolated
 # from /Applications/MeTerm.app. Stable signing keeps the dev-only Keychain ACL
