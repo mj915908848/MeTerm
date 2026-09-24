@@ -10,10 +10,11 @@
 ### 问题修复 / 优化
 
 - **Agent Shell Hook 更稳健** — 无 Hook 的会话不再卡住；身份检测兼容不同 Shell 方言，并通过远端 exec 通道识别主机，避免把 Hook 注入嵌套 SSH。自动重试不再被无关按键打断，也不会覆盖用户已有的 `DEBUG` trap 或丢弃数组形式的 `PROMPT_COMMAND`。
+- **Agent 等待条件已满足时立即返回** — `watch_terminal` 发现终端已经处于目标状态后不再继续等待，避免 Agent 多余挂起。
 - **服务器信息轮询更轻、更准确** — CPU 采样不再依赖远端 `sleep`，进程列表降低刷新频率；面板不可见时停止轮询。便携系统分支按实际输出解析进程，无法取得 CPU 时显示未知，并过滤面板自身的采样进程。
 - **连接分组与窗口路由修复** — 批量移动按整个选区处理，内部保留分组名不再与用户分组冲突，已有记录仍可访问；连接窗口中的会话请求、语言、主题和保存操作也能正确到达所属窗口。
 - **修复 SSH 端口输入与辅助窗口右键菜单** — SSH 端口框不再使用会拦截键盘菜单的数字输入类型；设置、关于和更新窗口不再弹出 WebView 默认菜单。
-- **状态栏和启动状态修正** — 空闲时状态栏可自动收起，连接后保持显示；主页启动时不再误报本地连接，关闭面板时工具栏状态同步更新。
+- **启动状态与工具栏同步修正** — 主页启动时不再误报本地连接；面板自行关闭时，工具栏按钮同步取消高亮。
 - **发布包校验与启动稳定性改进** — DMG 重建后的内容校验更可靠，并修复终端生命周期回调的循环依赖。
 
 ### 验证
@@ -33,10 +34,11 @@
 ### Bug Fixes
 
 - **Agent shell hooks are more robust** — The Agent no longer stalls on sessions without a shell hook. Host detection works across shell dialects and uses the remote exec channel, so a nested SSH session is never mistaken for the host. Unrelated keystrokes no longer cancel a retry chain, and hook installation preserves an existing `DEBUG` trap and array-form `PROMPT_COMMAND` entries.
+- **Agent waits return as soon as the condition is met** — `watch_terminal` returns immediately when the terminal already has the requested state, avoiding an unnecessary wait.
 - **Server-info polling is lighter and more accurate** — CPU sampling no longer relies on remote `sleep`, the process list refreshes less often, and polling stops while the panel is hidden. Portable process-list branches parse their actual output shape, report CPU as unknown when it cannot be measured, and filter out the panel's own sampling process.
 - **Connection grouping and window routing are fixed** — Batch moves apply to the whole selection, the reserved internal group name no longer conflicts with user groups, and existing records remain reachable. Session requests, language, theme, and save actions from the connections window now reach the correct window.
 - **SSH port entry and auxiliary-window context menus are fixed** — The SSH port field no longer uses a numeric input type that interferes with keyboard menus; Settings, About, and Updater windows no longer show the WebView's default context menu.
-- **Status-bar and startup state are corrected** — The status bar can hide while idle and stays visible after connecting. Startup no longer reports a false local connection, and the toolbar state follows a panel closing itself.
+- **Startup and toolbar state are corrected** — Startup on the home view no longer reports a false local connection, and toolbar buttons no longer stay highlighted after a panel closes itself.
 - **Packaging checks and startup stability are improved** — Rebuilt DMGs receive more reliable content validation, and a circular terminal lifecycle callback dependency is removed.
 
 ### Validation
