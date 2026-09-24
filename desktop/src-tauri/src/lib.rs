@@ -64,6 +64,22 @@ fn startup_log_reset() {
 
 static APP_START: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
+/// Windows that support the app but do not count as primary app windows for
+/// close/exit lifecycle decisions.
+pub(crate) const LIFECYCLE_UTILITY_WINDOW_LABELS: &[&str] = &[
+    "settings",
+    "tray-dialog",
+    "updater",
+    "about",
+    "jumpserver-browser",
+    "editor",
+    "connections",
+];
+
+pub(crate) fn is_lifecycle_utility_window_label(label: &str) -> bool {
+    LIFECYCLE_UTILITY_WINDOW_LABELS.contains(&label) || label.starts_with("drag-preview")
+}
+
 pub struct AppLifecycleState {
     has_open_tabs: Mutex<bool>,
     is_quitting: AtomicBool,
@@ -150,10 +166,13 @@ impl AppLifecycleState {
 
     /// Returns true if any main (non-utility) window has been initialized.
     fn has_any_initialized_main_window(&self) -> bool {
-        const UTILITY_WINDOWS: &[&str] = &["settings", "tray-dialog", "updater", "about"];
         self.initialized_windows
             .lock()
-            .map(|guard| guard.iter().any(|l| !UTILITY_WINDOWS.contains(&l.as_str())))
+            .map(|guard| {
+                guard
+                    .iter()
+                    .any(|label| !is_lifecycle_utility_window_label(label.as_str()))
+            })
             .unwrap_or(false)
     }
 
@@ -1184,36 +1203,49 @@ pub fn run() {
 
                         // When a utility window (or the transient tab-drag preview
                         // overlay) is destroyed, skip the main-window check
-                        let is_utility = label == "settings" || label == "tray-dialog" || label == "updater" || label == "about" || label == "editor" || label.starts_with("drag-preview");
+                        let is_utility = is_lifecycle_utility_window_label(&label);
                         if !is_utility {
-                            const UTIL_LABELS: &[&str] = &["settings", "tray-dialog", "updater", "about", "editor"];
                             let lifecycle = app_handle.state::<AppLifecycleState>();
                             let has_main_windows = app_handle.webview_windows().keys()
                                 .any(|k| {
                                     let s = k.as_str();
                                     // Skip utility windows
-                                    if UTIL_LABELS.contains(&s) { return false; }
+                                    if is_lifecycle_utility_window_label(s) { return false; }
                                     // Count windows that are initialized OR still within grace period
                                     lifecycle.is_window_initialized(s) ||
                                         lifecycle.is_within_grace_period(s, Duration::from_secs(3))
                                 });
 
                             if !has_main_windows {
-                                // Last main window closed — close all utility windows
-                                for util_label in &["settings", "updater", "about", "editor"] {
-                                    if let Some(w) = app_handle.get_webview_window(util_label) {
-                                        let _ = w.close();
-                                    }
+                                // Last main window closed — close utility windows and
+                                // quit explicitly. macOS otherwise stays resident with
+                                // no windows, and a connections window must not keep
+                                // the process alive on any platform.
+                                lifecycle.mark_quitting();
+                                let utility_windows: Vec<_> = app_handle
+                                    .webview_windows()
+                                    .into_iter()
+                                    .filter_map(|(window_label, window)| {
+                                        is_lifecycle_utility_window_label(&window_label)
+                                            .then_some(window)
+                                    })
+                                    .collect();
+                                for window in utility_windows {
+                                    let _ = window.close();
                                 }
+                                app_handle.exit(0);
                             }
                         }
                     }
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         let lifecycle = app_handle.state::<AppLifecycleState>();
 
-                        // Always allow utility windows (and the transient tab-drag
-                        // preview overlay) to close
-                        if label == "settings" || label == "tray-dialog" || label == "updater" || label == "about" || label == "editor" || label.starts_with("drag-preview") {
+                        // Allow utility windows (and the transient tab-drag preview)
+                        // to close directly. The JumpServer browser keeps its existing
+                        // JavaScript close-request path.
+                        if is_lifecycle_utility_window_label(&label)
+                            && label != "jumpserver-browser"
+                        {
                             debug_log!("[DEBUG] Window {} close allowed (utility)", label);
                             return;
                         }

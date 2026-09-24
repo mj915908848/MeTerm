@@ -1,3 +1,4 @@
+use crate::is_lifecycle_utility_window_label;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
@@ -514,17 +515,9 @@ pub fn set_traffic_lights_visible(window: tauri::Window, visible: bool) -> Resul
 
 #[tauri::command]
 pub fn get_main_window_count(app: AppHandle) -> u32 {
-    const UTILITY_LABELS: &[&str] = &[
-        "settings",
-        "jumpserver-browser",
-        "about",
-        "updater",
-        "tray-dialog",
-        "editor",
-    ];
     app.webview_windows()
         .keys()
-        .filter(|k| !UTILITY_LABELS.contains(&k.as_str()))
+        .filter(|k| !is_lifecycle_utility_window_label(k.as_str()))
         .count() as u32
 }
 

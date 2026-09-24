@@ -35,8 +35,8 @@ export interface SelectionState {
  *
  * `visibleKeys` is the row order as rendered (collapsed groups contribute
  * nothing, because a range that silently spans hidden rows moves connections the
- * user cannot see). A shift-click whose anchor is gone falls back to a plain
- * single selection rather than selecting nothing.
+ * user cannot see). A shift-click without a live anchor starts a new selection
+ * at the clicked row instead of falling through to the open-connection action.
  */
 export function resolveRowClick(
   visibleKeys: readonly string[],
@@ -44,7 +44,11 @@ export function resolveRowClick(
   clickedKey: string,
   mods: ClickModifiers,
 ): ClickOutcome {
-  if (mods.range && state.anchor !== null) {
+  if (mods.range) {
+    if (state.anchor === null) {
+      return { selection: [clickedKey], anchor: clickedKey, connect: false };
+    }
+
     const from = visibleKeys.indexOf(state.anchor);
     const to = visibleKeys.indexOf(clickedKey);
     if (from >= 0 && to >= 0) {
