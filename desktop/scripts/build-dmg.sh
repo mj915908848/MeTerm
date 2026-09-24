@@ -130,6 +130,7 @@ verify_dmg() {
             problems=1
         elif ! codesign --verify --strict "$app_inside" >/dev/null 2>&1; then
             warn ".app 签名校验未通过：$(codesign --verify --strict "$app_inside" 2>&1 | head -1)"
+            problems=1
         fi
     fi
     if [ ! -L "$VERIFY_MOUNT/Applications" ]; then

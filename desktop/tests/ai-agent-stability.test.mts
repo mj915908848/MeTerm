@@ -156,6 +156,20 @@ test('real watch retains silence return behavior', async () => {
   assert.equal(h.outputs.size + h.idles.size, 0); assert.equal(h.locked, false);
 });
 
+test('live hookless watch completes after a newly arrived prompt settles', async () => {
+  const h = watchHarness({ screen: 'command still running', lastExitCode: 0 });
+  const result = h.tool.execute({ idle_timeout: 3 }, {});
+  assert.ok(h.locked, 'the live watcher must be active before output arrives');
+  const promptAt = Date.now();
+  for (const callback of h.outputs) callback('command output\nuser@host ~ % ');
+  const outcome = await result;
+  assert.match(outcome, /status: completed, elapsed: [23]s, exit: -1/);
+  assert.ok(Date.now() - promptAt >= WATCH_PROMPT_SETTLE_MS,
+    'the prompt must remain quiet for the full settle interval before completion');
+  assert.equal(h.outputs.size + h.idles.size, 0);
+  assert.equal(h.locked, false);
+});
+
 // ─── watch_terminal: the "result is already there" fast path ─────────
 // The watcher only ever waited for FUTURE events (OSC 7768 shell-idle, new
 // output, the idle timeout, the deadline) and none of those are replayed. A

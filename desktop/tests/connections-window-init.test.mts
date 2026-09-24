@@ -99,7 +99,7 @@ interface Harness {
   mod: any;
 }
 
-function boot(options: { storedOwner?: string; label?: string } = {}): Harness {
+function boot(options: { storedOwner?: string; label?: string; liveWindows?: string[] } = {}): Harness {
   const label = options.label ?? 'connections';
   const body = new El();
   const renderCalls: any[] = [];
@@ -131,6 +131,28 @@ function boot(options: { storedOwner?: string; label?: string } = {}): Harness {
   ];
 
   const mocks: Record<string, any> = {
+    '@tauri-apps/api/core': {
+      invoke: async (command: string, args: any) => {
+        assert.equal(command, 'connections_dispatch');
+        const request = args.request;
+        if (request.action === 'mutated') {
+          sent.push({ target: '*', event: 'connections-mutated', payload: undefined });
+          harness.mutated++;
+          return null;
+        }
+        const live = options.liveWindows ?? ['main', 'window-42', 'window-7'];
+        const target = live.includes(request.preferredOwner) ? request.preferredOwner
+          : live.includes('main') ? 'main' : live.find((name) => name.startsWith('window-'));
+        if (!target) throw new Error('no app window is available');
+        const event = request.action === 'open' ? 'connections-open-request' : 'connections-new-request';
+        const payload = request.action === 'open'
+          ? { type: request.connectionType, key: request.key, targetWindowLabel: target }
+          : { kind: request.kind, targetWindowLabel: target };
+        sent.push({ target, event, payload });
+        if (event === 'connections-open-request') opened.push(payload);
+        return target;
+      },
+    },
     '@tauri-apps/api/window': {
       getCurrentWindow: () => ({
         label,
@@ -378,6 +400,20 @@ test('a request is addressed to the window the launcher belongs to', () => {
     'window-42',
     'and it says so in the payload, which is what the receiving window checks',
   );
+});
+
+test('a closed launcher owner falls back to the live main window', () => {
+  const h = boot({ storedOwner: 'window-42', liveWindows: ['main'] });
+  h.renderCalls[0].deps.onSelect(sampleItem);
+  assert.equal(h.sent[0].target, 'main');
+  assert.equal(h.sent[0].payload.targetWindowLabel, 'main');
+});
+
+test('when main is also gone, the launcher finds another live app window', () => {
+  const h = boot({ storedOwner: 'window-42', liveWindows: ['window-7'] });
+  h.renderCalls[0].deps.onSelect(sampleItem);
+  assert.equal(h.sent[0].target, 'window-7');
+  assert.equal(h.sent[0].payload.targetWindowLabel, 'window-7');
 });
 
 test('a launcher nobody claimed falls back to the startup window', () => {

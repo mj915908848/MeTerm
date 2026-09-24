@@ -2,6 +2,7 @@
 identifier = "connections-commands"
 description = "Allows the connection-list window to reveal itself and to create, edit and delete saved connections in place. Session commands are deliberately NOT granted: the window delegates every connect to the main window."
 commands.allow = [
+  "connections_dispatch",
   "reveal_window",
   "create_transparent_window",
   # SSH — the edit dialog's own commands: probe the target, surface the local key

@@ -24,7 +24,8 @@
  */
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-import { emit, emitTo, listen } from '@tauri-apps/api/event';
+import { emitTo, listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { initLanguage, setLanguage, t } from './i18n';
 import { loadSettings, resolveIsDark, type AppSettings } from './themes';
 import { createUtilityWindow, revealAfterPaint } from './window-utils';
@@ -143,7 +144,13 @@ let ownerWindowLabel: string = PRIMARY_WINDOW_LABEL;
  * key travel — never credentials.
  */
 function emitToOwner(event: string, payload: Record<string, unknown>): void {
-  void emitTo(ownerWindowLabel, event, { ...payload, targetWindowLabel: ownerWindowLabel });
+  const preferredOwner = ownerWindowLabel;
+  const request = event === EVENT_OPEN_REQUEST
+    ? { action: 'open', preferredOwner, connectionType: payload.type, key: payload.key }
+    : { action: 'new', preferredOwner, kind: payload.kind };
+  void invoke<string | null>('connections_dispatch', { request }).then((resolved) => {
+    if (resolved && ownerWindowLabel === preferredOwner) ownerWindowLabel = resolved;
+  }).catch((error) => console.error('Failed to route connection request:', error));
 }
 
 /**
@@ -470,7 +477,8 @@ export function initConnectionsWindow(): void {
   // window, whose home view and toolbar read the same shared store.
   const afterMutation = (): void => {
     refresh();
-    void emit(EVENT_MUTATED);
+    void invoke('connections_dispatch', { request: { action: 'mutated' } })
+      .catch((error) => console.error('Failed to notify connection mutation:', error));
   };
 
   const refresh = (): void => {

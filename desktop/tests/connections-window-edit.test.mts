@@ -101,8 +101,8 @@ test('a delegated connect carries a type and a key, never the connection itself'
   const sender = bodyAfter(source, 'function emitToOwner');
   assert.match(
     sender,
-    /emitTo\(\s*ownerWindowLabel,\s*event,\s*\{\s*\.\.\.payload,\s*targetWindowLabel:\s*ownerWindowLabel\s*\}/,
-    'the only field added to a request is the window it is addressed to',
+    /\{ action: 'open', preferredOwner, connectionType: payload\.type, key: payload\.key \}/,
+    'the broker request contains only the owner, type and key',
   );
 
   for (const secret of ['password', 'apiToken', 'privateKey', 'proxyPassword']) {

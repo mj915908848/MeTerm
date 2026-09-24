@@ -984,21 +984,23 @@ export function createWatchTerminalTool(): ToolHandler {
             detectorChecked = false;
             return;
           }
-          // One check per quiet period — the old loop re-scanned the
-          // entire (up to 64 KB) buffer every 400ms for no benefit.
-          if (detectorChecked) return;
-          detectorChecked = true;
-
           // Hookless completion. Without OSC 7768 (SSH into a host where
           // the hook could not be injected, PowerShell, failed injection)
           // no shell-idle event will ever arrive, so a quiet prompt tail
           // is the best "the command finished" evidence available. This
           // is the same last-resort rule run_command already applies.
+          // Keep checking until the longer prompt-settle interval passes;
+          // the interactive detector below may have run at 1200ms already.
           if (!hookInjected && hadOutput && silentMs >= WATCH_PROMPT_SETTLE_MS
             && endsWithShellPrompt(lifecycle.output)) {
             finalize('completed');
             return;
           }
+
+          // One interactive check per quiet period — the old loop
+          // re-scanned the entire (up to 64 KB) buffer every 400ms.
+          if (detectorChecked) return;
+          detectorChecked = true;
 
           const det = detectInteractiveState(lifecycle.output, false);
           if (det.state === 'waiting_password' || det.state === 'waiting_confirm' || det.state === 'waiting_input') {

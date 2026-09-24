@@ -116,8 +116,8 @@ test('the launcher sends its requests to that window', () => {
 
   assert.match(
     sender,
-    /void emitTo\(ownerWindowLabel, event, \{ \.\.\.payload, targetWindowLabel: ownerWindowLabel \}\)/,
-    'one sender, one target, one label — nothing else may be attached to a request',
+    /invoke<string \| null>\('connections_dispatch', \{ request \}\)/,
+    'requests must pass through the constrained native dispatcher',
   );
 
   for (const site of [
@@ -172,13 +172,11 @@ test('a label that cannot be a window of this app is never a target', () => {
 // windows that take part have to be allowed to.
 
 test('both windows that target a request are allowed to', () => {
-  // `default` covers `main` and every `window-*`; `connections` is the launcher.
-  for (const name of ['default.json', 'connections.json']) {
-    assert.ok(
-      readCapability(name).includes('core:event:allow-emit-to'),
-      `${name} has to allow emit-to: a targeted request is rejected without it`,
-    );
-  }
+  const launcher = JSON.parse(readCapability('connections.json'));
+  assert.ok(!launcher.permissions.includes('core:event:allow-emit'));
+  assert.ok(!launcher.permissions.includes('core:event:allow-emit-to'));
+  assert.ok(launcher.permissions.includes('connections-commands'));
+  assert.match(read('connections-window.ts'), /invoke\(['"]connections_dispatch['"]/);
   // The whole fix rests on a `window-*` window being able to serve the launcher, so
   // "new window" has to stay covered by the capability that grants it the API.
   const covered: string[] = JSON.parse(readCapability('default.json')).windows;
@@ -186,4 +184,15 @@ test('both windows that target a request are allowed to', () => {
     covered.includes('window-*') && covered.includes('main'),
     'every window that can own the launcher has to be covered by a capability',
   );
+});
+
+test('native dispatcher permits only connection events and checks live owner before delivery', () => {
+  const rust = fs.readFileSync(new URL('../src-tauri/src/commands/connections_dispatch.rs', import.meta.url), 'utf8');
+  assert.match(rust, /caller\.label\(\)\s*!=\s*"connections"/);
+  assert.match(rust, /get_webview_window\(preferred_owner\)/);
+  assert.match(rust, /get_webview_window\("main"\)/);
+  for (const event of ['connections-open-request', 'connections-new-request', 'connections-mutated']) {
+    assert.ok(rust.includes(event));
+  }
+  assert.doesNotMatch(rust, /pub async fn connections_dispatch[^]*event:\s*String/);
 });

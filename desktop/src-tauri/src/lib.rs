@@ -1082,6 +1082,7 @@ pub fn run() {
             commands::remote_broker::remote_close_session,
             // Identity-confirmed native export; credential bytes never cross WebView IPC.
             commands::connection_export::export_ssh_connections,
+            commands::connections_dispatch::connections_dispatch,
             // relay tunnel(公网中继隧道配置:出站注册客户端)
             server::relay_client::get_relay_config,
             server::relay_client::set_relay_config,

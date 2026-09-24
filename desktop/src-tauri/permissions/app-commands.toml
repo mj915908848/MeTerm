@@ -60,6 +60,7 @@ commands.allow = [
   "remote_send_frame",
   "remote_close_session",
   "export_ssh_connections",
+  "connections_dispatch",
   "get_relay_config",
   "set_relay_config",
   "sync_get_connections",

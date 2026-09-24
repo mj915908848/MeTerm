@@ -25,8 +25,6 @@
     "core:window:allow-inner-size",
     "core:window:allow-outer-position",
     "core:window:allow-scale-factor",
-    "core:event:allow-emit",
-    "core:event:allow-emit-to",
     "core:event:allow-listen",
     "core:event:allow-unlisten"
   ]
