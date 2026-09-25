@@ -19,7 +19,6 @@ import {
   TOKEN_BUDGET, injectShellHook,
   TodoState,
 } from './ai-tools';
-import { localReadApprovalKey } from './ai-tools-core';
 import type { TodoItem } from './ai-tools-todo';
 import { TerminalRegistry } from './terminal';
 import { loadSettings } from './themes';
@@ -39,6 +38,8 @@ import { type AgentEvent } from './ai-agent-events';
 import { runAgentAsGenerator, type ImageAttachment } from './ai-agent-run';
 import { runTools, type ToolExecResult } from './ai-tool-orchestrator';
 import type { ToolHandler } from './ai-tools';
+import { invoke } from '@tauri-apps/api/core';
+import { localReadApprovalKey, resolveLocalToolPath, resolvePaneTarget } from './ai-tools-core';
 import { hooks } from './ai-hooks';
 import { summarizeOlderMessages, COMPACT_MAX_OUTPUT } from './ai-agent-compact';
 import { abortableOperation } from './ai-abortable-operation';
@@ -59,6 +60,45 @@ export { gatherContext } from './ai-agent-context';
 export type { AgentEvent } from './ai-agent-events';
 
 const SCOPED_READ_TOOLS = new Set(['read_file', 'grep_search', 'glob_search', 'list_directory']);
+
+async function preflightReadScopeConfirmation(
+  toolName: string,
+  args: Record<string, unknown>,
+  context: ReturnType<typeof buildToolContext>,
+): Promise<boolean | undefined> {
+  if (!SCOPED_READ_TOOLS.has(toolName)) return undefined;
+
+  const paneResult = toolName === 'read_file'
+    ? {
+      ok: true as const,
+      pane: context.panes.find((pane) => pane.isDefaultTarget) ?? context.panes[0],
+    }
+    : resolvePaneTarget(context, args.pane);
+  if (!paneResult.ok || !paneResult.pane) return true;
+  const pane = paneResult.pane;
+  const isSSH = toolName === 'read_file' ? context.isSSH : pane.isSSH;
+  if (isSSH) return true;
+
+  const cwd = toolName === 'read_file' ? context.cwd : pane.cwd;
+  const rawPath = toolName === 'glob_search' ? args.cwd : args.path;
+  const requestedPath = typeof rawPath === 'string' && rawPath.trim()
+    ? rawPath.trim()
+    : toolName === 'read_file'
+      ? ''
+      : pane.cwd || '.';
+  const localPath = resolveLocalToolPath(requestedPath, cwd);
+  if (!localPath) return true;
+
+  try {
+    return await invoke<boolean>('agent_read_path_requires_confirmation', {
+      path: localPath,
+      workspaceRoot: cwd,
+    });
+  } catch {
+    // Do not silently trust lexical paths if the canonical preflight fails.
+    return true;
+  }
+}
 
 function rememberAuthorizedReadPath(
   toolName: string,
@@ -869,6 +909,12 @@ export class ToolAgent {
           // Notify UI about this tool call (for card rendering).
           callbacks.onToolCall?.(toolCall.function.name, args);
 
+          const readScopeConfirmation = await preflightReadScopeConfirmation(
+            toolCall.function.name,
+            args,
+            toolCtx,
+          );
+
           // Permission decision via mode + rules + handler heuristic.
           const perm = decidePermission(
             toolCall.function.name,
@@ -877,6 +923,7 @@ export class ToolAgent {
             permMode,
             permRules,
             toolCtx,
+            readScopeConfirmation,
           );
           if (perm.kind === 'deny') {
             decisions.set(toolCall.id, { kind: 'reject', message: perm.reason });
@@ -885,7 +932,7 @@ export class ToolAgent {
           if (perm.kind === 'allow') {
             const allowScopeBypass = permMode === 'acceptAll'
               || permMode === 'bypass'
-              || requiresReadScopeConfirmation(toolCall.function.name, args, toolCtx);
+              || (readScopeConfirmation ?? requiresReadScopeConfirmation(toolCall.function.name, args, toolCtx));
             rememberAuthorizedReadPath(toolCall.function.name, args, toolCtx, allowScopeBypass);
             decisions.set(toolCall.id, { kind: 'run', args });
             continue;
@@ -974,7 +1021,7 @@ export class ToolAgent {
           // approved === true
           const allowScopeBypass = permMode === 'acceptAll'
             || permMode === 'bypass'
-            || requiresReadScopeConfirmation(toolCall.function.name, args, toolCtx);
+            || (readScopeConfirmation ?? requiresReadScopeConfirmation(toolCall.function.name, args, toolCtx));
           rememberAuthorizedReadPath(toolCall.function.name, args, toolCtx, allowScopeBypass);
           decisions.set(toolCall.id, { kind: 'run', args });
         }

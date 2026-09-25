@@ -1152,6 +1152,7 @@ pub fn run() {
             commands::fs::delete_background_image,
             commands::fs::take_initial_open_path,
             commands::fs::agent_read_file,
+            commands::fs::agent_read_path_requires_confirmation,
             commands::fs::agent_read_file_bytes,
             commands::fs::agent_write_file,
             commands::fs::agent_write_file_bytes,

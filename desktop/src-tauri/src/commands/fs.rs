@@ -319,20 +319,30 @@ fn resolve_agent_read_path(
     let resolved = normalize_path(path);
     let canonical_path = std::fs::canonicalize(&resolved)
         .map_err(|_| format!("path not found or inaccessible: {}", resolved))?;
-    let canonical_root = std::fs::canonicalize(normalize_path(workspace_root))
-        .map_err(|_| "terminal working directory is unavailable".to_string())?;
-    if !canonical_path.starts_with(&canonical_root) && !allow_outside {
-        return Err(
-            "path resolves outside the terminal working directory; explicit confirmation is required"
-                .into(),
-        );
-    }
-    if !allow_outside
-        && is_sensitive_agent_grep_path(&canonical_path, canonical_path.is_dir())
-    {
-        return Err("path may contain credentials; explicit confirmation is required".into());
+    if !allow_outside {
+        let canonical_root = std::fs::canonicalize(normalize_path(workspace_root))
+            .map_err(|_| "terminal working directory is unavailable".to_string())?;
+        if !canonical_path.starts_with(&canonical_root) {
+            return Err(
+                "path resolves outside the terminal working directory; explicit confirmation is required"
+                    .into(),
+            );
+        }
+        if is_sensitive_agent_grep_path(&canonical_path, canonical_path.is_dir()) {
+            return Err("path may contain credentials; explicit confirmation is required".into());
+        }
     }
     Ok(canonical_path)
+}
+
+/// Check the canonical target before the frontend decides whether a local
+/// Agent read needs explicit scope confirmation. Errors fail closed.
+#[tauri::command]
+pub fn agent_read_path_requires_confirmation(path: String, workspace_root: String) -> bool {
+    if workspace_root.trim().is_empty() {
+        return true;
+    }
+    resolve_agent_read_path(&path, &workspace_root, false).is_err()
 }
 
 /// Read a local file by absolute / `~`-prefixed path.

@@ -266,6 +266,7 @@ export const DEFAULT_PERMISSION_RULES: PermissionRule[] = [
  * @param handler   The registered handler (for fallback heuristics).
  * @param mode      Current PermissionMode.
  * @param rules     User + default rules (first match wins).
+ * @param readScopeConfirmation Canonical local-read scope result, when preflighted.
  */
 export function decidePermission(
   toolName: string,
@@ -274,7 +275,11 @@ export function decidePermission(
   mode: PermissionMode,
   rules: PermissionRule[],
   context?: ToolContext,
+  readScopeConfirmation?: boolean,
 ): PermissionDecision {
+  const scopeNeedsConfirmation = readScopeConfirmation
+    ?? requiresReadScopeConfirmation(toolName, args, context);
+
   // Bypass: short-circuit everything.
   if (mode === 'bypass') return { kind: 'allow' };
 
@@ -284,7 +289,7 @@ export function decidePermission(
   // though isConcurrencySafe is false (it's serialized, not read-only).
   if (mode === 'plan') {
     if (handler?.isConcurrencySafe || toolName === 'todo_write') {
-      return requiresReadScopeConfirmation(toolName, args, context) ? { kind: 'ask' } : { kind: 'allow' };
+      return scopeNeedsConfirmation ? { kind: 'ask' } : { kind: 'allow' };
     }
     return {
       kind: 'deny',
@@ -314,7 +319,7 @@ export function decidePermission(
   // Mode defaults (equivalent to legacy trust levels).
   if (!handler) return { kind: 'ask' }; // unknown tool → always ask
 
-  if (mode === 'acceptSafe' && requiresReadScopeConfirmation(toolName, args, context)) {
+  if (mode === 'acceptSafe' && scopeNeedsConfirmation) {
     return { kind: 'ask' };
   }
   // Shell command strings can read arbitrary host files and chain commands;
