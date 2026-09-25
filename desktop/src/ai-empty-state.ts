@@ -67,7 +67,7 @@ async function detectProjectHints(cwd: string, isSSH: boolean): Promise<ProjectH
         path,
         maxBytes: 1024,
         workspaceRoot: cwd,
-        allowOutside: false,
+        approvedCanonicalPath: null,
       });
       return r.content ?? '';
     } catch {

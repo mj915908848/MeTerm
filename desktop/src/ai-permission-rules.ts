@@ -5,8 +5,9 @@
 //   PermissionMode: coarse-grained default behavior
 //   PermissionRule: fine-grained allow/deny overrides with regex
 //
-// Evaluation order: user rules → mode default → handler heuristic
-// (requiresConfirm / isDestructive).  First match wins.
+// Evaluation order: bypass / plan guards → user rules (with canonical read
+// scope constraints) → mode default → handler heuristic.
+// User rules remain first-match-wins.
 
 import type { ToolContext, ToolHandler } from './ai-tools-core';
 
@@ -308,7 +309,12 @@ export function decidePermission(
       return { kind: 'ask' };
     }
     if (match) {
-      if (rule.action === 'allow') return { kind: 'allow' };
+      if (rule.action === 'allow') {
+        // A rule can auto-approve an in-scope read, but cannot grant access
+        // beyond the canonical workspace/sensitive-path boundary.
+        if (scopeNeedsConfirmation && mode !== 'acceptAll') return { kind: 'ask' };
+        return { kind: 'allow' };
+      }
       if (rule.action === 'deny') {
         return { kind: 'deny', reason: `Denied by permission rule (tool=${rule.tool}).` };
       }

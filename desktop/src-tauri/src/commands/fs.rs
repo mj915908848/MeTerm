@@ -310,39 +310,72 @@ pub struct AgentReadResult {
 }
 
 /// Resolve Agent read paths through symlinks and keep them within the active
-/// terminal workspace unless that exact path was authorized by the UI.
+/// terminal workspace unless the UI approved this exact canonical target.
 fn resolve_agent_read_path(
     path: &str,
     workspace_root: &str,
-    allow_outside: bool,
+    approved_canonical_path: Option<&str>,
 ) -> Result<std::path::PathBuf, String> {
     let resolved = normalize_path(path);
     let canonical_path = std::fs::canonicalize(&resolved)
         .map_err(|_| format!("path not found or inaccessible: {}", resolved))?;
-    if !allow_outside {
-        let canonical_root = std::fs::canonicalize(normalize_path(workspace_root))
-            .map_err(|_| "terminal working directory is unavailable".to_string())?;
-        if !canonical_path.starts_with(&canonical_root) {
+    if let Some(approved) = approved_canonical_path {
+        if canonical_path != std::path::Path::new(approved) {
             return Err(
-                "path resolves outside the terminal working directory; explicit confirmation is required"
+                "read target changed after confirmation; review the new target and confirm again"
                     .into(),
             );
         }
-        if is_sensitive_agent_grep_path(&canonical_path, canonical_path.is_dir()) {
-            return Err("path may contain credentials; explicit confirmation is required".into());
-        }
+        return Ok(canonical_path);
+    }
+
+    let canonical_root = std::fs::canonicalize(normalize_path(workspace_root))
+        .map_err(|_| "terminal working directory is unavailable".to_string())?;
+    if !canonical_path.starts_with(&canonical_root) {
+        return Err(
+            "path resolves outside the terminal working directory; explicit confirmation is required"
+                .into(),
+        );
+    }
+    if is_sensitive_agent_grep_path(&canonical_path, canonical_path.is_dir()) {
+        return Err("path may contain credentials; explicit confirmation is required".into());
     }
     Ok(canonical_path)
 }
 
-/// Check the canonical target before the frontend decides whether a local
-/// Agent read needs explicit scope confirmation. Errors fail closed.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentReadPathPreflight {
+    pub canonical_path: String,
+    pub requires_confirmation: bool,
+}
+
+/// Check that the target exists, then report its canonical location and
+/// whether it needs explicit scope confirmation. Invalid targets stay errors.
 #[tauri::command]
-pub fn agent_read_path_requires_confirmation(path: String, workspace_root: String) -> bool {
-    if workspace_root.trim().is_empty() {
-        return true;
-    }
-    resolve_agent_read_path(&path, &workspace_root, false).is_err()
+pub fn agent_read_path_requires_confirmation(
+    path: String,
+    workspace_root: String,
+) -> Result<AgentReadPathPreflight, String> {
+    let resolved = normalize_path(&path);
+    let canonical_path = std::fs::canonicalize(&resolved)
+        .map_err(|_| format!("path not found or inaccessible: {}", resolved))?;
+    let canonical_root = if workspace_root.trim().is_empty() {
+        None
+    } else {
+        std::fs::canonicalize(normalize_path(&workspace_root)).ok()
+    };
+    let requires_confirmation = match canonical_root {
+        Some(root) => {
+            !canonical_path.starts_with(&root)
+                || is_sensitive_agent_grep_path(&canonical_path, canonical_path.is_dir())
+        }
+        None => true,
+    };
+    Ok(AgentReadPathPreflight {
+        canonical_path: canonical_path.to_string_lossy().into_owned(),
+        requires_confirmation,
+    })
 }
 
 /// Read a local file by absolute / `~`-prefixed path.
@@ -353,10 +386,10 @@ pub fn agent_read_file(
     path: String,
     max_bytes: Option<u64>,
     workspace_root: String,
-    allow_outside: bool,
+    approved_canonical_path: Option<String>,
 ) -> Result<AgentReadResult, String> {
     let resolved = normalize_path(&path);
-    let p = resolve_agent_read_path(&path, &workspace_root, allow_outside)?;
+    let p = resolve_agent_read_path(&path, &workspace_root, approved_canonical_path.as_deref())?;
 
     if !p.is_file() {
         return Err(format!("not a regular file: {}", resolved));
@@ -601,10 +634,10 @@ pub fn agent_list_directory(
     show_hidden: Option<bool>,
     max_entries: Option<usize>,
     workspace_root: String,
-    allow_outside: bool,
+    approved_canonical_path: Option<String>,
 ) -> Result<AgentDirListing, String> {
     let resolved = normalize_path(&path);
-    let p = resolve_agent_read_path(&path, &workspace_root, allow_outside)?;
+    let p = resolve_agent_read_path(&path, &workspace_root, approved_canonical_path.as_deref())?;
     if !p.is_dir() {
         return Err(format!("not a directory: {}", resolved));
     }
@@ -670,12 +703,12 @@ pub fn agent_glob_search(
     cwd: String,
     max_results: Option<usize>,
     workspace_root: String,
-    allow_outside: bool,
+    approved_canonical_path: Option<String>,
 ) -> Result<Vec<GlobMatch>, String> {
     use globset::{GlobBuilder, GlobMatcher};
     use walkdir::WalkDir;
 
-    let root = resolve_agent_read_path(&cwd, &workspace_root, allow_outside)?;
+    let root = resolve_agent_read_path(&cwd, &workspace_root, approved_canonical_path.as_deref())?;
 
     let cap = max_results.unwrap_or(200).min(2000);
 
@@ -882,14 +915,14 @@ pub fn agent_grep_search(
     case_insensitive: Option<bool>,
     max_hits: Option<usize>,
     workspace_root: String,
-    allow_outside: bool,
+    approved_canonical_path: Option<String>,
 ) -> Result<GrepResult, String> {
     use globset::{GlobBuilder, GlobMatcher};
     use regex::RegexBuilder;
     use walkdir::WalkDir;
 
-    let root = resolve_agent_read_path(&path, &workspace_root, allow_outside)?;
-    if !allow_outside && is_sensitive_agent_grep_path(&root, root.is_dir()) {
+    let root = resolve_agent_read_path(&path, &workspace_root, approved_canonical_path.as_deref())?;
+    if approved_canonical_path.is_none() && is_sensitive_agent_grep_path(&root, root.is_dir()) {
         return Ok(GrepResult {
             hits: Vec::new(),
             files_scanned: 0,
@@ -976,7 +1009,9 @@ pub fn agent_grep_search(
         if head.contains(&0u8) {
             continue;
         }
-        if contains_private_key_header(&bytes) && !(allow_outside && entry.depth() == 0) {
+        if contains_private_key_header(&bytes)
+            && !(approved_canonical_path.is_some() && entry.depth() == 0)
+        {
             continue;
         }
         let content = match std::str::from_utf8(&bytes) {

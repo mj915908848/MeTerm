@@ -92,7 +92,7 @@ export function createReadFileTool(): ToolHandler {
           // 10 MB cap matches the previous behavior.
           maxBytes: 10 * 1024 * 1024,
           workspaceRoot: ctx.cwd,
-          allowOutside: ctx.approvedReadPaths?.has(localPath) ?? false,
+          approvedCanonicalPath: ctx.approvedReadPaths?.get(localPath) ?? null,
         });
 
         if (result.too_large) {

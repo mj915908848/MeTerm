@@ -96,8 +96,8 @@ export interface ToolContext {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   todoState?: import('./ai-tools-todo').TodoStateRef;
-  /** Exact local read paths authorized by the permission decision. */
-  approvedReadPaths?: Set<string>;
+  /** Local read paths explicitly authorized for one canonical target. */
+  approvedReadPaths?: Map<string, string>;
 }
 
 /** Resolve relative local tool paths against the selected terminal pane cwd. */
@@ -383,7 +383,7 @@ export function buildToolContext(sessionId: string): ToolContext {
     shellType: defaultPane.shellType,
     cwd: defaultPane.cwd,
     panes,
-    approvedReadPaths: new Set<string>(),
+    approvedReadPaths: new Map<string, string>(),
   };
 }
 

@@ -100,6 +100,7 @@ const APP_COMMANDS: &[&str] = &[
     "delete_background_image",
     "take_initial_open_path",
     "agent_read_file",
+    "agent_read_path_requires_confirmation",
     "agent_read_file_bytes",
     "agent_write_file",
     "agent_write_file_bytes",

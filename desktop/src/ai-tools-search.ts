@@ -99,7 +99,7 @@ export function createListDirectoryTool(): ToolHandler {
             showHidden,
             maxEntries,
             workspaceRoot: pane.cwd,
-            allowOutside: ctx.approvedReadPaths?.has(localPath) ?? false,
+            approvedCanonicalPath: ctx.approvedReadPaths?.get(localPath) ?? null,
           });
           return formatListing(result);
         } catch (e) {
@@ -220,7 +220,7 @@ export function createGlobSearchTool(): ToolHandler {
             cwd,
             maxResults,
             workspaceRoot: pane.cwd,
-            allowOutside: ctx.approvedReadPaths?.has(cwd) ?? false,
+            approvedCanonicalPath: ctx.approvedReadPaths?.get(cwd) ?? null,
           });
           return formatGlobMatches(matches, pattern, cwd, matches.length >= maxResults);
         } catch (e) {
@@ -325,7 +325,7 @@ export function createGrepSearchTool(): ToolHandler {
             caseInsensitive,
             maxHits,
             workspaceRoot: pane.cwd,
-            allowOutside: ctx.approvedReadPaths?.has(root) ?? false,
+            approvedCanonicalPath: ctx.approvedReadPaths?.get(root) ?? null,
           });
           return formatGrepResult(result, pattern, root);
         } catch (e) {

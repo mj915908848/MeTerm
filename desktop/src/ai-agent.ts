@@ -61,11 +61,16 @@ export type { AgentEvent } from './ai-agent-events';
 
 const SCOPED_READ_TOOLS = new Set(['read_file', 'grep_search', 'glob_search', 'list_directory']);
 
+type ReadScopePreflight =
+  | { kind: 'safe'; canonicalPath: string }
+  | { kind: 'confirmation-required'; canonicalPath?: string }
+  | { kind: 'invalid'; reason: string };
+
 async function preflightReadScopeConfirmation(
   toolName: string,
   args: Record<string, unknown>,
   context: ReturnType<typeof buildToolContext>,
-): Promise<boolean | undefined> {
+): Promise<ReadScopePreflight | undefined> {
   if (!SCOPED_READ_TOOLS.has(toolName)) return undefined;
 
   const paneResult = toolName === 'read_file'
@@ -74,10 +79,15 @@ async function preflightReadScopeConfirmation(
       pane: context.panes.find((pane) => pane.isDefaultTarget) ?? context.panes[0],
     }
     : resolvePaneTarget(context, args.pane);
-  if (!paneResult.ok || !paneResult.pane) return true;
+  if (!paneResult.ok || !paneResult.pane) {
+    return {
+      kind: 'invalid',
+      reason: paneResult.ok ? 'No terminal pane is available.' : paneResult.error,
+    };
+  }
   const pane = paneResult.pane;
   const isSSH = toolName === 'read_file' ? context.isSSH : pane.isSSH;
-  if (isSSH) return true;
+  if (isSSH) return { kind: 'confirmation-required' };
 
   const cwd = toolName === 'read_file' ? context.cwd : pane.cwd;
   const rawPath = toolName === 'glob_search' ? args.cwd : args.path;
@@ -87,16 +97,31 @@ async function preflightReadScopeConfirmation(
       ? ''
       : pane.cwd || '.';
   const localPath = resolveLocalToolPath(requestedPath, cwd);
-  if (!localPath) return true;
+  if (!localPath) {
+    return {
+      kind: 'invalid',
+      reason: 'The local read path cannot be resolved because the terminal working directory is unavailable.',
+    };
+  }
 
   try {
-    return await invoke<boolean>('agent_read_path_requires_confirmation', {
-      path: localPath,
-      workspaceRoot: cwd,
-    });
-  } catch {
-    // Do not silently trust lexical paths if the canonical preflight fails.
-    return true;
+    const result = await invoke<{ canonicalPath: string; requiresConfirmation: boolean }>(
+      'agent_read_path_requires_confirmation',
+      {
+        path: localPath,
+        workspaceRoot: cwd,
+      },
+    );
+    return result.requiresConfirmation
+      ? { kind: 'confirmation-required', canonicalPath: result.canonicalPath }
+      : { kind: 'safe', canonicalPath: result.canonicalPath };
+  } catch (error) {
+    const reason = typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : 'The target is missing or inaccessible.';
+    return { kind: 'invalid', reason: `Local read preflight failed: ${reason}` };
   }
 }
 
@@ -104,9 +129,9 @@ function rememberAuthorizedReadPath(
   toolName: string,
   args: Record<string, unknown>,
   context: ReturnType<typeof buildToolContext>,
-  allowScopeBypass: boolean,
+  canonicalPath: string | undefined,
 ): void {
-  if (!allowScopeBypass || !SCOPED_READ_TOOLS.has(toolName) || !context.approvedReadPaths) return;
+  if (!canonicalPath || !SCOPED_READ_TOOLS.has(toolName) || !context.approvedReadPaths) return;
 
   const paneNumber = Number(args.pane);
   const pane = Number.isInteger(paneNumber) && paneNumber > 0
@@ -124,7 +149,7 @@ function rememberAuthorizedReadPath(
 
   const cwd = toolName === 'read_file' ? context.cwd : pane?.cwd ?? context.cwd;
   const key = localReadApprovalKey(requested, cwd);
-  if (key) context.approvedReadPaths.add(key);
+  if (key) context.approvedReadPaths.set(key, canonicalPath);
 }
 
 // ─── Agent Callbacks ────────────────────────────────────────────
@@ -909,11 +934,19 @@ export class ToolAgent {
           // Notify UI about this tool call (for card rendering).
           callbacks.onToolCall?.(toolCall.function.name, args);
 
-          const readScopeConfirmation = await preflightReadScopeConfirmation(
+          const readScopePreflight = await preflightReadScopeConfirmation(
             toolCall.function.name,
             args,
             toolCtx,
           );
+          if (readScopePreflight?.kind === 'invalid') {
+            decisions.set(toolCall.id, {
+              kind: 'reject',
+              message: readScopePreflight.reason,
+            });
+            continue;
+          }
+          const readScopeConfirmation = readScopePreflight?.kind === 'confirmation-required';
 
           // Permission decision via mode + rules + handler heuristic.
           const perm = decidePermission(
@@ -933,7 +966,12 @@ export class ToolAgent {
             const allowScopeBypass = permMode === 'acceptAll'
               || permMode === 'bypass'
               || (readScopeConfirmation ?? requiresReadScopeConfirmation(toolCall.function.name, args, toolCtx));
-            rememberAuthorizedReadPath(toolCall.function.name, args, toolCtx, allowScopeBypass);
+            rememberAuthorizedReadPath(
+              toolCall.function.name,
+              args,
+              toolCtx,
+              allowScopeBypass ? readScopePreflight?.canonicalPath : undefined,
+            );
             decisions.set(toolCall.id, { kind: 'run', args });
             continue;
           }
@@ -1019,10 +1057,12 @@ export class ToolAgent {
             continue;
           }
           // approved === true
-          const allowScopeBypass = permMode === 'acceptAll'
-            || permMode === 'bypass'
-            || (readScopeConfirmation ?? requiresReadScopeConfirmation(toolCall.function.name, args, toolCtx));
-          rememberAuthorizedReadPath(toolCall.function.name, args, toolCtx, allowScopeBypass);
+          rememberAuthorizedReadPath(
+            toolCall.function.name,
+            args,
+            toolCtx,
+            readScopePreflight?.canonicalPath,
+          );
           decisions.set(toolCall.id, { kind: 'run', args });
         }
 
