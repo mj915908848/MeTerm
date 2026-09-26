@@ -309,6 +309,51 @@ pub struct AgentReadResult {
     pub too_large: bool,
 }
 
+const HARDLINK_CONFIRMATION_REQUIRED: &str =
+    "file has multiple hard links or an unverifiable link count; explicit confirmation is required";
+
+/// Return true when a regular file has more than one directory entry pointing
+/// to the same file. Unknown platforms fail closed for regular files.
+fn has_multiple_file_links(metadata: &std::fs::Metadata) -> bool {
+    if !metadata.is_file() {
+        return false;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        metadata.nlink() > 1
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.number_of_links() > 1
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        true
+    }
+}
+
+fn hardlink_confirmation_error(path: &std::path::Path) -> String {
+    format!(
+        "{}: {}; call read_file on this path to request confirmation",
+        path.display(),
+        HARDLINK_CONFIRMATION_REQUIRED
+    )
+}
+
+fn reject_unapproved_hardlinked_file(
+    metadata: &std::fs::Metadata,
+    path: &std::path::Path,
+    approved_canonical_path: Option<&str>,
+) -> Result<(), String> {
+    if approved_canonical_path.is_none() && has_multiple_file_links(metadata) {
+        return Err(hardlink_confirmation_error(path));
+    }
+    Ok(())
+}
+
 /// Resolve Agent read paths through symlinks and keep them within the active
 /// terminal workspace unless the UI approved this exact canonical target.
 fn resolve_agent_read_path(
@@ -340,6 +385,13 @@ fn resolve_agent_read_path(
     if is_sensitive_agent_grep_path(&canonical_path, canonical_path.is_dir()) {
         return Err("path may contain credentials; explicit confirmation is required".into());
     }
+    let metadata = std::fs::metadata(&canonical_path).map_err(|_| {
+        format!(
+            "path not found or inaccessible: {}",
+            canonical_path.display()
+        )
+    })?;
+    reject_unapproved_hardlinked_file(&metadata, &canonical_path, None)?;
     Ok(canonical_path)
 }
 
@@ -367,8 +419,12 @@ pub fn agent_read_path_requires_confirmation(
     };
     let requires_confirmation = match canonical_root {
         Some(root) => {
-            !canonical_path.starts_with(&root)
-                || is_sensitive_agent_grep_path(&canonical_path, canonical_path.is_dir())
+            let scope_or_sensitive = !canonical_path.starts_with(&root)
+                || is_sensitive_agent_grep_path(&canonical_path, canonical_path.is_dir());
+            scope_or_sensitive
+                || std::fs::metadata(&canonical_path)
+                    .map(|metadata| has_multiple_file_links(&metadata))
+                    .unwrap_or(true)
         }
         None => true,
     };
@@ -395,7 +451,9 @@ pub fn agent_read_file(
         return Err(format!("not a regular file: {}", resolved));
     }
 
-    let meta = std::fs::metadata(&p).map_err(|e| format!("stat failed: {}", e))?;
+    let mut file = std::fs::File::open(&p).map_err(|e| format!("read failed: {}", e))?;
+    let meta = file.metadata().map_err(|e| format!("stat failed: {}", e))?;
+    reject_unapproved_hardlinked_file(&meta, &p, approved_canonical_path.as_deref())?;
     let size = meta.len();
     let cap = max_bytes.unwrap_or(10 * 1024 * 1024); // 10 MB default
 
@@ -408,7 +466,8 @@ pub fn agent_read_file(
         });
     }
 
-    let bytes = std::fs::read(&p).map_err(|e| format!("read failed: {}", e))?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut file, &mut bytes).map_err(|e| format!("read failed: {}", e))?;
 
     // Binary detection: any NUL byte in the first 4KB.
     let head = &bytes[..bytes.len().min(4096)];
@@ -659,6 +718,21 @@ pub fn agent_list_directory(
             break;
         }
         let ft = entry.file_type().ok();
+        let metadata_result = entry.metadata();
+        if matches!(ft.as_ref(), Some(file_type) if file_type.is_file()) {
+            match metadata_result.as_ref() {
+                Ok(metadata) => reject_unapproved_hardlinked_file(
+                    metadata,
+                    &entry.path(),
+                    approved_canonical_path.as_deref(),
+                )?,
+                Err(_) if approved_canonical_path.is_none() => {
+                    return Err(hardlink_confirmation_error(&entry.path()));
+                }
+                Err(_) => {}
+            }
+        }
+        let meta = metadata_result.ok();
         let kind = match ft {
             Some(t) if t.is_dir() => "dir",
             Some(t) if t.is_symlink() => "symlink",
@@ -666,7 +740,6 @@ pub fn agent_list_directory(
             _ => "other",
         }
         .to_string();
-        let meta = entry.metadata().ok();
         let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
         let mtime = meta
             .and_then(|m| m.modified().ok())
@@ -759,6 +832,16 @@ pub fn agent_glob_search(
         let rel = entry.path().strip_prefix(&root).unwrap_or(entry.path());
         let rel_str = rel.to_string_lossy();
         if matcher.is_match(rel.as_os_str()) || matcher.is_match(rel_str.as_ref()) {
+            if entry.file_type().is_file() {
+                let metadata = entry
+                    .metadata()
+                    .map_err(|_| hardlink_confirmation_error(entry.path()))?;
+                reject_unapproved_hardlinked_file(
+                    &metadata,
+                    entry.path(),
+                    approved_canonical_path.as_deref(),
+                )?;
+            }
             hits.push(GlobMatch {
                 path: entry.path().to_string_lossy().to_string(),
                 is_dir: entry.file_type().is_dir(),
@@ -997,10 +1080,17 @@ pub fn agent_grep_search(
 
         // Cheap binary sniff: read up to 4 KB, bail on NUL.
         let path = entry.path();
-        let bytes = match std::fs::read(path) {
-            Ok(b) => b,
+        let mut file = match std::fs::File::open(path) {
+            Ok(file) => file,
             Err(_) => continue,
         };
+        let metadata = file
+            .metadata()
+            .map_err(|_| hardlink_confirmation_error(path))?;
+        reject_unapproved_hardlinked_file(&metadata, path, approved_canonical_path.as_deref())?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut file, &mut bytes)
+            .map_err(|_| format!("failed to read file: {}", path.display()))?;
         // Hard cap per-file size at 1 MB to avoid pathological cases.
         if bytes.len() > 1024 * 1024 {
             continue;
@@ -1208,5 +1298,205 @@ fn crc32(data: &[u8]) -> u32 {
             crc = TABLE[idx] ^ (crc >> 8);
         }
         crc ^ 0xffffffff
+    }
+}
+
+#[cfg(test)]
+mod agent_read_hardlink_tests {
+    use super::*;
+    use std::path::{Path, PathBuf};
+
+    struct TestWorkspace {
+        root: PathBuf,
+    }
+
+    impl TestWorkspace {
+        fn new() -> Self {
+            let root = std::env::temp_dir().join(format!(
+                "meterm-agent-hardlink-test-{}",
+                uuid::Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&root).expect("create temporary workspace");
+            Self { root }
+        }
+
+        fn linked_file(&self, name: &str, alias: &str, content: &str) -> PathBuf {
+            let file = self.root.join(name);
+            let alias = self.root.join(alias);
+            std::fs::write(&file, content).expect("write fixture");
+            std::fs::hard_link(&file, &alias).expect("create hard link fixture");
+            file
+        }
+    }
+
+    impl Drop for TestWorkspace {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn path_string(path: &Path) -> String {
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn hardlinked_file_preflight_requires_confirmation() {
+        let workspace = TestWorkspace::new();
+        let file = workspace.linked_file("shared-data.txt", "alias.txt", "private content");
+
+        let preflight =
+            agent_read_path_requires_confirmation(path_string(&file), path_string(&workspace.root))
+                .expect("preflight existing file");
+
+        assert!(preflight.requires_confirmation);
+    }
+
+    #[test]
+    fn unapproved_hardlinked_file_is_rejected_but_approved_target_is_allowed() {
+        let workspace = TestWorkspace::new();
+        let file = workspace.linked_file("shared-data.txt", "alias.txt", "private content");
+        let workspace_root = path_string(&workspace.root);
+
+        let rejected = resolve_agent_read_path(&path_string(&file), &workspace_root, None);
+        assert!(rejected
+            .expect_err("unapproved hard link must be rejected")
+            .contains("explicit confirmation is required"));
+
+        let denied_read = agent_read_file(path_string(&file), None, workspace_root.clone(), None);
+        assert!(denied_read
+            .err()
+            .expect("unapproved hard link must not be read")
+            .contains("explicit confirmation is required"));
+
+        let canonical = std::fs::canonicalize(&file).expect("canonicalize fixture");
+        let approved = resolve_agent_read_path(
+            &path_string(&file),
+            &workspace_root,
+            Some(&path_string(&canonical)),
+        )
+        .expect("explicitly approved hard link");
+        assert_eq!(approved, canonical);
+
+        let approved_read = agent_read_file(
+            path_string(&file),
+            None,
+            workspace_root,
+            Some(path_string(&canonical)),
+        )
+        .expect("confirmed hard link can be read");
+        assert_eq!(approved_read.content.as_deref(), Some("private content"));
+    }
+
+    #[test]
+    fn list_directory_does_not_return_hardlinked_file_metadata_without_approval() {
+        let workspace = TestWorkspace::new();
+        workspace.linked_file("shared-data.txt", "alias.txt", "private content");
+
+        let result = agent_list_directory(
+            path_string(&workspace.root),
+            Some(true),
+            None,
+            path_string(&workspace.root),
+            None,
+        );
+
+        assert!(result
+            .err()
+            .expect("listing linked files requires confirmation")
+            .contains("explicit confirmation is required"));
+    }
+
+    #[test]
+    fn glob_search_does_not_return_hardlinked_file_paths_without_approval() {
+        let workspace = TestWorkspace::new();
+        workspace.linked_file("shared-data.txt", "alias.txt", "private content");
+
+        let result = agent_glob_search(
+            "**/*.txt".into(),
+            path_string(&workspace.root),
+            None,
+            path_string(&workspace.root),
+            None,
+        );
+
+        assert!(result
+            .err()
+            .expect("glob traversal of linked files requires confirmation")
+            .contains("explicit confirmation is required"));
+    }
+
+    #[test]
+    fn glob_search_ignores_nonmatching_hardlinked_files() {
+        let workspace = TestWorkspace::new();
+        workspace.linked_file("shared-data.txt", "alias.txt", "private content");
+        let ordinary = workspace.root.join("readme.md");
+        std::fs::write(&ordinary, "ordinary content").expect("write fixture");
+
+        let matches = agent_glob_search(
+            "**/*.md".into(),
+            path_string(&workspace.root),
+            None,
+            path_string(&workspace.root),
+            None,
+        )
+        .expect("glob should only require confirmation for matching linked files");
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            matches[0].path,
+            path_string(&std::fs::canonicalize(ordinary).expect("canonicalize fixture"))
+        );
+    }
+
+    #[test]
+    fn grep_search_does_not_leak_hardlinked_file_content_without_approval() {
+        let workspace = TestWorkspace::new();
+        workspace.linked_file("shared-data.txt", "alias.txt", "HARDLINK_PRIVATE_MARKER");
+
+        let result = agent_grep_search(
+            "HARDLINK_PRIVATE_MARKER".into(),
+            path_string(&workspace.root),
+            None,
+            None,
+            None,
+            path_string(&workspace.root),
+            None,
+        );
+
+        let error = result
+            .err()
+            .expect("grep must not read linked file content without approval");
+        assert!(error.contains("explicit confirmation is required"));
+        assert!(error.contains("shared-data.txt"));
+        assert!(!error.contains("HARDLINK_PRIVATE_MARKER"));
+    }
+
+    #[test]
+    fn ordinary_single_link_file_remains_in_scope_without_confirmation() {
+        let workspace = TestWorkspace::new();
+        let file = workspace.root.join("ordinary.txt");
+        std::fs::write(&file, "ordinary content").expect("write fixture");
+
+        let preflight =
+            agent_read_path_requires_confirmation(path_string(&file), path_string(&workspace.root))
+                .expect("preflight ordinary file");
+        assert!(!preflight.requires_confirmation);
+
+        let resolved =
+            resolve_agent_read_path(&path_string(&file), &path_string(&workspace.root), None)
+                .expect("ordinary file remains readable");
+        assert_eq!(
+            resolved,
+            std::fs::canonicalize(file).expect("canonicalize fixture")
+        );
+
+        let read = agent_read_file(
+            path_string(&workspace.root.join("ordinary.txt")),
+            None,
+            path_string(&workspace.root),
+            None,
+        )
+        .expect("ordinary file content remains readable");
+        assert_eq!(read.content.as_deref(), Some("ordinary content"));
     }
 }

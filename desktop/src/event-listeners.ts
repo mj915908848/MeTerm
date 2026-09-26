@@ -24,7 +24,7 @@ import { updateSSHHomeView, exportConnectionsToFile, formatSSHExportResult, impo
 import { showRemoteConnectDialog, type RemoteServerInfo } from './remote';
 import { StatusBar } from './status-bar';
 import { invoke } from '@tauri-apps/api/core';
-import { emit, listen } from '@tauri-apps/api/event';
+import { emit, emitTo, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
@@ -75,6 +75,45 @@ import { togglePip } from './pip';
 import { flushMainWindowGeometry, trackMainWindowGeometry } from './window-geometry';
 import { restoreActiveJumpServersFromStorage } from './jumpserver-handler';
 import { applyNbPalette } from './nb-palette';
+import { requestEditorCloseBeforeLastMainWindow } from './last-main-editor-close';
+import { waitForEditorReady } from './file-editor-bridge';
+import {
+  EDITOR_MAIN_CLOSE_REQUEST_EVENT,
+  EDITOR_MAIN_CLOSE_RESULT_EVENT,
+  EDITOR_WINDOW_LABEL,
+  type EditorMainCloseResult,
+} from './file-editor-events';
+
+async function requestEditorCloseWithConfirmation(): Promise<boolean> {
+  const requestId = crypto.randomUUID();
+  let settle!: (accepted: boolean) => void;
+  const result = new Promise<boolean>(resolve => { settle = resolve; });
+  const unlisten = await listen<EditorMainCloseResult>(EDITOR_MAIN_CLOSE_RESULT_EVENT, event => {
+    if (event.payload?.requestId === requestId) settle(event.payload.accepted === true);
+  });
+  const timeout = setTimeout(() => settle(false), 120_000);
+  try {
+    await waitForEditorReady();
+    await emitTo(EDITOR_WINDOW_LABEL, EDITOR_MAIN_CLOSE_REQUEST_EVENT, {
+      requestId,
+      requesterLabel: getCurrentWindow().label,
+    });
+    const accepted = await result;
+    if (!accepted) return false;
+
+    // The editor answers after the user confirms, then destroys itself. Wait
+    // for that destruction before disconnecting the session used for saves.
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (!await WebviewWindow.getByLabel(EDITOR_WINDOW_LABEL)) return true;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return false;
+  } finally {
+    clearTimeout(timeout);
+    unlisten();
+  }
+}
 
 // ── Lazy-cached DOM elements ──────────────────────────────────────
 
@@ -537,32 +576,31 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
       }
     }
 
-    // Original close logic
+    // Confirm session loss before asking the editor to discard unsaved work.
+    // Neither confirmation should tear down sessions until both are accepted.
     if (TabManager.tabs.length > 0) {
       const shouldClose = await confirmSystem(t('confirmCloseWindowWithSessions'));
-      if (shouldClose) {
-        await closeAllSessions();
-        // Close auxiliary windows when the last main window is closing
-        if (mainWindowCount <= 1) {
-          for (const label of ['jumpserver-browser', 'about', 'editor']) {
-            const w = await WebviewWindow.getByLabel(label);
-            if (w) void w.close();
-          }
-        }
-        await invoke('allow_window_close', { windowLabel: currentWindowLabel });
-        await getCurrentWindow().close();
-      }
-    } else {
-      // Close auxiliary windows when the last main window is closing
-      if (mainWindowCount <= 1) {
-        for (const label of ['jumpserver-browser', 'about', 'editor']) {
-          const w = await WebviewWindow.getByLabel(label);
-          if (w) void w.close();
-        }
-      }
-      await invoke('allow_window_close', { windowLabel: currentWindowLabel });
-      await getCurrentWindow().close();
+      if (!shouldClose) return;
     }
+
+    // A close() request resolves before the editor's unsaved-work decision.
+    // Preserve this window and its remote sessions until the editor is gone.
+    if (!await requestEditorCloseBeforeLastMainWindow(
+      mainWindowCount,
+      () => WebviewWindow.getByLabel(EDITOR_WINDOW_LABEL),
+      () => requestEditorCloseWithConfirmation(),
+    )) return;
+
+    if (TabManager.tabs.length > 0) await closeAllSessions();
+    // Close auxiliary windows when the last main window is closing.
+    if (mainWindowCount <= 1) {
+      for (const label of ['jumpserver-browser', 'about']) {
+        const w = await WebviewWindow.getByLabel(label);
+        if (w) void w.close();
+      }
+    }
+    await invoke('allow_window_close', { windowLabel: currentWindowLabel });
+    await getCurrentWindow().close();
   });
 
   void listen<{ target_window: string }>('menu-pip-toggle', (event) => {

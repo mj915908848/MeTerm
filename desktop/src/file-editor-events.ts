@@ -13,6 +13,8 @@ export const EDITOR_SAVE_REQUEST_EVENT = 'meterm-editor-save-request';
 export const EDITOR_SAVE_RESULT_EVENT = 'meterm-editor-save-result';
 export const EDITOR_TAB_CLOSED_EVENT = 'meterm-editor-tab-closed';
 export const EDITOR_WINDOW_CLOSED_EVENT = 'meterm-editor-window-closed';
+export const EDITOR_MAIN_CLOSE_REQUEST_EVENT = 'meterm-editor-main-close-request';
+export const EDITOR_MAIN_CLOSE_RESULT_EVENT = 'meterm-editor-main-close-result';
 export const EDITOR_DISCONNECTED_EVENT = 'meterm-editor-disconnected';
 
 /** Matches the server-side bounded editor read limit. */
@@ -21,6 +23,16 @@ export const MAX_EDITOR_FILE_BYTES = 50 * 1024 * 1024;
 export interface EditorPing {
   ownerLabel: string;
   requestId: string;
+}
+
+export interface EditorMainCloseRequest {
+  requesterLabel: string;
+  requestId: string;
+}
+
+export interface EditorMainCloseResult {
+  requestId: string;
+  accepted: boolean;
 }
 
 export interface EditorPong {

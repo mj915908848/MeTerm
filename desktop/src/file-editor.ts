@@ -29,6 +29,8 @@ import {
   EDITOR_SAVE_RESULT_EVENT,
   EDITOR_TAB_CLOSED_EVENT,
   EDITOR_WINDOW_CLOSED_EVENT,
+  EDITOR_MAIN_CLOSE_REQUEST_EVENT,
+  EDITOR_MAIN_CLOSE_RESULT_EVENT,
   MAX_EDITOR_FILE_BYTES,
   editorTextFitsLimit,
   isSafeEditorWindowLabel,
@@ -41,6 +43,8 @@ import {
   type EditorSaveRequest,
   type EditorSaveResult,
   type EditorTabClosed,
+  type EditorMainCloseRequest,
+  type EditorMainCloseResult,
 } from './file-editor-events';
 import {
   readText as clipboardReadText,
@@ -1100,6 +1104,43 @@ async function installEditorEventListeners(): Promise<void> {
       if (tabId === activeTabId) setSaveBtnState('failed');
     }),
   ]);
+  await listen<EditorMainCloseRequest>(EDITOR_MAIN_CLOSE_REQUEST_EVENT, async event => {
+    const request = event.payload;
+    if (!isValidEditorNonce(request?.requestId)
+        || !(request.requesterLabel === 'main'
+          || /^window-[A-Za-z0-9-]{1,64}$/.test(request.requesterLabel))) return;
+    let replied = false;
+    try {
+      const dirty = [...tabs.values()].some(tab => tab.isDirty);
+      const accepted = !dirty || await confirm(t('editorUnsavedChanges'), {
+        title: 'MeTerm Editor', kind: 'warning',
+      });
+      const reply: EditorMainCloseResult = { requestId: request.requestId, accepted };
+      if (!accepted) {
+        await emitTo(request.requesterLabel, EDITOR_MAIN_CLOSE_RESULT_EVENT, reply);
+        return;
+      }
+
+      // A native close() resolves when requested, not when the editor's own
+      // asynchronous close confirmation finishes. This request already has the
+      // user's answer, so notify owners and destroy the window explicitly.
+      const owners = new Set([...tabs.values()].map(tab => tab.ownerLabel));
+      await Promise.all([...owners].map(owner => (
+        emitTo(owner, EDITOR_WINDOW_CLOSED_EVENT, {}).catch(() => {})
+      )));
+      await emitTo(request.requesterLabel, EDITOR_MAIN_CLOSE_RESULT_EVENT, reply);
+      replied = true;
+      await getCurrentWindow().destroy();
+    } catch (error) {
+      console.error('Unable to close editor for main-window exit:', error);
+      if (!replied) {
+        await emitTo(request.requesterLabel, EDITOR_MAIN_CLOSE_RESULT_EVENT, {
+          requestId: request.requestId, accepted: false,
+        } satisfies EditorMainCloseResult).catch(() => {});
+      }
+    }
+  });
+  // Answer readiness pings only after every request handler is installed.
   await listen<EditorPing>(EDITOR_PING_EVENT, event => {
     const payload = event.payload;
     if (!payload || !isSafeEditorWindowLabel(payload.ownerLabel)

@@ -80,6 +80,50 @@ pub(crate) fn is_lifecycle_utility_window_label(label: &str) -> bool {
     LIFECYCLE_UTILITY_WINDOW_LABELS.contains(&label) || label.starts_with("drag-preview")
 }
 
+/// The editor can veto its asynchronous close request while unsaved changes
+/// are open. Keep the process alive until that window is actually destroyed.
+fn should_exit_after_window_destroyed<'a>(
+    destroyed_label: &str,
+    remaining_windows: impl IntoIterator<Item = (&'a str, bool)>,
+) -> bool {
+    if is_lifecycle_utility_window_label(destroyed_label) && destroyed_label != "editor" {
+        return false;
+    }
+    !remaining_windows
+        .into_iter()
+        .any(|(label, main_is_active)| {
+            label == "editor" || (!is_lifecycle_utility_window_label(label) && main_is_active)
+        })
+}
+
+#[cfg(test)]
+mod lifecycle_exit_tests {
+    use super::should_exit_after_window_destroyed;
+
+    #[test]
+    fn editor_must_finish_its_close_confirmation_before_app_exit() {
+        assert!(!should_exit_after_window_destroyed(
+            "main",
+            [("editor", false)]
+        ));
+        assert!(should_exit_after_window_destroyed("editor", []));
+    }
+
+    #[test]
+    fn other_app_windows_and_short_lived_windows_keep_the_app_running() {
+        assert!(!should_exit_after_window_destroyed(
+            "main",
+            [("window-2", true)]
+        ));
+        assert!(!should_exit_after_window_destroyed(
+            "main",
+            [("window-2", false), ("editor", false)]
+        ));
+        assert!(!should_exit_after_window_destroyed("settings", []));
+        assert!(should_exit_after_window_destroyed("main", []));
+    }
+}
+
 pub struct AppLifecycleState {
     has_open_tabs: Mutex<bool>,
     is_quitting: AtomicBool,
@@ -1202,40 +1246,35 @@ pub fn run() {
                         let lifecycle = app_handle.state::<AppLifecycleState>();
                         lifecycle.remove_initialized_window(&label);
 
-                        // When a utility window (or the transient tab-drag preview
-                        // overlay) is destroyed, skip the main-window check
-                        let is_utility = is_lifecycle_utility_window_label(&label);
-                        if !is_utility {
-                            let lifecycle = app_handle.state::<AppLifecycleState>();
-                            let has_main_windows = app_handle.webview_windows().keys()
-                                .any(|k| {
-                                    let s = k.as_str();
-                                    // Skip utility windows
-                                    if is_lifecycle_utility_window_label(s) { return false; }
-                                    // Count windows that are initialized OR still within grace period
-                                    lifecycle.is_window_initialized(s) ||
-                                        lifecycle.is_within_grace_period(s, Duration::from_secs(3))
-                                });
+                        // The editor may still be waiting for its unsaved-changes
+                        // confirmation after the last main window disappears.
+                        // Recheck on its Destroyed event, not on CloseRequested.
+                        let remaining_windows = app_handle.webview_windows();
+                        let should_exit = should_exit_after_window_destroyed(
+                            &label,
+                            remaining_windows.keys().map(|window_label| {
+                                let name = window_label.as_str();
+                                let main_is_active = lifecycle.is_window_initialized(name)
+                                    || lifecycle.is_within_grace_period(name, Duration::from_secs(3));
+                                (name, main_is_active)
+                            }),
+                        );
 
-                            if !has_main_windows {
-                                // Last main window closed — close utility windows and
-                                // quit explicitly. macOS otherwise stays resident with
-                                // no windows, and a connections window must not keep
-                                // the process alive on any platform.
-                                lifecycle.mark_quitting();
-                                let utility_windows: Vec<_> = app_handle
-                                    .webview_windows()
-                                    .into_iter()
-                                    .filter_map(|(window_label, window)| {
-                                        is_lifecycle_utility_window_label(&window_label)
-                                            .then_some(window)
-                                    })
-                                    .collect();
-                                for window in utility_windows {
-                                    let _ = window.close();
-                                }
-                                app_handle.exit(0);
+                        if should_exit {
+                            // Last main/editor window closed. Explicitly quit so
+                            // macOS cannot stay resident with utility windows only.
+                            lifecycle.mark_quitting();
+                            let utility_windows: Vec<_> = remaining_windows
+                                .into_iter()
+                                .filter_map(|(window_label, window)| {
+                                    is_lifecycle_utility_window_label(&window_label)
+                                        .then_some(window)
+                                })
+                                .collect();
+                            for window in utility_windows {
+                                let _ = window.close();
                             }
+                            app_handle.exit(0);
                         }
                     }
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {

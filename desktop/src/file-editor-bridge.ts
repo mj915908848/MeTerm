@@ -190,7 +190,8 @@ async function installBridgeListeners(): Promise<void> {
   return bridgeListeners;
 }
 
-async function waitForEditorReady(): Promise<void> {
+export async function waitForEditorReady(): Promise<void> {
+  await installBridgeListeners();
   const ownerLabel = getCurrentWindow().label;
   const requestId = crypto.randomUUID();
   await new Promise<void>((resolve, reject) => {

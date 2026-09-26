@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { abortableOperation } from '../src/ai-abortable-operation.ts';
+import { decidePermission, requiresReadScopeConfirmation } from '../src/ai-permission-rules.ts';
 
 const source = (file: string) => ts.createSourceFile(file, readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
 function find(file: string, predicate: (node: ts.Node) => boolean): ts.Node {
@@ -53,22 +54,40 @@ function approvalHarness() {
   const enclosing = loop.parent as ts.Block;
   const index = enclosing.statements.indexOf(loop as ts.Statement);
   const after = enclosing.statements[index + 1]; assert.ok(ts.isIfStatement(after));
-  const body = `async check(response,callbacks) { const sessionId='test', iteration=1, permMode='manual', permRules=[], decisions=new Map(); const toolCtx={abortSignal:this.abortController.signal}; ${loop.getText()} ${after.getText()} }`;
-  const Agent = new Function('hooks', 'decidePermission', 'abortableOperation', compile(`class Agent { ${method('completeAbortedToolBatch')} ${body} }`) + ';return Agent;')(
-    { emitPreToolUse: async () => ({}) }, () => ({ kind: 'ask' }), abortableOperation,
+  const preflight = find('ai-agent.ts', node => ts.isFunctionDeclaration(node) && node.name?.text === 'preflightReadScopeConfirmation').getText();
+  const resolveLocalToolPath = find('ai-tools-core.ts', node => ts.isFunctionDeclaration(node) && node.name?.text === 'resolveLocalToolPath').getText().replace(/^export\s+/, '');
+  const resolvePaneTarget = find('ai-tools-core.ts', node => ts.isFunctionDeclaration(node) && node.name?.text === 'resolvePaneTarget').getText().replace(/^export\s+/, '');
+  const body = `async check(response,callbacks) { const sessionId='test', iteration=1, permMode='acceptSafe', permRules=[], decisions=new Map(); const toolCtx={abortSignal:this.abortController.signal, sessionId, cwd:'/workspace', isSSH:false, panes:[{isDefaultTarget:true, cwd:'/workspace', isSSH:false}]}; ${loop.getText()} ${after.getText()} }`;
+  let preflightCalls = 0;
+  const Agent = new Function('hooks', 'SCOPED_READ_TOOLS', 'invoke', 'decidePermission', 'requiresReadScopeConfirmation', 'abortableOperation',
+    compile(`${resolveLocalToolPath}\n${resolvePaneTarget}\n${preflight}\nclass Agent { ${method('completeAbortedToolBatch')} ${body} }`) + ';return Agent;')(
+    { emitPreToolUse: async () => ({}) },
+    new Set(['read_file', 'grep_search', 'glob_search', 'list_directory']),
+    async (command: string, args: { path: string; workspaceRoot: string }) => {
+      preflightCalls++;
+      assert.equal(command, 'agent_read_path_requires_confirmation');
+      assert.match(args.path, /^\/outside\//);
+      assert.equal(args.workspaceRoot, '/workspace');
+      return { canonicalPath: args.path, requiresConfirmation: true };
+    },
+    decidePermission,
+    requiresReadScopeConfirmation,
+    abortableOperation,
   );
   const agent = new Agent(); agent.messages = []; agent.aborted = false;
-  agent.abortController = new AbortController(); agent.toolRegistry = { get: () => ({}) };
-  return agent;
+  agent.abortController = new AbortController(); agent.toolRegistry = { get: () => ({ requiresConfirm: () => false, isDestructive: () => false }) };
+  return { agent, get preflightCalls() { return preflightCalls; } };
 }
 for (const count of [1, 3]) test(`approval cancellation settles and pairs all ${count} tool calls`, async () => {
-  const agent = approvalHarness();
-  const calls = Array.from({ length: count }, (_, i) => ({ id: String(i), function: { name: 'run_command', arguments: '{}' } }));
+  const harness = approvalHarness(); const { agent } = harness;
+  const calls = Array.from({ length: count }, (_, i) => ({ id: String(i), function: { name: 'read_file', arguments: JSON.stringify({ path: `/outside/${i}.txt` }) } }));
   agent.messages.push({ role: 'assistant', tool_calls: calls });
   let notify: () => void; const started = new Promise<void>(resolve => { notify = resolve; });
-  let aborted = 0;
-  const pending = agent.check({ toolCalls: calls }, { onConfirmRequired: () => { notify!(); return new Promise(() => {}); }, onAborted: () => aborted++ });
+  let aborted = 0; let confirmations = 0;
+  const pending = agent.check({ toolCalls: calls }, { onConfirmRequired: (name: string, args: { path: string }) => { confirmations++; assert.equal(name, 'read_file'); assert.match(args.path, /^\/outside\//); notify!(); return new Promise(() => {}); }, onAborted: () => aborted++ });
   await started; agent.aborted = true; agent.abortController.abort(); await pending;
+  assert.equal(harness.preflightCalls, 1);
+  assert.equal(confirmations, 1);
   assert.equal(aborted, 1);
   assert.deepEqual(agent.messages.filter((m: any) => m.role === 'tool').map((m: any) => m.tool_call_id), calls.map(c => c.id));
   agent.completeAbortedToolBatch(calls, {});
