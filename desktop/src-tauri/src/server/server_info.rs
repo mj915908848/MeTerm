@@ -30,7 +30,7 @@ if [ -f /proc/meminfo ]; then awk '/^MemTotal:/{t=$2}/^MemAvailable:/{a=$2}/^Mem
 if [ -f /proc/meminfo ]; then awk '/^SwapTotal:/{t=$2}/^SwapFree:/{f=$2}END{printf "SWAP_TOTAL=%.0f\nSWAP_USED=%.0f\n",t*1024,(t-f)*1024}' /proc/meminfo; elif command -v sysctl >/dev/null 2>&1; then sysctl -n vm.swapusage 2>/dev/null | awk '{t="";u="";for(i=1;i<=NF;i++){if($i=="total")t=$(i+2);if($i=="used")u=$(i+2)};sub(/M$/,"",t);sub(/M$/,"",u);if(t!="")printf "SWAP_TOTAL=%.0f\nSWAP_USED=%.0f\n",t*1048576,u*1048576}'; fi
 if [ -f /proc/loadavg ]; then echo "LOADAVG=$(awk '{printf "%s|%s|%s",$1,$2,$3}' /proc/loadavg)"; elif command -v sysctl >/dev/null 2>&1; then echo "LOADAVG=$(sysctl -n vm.loadavg 2>/dev/null | sed 's/[{}]//g' | awk '{printf "%s|%s|%s",$1,$2,$3}')"; fi
 df -kP 2>/dev/null | awk 'NR>1 && $1 ~ /^\// {printf "DISK=%s|%.0f|%.0f|%.0f\n",$6,$2*1024,$3*1024,$4*1024}'
-if [ -f /proc/net/dev ]; then awk '/^ *[a-z]/ && !/^ *lo:/ {gsub(/:/, " "); printf "NET=%s|%.0f|%.0f\n",$1,$2,$10}' /proc/net/dev 2>/dev/null; fi
+if [ -f /proc/net/dev ]; then awk '$1 ~ /:$/ && $1 != "lo:" {gsub(/:/, " "); printf "NET=%s|%.0f|%.0f\n",$1,$2,$10}' /proc/net/dev 2>/dev/null; fi
 if [ -f /proc/uptime ]; then echo "UPTIME_SECS=$(cut -d. -f1 /proc/uptime 2>/dev/null)"; elif command -v sysctl >/dev/null 2>&1; then bt=$(sysctl -n kern.boottime 2>/dev/null|sed 's/.*sec = \([0-9]*\).*/\1/');now=$(date +%s);echo "UPTIME_SECS=$((now-bt))"; else echo "UPTIME_SECS=0"; fi
 "#;
 
