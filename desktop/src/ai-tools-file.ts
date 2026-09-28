@@ -12,7 +12,7 @@
 // Error objects).
 //
 // Remote (SSH) files go through the existing `executeViaTerminal`
-// path which runs `head` / `cat <<EOF` over the live PTY.
+// path which runs `head` / `printf` over the live PTY.
 
 import { invoke } from '@tauri-apps/api/core';
 import { resolveLocalToolPath, ToolHandler } from './ai-tools-core';
@@ -68,7 +68,12 @@ export function createReadFileTool(): ToolHandler {
       if (!path) {
         return 'Error: read_file requires a non-empty "path" argument.';
       }
-      const maxLines = (args.maxLines as number) || 200;
+      const requestedMaxLines = args.maxLines;
+      if (requestedMaxLines !== undefined &&
+          (typeof requestedMaxLines !== 'number' || !Number.isSafeInteger(requestedMaxLines) || requestedMaxLines < 1)) {
+        return 'Error: read_file maxLines must be a positive integer.';
+      }
+      const maxLines = requestedMaxLines ?? 200;
 
       if (ctx.isSSH) {
         // SSH: read via terminal command. Single-quote the path to
@@ -125,7 +130,7 @@ export function createWriteFileTool(): ToolHandler {
     definition: {
       name: 'write_file',
       description:
-        'Write content to a file at the given path. If the file exists it will be overwritten. Parent directories are created automatically. Supports absolute paths and ~/-prefixed paths. For SSH sessions the write goes through the remote shell via a heredoc.',
+        'Write content to a file at the given path. If the file exists it will be overwritten. Parent directories are created automatically. Supports absolute paths and ~/-prefixed paths. For SSH sessions the write goes through the remote shell via printf.',
       parameters: {
         type: 'object',
         properties: {
@@ -155,13 +160,12 @@ export function createWriteFileTool(): ToolHandler {
       }
 
       if (ctx.isSSH) {
-        // SSH: write via heredoc. Single-quote the EOF marker to
-        // disable expansion inside the body, and single-quote the
-        // path to handle $ / spaces / etc.
-        const eofMarker = `METERM_EOF_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 14)}`;
+        // A quoted printf argument preserves the exact text, including whether
+        // the final line has a newline. Heredocs always add a final newline.
         const safePath = filePath.replace(/'/g, `'\\''`);
+        const safeContent = content.replace(/'/g, `'\\''`);
         const dirCmd = `mkdir -p "$(dirname '${safePath}')"`;
-        const writeCmd = `${dirCmd} && cat > '${safePath}' << '${eofMarker}'\n${content}\n${eofMarker}`;
+        const writeCmd = `${dirCmd} && printf '%s' '${safeContent}' > '${safePath}'`;
         try {
           const result = await executeViaTerminal(ctx.sessionId, writeCmd, 15, ctx.shellType);
           // Heuristic error sniff — anything containing the word
