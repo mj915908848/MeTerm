@@ -7,7 +7,6 @@ import { AppSettings } from './themes';
 import { t } from './i18n';
 import { createSettingsSelect } from './custom-select';
 import {
-  DEFAULT_PERMISSION_RULES,
   validatePermissionRule,
   type PermissionMode,
   type PermissionRule,
@@ -86,6 +85,7 @@ export function createPermissionRulesEditor(
   list.className = 'ai-permission-rules-list';
   list.style.cssText = 'display:flex;flex-direction:column;gap:6px;margin-top:8px;';
   container.appendChild(list);
+  let addingRule = false;
 
   function getRules(): PermissionRule[] {
     return (current.aiPermissionRules as PermissionRule[] | undefined) ?? [];
@@ -99,8 +99,9 @@ export function createPermissionRulesEditor(
 
   function render(): void {
     list.innerHTML = '';
+    addBtn.disabled = addingRule;
     const rules = getRules();
-    if (rules.length === 0) {
+    if (rules.length === 0 && !addingRule) {
       const empty = document.createElement('div');
       empty.className = 'settings-hint';
       empty.style.cssText = 'font-size:11px;opacity:0.7;padding:6px 0;';
@@ -112,6 +113,86 @@ export function createPermissionRulesEditor(
     for (let i = 0; i < rules.length; i++) {
       list.appendChild(buildRuleRow(rules, i));
     }
+    if (addingRule) list.appendChild(buildDraftRuleRow());
+  }
+
+  function buildDraftRuleRow(): HTMLDivElement {
+    const row = document.createElement('div');
+    row.className = 'ai-permission-rule-row ai-permission-rule-draft';
+    row.style.cssText =
+      'display:grid;grid-template-columns:1fr 1fr 1fr 110px auto;gap:6px;align-items:center;';
+
+    const toolInput = document.createElement('input');
+    toolInput.type = 'text';
+    toolInput.className = 'settings-input';
+    toolInput.placeholder = t('aiPermissionRuleTool');
+    toolInput.addEventListener('keydown', (e) => e.stopPropagation());
+    row.appendChild(toolInput);
+
+    const cmdInput = document.createElement('input');
+    cmdInput.type = 'text';
+    cmdInput.className = 'settings-input';
+    cmdInput.placeholder = t('aiPermissionRuleCmdMatch');
+    cmdInput.addEventListener('keydown', (e) => e.stopPropagation());
+    row.appendChild(cmdInput);
+
+    const pathInput = document.createElement('input');
+    pathInput.type = 'text';
+    pathInput.className = 'settings-input';
+    pathInput.placeholder = t('aiPermissionRulePathMatch');
+    pathInput.addEventListener('keydown', (e) => e.stopPropagation());
+    row.appendChild(pathInput);
+
+    const actionSel = createSettingsSelect([
+      { value: 'allow', label: t('aiPermissionActionAllow') },
+      { value: 'deny', label: t('aiPermissionActionDeny') },
+      { value: 'ask', label: t('aiPermissionActionAsk'), selected: true },
+    ]);
+    row.appendChild(actionSel.el);
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:4px;';
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'settings-select';
+    saveBtn.textContent = t('aiPermissionRuleSave');
+    saveBtn.onclick = () => {
+      const tool = toolInput.value.trim();
+      toolInput.setCustomValidity(tool ? '' : t('aiPermissionRuleToolRequired'));
+      if (!tool) {
+        toolInput.reportValidity();
+        return;
+      }
+      const command = cmdInput.value.trim();
+      const path = pathInput.value.trim();
+      const rule: PermissionRule = {
+        tool,
+        ...(command || path ? { match: { ...(command ? { command } : {}), ...(path ? { path } : {}) } } : {}),
+        action: actionSel.value as PermissionRule['action'],
+      };
+      const error = validatePermissionRule(rule);
+      const invalidCommand = error?.startsWith('Invalid command') ?? false;
+      cmdInput.setCustomValidity(invalidCommand ? t('aiPermissionRuleRegexInvalid') : '');
+      pathInput.setCustomValidity(error && !invalidCommand ? t('aiPermissionRuleRegexInvalid') : '');
+      if (error) {
+        (invalidCommand ? cmdInput : pathInput).reportValidity();
+        return;
+      }
+      const rules = getRules().slice();
+      rules.push(rule);
+      addingRule = false;
+      commitRules(rules);
+    };
+    actions.appendChild(saveBtn);
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'settings-select';
+    cancelBtn.textContent = t('aiPermissionRuleCancel');
+    cancelBtn.onclick = () => {
+      addingRule = false;
+      render();
+    };
+    actions.appendChild(cancelBtn);
+    row.appendChild(actions);
+    return row;
   }
 
   function buildRuleRow(rules: PermissionRule[], index: number): HTMLDivElement {
@@ -129,7 +210,15 @@ export function createPermissionRulesEditor(
     toolInput.value = rule.tool;
     toolInput.addEventListener('keydown', (e) => e.stopPropagation());
     toolInput.onchange = () => {
-      rule.tool = toolInput.value.trim() || '*';
+      const tool = toolInput.value.trim();
+      toolInput.setCustomValidity(tool ? '' : t('aiPermissionRuleToolRequired'));
+      if (!tool) {
+        toolInput.reportValidity();
+        toolInput.value = rule.tool;
+        toolInput.setCustomValidity('');
+        return;
+      }
+      rule.tool = tool;
       commitRules(rules);
     };
     row.appendChild(toolInput);
@@ -203,14 +292,9 @@ export function createPermissionRulesEditor(
   }
 
   addBtn.onclick = () => {
-    const rules = getRules().slice();
-    // If the list is empty and user adds the first rule, seed it with
-    // the defaults so they have something to edit from.
-    if (rules.length === 0) {
-      for (const r of DEFAULT_PERMISSION_RULES) rules.push(structuredClone(r));
-    }
-    rules.push({ tool: 'run_command', action: 'ask' });
-    commitRules(rules);
+    if (addingRule) return;
+    addingRule = true;
+    render();
   };
 
   render();

@@ -16,7 +16,7 @@ import type { ToolContext, ToolHandler } from './ai-tools-core';
 export type PermissionMode =
   /** Ask for confirmation on EVERY tool call (corresponds to trust level 0). */
   | 'ask'
-  /** Auto-approve scoped reads; ask before shell commands and sensitive/out-of-scope reads. */
+  /** Auto-approve scoped reads and commands not flagged by the danger heuristic. */
   | 'acceptSafe'
   /** Auto-approve unless the call is catastrophic (trust level 2). */
   | 'acceptAll'
@@ -257,6 +257,21 @@ export const DEFAULT_PERMISSION_RULES: PermissionRule[] = [
   { tool: 'run_command', match: { command: '\\bwget\\b.*--post' }, action: 'ask' },
 ];
 
+/** Recognize only the unchanged rows created by the old Add button. */
+export function isLegacyAutoAddedRuleSet(rules: unknown): rules is PermissionRule[] {
+  if (!Array.isArray(rules) || rules.length <= DEFAULT_PERMISSION_RULES.length) return false;
+  const defaultRows = rules.slice(0, DEFAULT_PERMISSION_RULES.length);
+  const addedRows = rules.slice(DEFAULT_PERMISSION_RULES.length);
+  return JSON.stringify(defaultRows) === JSON.stringify(DEFAULT_PERMISSION_RULES)
+    && addedRows.every((rule) => JSON.stringify(rule) === JSON.stringify({ tool: 'run_command', action: 'ask' }));
+}
+
+/** Custom rules override built-in defaults without duplicating them in settings. */
+export function mergePermissionRules(customRules?: PermissionRule[]): PermissionRule[] {
+  const custom = isLegacyAutoAddedRuleSet(customRules) ? [] : customRules ?? [];
+  return [...custom, ...DEFAULT_PERMISSION_RULES];
+}
+
 // ─── Rule Evaluator ────────────────────────────────────────
 
 /**
@@ -328,10 +343,6 @@ export function decidePermission(
   if (mode === 'acceptSafe' && scopeNeedsConfirmation) {
     return { kind: 'ask' };
   }
-  // Shell command strings can read arbitrary host files and chain commands;
-  // command-name regexes cannot establish that a command is read-only.
-  if (mode === 'acceptSafe' && toolName === 'run_command') return { kind: 'ask' };
-
   switch (mode) {
     case 'ask':
       return { kind: 'ask' };

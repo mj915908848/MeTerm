@@ -49,7 +49,7 @@ import {
   decidePermission,
   requiresReadScopeConfirmation,
   trustLevelToMode,
-  DEFAULT_PERMISSION_RULES,
+  mergePermissionRules,
   type PermissionMode,
   type PermissionRule,
 } from './ai-permission-rules';
@@ -879,9 +879,9 @@ export class ToolAgent {
         const permMode: PermissionMode =
           (settingsForTools.aiPermissionMode as PermissionMode | undefined)
           ?? trustLevelToMode(currentTrustLevel);
-        const permRules: PermissionRule[] =
-          (settingsForTools.aiPermissionRules as PermissionRule[] | undefined)
-          ?? DEFAULT_PERMISSION_RULES;
+        const permRules: PermissionRule[] = mergePermissionRules(
+          settingsForTools.aiPermissionRules as PermissionRule[] | undefined,
+        );
 
         // Pass 1 (serial): notify UI + resolve confirmations + emit
         // PreToolUse hook + consult permission rules. Builds a map from

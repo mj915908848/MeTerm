@@ -1,4 +1,5 @@
 import type { AIProviderEntry } from './ai-provider';
+import { isLegacyAutoAddedRuleSet } from './ai-permission-rules';
 import {
   SETTINGS_STORAGE_KEY,
   applySettingsSecrets,
@@ -500,6 +501,13 @@ export function loadSettings(): AppSettings {
       const parsed = JSON.parse(stored);
       let settings = { ...DEFAULT_SETTINGS, ...parsed } as AppSettings;
       let needsSave = false;
+
+      // The old Add button saved all defaults plus an unconditional ask rule.
+      // Remove only that exact generated set; preserve any edited user rules.
+      if (isLegacyAutoAddedRuleSet(settings.aiPermissionRules)) {
+        delete settings.aiPermissionRules;
+        needsSave = true;
+      }
 
       // Migration: old single-provider format → new multi-provider format
       if (!parsed.aiProviders && parsed.aiProviderType) {

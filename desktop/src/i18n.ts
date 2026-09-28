@@ -351,6 +351,9 @@ export interface Translations {
   aiPermissionRuleCmdMatch: string;
   aiPermissionRulePathMatch: string;
   aiPermissionRuleRegexInvalid: string;
+  aiPermissionRuleSave: string;
+  aiPermissionRuleCancel: string;
+  aiPermissionRuleToolRequired: string;
   aiAuditLog: string;
   aiAuditLogOpen: string;
   aiAuditLogEmpty: string;
@@ -1151,7 +1154,7 @@ const translations: Record<Language, Translations> = {
     aiPermissionModeHint: 'Overrides the trust level. Plan mode denies writes; sensitive or out-of-workspace reads require confirmation.',
     aiPermissionRules: 'Permission Rules',
     aiPermissionRulesAdd: 'Add rule',
-    aiPermissionRulesNone: 'No custom rules. Sensitive or out-of-workspace reads require confirmation; shell commands require confirmation in Accept safe mode.',
+    aiPermissionRulesNone: 'No custom rules. Sensitive or out-of-workspace reads require confirmation; Accept safe asks before commands flagged as dangerous.',
     aiPermissionActionAllow: 'Allow',
     aiPermissionActionDeny: 'Deny',
     aiPermissionActionAsk: 'Ask',
@@ -1159,6 +1162,9 @@ const translations: Record<Language, Translations> = {
     aiPermissionRuleCmdMatch: 'Command regex',
     aiPermissionRulePathMatch: 'Path regex',
     aiPermissionRuleRegexInvalid: 'Invalid regular expression. Fix it before saving this rule.',
+    aiPermissionRuleSave: 'Save',
+    aiPermissionRuleCancel: 'Cancel',
+    aiPermissionRuleToolRequired: 'Enter a tool name (* matches all tools).',
     aiAuditLog: 'Agent Audit Log',
     aiAuditLogOpen: 'Open audit log',
     aiAuditLogEmpty: '(No audit entries yet)',
@@ -1961,7 +1967,7 @@ const translations: Record<Language, Translations> = {
     aiPermissionModeHint: '覆盖信任级别。计划模式拒绝写入；读取敏感路径或工作目录外的文件需要确认。',
     aiPermissionRules: '权限规则',
     aiPermissionRulesAdd: '添加规则',
-    aiPermissionRulesNone: '无自定义规则。读取敏感路径或工作目录外的文件需要确认；Accept safe 模式下执行 shell 命令需要确认。',
+    aiPermissionRulesNone: '无自定义规则。读取敏感路径或工作目录外的文件需要确认；Accept safe 模式仅对识别为危险的命令要求确认。',
     aiPermissionActionAllow: '允许',
     aiPermissionActionDeny: '拒绝',
     aiPermissionActionAsk: '询问',
@@ -1969,6 +1975,9 @@ const translations: Record<Language, Translations> = {
     aiPermissionRuleCmdMatch: '命令正则',
     aiPermissionRulePathMatch: '路径正则',
     aiPermissionRuleRegexInvalid: '正则表达式无效，请修正后再保存规则。',
+    aiPermissionRuleSave: '保存',
+    aiPermissionRuleCancel: '取消',
+    aiPermissionRuleToolRequired: '请输入工具名（* 匹配所有工具）。',
     aiAuditLog: 'Agent 审计日志',
     aiAuditLogOpen: '查看审计日志',
     aiAuditLogEmpty: '(暂无审计记录)',
