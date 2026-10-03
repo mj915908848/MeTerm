@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use super::protocol;
 
+#[cfg(test)]
+pub(crate) mod operation_tests;
 mod read_limits;
 mod sftp_read;
 pub use sftp_read::{handle_sftp_file_read, handle_sftp_file_save};
@@ -359,7 +361,7 @@ pub fn handle_file_operation(payload: &[u8]) -> Vec<u8> {
             }
         }
         "rename" => std::fs::rename(&req.path, &req.new_path).map(|_| None),
-        "copy" => std::fs::copy(&req.path, &req.new_path).map(|_| None),
+        "copy" => copy_local_file(&req.path, &req.new_path).map(|_| None),
         "symlink" => {
             #[cfg(unix)]
             {
@@ -428,6 +430,30 @@ pub fn handle_file_operation(payload: &[u8]) -> Vec<u8> {
         }
         Err(e) => encode_file_op_error(&e.to_string()),
     }
+}
+
+/// Refuse filesystem aliases before `copy` can truncate the source inode.
+fn copy_local_file(source: &str, destination: &str) -> std::io::Result<u64> {
+    let source_path = std::fs::canonicalize(source)?;
+    if let Ok(destination_path) = std::fs::canonicalize(destination) {
+        let same_file = source_path == destination_path;
+        #[cfg(unix)]
+        let same_file = {
+            use std::os::unix::fs::MetadataExt;
+            let source_meta = std::fs::metadata(&source_path)?;
+            let destination_meta = std::fs::metadata(&destination_path)?;
+            same_file
+                || (source_meta.dev() == destination_meta.dev()
+                    && source_meta.ino() == destination_meta.ino())
+        };
+        if same_file {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "source and destination refer to the same file",
+            ));
+        }
+    }
+    std::fs::copy(source, destination)
 }
 
 /// Handle MsgFileReadRequest — read file content.
@@ -859,38 +885,9 @@ pub async fn handle_sftp_file_operation(payload: &[u8], sftp: &SftpSession) -> V
             .await
             .map(|_| None)
             .map_err(|e| format!("{}", e)),
-        "copy" => {
-            use tokio::io::{AsyncReadExt, AsyncWriteExt};
-            match sftp.open(req.path.clone()).await {
-                Ok(mut src) => match sftp.create(req.new_path.clone()).await {
-                    Ok(mut dst) => {
-                        let mut buf = vec![0u8; 1024 * 1024];
-                        loop {
-                            match src.read(&mut buf).await {
-                                Ok(0) => break,
-                                Ok(n) => {
-                                    if let Err(e) = dst.write_all(&buf[..n]).await {
-                                        return encode_file_op_error_with_op(
-                                            &format!("write: {}", e),
-                                            "copy",
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    return encode_file_op_error_with_op(
-                                        &format!("read: {}", e),
-                                        "copy",
-                                    )
-                                }
-                            }
-                        }
-                        Ok(None)
-                    }
-                    Err(e) => Err(format!("create dest: {}", e)),
-                },
-                Err(e) => Err(format!("open source: {}", e)),
-            }
-        }
+        "copy" => copy_sftp_file(sftp, &req.path, &req.new_path)
+            .await
+            .map(|_| None),
         "symlink" => {
             // OpenSSH reverses SSH_FXP_SYMLINK args vs RFC:
             // RFC: (linkpath, targetpath), OpenSSH: (targetpath, linkpath)
@@ -947,6 +944,128 @@ pub async fn handle_sftp_file_operation(payload: &[u8], sftp: &SftpSession) -> V
             protocol::encode_message(protocol::MSG_FILE_OPERATION_RESP, &data)
         }
         Err(e) => encode_file_op_error_with_op(&e, &req.operation),
+    }
+}
+
+/// SFTP paths use POSIX separators on every client platform. Keep temporary
+/// names independent of the target basename so legal long names still work.
+fn sftp_temporary_sibling(target: &str, purpose: &str) -> String {
+    let name = format!(".meterm.{purpose}-{}", uuid::Uuid::new_v4());
+    match target.rsplit_once('/') {
+        Some((parent, _)) => format!("{parent}/{name}"),
+        None => name,
+    }
+}
+
+/// Copy into an exclusive staging file so even remote hardlink aliases cannot
+/// truncate the source. SFTP attributes do not expose inode identity.
+async fn copy_sftp_file(sftp: &SftpSession, source: &str, destination: &str) -> Result<(), String> {
+    use russh_sftp::protocol::OpenFlags;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    if source == destination {
+        return Err("source and destination refer to the same file".into());
+    }
+    let source_canonical = sftp.canonicalize(source.to_string()).await.ok();
+    let destination_canonical = sftp.canonicalize(destination.to_string()).await.ok();
+    if source_canonical.is_some() && source_canonical == destination_canonical {
+        return Err("source and destination refer to the same file".into());
+    }
+    // Preserve the existing behavior of copying through a destination symlink.
+    let destination = destination_canonical.as_deref().unwrap_or(destination);
+    let existing_mode = sftp
+        .metadata(destination.to_string())
+        .await
+        .ok()
+        .and_then(|m| m.permissions);
+    let mut src = sftp
+        .open(source.to_string())
+        .await
+        .map_err(|e| format!("open source: {e}"))?;
+    let temporary = sftp_temporary_sibling(destination, "copy");
+    let mut dst = sftp
+        .open_with_flags(
+            temporary.clone(),
+            OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE,
+        )
+        .await
+        .map_err(|e| format!("create copy temp: {e}"))?;
+    let result = async {
+        let mut buffer = vec![0; 1024 * 1024];
+        loop {
+            let n = src
+                .read(&mut buffer)
+                .await
+                .map_err(|e| format!("read source: {e}"))?;
+            if n == 0 {
+                break;
+            }
+            dst.write_all(&buffer[..n])
+                .await
+                .map_err(|e| format!("write copy: {e}"))?;
+        }
+        dst.shutdown()
+            .await
+            .map_err(|e| format!("close copy: {e}"))?;
+        if let Some(permissions) = existing_mode {
+            sftp.set_metadata(
+                temporary.clone(),
+                russh_sftp::client::fs::Metadata {
+                    permissions: Some(permissions),
+                    ..russh_sftp::client::fs::Metadata::empty()
+                },
+            )
+            .await
+            .map_err(|e| format!("preserve destination permissions: {e}"))?;
+        }
+        finalize_sftp_copy(sftp, &temporary, destination).await
+    }
+    .await;
+    drop(dst);
+    if result.is_err() {
+        let _ = sftp.remove_file(temporary).await;
+    }
+    result
+}
+
+async fn finalize_sftp_copy(
+    sftp: &SftpSession,
+    temporary: &str,
+    destination: &str,
+) -> Result<(), String> {
+    if sftp
+        .rename(temporary.to_string(), destination.to_string())
+        .await
+        .is_ok()
+    {
+        return Ok(());
+    }
+    let metadata = sftp
+        .symlink_metadata(destination.to_string())
+        .await
+        .map_err(|e| format!("inspect copy destination: {e}"))?;
+    if !metadata.is_regular() && !metadata.is_symlink() {
+        return Err("copy destination is not a file".into());
+    }
+    let backup = sftp_temporary_sibling(destination, "copy.backup");
+    sftp.rename(destination.to_string(), backup.clone())
+        .await
+        .map_err(|e| format!("preserve copy destination: {e}"))?;
+    match sftp
+        .rename(temporary.to_string(), destination.to_string())
+        .await
+    {
+        Ok(()) => {
+            let _ = sftp.remove_file(backup).await;
+            Ok(())
+        }
+        Err(error) => {
+            let restore = sftp.rename(backup.clone(), destination.to_string()).await;
+            Err(match restore {
+                Ok(()) => format!("commit copy: {error}"),
+                Err(restore_error) => format!("commit copy: {error}; original preserved at {backup}, restore failed: {restore_error}"),
+            })
+        }
     }
 }
 
