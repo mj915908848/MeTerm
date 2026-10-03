@@ -897,7 +897,15 @@ pub async fn handle_sftp_file_operation(payload: &[u8], sftp: &SftpSession) -> V
                 .map(|_| None)
                 .map_err(|e| format!("{}", e))
         }
-        "touch" => match sftp.create(req.path.clone()).await {
+        "touch" => match sftp
+            .open_with_flags(
+                req.path.clone(),
+                russh_sftp::protocol::OpenFlags::CREATE
+                    | russh_sftp::protocol::OpenFlags::EXCLUDE
+                    | russh_sftp::protocol::OpenFlags::WRITE,
+            )
+            .await
+        {
             Ok(file) => {
                 drop(file);
                 Ok(None)

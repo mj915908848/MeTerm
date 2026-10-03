@@ -365,6 +365,23 @@ async fn sftp_copy_distinct_file_still_overwrites_destination() {
     );
 }
 #[tokio::test]
+async fn sftp_touch_rejects_existing_without_truncation_and_creates_new() {
+    let dir = TestDir::new();
+    let existing = dir.path.join("existing");
+    let new = dir.path.join("new");
+    std::fs::write(&existing, b"original content").unwrap();
+    let sftp = sftp_pair(Default::default()).await;
+    assert!(!success(
+        &super::handle_sftp_file_operation(&request("touch", &existing, &existing), &sftp).await
+    ));
+    assert_eq!(std::fs::read(&existing).unwrap(), b"original content");
+    assert!(success(
+        &super::handle_sftp_file_operation(&request("touch", &new, &new), &sftp).await
+    ));
+    assert_eq!(std::fs::read(&new).unwrap(), b"");
+}
+
+#[tokio::test]
 async fn sftp_copy_write_failure_preserves_existing_destination() {
     let dir = TestDir::new();
     let source = dir.path.join("source");
