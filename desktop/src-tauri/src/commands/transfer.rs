@@ -91,7 +91,7 @@ pub enum SessionUploadEvent {
 
 #[derive(Clone, Copy)]
 enum DownloadOutcome {
-    Completed,
+    Completed { total_size: u64 },
     Cancelled,
 }
 
@@ -771,7 +771,7 @@ fn run_ssh2_session_download_blocking(
         return Err("remote file ended unexpectedly".to_string());
     }
 
-    Ok((DownloadOutcome::Completed, total_size))
+    Ok((DownloadOutcome::Completed { total_size }, total_size))
 }
 
 async fn run_ssh2_session_download(
@@ -884,19 +884,11 @@ async fn run_ssh2_session_download(
             send_event(on_event, SessionDownloadEvent::Cancelled { transfer_id })?;
             Ok(DownloadOutcome::Cancelled)
         }
-        (DownloadOutcome::Completed, total_size) => {
+        (DownloadOutcome::Completed { .. }, total_size) => {
             if let Some(reporter) = reporter.as_mut() {
                 reporter.emit_if_needed(total_size, true)?;
             }
-            send_event(
-                on_event,
-                SessionDownloadEvent::Completed {
-                    transfer_id,
-                    total_size,
-                    save_path,
-                },
-            )?;
-            Ok(DownloadOutcome::Completed)
+            Ok(DownloadOutcome::Completed { total_size })
         }
     }
 }
@@ -1306,16 +1298,10 @@ async fn run_local_session_download(
     };
     flush_result.map_err(|e| format!("flush local file: {}", e))?;
     reporter.emit_if_needed(written, true)?;
-
-    send_event(
-        on_event,
-        SessionDownloadEvent::Completed {
-            transfer_id,
-            total_size,
-            save_path,
-        },
-    )?;
-    Ok(DownloadOutcome::Completed)
+    if written != total_size {
+        return Err("source file changed during download".to_string());
+    }
+    Ok(DownloadOutcome::Completed { total_size })
 }
 
 async fn run_sftp_session_download(
@@ -1414,15 +1400,7 @@ async fn run_sftp_session_download(
             return finish_cancelled_download(&save_path, transfer_id, on_event).await;
         };
         flush_result.map_err(|e| format!("flush local file: {}", e))?;
-        send_event(
-            on_event,
-            SessionDownloadEvent::Completed {
-                transfer_id,
-                total_size,
-                save_path,
-            },
-        )?;
-        return Ok(DownloadOutcome::Completed);
+        return Ok(DownloadOutcome::Completed { total_size });
     }
 
     let read = remote.read_pipelined_streaming_each(max_inflight_bytes, {
@@ -1531,19 +1509,159 @@ async fn run_sftp_session_download(
         remove_partial_file(&save_path).await;
         return Err("remote file ended unexpectedly".to_string());
     }
+    Ok(DownloadOutcome::Completed { total_size })
+}
 
-    send_event(
-        on_event,
-        SessionDownloadEvent::Completed {
-            transfer_id,
-            total_size,
-            save_path,
-        },
-    )?;
-    Ok(DownloadOutcome::Completed)
+/// Owns only an exclusively created staging file; cleanup never targets the
+/// user's chosen destination, including failures before the backend opens it.
+struct DownloadStagingFile(PathBuf);
+
+impl Drop for DownloadStagingFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+impl DownloadStagingFile {
+    async fn prepare(destination: &str, offset: u64) -> Result<Self, String> {
+        ensure_save_path(destination)?;
+        let path = Path::new(destination)
+            .parent()
+            .ok_or("download target has no parent")?
+            .join(format!(".meterm.download-{}", uuid::Uuid::new_v4()));
+        // Construct ownership synchronously with exclusive creation, so a
+        // cancelled async open cannot leave an unowned staging file behind.
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|e| format!("create download temp: {e}"))?;
+        let staged = Self(path);
+        match std::fs::metadata(destination) {
+            Ok(metadata) => std::fs::set_permissions(&staged.0, metadata.permissions())
+                .map_err(|e| format!("preserve download permissions: {e}"))?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("inspect download target: {error}")),
+        }
+        let mut target = tokio::fs::File::from_std(file);
+        if offset > 0 {
+            let source = tokio::fs::File::open(destination)
+                .await
+                .map_err(|e| format!("open download prefix: {e}"))?;
+            let mut prefix = source.take(offset);
+            let copied = tokio::io::copy(&mut prefix, &mut target)
+                .await
+                .map_err(|e| format!("copy download prefix: {e}"))?;
+            if copied != offset {
+                return Err("existing download is shorter than resume offset".into());
+            }
+        }
+        target
+            .flush()
+            .await
+            .map_err(|e| format!("flush download prefix: {e}"))?;
+        Ok(staged)
+    }
+}
+
+fn reject_same_local_download(source: &str, destination: &str) -> Result<(), String> {
+    let same_path = source == destination
+        || match (
+            std::fs::canonicalize(source),
+            std::fs::canonicalize(destination),
+        ) {
+            (Ok(source), Ok(destination)) => source == destination,
+            _ => false,
+        };
+    #[cfg(unix)]
+    let same_path = same_path || {
+        use std::os::unix::fs::MetadataExt;
+        match (std::fs::metadata(source), std::fs::metadata(destination)) {
+            (Ok(source), Ok(destination)) => {
+                source.dev() == destination.dev() && source.ino() == destination.ino()
+            }
+            _ => false,
+        }
+    };
+    if same_path {
+        Err("source path and save path must be different".into())
+    } else {
+        Ok(())
+    }
 }
 
 async fn run_session_download(
+    session: Arc<Session>,
+    path: String,
+    save_path: String,
+    start_offset: u64,
+    ctrl: tokio::sync::mpsc::Receiver<DownloadSignal>,
+    transfer_id: u32,
+    on_event: &tauri::ipc::Channel<SessionDownloadEvent>,
+    cancellation: CancellationToken,
+) -> Result<DownloadOutcome, String> {
+    let is_local =
+        *session.executor_type.lock().unwrap() != "ssh" && session.sftp.lock().unwrap().is_none();
+    if is_local {
+        reject_same_local_download(&path, &save_path)?;
+    }
+    if cancellation.is_cancelled() {
+        send_event(on_event, SessionDownloadEvent::Cancelled { transfer_id })?;
+        return Ok(DownloadOutcome::Cancelled);
+    }
+    // Preserve save-through-symlink behavior while publishing atomically at
+    // the resolved target, and keep the requested path in completion events.
+    let destination = match std::fs::canonicalize(&save_path) {
+        Ok(path) => path
+            .to_str()
+            .ok_or("invalid download target path")?
+            .to_owned(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => save_path.clone(),
+        Err(error) => return Err(format!("resolve download target: {error}")),
+    };
+    let staged = tokio::select! {
+        result = DownloadStagingFile::prepare(&destination, start_offset) => result?,
+        _ = cancellation.cancelled() => {
+            send_event(on_event, SessionDownloadEvent::Cancelled { transfer_id })?;
+            return Ok(DownloadOutcome::Cancelled);
+        }
+    };
+    let staged_path = staged
+        .0
+        .to_str()
+        .ok_or("invalid download temp path")?
+        .to_string();
+    let outcome = run_session_download_to_stage(
+        session,
+        path,
+        staged_path.clone(),
+        start_offset,
+        ctrl,
+        transfer_id,
+        on_event,
+        cancellation.clone(),
+    )
+    .await?;
+    if let DownloadOutcome::Completed { total_size } = outcome {
+        if cancellation.is_cancelled() {
+            send_event(on_event, SessionDownloadEvent::Cancelled { transfer_id })?;
+            return Ok(DownloadOutcome::Cancelled);
+        }
+        finalize_local_upload(&staged_path, &destination).await?;
+        // A delivery failure after commit must not remove the published file.
+        send_event(
+            on_event,
+            SessionDownloadEvent::Completed {
+                transfer_id,
+                total_size,
+                save_path,
+            },
+        )?;
+    }
+    Ok(outcome)
+}
+
+async fn run_session_download_to_stage(
     session: Arc<Session>,
     path: String,
     save_path: String,
@@ -1645,7 +1763,6 @@ pub async fn start_session_file_download(
         .await;
 
         if let Err(err) = result {
-            remove_partial_file(&save_path_clone).await;
             let _ = send_event(
                 &on_event,
                 SessionDownloadEvent::Failed {
@@ -2055,3 +2172,6 @@ pub async fn control_session_file_upload(
         .await
         .map_err(|_| "upload transfer control channel closed".to_string())
 }
+
+#[cfg(test)]
+mod download_tests;
