@@ -317,6 +317,7 @@ async function connectIpc(mt: ManagedTerminal, callbacks: WsCallbacks): Promise<
   const transport = new IpcTransport(mt.id);
 
   transport.onmessage = (data) => {
+    if (mt.ended) return;
     handleIncomingMessage(mt, data, callbacks, () => transport.close());
   };
   transport.onclose = () => {
@@ -328,6 +329,12 @@ async function connectIpc(mt: ManagedTerminal, callbacks: WsCallbacks): Promise<
 
   try {
     await transport.connect();
+    // detach/destroy can run while the native invoke is still completing. In
+    // that case no registry entry remains to close the newly created client.
+    if (mt.ended) {
+      transport.close();
+      return;
+    }
     mt.transport = transport;
     mt.clientId = transport.clientId;
     mt.onStatus('connected');
@@ -341,6 +348,7 @@ async function connectIpc(mt: ManagedTerminal, callbacks: WsCallbacks): Promise<
 
     DrawerManager.setTransport(mt.id, transport);
   } catch (e) {
+    if (mt.ended) return;
     console.error(`[terminal] IPC connect failed for session ${mt.id}:`, e);
     mt.onStatus('disconnected');
   }
