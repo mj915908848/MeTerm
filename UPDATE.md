@@ -1,5 +1,39 @@
 # MeTerm 更新记录
 
+## v0.2.19
+
+### 问题修复 / 优化
+
+- **文件操作保护原文件** — 本地与 SFTP 复制会拒绝覆盖源文件本身或其别名；SFTP 新建文件不会截断同名文件。下载先写入独占临时文件，成功后才替换目标；远程编辑保存失败时保留原文件，并在替换时保留权限。
+- **已保存 SSH 连接恢复完整凭据** — 使用已保存私钥路径连接时改由绑定凭据的 Broker 读取密钥口令和代理密码；本次连接的 Shell Hook 开关不再被旧保存值覆盖。
+- **终端与共享会话重连更可靠** — 终端输入按发送顺序写入 PTY；标签移走时关闭延迟完成的 IPC 连接。IPC 重连保留桌面主控身份并隔离旧连接代次，WebSocket 重连也不会让旧连接清理误断新连接。
+- **Agent 工具对话保持完整** — 一批工具调用达到错误阈值或被中止时仍补齐每个调用的结果；同时收紧本地文件读取授权与 SSH 读取参数校验，保留写入内容原文。
+- **桌面交互与采集修正** — 改进主窗口关闭确认、硬链接处理与 Shift 多选，并过滤服务器网卡采集结果中的表头。
+
+### 验证
+
+- 前端单测 616 项、Rust 测试 743 项通过（另有 1 项需要已登录 Claude 的集成冒烟测试按既有设置跳过）；前端构建通过，桌面与前端生产依赖审计均为 0 项漏洞。
+- 本地 macOS ARM64 App 与 DMG 已构建；App 为 ad-hoc 签名（无 Developer ID / 无公证），签名校验通过。真实 SSH/SFTP 服务、共享会话及原生 macOS 交互仍需现场验证。
+
+---
+
+## Changelog (English)
+
+### Bug Fixes
+
+- **File operations preserve existing files** — Local and SFTP copy reject the source and its aliases; SFTP new-file creation cannot truncate an existing name. Downloads stage data before replacing the destination, and failed remote-editor saves preserve the original file and its permissions.
+- **Saved SSH connections recover their credentials** — An unchanged saved key path uses the credential-bound broker to load the key passphrase and proxy password. The current Shell Hook setting now takes effect.
+- **Terminal and shared-session reconnects are more reliable** — Input reaches the PTY in order, late IPC connections close after tab teardown, and IPC reconnects retain the desktop owner's identity while isolating stale generations. Old WebSocket handlers cannot disconnect a newer reconnect.
+- **Agent tool conversations stay complete** — Early stop and cancellation pair every tool call with a result. Local read authorization and SSH read-argument validation are also tightened while preserving the original write payload.
+- **Desktop interaction and collection fixes** — Window-close confirmation, hard-link handling, Shift selection, and network-interface header filtering are corrected.
+
+### Validation
+
+- All 616 frontend tests and 743 Rust tests passed; one integration smoke test requiring a logged-in Claude remains ignored by default. The frontend build passed, and production-dependency audits for desktop and frontend reported zero vulnerabilities.
+- The local macOS ARM64 app and DMG were built. The app passed ad-hoc signature verification (no Developer ID signing or notarization). Live SSH/SFTP servers, shared sessions, and native macOS interactions still require hands-on verification.
+
+---
+
 ## v0.2.18
 
 ### 新功能
