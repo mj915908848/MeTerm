@@ -579,6 +579,27 @@ impl Session {
         Ok((bound_client, rx, conn_gen))
     }
 
+    /// Rebind a native desktop channel to its original client identity. The
+    /// generation is captured under `clients`, so an older window's delayed
+    /// disconnect cannot tear down the replacement connection.
+    pub(crate) fn reconnect_ipc_client(
+        &self,
+        client_id: &str,
+        channel: tauri::ipc::Channel<Vec<u8>>,
+    ) -> Result<(Arc<Client>, u64), String> {
+        let _private_guard = self.private.lock().unwrap();
+        let clients = self.clients.lock().unwrap();
+        if *self.state.lock().unwrap() == SessionState::Closed {
+            return Err("session is closed".to_string());
+        }
+        let client = clients
+            .get(client_id)
+            .ok_or_else(|| "client not found".to_string())?;
+        let conn_gen = client.reconnect_ipc(channel)?;
+        self.reconcile_state_locked(&clients);
+        Ok((client.clone(), conn_gen))
+    }
+
     /// Set the terminal and start the I/O run loop.
     /// `self_arc` must be the same `Arc<Session>` from the SessionManager.
     pub async fn start_terminal(

@@ -314,7 +314,7 @@ async function connectRemoteBroker(mt: ManagedTerminal, callbacks: WsCallbacks):
 
 async function connectIpc(mt: ManagedTerminal, callbacks: WsCallbacks): Promise<void> {
   mt.onStatus('connecting');
-  const transport = new IpcTransport(mt.id);
+  const transport = new IpcTransport(mt.id, mt.clientId);
 
   transport.onmessage = (data) => {
     if (mt.ended) return;

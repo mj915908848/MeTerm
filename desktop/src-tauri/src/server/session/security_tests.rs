@@ -203,6 +203,58 @@ fn failed_ipc_downstream_immediately_reconciles_session_state() {
 }
 
 #[test]
+fn native_ipc_reconnect_keeps_owner_id_and_rejects_stale_generation() {
+    let session = test_session("ipc-owner-reconnect");
+    let old_channel = tauri::ipc::Channel::<Vec<u8>>::new(|_| Ok(()));
+    let owner = Arc::new(Client::new_ipc(
+        "desktop-owner".to_string(),
+        "ipc://local".to_string(),
+        ClientRole::Viewer,
+        old_channel,
+    ));
+    session.add_client(owner.clone()).unwrap();
+    let old_gen = owner.conn_gen();
+
+    let replacement_channel = tauri::ipc::Channel::<Vec<u8>>::new(|_| Ok(()));
+    let (replacement, new_gen) = session
+        .reconnect_ipc_client("desktop-owner", replacement_channel)
+        .unwrap();
+    assert!(Arc::ptr_eq(&owner, &replacement));
+    assert_eq!(session.owner(), "desktop-owner");
+    assert_ne!(old_gen, new_gen);
+    session.remove_client("desktop-owner", old_gen);
+    assert!(session
+        .current_client_connection("desktop-owner", new_gen)
+        .is_some());
+    assert!(session
+        .current_client_connection("desktop-owner", old_gen)
+        .is_none());
+}
+
+#[test]
+fn native_ipc_reconnect_cannot_replace_a_websocket_client() {
+    let session = test_session("ipc-cannot-rebind-ws");
+    let (remote, _receivers) = device_client(
+        "phone",
+        generation_security("phone-device", uuid::Uuid::new_v4()),
+    );
+    session.add_client(remote.clone()).unwrap();
+    let generation = remote.conn_gen();
+    let channel = tauri::ipc::Channel::<Vec<u8>>::new(|_| Ok(()));
+
+    assert_eq!(
+        session
+            .reconnect_ipc_client("phone", channel)
+            .err()
+            .unwrap(),
+        "not a local IPC client"
+    );
+    assert!(session
+        .current_client_connection("phone", generation)
+        .is_some());
+}
+
+#[test]
 fn private_session_rejects_same_device_reconnect() {
     let session = test_session("private-reconnect");
     let security = ClientSecurityContext::test_device(TrustedIngress::Relay, "device-private-test");

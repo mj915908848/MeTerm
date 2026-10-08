@@ -14,6 +14,7 @@ export class IpcTransport implements TerminalTransport {
   private _connected = false;
   private _sessionId: string;
   private _clientId: string | null = null;
+  private _connGen: number | null = null;
   /** Tauri commands can execute concurrently; terminal bytes must not. */
   private _inputQueue: Promise<void> = Promise.resolve();
   /** Per-transfer queues to serialize ipc_session_control invokes per transferId */
@@ -21,7 +22,7 @@ export class IpcTransport implements TerminalTransport {
   onmessage: ((data: ArrayBuffer) => void) | null = null;
   onclose: (() => void) | null = null;
 
-  constructor(sessionId: string) { this._sessionId = sessionId; }
+  constructor(sessionId: string, private readonly reconnectClientId: string | null = null) { this._sessionId = sessionId; }
 
   get connected(): boolean { return this._connected; }
   get clientId(): string | null { return this._clientId; }
@@ -36,25 +37,29 @@ export class IpcTransport implements TerminalTransport {
 
     const raw = await invoke<string>('ipc_connect_session', {
       sessionId: this._sessionId,
+      clientId: this.reconnectClientId,
       onOutput: channel,
     });
     const hello = JSON.parse(raw);
     this._clientId = hello.client_id;
+    this._connGen = hello.conn_gen;
     this._connected = true;
     return hello;
   }
 
   send(data: Uint8Array): void {
-    if (!this._connected || !this._clientId) return;
+    if (!this._connected || !this._clientId || this._connGen === null) return;
     const msgType = data[0];
     const payload = Array.from(data.slice(1));
 
     if (msgType === MsgInput) {
       const clientId = this._clientId;
+      const connGen = this._connGen;
       this._inputQueue = this._inputQueue.then(() =>
         invoke('ipc_session_input', {
           sessionId: this._sessionId,
           clientId,
+          connGen,
           data: payload,
         }) as Promise<void>
       ).catch((error) => console.error('IPC input error:', error));
@@ -65,6 +70,7 @@ export class IpcTransport implements TerminalTransport {
         void invoke('ipc_session_resize', {
           sessionId: this._sessionId,
           clientId: this._clientId,
+          connGen: this._connGen,
           cols, rows,
         });
       }
@@ -91,6 +97,7 @@ export class IpcTransport implements TerminalTransport {
         invoke('ipc_session_control', {
           sessionId: this._sessionId,
           clientId: this._clientId,
+          connGen: this._connGen,
           msgType,
           payload,
         }) as Promise<void>
@@ -100,14 +107,16 @@ export class IpcTransport implements TerminalTransport {
   }
 
   close(): void {
-    if (this._connected && this._clientId) {
+    if (this._connected && this._clientId && this._connGen !== null) {
       void invoke('ipc_disconnect_session', {
         sessionId: this._sessionId,
         clientId: this._clientId,
+        connGen: this._connGen,
       });
     }
     this._connected = false;
     this._clientId = null;
+    this._connGen = null;
   }
 }
 

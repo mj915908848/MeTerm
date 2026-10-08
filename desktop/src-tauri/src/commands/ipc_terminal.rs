@@ -18,6 +18,7 @@ use crate::server::ServerState;
 pub async fn ipc_connect_session(
     state: State<'_, Arc<ServerState>>,
     session_id: String,
+    client_id: Option<String>,
     on_output: tauri::ipc::Channel<Vec<u8>>,
 ) -> Result<String, String> {
     let session = state
@@ -25,16 +26,21 @@ pub async fn ipc_connect_session(
         .get(&session_id)
         .ok_or_else(|| "session not found".to_string())?;
 
-    let id = uuid::Uuid::new_v4().to_string();
-    let client = Arc::new(Client::new_ipc(
-        id.clone(),
-        "ipc://local".to_string(),
-        ClientRole::Viewer,
-        on_output,
-    ));
-    session
-        .add_client(client.clone())
-        .map_err(|e| e.to_string())?;
+    let (id, client, conn_gen) = if let Some(id) = client_id {
+        let (client, conn_gen) = session.reconnect_ipc_client(&id, on_output)?;
+        (id, client, conn_gen)
+    } else {
+        let id = uuid::Uuid::new_v4().to_string();
+        let client = Arc::new(Client::new_ipc(
+            id.clone(),
+            "ipc://local".to_string(),
+            ClientRole::Viewer,
+            on_output,
+        ));
+        session.add_client(client.clone())?;
+        let conn_gen = client.conn_gen();
+        (id, client, conn_gen)
+    };
 
     // Determine actual role after add_client (may have been promoted to Master)
     let actual_role = if session.master() == id {
@@ -46,7 +52,6 @@ pub async fn ipc_connect_session(
     let rows = *session.last_rows.lock().unwrap();
 
     // Send Hello via Channel
-    let conn_gen = client.conn_gen();
     let hello = protocol::encode_hello(&id, actual_role, 1, cols, rows, conn_gen);
     if !session.send_to_client_generation(&id, conn_gen, hello) {
         session.remove_client(&id, conn_gen);
@@ -74,10 +79,10 @@ pub async fn ipc_connect_session(
         // Mirror 会话底层带 PTY:AI 历史(attach)之外再回放终端环形缓冲(见 ws.rs 同段说明)。
         // IPC 下行是 Tauri Channel(无背压容量限制),两类帧顺序不影响正确性。
         if entry.kind() == crate::server::agent::AgentKind::Mirror {
-            session.flush_ring_buffer(&client, client.conn_gen());
+            session.flush_ring_buffer(&client, conn_gen);
         }
     } else {
-        session.flush_ring_buffer(&client, client.conn_gen());
+        session.flush_ring_buffer(&client, conn_gen);
     }
     if session.current_client_connection(&id, conn_gen).is_none() {
         session.remove_client(&id, conn_gen);
@@ -94,7 +99,7 @@ pub async fn ipc_connect_session(
         "role": actual_role,
         "cols": cols,
         "rows": rows,
-        "conn_gen": client.conn_gen(),
+        "conn_gen": conn_gen,
     })
     .to_string())
 }
@@ -105,9 +110,10 @@ pub async fn ipc_disconnect_session(
     state: State<'_, Arc<ServerState>>,
     session_id: String,
     client_id: String,
+    conn_gen: u64,
 ) -> Result<(), String> {
     if let Some(session) = state.session_manager.get(&session_id) {
-        session.remove_client(&client_id, 0); // conn_gen=0: IPC has no reconnect
+        session.remove_client(&client_id, conn_gen);
     }
     Ok(())
 }
@@ -118,15 +124,13 @@ pub async fn ipc_session_input(
     state: State<'_, Arc<ServerState>>,
     session_id: String,
     client_id: String,
+    conn_gen: u64,
     data: Vec<u8>,
 ) -> Result<(), String> {
     let session = state
         .session_manager
         .get(&session_id)
         .ok_or("session not found")?;
-    let conn_gen = session
-        .client_connection_generation(&client_id)
-        .ok_or("client not connected")?;
     if let Some(authority) = session.current_client_connection(&client_id, conn_gen) {
         session.handle_authorized_input(&authority, &data);
     }
@@ -139,6 +143,7 @@ pub async fn ipc_session_resize(
     state: State<'_, Arc<ServerState>>,
     session_id: String,
     client_id: String,
+    conn_gen: u64,
     cols: u16,
     rows: u16,
 ) -> Result<(), String> {
@@ -146,9 +151,6 @@ pub async fn ipc_session_resize(
         .session_manager
         .get(&session_id)
         .ok_or("session not found")?;
-    let conn_gen = session
-        .client_connection_generation(&client_id)
-        .ok_or("client not connected")?;
     if let Some(authority) = session.current_client_connection(&client_id, conn_gen) {
         session.handle_authorized_resize(&authority, cols, rows);
     }
@@ -161,14 +163,12 @@ pub async fn ipc_session_ping(
     state: State<'_, Arc<ServerState>>,
     session_id: String,
     client_id: String,
+    conn_gen: u64,
 ) -> Result<(), String> {
     let session = state
         .session_manager
         .get(&session_id)
         .ok_or("session not found")?;
-    let conn_gen = session
-        .client_connection_generation(&client_id)
-        .ok_or("client not connected")?;
     // Reuse the ping handler from dispatch
     crate::server::dispatch::dispatch_message(
         &session,
@@ -189,6 +189,7 @@ pub async fn ipc_session_control(
     state: State<'_, Arc<ServerState>>,
     session_id: String,
     client_id: String,
+    conn_gen: u64,
     msg_type: u8,
     payload: Vec<u8>,
 ) -> Result<(), String> {
@@ -196,9 +197,6 @@ pub async fn ipc_session_control(
         .session_manager
         .get(&session_id)
         .ok_or("session not found")?;
-    let conn_gen = session
-        .client_connection_generation(&client_id)
-        .ok_or("client not connected")?;
     crate::server::dispatch::dispatch_message(
         &session, &client_id, conn_gen, msg_type, &payload, &state,
     )

@@ -139,6 +139,8 @@ impl ClientSecurityContext {
 pub struct Client {
     pub id: String,
     pub role: ClientRole,
+    /// Set only by the native IPC constructor; never inferred from a public ID.
+    is_ipc: bool,
     pub connected: AtomicBool,
     security: std::sync::RwLock<ClientSecurityContext>,
     pub remote_addr: String,
@@ -176,6 +178,7 @@ impl Client {
         let client = Self {
             id,
             role,
+            is_ipc: false,
             connected: AtomicBool::new(true),
             security: std::sync::RwLock::new(security),
             remote_addr,
@@ -205,6 +208,7 @@ impl Client {
         Self {
             id,
             role,
+            is_ipc: true,
             connected: AtomicBool::new(true),
             security: std::sync::RwLock::new(ClientSecurityContext::direct_loopback_owner()),
             remote_addr,
@@ -439,6 +443,26 @@ impl Client {
         self.connected.store(false, Ordering::SeqCst);
         let mut guard = self.downstream.lock().unwrap();
         *guard = None;
+    }
+
+    /// Rebind the same native IPC identity to a replacement WebView channel.
+    /// The caller holds the session's clients lock through the generation read.
+    pub(crate) fn reconnect_ipc(
+        &self,
+        channel: tauri::ipc::Channel<Vec<u8>>,
+    ) -> Result<u64, String> {
+        if !self.is_ipc || !self.is_trusted_local_owner() {
+            return Err("not a local IPC client".to_string());
+        }
+        self.connected.store(false, Ordering::SeqCst);
+        {
+            let mut guard = self.downstream.lock().unwrap();
+            *guard = Some(DownStream::IpcChannel(channel));
+        }
+        let conn_gen = self.conn_gen.fetch_add(1, Ordering::SeqCst) + 1;
+        self.connected.store(true, Ordering::SeqCst);
+        self.touch();
+        Ok(conn_gen)
     }
 
     /// Reconnect with fresh WS queues. Returns new receivers for the WS write pump.
