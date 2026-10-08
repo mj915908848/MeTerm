@@ -179,5 +179,17 @@ export async function runTools(
     results.push(...batchResults);
   }
 
+  // The assistant message already contains every call in this turn. Even when
+  // execution stops between serial batches, providers require one result for
+  // each call before the conversation can continue.
+  for (const call of toolCalls.slice(results.length)) {
+    results.push({
+      callId: call.id,
+      toolName: call.function.name,
+      result: 'Execution aborted by user',
+      isError: true,
+    });
+  }
+
   return results;
 }

@@ -1134,6 +1134,7 @@ export class ToolAgent {
         );
 
         let terminalInterrupted = false;
+        let tooManyToolErrors = false;
         // Pass 3: drain results in order — update message history + UI.
         for (const r of results) {
           // Normalize the tool result into the ChatMessage.content shape.
@@ -1174,15 +1175,23 @@ export class ToolAgent {
           if (r.isError) {
             consecutiveErrors++;
             if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-              this.abortController = null;
-              callbacks.onError(
-                new Error('Too many consecutive tool errors. Please check and retry.'),
-              );
-              return;
+              tooManyToolErrors = true;
             }
           } else {
             consecutiveErrors = 0;
           }
+        }
+
+        // Every tool call above has a result before reporting an early stop.
+        if (this.aborted) {
+          this.abortController = null;
+          callbacks.onAborted?.(iteration);
+          return;
+        }
+        if (tooManyToolErrors) {
+          this.abortController = null;
+          callbacks.onError(new Error('Too many consecutive tool errors. Please check and retry.'));
+          return;
         }
 
         if (terminalInterrupted) {
