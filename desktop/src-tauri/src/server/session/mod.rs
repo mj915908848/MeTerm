@@ -522,7 +522,7 @@ impl Session {
         remote_addr: String,
         security: ClientSecurityContext,
         grace: std::time::Duration,
-    ) -> Result<client::WsReceivers, String> {
+    ) -> Result<(Arc<Client>, client::WsReceivers, u64), String> {
         // Match add_client/set_private lock order. A reconnect either finishes
         // registration before set_private scans, or observes private=true and
         // is rejected; it can never slip into the post-scan gap.
@@ -566,11 +566,13 @@ impl Session {
         }
 
         let rx = client.reconnect(remote_addr, security)?;
+        let bound_client = client.clone();
+        let conn_gen = client.conn_gen();
         self.reconcile_state_locked(&clients);
         drop(clients);
         drop(private_guard);
 
-        Ok(rx)
+        Ok((bound_client, rx, conn_gen))
     }
 
     /// Set the terminal and start the I/O run loop.

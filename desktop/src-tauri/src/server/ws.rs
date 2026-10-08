@@ -84,7 +84,7 @@ async fn handle_ws(
     };
 
     // 2. Handle reconnect or create new client
-    let (client, receivers) = if let Some(ref cid) = query.client_id {
+    let (client, receivers, conn_gen) = if let Some(ref cid) = query.client_id {
         // Attempt reconnect
         match session.reconnect_client(
             cid,
@@ -92,11 +92,7 @@ async fn handle_ws(
             security.clone(),
             state.config.reconnect_grace,
         ) {
-            Ok(rx) => {
-                let clients = session.clients.lock().unwrap();
-                let client = clients.get(cid).cloned().unwrap();
-                (client, rx)
-            }
+            Ok(bound) => bound,
             Err(_) => match create_new_client(&session, &query, &remote_addr, security.clone()) {
                 Ok(created) => created,
                 Err(error) => {
@@ -120,13 +116,9 @@ async fn handle_ws(
     };
 
     let client_id = client.id.clone();
-    // conn_gen 捕获点必须在此(step2 client 建立/reconnect 完成之后、长回放之前),记住**本 handler
-    // H0 自己建立时的代次 G0**。若像旧代码那样放到 step6 长回放(attach + flush_ring_buffer_async)
-    // 之后再读,则回放窗口内同 client_id 重连(H1)会把 conn_gen bump 到 G1,H0 读到的就是 G1;cleanup
-    // 时 `remove_client(client_id, G1)` 与当前 gen 相等 → 不跳过 → 误 disconnect 刚重连的 H1 + 触发
-    // master 误让(手机抖动重连后被自己的旧 handler 杀掉、master 易主的根因)。捕获前移到 G0 后,H1
-    // bump 到 G1 使 `conn_gen()==G1≠G0` → remove_client 整体跳过,不误拆 H1(见 remove_client 语义)。
-    let conn_gen = client.conn_gen();
+    // The generation is bound to these receivers during registration. Reading
+    // client.conn_gen() here would let an overlapping reconnect substitute its
+    // newer generation and make this handler disconnect that newer connection.
     // Both authentication and the direct-LAN accept lease happened before the
     // WebSocket upgrade. Revalidate after registration so neither credential
     // revocation nor LAN shutdown can leave a late, unscanned socket alive.
@@ -467,7 +459,7 @@ fn create_new_client(
     query: &WsQuery,
     remote_addr: &str,
     security: ClientSecurityContext,
-) -> Result<(Arc<Client>, WsReceivers), String> {
+) -> Result<(Arc<Client>, WsReceivers, u64), String> {
     let id = uuid::Uuid::new_v4().to_string();
     let role = match query.mode.as_deref() {
         Some("readonly") => ClientRole::ReadOnly,
@@ -475,8 +467,9 @@ fn create_new_client(
     };
     let (client, rx) = Client::new(id, remote_addr.to_string(), role, security);
     let client = Arc::new(client);
+    let conn_gen = client.conn_gen();
     session.add_client(client.clone())?;
-    Ok((client, rx))
+    Ok((client, rx, conn_gen))
 }
 
 fn keep_session_registration(
@@ -578,5 +571,49 @@ mod lan_registration_tests {
         ));
         assert!(state.presence.has_any());
         state.presence.remove(&relay_presence);
+    }
+}
+
+#[cfg(test)]
+mod reconnect_binding_tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn reconnect_handler_cleanup_uses_its_own_generation_after_overlap() {
+        let state = crate::server::create_dummy_state();
+        let session = state.session_manager.create();
+        let security = ClientSecurityContext::direct_loopback_owner();
+        let (client, _initial_receivers) = Client::new(
+            "stable".into(),
+            "127.0.0.1".into(),
+            ClientRole::Master,
+            security.clone(),
+        );
+        let client = Arc::new(client);
+        session.add_client(client.clone()).unwrap();
+
+        // H0 returns from registration, then H1 registers before H0 reads conn_gen.
+        let (_h0_client, _h0_receivers, generation_used_by_h0_handler) = session
+            .reconnect_client(
+                "stable",
+                "127.0.0.1".into(),
+                security.clone(),
+                Duration::from_secs(60),
+            )
+            .unwrap();
+        let (_h1_client, _h1_receivers, h1_generation) = session
+            .reconnect_client(
+                "stable",
+                "127.0.0.1".into(),
+                security,
+                Duration::from_secs(60),
+            )
+            .unwrap();
+
+        assert_eq!(generation_used_by_h0_handler, 1);
+        assert_eq!(h1_generation, 2);
+        session.remove_client("stable", generation_used_by_h0_handler);
+        assert!(client.is_connected(), "H0 cleanup must not disconnect H1");
     }
 }
