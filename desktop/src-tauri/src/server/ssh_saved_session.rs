@@ -39,6 +39,8 @@ pub struct CreateSshSessionFromSavedRequest {
     id: String,
     #[serde(default)]
     trusted_fingerprint: Option<String>,
+    #[serde(default)]
+    skip_shell_hook: Option<bool>,
 }
 
 /// 从已存连接的元数据(`ConnectionRegistry`)+ 钥匙串密钥(`secret_vault`)
@@ -47,6 +49,7 @@ fn build_ssh_config_from_saved(
     conn: super::connections::SavedConnection,
     secrets: super::secret_vault::SshSecrets,
     trusted_fingerprint: Option<String>,
+    skip_shell_hook: Option<bool>,
 ) -> super::terminal::ssh::SshConfig {
     let auth_method = super::terminal::ssh::SshAuthMethod::from_str_lossy(&conn.auth_method);
 
@@ -74,7 +77,7 @@ fn build_ssh_config_from_saved(
         private_key,
         passphrase: secrets.passphrase.unwrap_or_default(),
         trusted_fingerprint: trusted_fingerprint.unwrap_or_default(),
-        disable_hook: conn.skip_shell_hook.unwrap_or(false),
+        disable_hook: skip_shell_hook.or(conn.skip_shell_hook).unwrap_or(false),
         multiplex_sftp: conn.multiplex_sftp.unwrap_or(false),
         proxy_type: conn.proxy_type.unwrap_or_default(),
         proxy_host: conn.proxy_host.unwrap_or_default(),
@@ -130,6 +133,7 @@ fn materialize_saved_ssh_config(
     state: &ServerState,
     id: &str,
     trusted_fingerprint: Option<String>,
+    skip_shell_hook: Option<bool>,
 ) -> Result<Option<super::terminal::ssh::SshConfig>, MaterializeSavedConfigError> {
     state.connections.read_with(id, |connection| {
         let Some(conn) = connection.filter(|conn| conn.deleted_at.is_none()) else {
@@ -144,6 +148,7 @@ fn materialize_saved_ssh_config(
             conn,
             secrets,
             trusted_fingerprint,
+            skip_shell_hook,
         )))
     })
 }
@@ -183,12 +188,13 @@ async fn materialize_saved_ssh_config_bounded(
     state: Arc<ServerState>,
     id: String,
     trusted_fingerprint: Option<String>,
+    skip_shell_hook: Option<bool>,
 ) -> Result<Option<super::terminal::ssh::SshConfig>, MaterializeSavedConfigError> {
     let gate = SAVED_CREDENTIAL_MATERIALIZE_GATE
         .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(1)))
         .clone();
     run_bounded_blocking_materializer(gate, SAVED_CREDENTIAL_LOAD_TIMEOUT, move || {
-        materialize_saved_ssh_config(&state, &id, trusted_fingerprint)
+        materialize_saved_ssh_config(&state, &id, trusted_fingerprint, skip_shell_hook)
     })
     .await
 }
@@ -214,6 +220,11 @@ pub async fn create_ssh_session_from_saved(
         state.clone(),
         body.id.clone(),
         body.trusted_fingerprint,
+        if matches!(principal, AuthPrincipal::Owner { .. }) {
+            body.skip_shell_hook
+        } else {
+            None
+        },
     )
     .await
     {
@@ -275,6 +286,11 @@ pub async fn test_ssh_session_from_saved(
         state.clone(),
         body.id.clone(),
         body.trusted_fingerprint,
+        if matches!(principal, AuthPrincipal::Owner { .. }) {
+            body.skip_shell_hook
+        } else {
+            None
+        },
     )
     .await
     {
@@ -378,11 +394,33 @@ mod tests {
     }
 
     #[test]
+    fn owner_request_overrides_saved_shell_hook_in_both_directions() {
+        let request: CreateSshSessionFromSavedRequest =
+            serde_json::from_value(serde_json::json!({ "id": "c1", "skip_shell_hook": false }))
+                .unwrap();
+        assert_eq!(request.skip_shell_hook, Some(false));
+
+        let disabled = build_ssh_config_from_saved(
+            make_conn("password", false),
+            SshSecrets::default(),
+            None,
+            Some(false),
+        );
+        assert!(!disabled.disable_hook);
+
+        let mut saved_enabled = make_conn("password", false);
+        saved_enabled.skip_shell_hook = Some(false);
+        let enabled =
+            build_ssh_config_from_saved(saved_enabled, SshSecrets::default(), None, Some(true));
+        assert!(enabled.disable_hook);
+    }
+
+    #[test]
     fn test_password_auth_uses_vault_password_and_leaves_key_empty() {
         let conn = make_conn("password", false);
         let mut secrets = SshSecrets::default();
         secrets.password = Some("hunter2".to_string());
-        let config = build_ssh_config_from_saved(conn, secrets, None);
+        let config = build_ssh_config_from_saved(conn, secrets, None, None);
         assert_eq!(config.auth_method, SshAuthMethod::Password);
         assert_eq!(config.password, "hunter2");
         assert!(config.private_key.is_empty());
@@ -394,7 +432,7 @@ mod tests {
         let mut secrets = SshSecrets::default();
         secrets.private_key_pem = Some("-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n".to_string());
         secrets.passphrase = Some("pp".to_string());
-        let config = build_ssh_config_from_saved(conn, secrets, None);
+        let config = build_ssh_config_from_saved(conn, secrets, None, None);
         assert_eq!(config.auth_method, SshAuthMethod::Key);
         assert!(config.private_key.starts_with("-----BEGIN"));
         assert_eq!(config.passphrase, "pp");
@@ -409,7 +447,7 @@ mod tests {
         conn.uses_desktop_key_ladder = true;
         let secrets = SshSecrets::default();
         assert!(validate_saved_credentials(&conn, &secrets).is_ok());
-        let config = build_ssh_config_from_saved(conn, secrets, None);
+        let config = build_ssh_config_from_saved(conn, secrets, None, None);
         assert_eq!(config.auth_method, SshAuthMethod::Key);
         assert!(config.private_key.is_empty());
     }
@@ -435,7 +473,7 @@ mod tests {
         let mut secrets = SshSecrets::default();
         secrets.private_key_path = Some("/Users/alice/.ssh/id_ed25519".into());
         assert!(validate_saved_credentials(&conn, &secrets).is_ok());
-        let config = build_ssh_config_from_saved(conn, secrets, None);
+        let config = build_ssh_config_from_saved(conn, secrets, None, None);
         // The raw device route must still reject a caller-supplied desktop path.
         assert!(super::super::handlers::validate_direct_ssh_config(&device, &config).is_err());
         assert!(super::super::handlers::validate_direct_ssh_config(&owner, &config).is_ok());
@@ -461,7 +499,8 @@ mod tests {
     fn test_carries_proxy_fields_and_trusted_fingerprint_override() {
         let conn = make_conn("password", false);
         let secrets = SshSecrets::default();
-        let config = build_ssh_config_from_saved(conn, secrets, Some("SHA256:abc123".to_string()));
+        let config =
+            build_ssh_config_from_saved(conn, secrets, Some("SHA256:abc123".to_string()), None);
         assert_eq!(config.proxy_type, "socks5");
         assert_eq!(config.proxy_host, "127.0.0.1");
         assert_eq!(config.proxy_port, 1080);
@@ -481,7 +520,7 @@ mod tests {
         let mut secrets = SshSecrets::default();
         secrets.password = Some("hunter2".to_string());
         secrets.proxy_password = Some("proxysecret".to_string());
-        let config = build_ssh_config_from_saved(conn, secrets, None);
+        let config = build_ssh_config_from_saved(conn, secrets, None, None);
         assert_eq!(config.proxy_password, "proxysecret");
     }
 

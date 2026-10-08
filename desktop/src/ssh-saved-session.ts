@@ -9,6 +9,7 @@
 import type { SSHConnectionConfig } from './ssh';
 import {
   createSSHSession,
+  isInlinePrivateKey,
   loadSavedConnections,
   showHostKeyConfirmDialog,
   testSSHConnection,
@@ -49,6 +50,9 @@ function matchesSavedMetadata(config: SSHConnectionConfig): boolean {
     && saved.proxyHost === config.proxyHost
     && saved.proxyPort === config.proxyPort
     && saved.proxyUsername === config.proxyUsername
+    && (!config.privateKey || (
+      config.privateKey === saved.privateKey && !isInlinePrivateKey(config.privateKey)
+    ))
     // `skipShellHook` is deliberately NOT compared: it is a per-session
     // runtime flag derived from the global settings toggle (and stripped
     // from saved records — see ssh.ts stripRuntimeOnlyFields), not part
@@ -58,15 +62,14 @@ function matchesSavedMetadata(config: SSHConnectionConfig): boolean {
 }
 
 /**
- * User-entered credentials and local key paths intentionally take the raw
- * connection path. Metadata-only saved connections use the id-bound Broker.
+ * User-entered credentials and changed key paths take the raw connection
+ * path. An unchanged saved key path uses the id-bound vault Broker.
  */
 export function shouldUseSavedSessionBroker(config: SSHConnectionConfig): boolean {
   return Boolean(
     brokerConnectionId(config)
       && matchesSavedMetadata(config)
       && !config.password
-      && !config.privateKey
       && !config.passphrase
       && !config.proxyPassword,
   );
@@ -78,6 +81,7 @@ async function postSavedOperation(
   ownerPort: number,
   ownerAuthToken: string,
   trustedFingerprint?: string,
+  skipShellHook?: boolean,
 ): Promise<{ response: Response; body: Record<string, unknown> }> {
   const response = await fetch(`http://127.0.0.1:${ownerPort}/api/sessions/ssh/${path}`, {
     method: 'POST',
@@ -88,6 +92,7 @@ async function postSavedOperation(
     body: JSON.stringify({
       id,
       trusted_fingerprint: trustedFingerprint || null,
+      skip_shell_hook: skipShellHook ?? null,
     }),
   });
   let body: Record<string, unknown> = {};
@@ -138,7 +143,7 @@ export async function createSSHSessionForConfig(
   }
 
   const { response, body } = await postSavedOperation(
-    'saved', id, ownerPort, ownerAuthToken, trustedFingerprint,
+    'saved', id, ownerPort, ownerAuthToken, trustedFingerprint, config.skipShellHook,
   );
   const challenge = asHostKeyChallenge(body);
   if (challenge?.error === 'host_key_mismatch') {
@@ -177,7 +182,7 @@ export async function testSSHConnectionForConfig(
   }
 
   const { response, body } = await postSavedOperation(
-    'saved/test', id, ownerPort, ownerAuthToken, trustedFingerprint,
+    'saved/test', id, ownerPort, ownerAuthToken, trustedFingerprint, config.skipShellHook,
   );
   const challenge = asHostKeyChallenge(body);
   if (challenge?.error === 'host_key_mismatch') {
