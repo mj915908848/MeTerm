@@ -3,7 +3,14 @@ use super::{Session, TermCtrl};
 use crate::server::auth::AuthPrincipal;
 use crate::server::protocol;
 use crate::server::session::state::{ClientRole, SessionState};
+use std::collections::VecDeque;
 use std::sync::Arc;
+
+#[derive(Default)]
+pub(super) struct InputQueue {
+    pending: VecDeque<Vec<u8>>,
+    draining: bool,
+}
 
 /// Immutable authority snapshot for exactly one admitted inbound frame.
 ///
@@ -155,14 +162,40 @@ impl Session {
             );
             return false;
         }
-        let data = data.to_vec();
-        let input_tx = self.input_tx.clone();
-        tokio::spawn(async move {
-            let guard = input_tx.lock().await;
-            if let Some(ref tx) = *guard {
-                let _ = tx.send(data).await;
+        // Admission and ordering happen before returning to the WebSocket
+        // reader. Only one drain task may consume this queue at a time.
+        let start_drain = {
+            let mut queue = self.input_queue.lock().unwrap();
+            queue.pending.push_back(data.to_vec());
+            if queue.draining {
+                false
+            } else {
+                queue.draining = true;
+                true
             }
-        });
+        };
+        if start_drain {
+            let input_queue = self.input_queue.clone();
+            let input_tx = self.input_tx.clone();
+            tokio::spawn(async move {
+                loop {
+                    let data = {
+                        let mut queue = input_queue.lock().unwrap();
+                        match queue.pending.pop_front() {
+                            Some(data) => data,
+                            None => {
+                                queue.draining = false;
+                                break;
+                            }
+                        }
+                    };
+                    let guard = input_tx.lock().await;
+                    if let Some(ref tx) = *guard {
+                        let _ = tx.send(data).await;
+                    }
+                }
+            });
+        }
         true
     }
 
@@ -429,6 +462,53 @@ impl Session {
             self.reconcile_state_locked(&clients);
         }
         sent
+    }
+}
+
+#[cfg(test)]
+mod ordered_input_tests {
+    use super::*;
+    use crate::server::events::EventBus;
+    use crate::server::session::{Session, SessionConfig};
+    use std::time::Duration;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn admitted_input_reaches_pty_in_dispatch_order() {
+        let session = Session::new(
+            "ordered-input".into(),
+            SessionConfig {
+                session_ttl: Duration::from_secs(300),
+                reconnect_grace: Duration::from_secs(60),
+                ring_buffer_size: 4096,
+                log_dir: String::new(),
+            },
+            EventBus::new(),
+        );
+        let (client, _receivers) = Client::new(
+            "master".into(),
+            "127.0.0.1".into(),
+            ClientRole::Master,
+            ClientSecurityContext::direct_loopback_owner(),
+        );
+        session.add_client(Arc::new(client)).unwrap();
+        let authority = session.current_client_connection("master", 0).unwrap();
+        let mut input_rx = session.install_input_channel_for_test().await;
+
+        const COUNT: u32 = 4096;
+        for sequence in 0..COUNT {
+            assert!(session.handle_authorized_input(&authority, &sequence.to_be_bytes()));
+        }
+        for expected in 0..COUNT {
+            let actual = tokio::time::timeout(Duration::from_secs(10), input_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                actual,
+                expected.to_be_bytes(),
+                "input frame {expected} arrived out of order"
+            );
+        }
     }
 }
 

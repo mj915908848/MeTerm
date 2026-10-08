@@ -207,6 +207,9 @@ pub struct Session {
 
     /// Channel to send input data to the terminal.
     input_tx: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::Sender<Vec<u8>>>>>,
+    /// Synchronous admission queue preserves the reader's frame order before
+    /// its single drain task waits for terminal-channel capacity.
+    input_queue: Arc<Mutex<access::InputQueue>>,
     /// Channel to send resize commands to the terminal.
     resize_tx: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::Sender<TermCtrl>>>>,
     /// Restart count for auto-restart logic.
@@ -307,6 +310,7 @@ impl Session {
             ring_buf: Mutex::new(RingBuffer::new(ring_size)),
             mode_tracker: Mutex::new(modes::ModeTracker::new()),
             input_tx: Arc::new(tokio::sync::Mutex::new(None)),
+            input_queue: Arc::new(Mutex::new(access::InputQueue::default())),
             resize_tx: Arc::new(tokio::sync::Mutex::new(None)),
             restart_count: std::sync::atomic::AtomicU32::new(0),
             created_at: Instant::now(),

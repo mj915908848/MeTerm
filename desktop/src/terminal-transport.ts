@@ -14,6 +14,8 @@ export class IpcTransport implements TerminalTransport {
   private _connected = false;
   private _sessionId: string;
   private _clientId: string | null = null;
+  /** Tauri commands can execute concurrently; terminal bytes must not. */
+  private _inputQueue: Promise<void> = Promise.resolve();
   /** Per-transfer queues to serialize ipc_session_control invokes per transferId */
   private _controlQueues: Map<number, Promise<void>> = new Map();
   onmessage: ((data: ArrayBuffer) => void) | null = null;
@@ -48,11 +50,14 @@ export class IpcTransport implements TerminalTransport {
     const payload = Array.from(data.slice(1));
 
     if (msgType === MsgInput) {
-      void invoke('ipc_session_input', {
-        sessionId: this._sessionId,
-        clientId: this._clientId,
-        data: payload,
-      });
+      const clientId = this._clientId;
+      this._inputQueue = this._inputQueue.then(() =>
+        invoke('ipc_session_input', {
+          sessionId: this._sessionId,
+          clientId,
+          data: payload,
+        }) as Promise<void>
+      ).catch((error) => console.error('IPC input error:', error));
     } else if (msgType === MsgResize) {
       if (payload.length >= 4) {
         const cols = (payload[0] << 8) | payload[1];
