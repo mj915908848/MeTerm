@@ -4,11 +4,18 @@
 
 ### 问题修复 / 优化
 
-- **文件操作保护原文件** — 本地与 SFTP 复制会拒绝覆盖源文件本身或其别名；SFTP 新建文件不会截断同名文件。下载先写入独占临时文件，成功后才替换目标；远程编辑保存失败时保留原文件，并在替换时保留权限。
-- **已保存 SSH 连接恢复完整凭据** — 使用已保存私钥路径连接时改由绑定凭据的 Broker 读取密钥口令和代理密码；本次连接的 Shell Hook 开关不再被旧保存值覆盖。
-- **终端与共享会话重连更可靠** — 终端输入按发送顺序写入 PTY；标签移走时关闭延迟完成的 IPC 连接。IPC 重连保留桌面主控身份并隔离旧连接代次，WebSocket 重连也不会让旧连接清理误断新连接。
-- **Agent 工具对话保持完整** — 一批工具调用达到错误阈值或被中止时仍补齐每个调用的结果；同时收紧本地文件读取授权与 SSH 读取参数校验，保留写入内容原文。
-- **桌面交互与采集修正** — 改进主窗口关闭确认、硬链接处理与 Shift 多选，并过滤服务器网卡采集结果中的表头。
+- **复制不再覆盖源文件** — 本地复制拒绝相同路径、符号链接和硬链接别名；SFTP 复制使用排他临时文件与安全替换，失败时保留原目标，并兼容合法的长文件名。
+- **SFTP 新建文件保持已有内容** — 新建时使用排他创建；同名文件已存在则报错，不再截断它。
+- **下载失败时保留目标** — 下载先写同目录独占临时文件，完成后才替换；失败或取消只清理本次临时文件。续传保留已下载前缀并去除旧尾部，完成事件在文件提交后发送。
+- **远程编辑保存可以回滚** — 保存先写唯一临时文件，再安全替换原文件；替换失败时恢复备份，恢复也失败则返回备份路径。保留原文件权限，不要求普通 SSH 用户更改所有权。
+- **已保存 SSH 连接恢复完整凭据** — 沿用已保存私钥路径时，通过绑定凭据的 Broker 读取密钥口令和代理密码；本次连接的 Shell Hook 开关优先于旧保存值。
+- **终端输入保持发送顺序** — WebSocket 输入在会话级队列中依次写入 PTY，本地 IPC 输入调用也按发送顺序排队。
+- **共享会话重连不误断新连接** — WebSocket 重连登记与代次绑定为原子操作；IPC 重连复用桌面主控 ID，并将请求和断开操作绑定到各自代次，拒绝用 IPC 替换 WebSocket 客户端。
+- **移除标签页后关闭迟到连接** — 终端标签在 IPC 连接等待期间被销毁时，迟到的连接会立即关闭，不再复活已移除的终端。
+- **Agent 工具结果完整配对** — 批量工具调用达到错误阈值或串行执行被中止时，仍为每个调用补齐结果，避免后续对话请求缺少 tool result。
+- **Agent 本地读取审批与 SSH 工具修正** — 普通权限模式下，工作区外、敏感路径及符号链接目标须经确认；批准绑定到执行时再次校验的规范路径，无效路径在预检时拒绝。修复 SSH grep 排除参数引号，限制 read_file 的 maxLines 为正整数，并保留 SSH 写入文本原有的末尾换行状态。
+- **恢复 Agent 权限规则操作** — 半自动模式重新按命令危险性决定是否确认；新规则先编辑再保存，仅清理旧按钮生成的默认规则和无条件询问规则。按既定行为恢复硬链接读取与审计日志实现，保留设置入口。
+- **窗口与服务器信息修正** — 最后主窗口关闭前确认未保存的远程编辑内容，等待编辑器关闭后再断开会话；修复 Shift 多选，并过滤网卡采集结果中的表头。
 
 ### 验证
 
@@ -21,11 +28,18 @@
 
 ### Bug Fixes
 
-- **File operations preserve existing files** — Local and SFTP copy reject the source and its aliases; SFTP new-file creation cannot truncate an existing name. Downloads stage data before replacing the destination, and failed remote-editor saves preserve the original file and its permissions.
-- **Saved SSH connections recover their credentials** — An unchanged saved key path uses the credential-bound broker to load the key passphrase and proxy password. The current Shell Hook setting now takes effect.
-- **Terminal and shared-session reconnects are more reliable** — Input reaches the PTY in order, late IPC connections close after tab teardown, and IPC reconnects retain the desktop owner's identity while isolating stale generations. Old WebSocket handlers cannot disconnect a newer reconnect.
-- **Agent tool conversations stay complete** — Early stop and cancellation pair every tool call with a result. Local read authorization and SSH read-argument validation are also tightened while preserving the original write payload.
-- **Desktop interaction and collection fixes** — Window-close confirmation, hard-link handling, Shift selection, and network-interface header filtering are corrected.
+- **Copy cannot overwrite its source** — Local copy rejects the same path and symbolic- or hard-link aliases. SFTP copy uses an exclusive temporary file and safe replacement, preserves the original destination on failure, and supports valid long filenames.
+- **SFTP file creation preserves existing names** — Exclusive creation now rejects an existing filename without truncating its contents.
+- **Failed downloads preserve the destination** — Downloads stage data in an exclusive same-directory temporary file and replace only on success. Failure or cancellation removes only the new temporary file; resume keeps the downloaded prefix, trims the old tail, and emits completion after commit.
+- **Remote-editor saves can roll back** — Saves stage a unique temporary file before replacing the original. A failed replacement restores the backup; if restoration fails too, the backup path is returned. File permissions are preserved without requiring ownership changes.
+- **Saved SSH connections recover credentials** — Reusing a saved key path loads the passphrase and proxy password through the credential-bound broker. The current Shell Hook selection takes precedence over the saved value.
+- **Terminal input retains send order** — WebSocket input writes to the PTY through a session FIFO, and local IPC input calls queue in send order.
+- **Shared-session reconnects protect new connections** — WebSocket registration binds the reconnect generation atomically. IPC reconnects retain the desktop owner ID and bind requests and disconnects to their generation; IPC cannot replace a WebSocket client.
+- **Late IPC connections close after tab removal** — If a terminal tab is destroyed during connection, the completed connection is closed rather than reviving the removed terminal.
+- **Agent tool results stay paired** — Error-threshold stops and serial cancellation still produce a result for every tool call, keeping subsequent conversations valid.
+- **Agent read approvals and SSH tools are corrected** — Ordinary permission modes require confirmation for out-of-workspace or sensitive local targets, including symbolic-link targets. Approval binds to a canonical path rechecked at execution; invalid paths fail preflight. SSH grep exclusion quoting is fixed, read_file maxLines must be a positive integer, and SSH writes preserve the original trailing-newline state.
+- **Agent permission-rule behavior is restored** — Semi-auto mode again prompts based on command risk. New rules are edited before saving; cleanup targets only legacy generated defaults and unconditional-ask rules. The established hard-link read and audit-log behavior is restored while retaining settings access.
+- **Window and server information are corrected** — Closing the last main window confirms unsaved remote-editor content and waits for the editor before disconnecting sessions. Shift selection works, and network-interface collection excludes header rows.
 
 ### Validation
 
