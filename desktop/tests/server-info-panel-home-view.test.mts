@@ -20,6 +20,7 @@ const read = (name: string): string =>
 
 const SYNC_SIGNATURE = '  syncToActiveSession(): void {';
 const CAN_POLL_SIGNATURE = '  private canPoll(): boolean {';
+const IS_OPEN_SIGNATURE = '  isOpen(): boolean {';
 
 /** The member's own parameter list, so default parameters survive the re-open. */
 function paramList(body: string, name: string): string {
@@ -61,6 +62,7 @@ function methodSource(source: string, signature: string, name: string): string {
 function panelSource(): string {
   const source = read('server-info-panel.ts');
   return [
+    methodSource(source, IS_OPEN_SIGNATURE, 'isOpen'),
     methodSource(source, CAN_POLL_SIGNATURE, 'canPoll'),
     methodSource(source, SYNC_SIGNATURE, 'syncToActiveSession'),
   ].join('\n\n');
@@ -82,6 +84,8 @@ function syncPanel(state: {
   gallery: boolean;
   sessionId: string | null;
   ssh: boolean;
+  tabId?: string;
+  openTabIds?: string[];
 }): PanelRun {
   const calls: string[] = [];
   const build = new Function(
@@ -91,12 +95,16 @@ function syncPanel(state: {
     'hasRemoteServerInfo',
     'TerminalRegistry',
     'document',
-    `${compiled}; return { canPoll, syncToActiveSession };`,
+    `${compiled}; return { isOpen, canPoll, syncToActiveSession };`,
   );
   const methods = build(
     state.home,
     state.gallery,
-    { getActiveSessionId: () => state.sessionId },
+    {
+      activeTabId: state.tabId ?? 'tab-1',
+      tabs: [...new Set([state.tabId ?? 'tab-1', ...(state.openTabIds ?? [])])].map((id) => ({ id })),
+      getActiveSessionId: () => state.sessionId,
+    },
     () => state.ssh,
     { resizeAll: () => { calls.push('resizeAll'); } },
     { hidden: false },
@@ -105,6 +113,7 @@ function syncPanel(state: {
   const panel = { style: { display: '' } };
   const self = {
     _open: true,
+    openTabs: new Set(state.openTabIds ?? [state.tabId ?? 'tab-1']),
     sessionId: state.sessionId,
     panel,
     infoEl: null,
@@ -120,6 +129,33 @@ function syncPanel(state: {
 
   return { display: panel.style.display, calls };
 }
+
+test('the toolbar open state follows the active tab', () => {
+  const tabManager = { activeTabId: 'tab-1' };
+  const build = new Function('TabManager', `${compiled}; return isOpen;`);
+  const isOpen = build(tabManager);
+  const panel = { openTabs: new Set(['tab-1']), _open: true };
+  assert.equal(isOpen.call(panel), true);
+  tabManager.activeTabId = 'tab-2';
+  assert.equal(isOpen.call(panel), false, 'a new tab must not inherit the active button');
+  tabManager.activeTabId = 'tab-1';
+  assert.equal(isOpen.call(panel), true, 'the original tab retains its open state');
+});
+
+test('a newly opened SSH tab does not inherit another tab\'s server-info panel', () => {
+  const run = syncPanel({
+    home: false,
+    gallery: false,
+    sessionId: 'ssh-2',
+    ssh: true,
+    tabId: 'tab-2',
+    openTabIds: ['tab-1'],
+  });
+  assert.equal(run.display, 'none', 'the new tab must start with its panel closed');
+  assert.ok(run.calls.includes('stopPolling'), 'the old tab must stop polling');
+  assert.ok(run.calls.includes('releaseContainer'), 'old server data must be detached');
+  assert.ok(!run.calls.includes('render'), 'the old panel must not be rendered for the new tab');
+});
 
 // The regression: an SSH tab is still open, the window is showing the home view.
 test('the home view hides the dock even while the SSH tab is still open', () => {

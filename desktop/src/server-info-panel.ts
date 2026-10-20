@@ -76,21 +76,26 @@ class ServerInfoPanelClass {
   private sessionId: string | null = null;
   private compact = false;
   private _open = false;
+  /** The dock's open state belongs to a tab, not to the whole window. */
+  private openTabs = new Set<string>();
   private timer: number | null = null;
   /** Ticks since the process list was last asked for — see PROCESS_EVERY_TICKS. */
   private processTick = 0;
 
-  /** User intent: has the panel been pinned open? */
+  /** User intent for the currently active tab. */
   isOpen(): boolean {
-    return this._open;
+    const tabId = TabManager.activeTabId;
+    return tabId !== null && this.openTabs.has(tabId);
   }
 
   toggle(): void {
-    if (this._open) this.close();
+    if (this.isOpen()) this.close();
     else this.open();
   }
 
   open(): void {
+    const tabId = TabManager.activeTabId;
+    if (!tabId) return;
     const mainContent = document.getElementById('main-content');
     if (!mainContent) return;
     if (!this.panel) this.build();
@@ -101,6 +106,7 @@ class ServerInfoPanelClass {
       mainContent.insertBefore(panel, mainContent.firstChild);
     }
     panel.style.display = '';
+    this.openTabs.add(tabId);
     this._open = true;
 
     // Single left dock: the file sidebar (sidebar mode) has to give way.
@@ -113,6 +119,8 @@ class ServerInfoPanelClass {
   }
 
   close(): void {
+    const tabId = TabManager.activeTabId;
+    if (tabId) this.openTabs.delete(tabId);
     this._open = false;
     this.stopPolling();
     this.releaseContainer();
@@ -128,7 +136,25 @@ class ServerInfoPanelClass {
    * looking at.
    */
   syncToActiveSession(): void {
-    if (!this._open) return;
+    // Closed tabs must not leave their saved dock state behind indefinitely.
+    for (const openTabId of this.openTabs) {
+      if (!TabManager.tabs.some((tab) => tab.id === openTabId)) this.openTabs.delete(openTabId);
+    }
+    const tabId = TabManager.activeTabId;
+    const shouldOpen = tabId !== null && this.openTabs.has(tabId);
+    if (!shouldOpen) {
+      this._open = false;
+      this.stopPolling();
+      this.releaseContainer();
+      this.sessionId = null;
+      this.infoEl = null;
+      if (this.panel && this.panel.style.display !== 'none') {
+        this.panel.style.display = 'none';
+        TerminalRegistry.resizeAll();
+      }
+      return;
+    }
+    this._open = true;
     const sessionId = TabManager.getActiveSessionId() ?? null;
     const changed = sessionId !== this.sessionId;
     if (changed) {
@@ -144,8 +170,8 @@ class ServerInfoPanelClass {
     // "nothing to describe" case below.
     if (isHomeView || isGalleryView || !sessionId || !hasRemoteServerInfo(sessionId)) {
       // Nothing to describe: home/gallery has no session at all, and local /
-      // JumpServer sessions have no remote exec channel to describe. Keep the
-      // pin — the panel comes back with the next SSH tab.
+      // JumpServer sessions have no remote exec channel to describe. Keep this
+      // tab's open state so its panel returns when this tab is shown again.
       this.stopPolling();
       if (this.panel) this.panel.style.display = 'none';
       TerminalRegistry.resizeAll();
@@ -154,6 +180,13 @@ class ServerInfoPanelClass {
     if (this.panel && this.panel.style.display === 'none') {
       this.panel.style.display = '';
       TerminalRegistry.resizeAll();
+    }
+    // A tab can have its file sidebar open while this tab's server-info dock
+    // was hidden. Reclaim the single left dock when switching back.
+    if (changed) {
+      void import('./file-manager-toggle').then((m) => {
+        if (this.isOpen()) m.closeFileSidebarForDockSwap();
+      });
     }
     // Unconditional on purpose: startPolling() is a no-op while the timer is
     // already running, and calling it only on `changed` left the timer stopped

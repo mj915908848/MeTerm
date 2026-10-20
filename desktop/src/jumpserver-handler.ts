@@ -23,6 +23,7 @@ import { t } from './i18n';
 import { ensureMeTermReady } from './session-actions';
 import { renderTabs } from './tab-renderer';
 import { renderToolbarActions } from './toolbar';
+import { ServerInfoPanel } from './server-info-panel';
 import { showHostKeyConfirmDialog } from './ssh';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
@@ -302,6 +303,7 @@ export async function connectToAsset(
     setViewMode('terminal');
     hideHomeView();
     hideGalleryView();
+    ServerInfoPanel.syncToActiveSession();
     SplitPaneManager.destroy(terminalPanelEl);
     TerminalRegistry.hideAll(terminalPanelEl);
     DrawerManager.hideAll();

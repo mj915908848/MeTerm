@@ -22,6 +22,7 @@ import { consumeLastAuthMethodUsed, addConnection, addRecentConnection, showAuth
 import { createSSHSessionForConfig } from './ssh-saved-session';
 import { showToast } from './notify';
 import { loadSettings } from './themes';
+import { ServerInfoPanel } from './server-info-panel';
 import { message } from '@tauri-apps/plugin-dialog';
 import {
   port, authToken,
@@ -64,6 +65,7 @@ export async function handleSSHConnect(config: SSHConnectionConfig): Promise<voi
     setViewMode('terminal');
     hideHomeView();
     hideGalleryView();
+    ServerInfoPanel.syncToActiveSession();
     SplitPaneManager.destroy(terminalPanelEl);
     TerminalRegistry.hideAll(terminalPanelEl);
     DrawerManager.hideAll();
