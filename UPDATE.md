@@ -1,5 +1,29 @@
 # MeTerm 更新记录
 
+## v0.2.20
+
+### 问题修复 / 优化
+
+- **服务器信息按连接标签记住开关状态** — 新连接默认关闭服务器信息；切回原连接时恢复其原有状态。SSH 与 JumpServer 连接等待期间会及时隐藏上一标签的面板。
+
+### 验证
+
+- 桌面前端 618 项测试通过；桌面前端与嵌入式网页前端构建、Rust `cargo check` 通过。原生 macOS 连接窗口交互、真实 SSH 与 JumpServer 连接尚未手动验证。
+
+---
+
+## Changelog (English)
+
+### Bug Fixes
+
+- **Server Info state follows each connection tab** — New connections start with the panel closed; returning to an existing tab restores its state. The previous tab's panel is hidden while SSH or JumpServer connects.
+
+### Validation
+
+- All 618 desktop frontend tests passed; the desktop frontend and embedded web frontend built, and Rust `cargo check` passed. Native macOS connections-window interaction and live SSH and JumpServer connections have not been manually verified.
+
+---
+
 ## v0.2.19
 
 ### 问题修复 / 优化
