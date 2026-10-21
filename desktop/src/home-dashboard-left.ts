@@ -1,17 +1,20 @@
 /**
  * Home Dashboard — shared connection pieces: collecting and filtering saved
- * connections, connecting (and when each was last used), the row and group
- * menus, deleting, and the group modal. The home page's connection table
- * itself is home-connection-manager.ts.
+ * connections, the recent-connections track, connecting, the row and group
+ * menus, deleting, and the group modal. The saved-connection manager itself
+ * (list + detail panel) is home-connection-manager.ts.
  */
 import { showGroupSortMenu } from './group-sort-menu';
 import { settings } from './app-state';
 import { t } from './i18n';
+import { icon } from './icons';
 import { showToast } from './notify';
 import { appendSshConnectionMenuItems } from './development-credential-recovery-ui';
 import {
   type SSHConnectionConfig,
   loadSavedConnections,
+  loadRecentConnections,
+  removeRecentConnection,
   showSSHModal,
   removeConnection as removeSSHConnection,
   getSSHConnectHandler,
@@ -69,6 +72,82 @@ export function filterConnections(items: ConnectionItem[], query: string): Conne
   if (!query) return items;
   const q = query.toLowerCase();
   return items.filter((i) => i.name.toLowerCase().includes(q) || i.detail.toLowerCase().includes(q));
+}
+
+// ─── Recent connections (home view) ───
+
+/**
+ * Render the servers this device actually connected to, most recent first, as
+ * the horizontal card track the full-page home used to show.
+ *
+ * A compact card per entry (icon + name + user@host, × to forget it) laid out
+ * left to right and scrolled sideways — a wide window shows several at once
+ * instead of one tall column. Newest entries come from the SSH history
+ * stores; with neither populated the section stays empty and hides itself.
+ */
+export function renderRecentActivity(query: string): void {
+  const section = document.getElementById('home-recent-activity');
+  if (!section) return;
+  section.innerHTML = '';
+
+  const recentItems: ConnectionItem[] = [];
+  for (const c of loadRecentConnections()) {
+    recentItems.push({
+      type: 'ssh',
+      key: sshKey(c.name),
+      name: c.name || c.host,
+      detail: `${c.username}@${c.host}${c.port && c.port !== 22 ? `:${c.port}` : ''}`,
+      raw: c,
+    });
+  }
+
+  const items = filterConnections(recentItems, query);
+  if (items.length === 0) return;
+
+  const title = document.createElement('div');
+  title.className = 'home-dash-section-title';
+  title.textContent = t('homeRecentActivity');
+  section.appendChild(title);
+
+  const track = document.createElement('div');
+  track.className = 'home-dash-recent-track';
+
+  for (const item of items) {
+    const iconName = item.type === 'jumpserver' ? 'jumpserver' : 'ssh';
+
+    const card = document.createElement('div');
+    card.className = `home-dash-recent-card home-dash-recent-${item.type}`;
+    // Names and hosts can be ellipsised in a narrow card, so the full pair is
+    // available on hover.
+    card.title = `${item.name} — ${item.detail}`;
+    card.innerHTML = `<span class="home-dash-recent-icon">${icon(iconName)}</span>`
+      + `<div class="home-dash-recent-info">`
+      + `<div class="home-dash-recent-name">${escapeHtml(item.name)}</div>`
+      + `<div class="home-dash-recent-detail">${escapeHtml(item.detail)}</div>`
+      + `</div>`;
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button';
+    delBtn.className = 'home-dash-recent-del';
+    delBtn.title = t('homeRecentRemove');
+    delBtn.setAttribute('aria-label', t('homeRecentRemove'));
+    delBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+    delBtn.onclick = (event) => {
+      event.stopPropagation();
+      if (item.type === 'ssh') {
+        const c = item.raw as SSHConnectionConfig;
+        removeRecentConnection(c.host, c.port ?? 22, c.username);
+      }
+      renderRecentActivity(query);
+    };
+    card.appendChild(delBtn);
+
+    // Click connects straight away, exactly like a connection-list row.
+    card.onclick = () => handleConnectionClick(item, card);
+    track.appendChild(card);
+  }
+
+  section.appendChild(track);
 }
 
 // ─── Move menu ───
@@ -148,27 +227,7 @@ export function createAssetHistoryRow(entry: JSAssetHistoryEntry, config: JumpSe
 
 // ─── Connection click handler ───
 
-const LAST_USED_KEY = 'meterm-connection-last-used';
-
-/** When each saved connection was last opened from the app (epoch ms, by connection key). */
-export function loadConnectionLastUsed(): Record<string, number> {
-  try {
-    const raw = localStorage.getItem(LAST_USED_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return {};
-}
-
-function recordConnectionUse(key: string): void {
-  try {
-    const map = loadConnectionLastUsed();
-    map[key] = Date.now();
-    localStorage.setItem(LAST_USED_KEY, JSON.stringify(map));
-  } catch {}
-}
-
 export function handleConnectionClick(item: ConnectionItem, anchor?: HTMLElement): void {
-  recordConnectionUse(item.key);
   if (item.type === 'ssh') {
     const handler = getSSHConnectHandler();
     if (handler) {

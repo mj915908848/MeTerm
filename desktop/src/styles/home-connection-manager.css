@@ -1,7 +1,8 @@
 /* ============================================================================
-   Home page connection table (home-connection-manager.ts)
-   Header (title, search, local terminal, + new), group filter chips, the
-   sortable table, and an inspector on the right while something is selected.
+   Home page connection manager (home-connection-manager.ts)
+   List on the left, the selected connection on the right. The list reuses the
+   shared .home-side-* row/group styles from home.css; the right pane hosts the
+   page's start content (.home-dash-scroll) while nothing is selected.
    ============================================================================ */
 
 .hcm {
@@ -10,221 +11,29 @@
   display: flex;
 }
 
-.hcm-main {
-  flex: 1;
-  min-width: 0;
+/* ── Left: the list ── */
+
+.hcm-list-pane {
+  width: 280px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 22px 28px 12px;
-}
-
-/* ── Header ── */
-
-.hcm-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.hcm-title {
-  margin: 0;
-  font-size: 19px;
-  font-weight: 600;
-  color: var(--text-heading);
-}
-.hcm-count {
-  margin-right: auto;
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.hcm-header .hcm-search-row {
-  flex: 0 1 340px;
-  min-width: 160px;
-}
-.hcm-header-btn { flex-shrink: 0; }
-
-/* ── Group chips ── */
-
-.hcm-chips {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.hcm-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 11px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 9999px;
-  background: rgba(var(--bg-card), 0.6);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
+  min-height: 0;
+  border-right: 1px solid var(--border-subtle);
   -webkit-user-select: none;
   user-select: none;
 }
-.hcm-chip:hover { background: rgba(var(--bg-button-hover), var(--app-window-opacity, 1)); }
-.hcm-chip.active {
-  background: var(--text-heading);
-  border-color: transparent;
-  color: rgb(var(--bg-primary));
-}
-.hcm-chip.active .hcm-chip-count { color: inherit; opacity: 0.7; }
-.hcm-chip-count { color: var(--text-muted); }
-.hcm-chip-add {
-  border-style: dashed;
-  background: transparent;
-  color: var(--text-muted);
-}
-.hcm-chip-sep {
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: var(--border-subtle);
-}
-.hcm-chip-jumpserver:not(.active) { color: #b45309; }
-.hcm-chip:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: 1px; }
-/* A chip is where dragged rows drop. */
-.hcm-chip.drop-target {
-  border-color: rgba(var(--accent-rgb, 106, 164, 255), 0.9);
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.18);
-}
-body.is-connection-dragging .hcm-chip[data-group] { border-style: dashed; }
 
-.hcm-dot {
+.hcm-toolbar {
   flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-.hcm-dot-none { background: var(--border-primary); }
-
-/* ── Table ── */
-
-.hcm-table {
-  flex: 1;
-  min-height: 0;
   display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: rgba(var(--bg-card), 0.45);
-  overflow: hidden;
-}
-
-/* Shared columns: icon, name, address, user, group, last used, actions. */
-.hcm-thead,
-.hcm-row {
-  display: grid;
-  grid-template-columns: 26px minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.9fr) 112px;
-  align-items: center;
-  column-gap: 10px;
-  padding: 0 12px;
-}
-
-.hcm-thead {
-  flex-shrink: 0;
-  height: 34px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.hcm-th {
-  justify-self: start;
-  padding: 3px 6px;
-  margin-left: -6px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-muted);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.hcm-th:hover { color: var(--text-primary); background: rgba(var(--bg-button-hover), var(--app-window-opacity, 1)); }
-.hcm-th.active { color: var(--text-primary); font-weight: 600; }
-.hcm-th:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: -2px; }
-
-.hcm-tbody {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  outline: none;
-}
-.hcm-tbody:focus-visible { box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb, 106, 164, 255), 0.5); }
-
-.hcm-row {
-  height: 38px;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 12.5px;
-  color: var(--text-primary);
-  cursor: default;
-  -webkit-user-select: none;
-  user-select: none;
-}
-.hcm-row:hover { background: rgba(var(--accent-rgb, 106, 164, 255), 0.06); }
-.hcm-row.selected { background: rgba(var(--accent-rgb, 106, 164, 255), 0.16); }
-
-.hcm-cell-icon { display: inline-flex; color: #3b82f6; }
-.hcm-cell-icon svg { width: 16px; height: 16px; }
-.hcm-row-jumpserver .hcm-cell-icon { color: #d97706; }
-
-.hcm-cell {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.hcm-cell-name { font-weight: 500; }
-.hcm-cell-muted { color: var(--text-secondary); }
-.hcm-cell-group { display: flex; align-items: center; gap: 6px; }
-.hcm-cell-dim { color: var(--text-muted); }
-
-/* Connect + ⋯ appear on the hovered or selected row. */
-.hcm-row-actions {
-  display: flex;
-  justify-content: flex-end;
   align-items: center;
   gap: 4px;
-  opacity: 0;
+  padding: 8px 8px 4px;
 }
-.hcm-row:hover .hcm-row-actions,
-.hcm-row.selected .hcm-row-actions,
-.hcm-row-actions:focus-within { opacity: 1; }
-.hcm-row-connect {
-  height: 24px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 6px;
-  background: var(--accent);
-  color: #fff;
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.hcm-row-connect:hover { filter: brightness(1.08); }
-.hcm-row-actions .hcm-icon-btn { width: 24px; height: 24px; }
+.hcm-toolbar .hcm-search { flex: 1; min-width: 0; margin: 0; }
 
-.hcm-empty {
-  padding: 40px 16px;
-  text-align: center;
-  font-size: 12.5px;
-  color: var(--text-muted);
-}
-
-.hcm-hint {
-  flex-shrink: 0;
-  font-size: 11px;
-  color: var(--text-dim, var(--text-muted));
-}
-
-/* ── Buttons ── */
-
-/* Quiet square icon buttons: "⋯" and the inspector's close. */
+/* Quiet square icon buttons: "+" in the list toolbar, "⋯" in the detail header. */
 .hcm-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -242,79 +51,117 @@ body.is-connection-dragging .hcm-chip[data-group] { border-style: dashed; }
 .hcm-icon-btn svg { width: 16px; height: 16px; }
 .hcm-icon-btn:hover { background: rgba(var(--bg-button-hover), var(--app-window-opacity, 1)); color: var(--text-primary); }
 .hcm-icon-btn:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: 1px; }
+.hcm-detail-actions .hcm-icon-btn { width: 32px; height: 32px; border-radius: 9999px; }
 
-/* "+ new" and the inspector's "connect": solid, the one primary action. */
-.hcm-header .ssh-btn-primary,
-.hcm-detail-actions .ssh-btn-primary,
-[data-theme="light"] .hcm-header .ssh-btn-primary,
-[data-theme="light"] .hcm-detail-actions .ssh-btn-primary {
-  background: var(--accent);
-  color: #fff;
-  box-shadow: none;
-}
-.hcm-header .ssh-btn-primary:hover,
-.hcm-detail-actions .ssh-btn-primary:hover,
-[data-theme="light"] .hcm-header .ssh-btn-primary:hover,
-[data-theme="light"] .hcm-detail-actions .ssh-btn-primary:hover { filter: brightness(1.08); background: var(--accent); }
-
-/* ── Inspector ── */
-
-.hcm-inspector {
-  display: none;
-  width: 360px;
-  flex-shrink: 0;
-  flex-direction: column;
-  min-height: 0;
-  border-left: 1px solid var(--border-subtle);
-  background: rgba(var(--bg-card), 0.35);
-}
-.hcm.has-inspector .hcm-inspector { display: flex; }
-
-.hcm-inspector-top {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px 0 22px;
-  font-size: 11.5px;
-  color: var(--text-muted);
-}
-.hcm-inspector-body {
+.hcm-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 22px 24px;
+  padding-bottom: 10px;
+  outline: none;
+}
+.hcm-list:focus-visible { box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb, 106, 164, 255), 0.5); }
+
+/* Rows sit inset with rounded corners rather than as full-bleed stripes. */
+.hcm-list-pane .home-side-row,
+.hcm-list-pane .home-side-group {
+  margin: 0 6px;
+  border-radius: 6px;
+}
+
+/* Several picked rows read as one block. */
+.hcm-list .home-side-row.hsr-picked { background: rgba(var(--accent-rgb, 106, 164, 255), 0.18); }
+.hcm-list .home-side-row.selected { background: rgba(var(--accent-rgb, 106, 164, 255), 0.16); }
+
+.hcm-list .home-side-group-empty {
+  padding: 5px 10px 5px 22px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-dim, var(--text-muted));
+}
+
+.hcm-list.is-dragging .home-side-group {
+  outline: 1px dashed rgba(var(--accent-rgb, 106, 164, 255), 0.5);
+  outline-offset: -2px;
+  border-radius: 5px;
+}
+/* Out-specifies the dashed outline above. */
+.hcm-list.is-dragging .home-side-group.drop-target,
+.home-side-grouphdr .home-side-group.drop-target {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.22);
+  outline: 1px solid rgba(var(--accent-rgb, 106, 164, 255), 0.9);
+  color: var(--text-primary);
+}
+
+/* "Home" is drawn as a list row (.home-side-row); these undo the button defaults. */
+.hcm-home {
+  flex-shrink: 0;
+  width: calc(100% - 12px);
+  margin-bottom: 6px;
+  padding-left: 10px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+}
+.hcm-home .hsr-icon svg { width: 15px; height: 15px; }
+.hcm-home.active { background: rgba(var(--accent-rgb, 106, 164, 255), 0.16); }
+.hcm-home.active .hsr-icon { color: var(--accent); }
+.hcm-home:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: -2px; }
+
+/* ── Right: the selection ── */
+
+.hcm-detail-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* The start content brings its own padding and scroll. */
+.hcm-detail-pane > .home-dash-scroll { min-width: 0; }
+
+/* Everything else sits in one centred column. */
+.hcm-detail-body {
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 32px;
+  box-sizing: border-box;
 }
 
 .hcm-detail-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 0 16px;
+  flex-wrap: wrap;
+  gap: 12px 14px;
+  padding: 32px 0 20px;
 }
 .hcm-detail-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 42px;
-  height: 42px;
-  border-radius: 11px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   background: rgba(59, 130, 246, 0.12);
   color: #3b82f6;
 }
-.hcm-detail-icon svg { width: 22px; height: 22px; }
-.hcm-detail-icon-jumpserver { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+.hcm-detail-icon svg { width: 24px; height: 24px; }
+.hcm-detail-icon-jumpserver { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .hcm-detail-title { flex: 1; min-width: 0; }
 .hcm-detail-name {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--text-heading);
   overflow-wrap: anywhere;
 }
 .hcm-detail-sub {
   margin-top: 3px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--text-muted);
   overflow-wrap: anywhere;
 }
@@ -322,29 +169,40 @@ body.is-connection-dragging .hcm-chip[data-group] { border-style: dashed; }
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 18px;
+  flex-wrap: wrap;
 }
-.hcm-detail-actions .ssh-btn-primary { flex: 1; }
-.hcm-detail-actions .hcm-icon-btn { width: 32px; height: 32px; border-radius: 9999px; }
+/* The one thing this page is for: a solid button, not a tinted one. */
+.hcm-detail-actions .ssh-btn-primary,
+[data-theme="light"] .hcm-detail-actions .ssh-btn-primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: none;
+}
+.hcm-detail-actions .ssh-btn-primary:hover,
+[data-theme="light"] .hcm-detail-actions .ssh-btn-primary:hover { filter: brightness(1.08); background: var(--accent); }
+.hcm-detail-actions .ssh-btn { padding: 0 16px; }
 
 /* The SSH form outside its modal. */
-.hcm-inspector .ssh-form-embedded { padding-bottom: 12px; }
+.hcm-detail-pane .ssh-form-embedded { padding-bottom: 24px; }
 
-/* Facts as one grouped list, a row per fact. */
+/* Facts as one grouped card, a row per fact. */
 .hcm-facts {
-  margin: 0 0 20px;
-  border-top: 1px solid var(--border-subtle);
+  margin: 0 0 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: rgba(var(--bg-card), 0.5);
+  overflow: hidden;
 }
 .hcm-fact {
   display: flex;
   align-items: baseline;
   gap: 16px;
-  padding: 9px 0;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 12.5px;
+  padding: 10px 16px;
+  font-size: 13px;
 }
-.hcm-fact-label { width: 64px; flex-shrink: 0; color: var(--text-muted); }
-.hcm-fact-value { flex: 1; min-width: 0; color: var(--text-primary); text-align: right; overflow-wrap: anywhere; }
+.hcm-fact + .hcm-fact { border-top: 1px solid var(--border-subtle); }
+.hcm-fact-label { width: 72px; flex-shrink: 0; color: var(--text-muted); }
+.hcm-fact-value { flex: 1; min-width: 0; color: var(--text-primary); overflow-wrap: anywhere; }
 
 .hcm-section-title {
   margin-bottom: 6px;
@@ -355,7 +213,7 @@ body.is-connection-dragging .hcm-chip[data-group] { border-style: dashed; }
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
   overflow: hidden;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .hcm-batch-list {
@@ -368,7 +226,7 @@ body.is-connection-dragging .hcm-chip[data-group] { border-style: dashed; }
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 0;
+  padding: 5px 0;
   border-bottom: 1px solid var(--border-subtle);
 }
 .hcm-batch-detail {
@@ -378,17 +236,45 @@ body.is-connection-dragging .hcm-chip[data-group] { border-style: dashed; }
   white-space: nowrap;
 }
 .hcm-tip {
+  margin-bottom: 24px;
   font-size: 11.5px;
   color: var(--text-dim, var(--text-muted));
 }
 
-/* Narrow windows: drop the "user" and "last used" columns, and the inspector
-   narrows so the table keeps room. */
-@media (max-width: 980px) {
-  .hcm-thead,
-  .hcm-row { grid-template-columns: 26px minmax(0, 1.5fr) minmax(0, 1.5fr) minmax(0, 1fr) 112px; }
-  .hcm-thead > :nth-child(4), .hcm-row > :nth-child(4),
-  .hcm-thead > :nth-child(6), .hcm-row > :nth-child(6) { display: none; }
-  .hcm-inspector { width: 300px; }
-  .hcm-main { padding: 18px 18px 10px; }
+@media (max-width: 760px) {
+  .hcm-list-pane { width: 220px; }
+  .hcm-detail-body { padding: 0 16px; }
 }
+
+/* The sort icon is drawn on a 14-unit grid; render it 1:1 like .hsg-sort did. */
+.hcm-sort-btn svg { width: 14px; height: 14px; }
+
+/* With nothing selected the start content (search, new-session buttons, recent)
+   is a launcher: a centred column a little above the middle, instead of a strip
+   stretched across the top of an otherwise empty pane. */
+.hcm-detail-pane > .home-dash-scroll {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding-top: clamp(24px, 14vh, 160px);
+  box-sizing: border-box;
+}
+
+/* "← Back" above the detail header. */
+.hcm-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 18px 0 -14px -8px;
+  padding: 4px 10px 4px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.hcm-back svg { width: 16px; height: 16px; }
+.hcm-back:hover { background: rgba(var(--bg-button-hover), var(--app-window-opacity, 1)); color: var(--text-primary); }
+.hcm-back:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: 1px; }

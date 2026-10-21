@@ -41,12 +41,6 @@ export interface ConnectionDragOptions {
   targetSelector?: string;
   /** Controls inside a row that must not start a drag. Default `.hsr-pin`. */
   ignoreSelector?: string;
-  /**
-   * Whether pointing at a row drops into that row's group. Default true (the
-   * grouped list). The home table sorts rows across groups, so there only the
-   * group chips are targets.
-   */
-  rowsAreTargets?: boolean;
 }
 
 /**
@@ -87,7 +81,6 @@ export function attachConnectionDrag(
     if (header) return groupOfHeader(header);
     // Hovering a row counts as hovering its group, which makes the target the
     // whole row instead of a thin header line.
-    if (opts.rowsAreTargets === false) return undefined;
     const row = el.closest(rowSelector) as HTMLElement | null;
     if (!row) return undefined;
     const raw = row.dataset.group;

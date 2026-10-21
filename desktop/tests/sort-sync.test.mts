@@ -8,13 +8,15 @@ import {
 } from '../src/connection-sort.ts';
 
 /**
- * The connections drawer lists a group's rows in the group's saved sort mode
- * (picked from the header's right-click menu). It renders through home-side.ts,
- * which must order rows with `sortGroupConnections()`: a list that sorts on its
- * own — or not at all — silently falls back to insertion order, which reads as
- * "the sort I picked did nothing". (The home page is a table sorted by column
- * headers, so per-group modes do not apply there.) The behaviour is covered
- * first, then the wiring.
+ * The connections drawer and the home page both list a group's rows, and the two
+ * lists have to agree on the order: switching a group to "IP ascending" in one
+ * has to reorder the other. Both render through home-side.ts, so the wiring
+ * checks below are that both use that renderer and that it sorts.
+ *
+ * That only holds while both go through `sortGroupConnections()`. A surface that
+ * sorts on its own — or not at all — silently falls back to insertion order,
+ * which reads as "the sort I picked over there did nothing here". The behaviour
+ * is covered first, then the wiring of both surfaces.
  */
 
 const saved = new Map<string, string>();
@@ -26,6 +28,7 @@ Object.defineProperty(globalThis, 'localStorage', { value: {
 const read = (path: string): string =>
   readFileSync(new URL(path, import.meta.url), 'utf8');
 
+const homeManager = read('../src/home-connection-manager.ts');
 const drawer = read('../src/connections-drawer.ts');
 const sideList = read('../src/home-side.ts');
 const sortSource = read('../src/connection-sort.ts');
@@ -79,9 +82,11 @@ test('JumpServer configs are addressed by sshHost/sshPort', () => {
   );
 });
 
-test('the drawer orders group rows through the shared sorter', () => {
+test('both surfaces order group rows through the shared sorter', () => {
   assert.match(sideList, /sortGroupConnections\(/, 'the shared list renderer does not order its rows');
-  assert.match(drawer, /renderSidebarList\(/, 'the connections drawer must render through the shared list');
+  for (const [label, source] of [['home page', homeManager], ['connections drawer', drawer]] as const) {
+    assert.match(source, /renderSidebarList\(/, `${label} must render through the shared list`);
+  }
 });
 
 test('the ungrouped bucket is spelled the same in both modules', () => {

@@ -25,7 +25,7 @@ export interface NewAction {
 /**
  * Every "new connection" entry, in reading order. Exported so the full-page
  * home can render them as its 2×2 grid without keeping a second copy of the
- * icons, labels and actions.
+ * icons, labels and actions — see home-action-grid.ts for the placement.
  */
 export const NEW_ACTIONS: NewAction[] = [
   { kind: 'local', iconName: 'terminal', labelKey: 'homeNewLocalSession', cls: 'local', ctxMenu: true, action: () => document.dispatchEvent(new CustomEvent('new-local-session')) },
