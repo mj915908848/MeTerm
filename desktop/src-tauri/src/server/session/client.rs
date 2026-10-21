@@ -32,7 +32,9 @@ enum DownStream {
     /// WebSocket client: push to mpsc channel, WS handler reads from receiver.
     Mpsc(WsDownstream),
     /// Local IPC client: push directly to Tauri Channel (no intermediate buffer).
-    IpcChannel(tauri::ipc::Channel<Vec<u8>>),
+    /// Raw binary frames: `Channel<Vec<u8>>` would serialize every byte as a
+    /// JSON number (`[27,91,...]`, ~3-4x larger, then JSON.parse).
+    IpcChannel(tauri::ipc::Channel),
 }
 
 /// Security identity captured from trusted request extensions at WS upgrade.
@@ -203,7 +205,7 @@ impl Client {
         id: String,
         remote_addr: String,
         role: ClientRole,
-        channel: tauri::ipc::Channel<Vec<u8>>,
+        channel: tauri::ipc::Channel,
     ) -> Self {
         Self {
             id,
@@ -339,7 +341,7 @@ impl Client {
                 }
             },
             Some(DownStream::IpcChannel(ch)) => {
-                if ch.send(data).is_err() {
+                if ch.send(tauri::ipc::InvokeResponseBody::Raw(data)).is_err() {
                     drop(guard);
                     self.disconnect();
                     return false;
@@ -388,7 +390,7 @@ impl Client {
             }
             match guard.as_ref() {
                 Some(DownStream::Mpsc(ws)) => Some(ws.priority_tx.clone()),
-                Some(DownStream::IpcChannel(ch)) => return ch.send(data).is_ok(),
+                Some(DownStream::IpcChannel(ch)) => return ch.send(tauri::ipc::InvokeResponseBody::Raw(data)).is_ok(),
                 None => return false,
             }
         };
@@ -428,7 +430,7 @@ impl Client {
             }
             match guard.as_ref() {
                 Some(DownStream::Mpsc(ws)) => Some(ws.bulk_tx.clone()),
-                Some(DownStream::IpcChannel(ch)) => return ch.send(data).is_ok(),
+                Some(DownStream::IpcChannel(ch)) => return ch.send(tauri::ipc::InvokeResponseBody::Raw(data)).is_ok(),
                 None => return false,
             }
         };
@@ -449,7 +451,7 @@ impl Client {
     /// The caller holds the session's clients lock through the generation read.
     pub(crate) fn reconnect_ipc(
         &self,
-        channel: tauri::ipc::Channel<Vec<u8>>,
+        channel: tauri::ipc::Channel,
     ) -> Result<u64, String> {
         if !self.is_ipc || !self.is_trusted_local_owner() {
             return Err("not a local IPC client".to_string());

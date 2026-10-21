@@ -3,6 +3,7 @@ import { CanvasAddon } from '@xterm/addon-canvas';
 import { LigaturesAddon } from '@xterm/addon-ligatures';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { AppSettings, getTheme, getColorSchemeBg, hexToRgba, hexToOscRgb } from './themes';
+import { markThumbnailChanged } from './terminal-thumbnail-feed';
 import { getFontFamily, getEffectiveFontWeight } from './fonts';
 import { encodeMessage, encodeResize, MsgInput } from './protocol';
 import { isMacPlatform, isWindowsPlatform } from './app-state';
@@ -129,6 +130,7 @@ export function applySettingsToTerminal(mt: ManagedTerminal, settings: AppSettin
 
   mt.terminal.refresh(0, mt.terminal.rows - 1);
   mt.thumbnailTerminal?.refresh(0, mt.thumbnailTerminal.rows - 1);
+  markThumbnailChanged(mt);
 
   // When theme changes, proactively report the new background/foreground
   // colors via OSC 11/10 responses so running TUI apps can auto-adapt

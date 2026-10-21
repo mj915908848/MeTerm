@@ -1,6 +1,6 @@
 //! Local IPC terminal commands — replaces WebSocket for local frontend communication.
 //!
-//! Uses `tauri::ipc::Channel<Vec<u8>>` for downstream (server → frontend) and
+//! Uses a raw-bytes `tauri::ipc::Channel` for downstream (server → frontend) and
 //! `invoke` for upstream (frontend → server). Messages use the same binary
 //! frame format `[MsgType: u8][Payload]` as WebSocket for protocol compatibility.
 
@@ -12,6 +12,22 @@ use crate::server::session::client::Client;
 use crate::server::session::state::ClientRole;
 use crate::server::ServerState;
 
+/// Error returned to the frontend when its IPC connection is no longer the
+/// session's current one (e.g. the reaper dropped it after a heartbeat gap
+/// while the window's timers were throttled). The frontend reconnects on it;
+/// keep the string in sync with `IPC_CLIENT_STALE` in `terminal-transport.ts`.
+pub(crate) const IPC_CLIENT_STALE: &str = "ipc-client-stale";
+
+fn require_current_connection(
+    session: &crate::server::session::Session,
+    client_id: &str,
+    conn_gen: u64,
+) -> Result<crate::server::session::access::DispatchAuthority, String> {
+    session
+        .current_client_connection(client_id, conn_gen)
+        .ok_or_else(|| IPC_CLIENT_STALE.to_string())
+}
+
 /// Connect to a session via local IPC. Creates an IPC client backed by a
 /// Tauri Channel for downstream output. Returns hello info JSON.
 #[tauri::command]
@@ -19,7 +35,7 @@ pub async fn ipc_connect_session(
     state: State<'_, Arc<ServerState>>,
     session_id: String,
     client_id: Option<String>,
-    on_output: tauri::ipc::Channel<Vec<u8>>,
+    on_output: tauri::ipc::Channel,
 ) -> Result<String, String> {
     let session = state
         .session_manager
@@ -131,9 +147,8 @@ pub async fn ipc_session_input(
         .session_manager
         .get(&session_id)
         .ok_or("session not found")?;
-    if let Some(authority) = session.current_client_connection(&client_id, conn_gen) {
-        session.handle_authorized_input(&authority, &data);
-    }
+    let authority = require_current_connection(&session, &client_id, conn_gen)?;
+    session.handle_authorized_input(&authority, &data);
     Ok(())
 }
 
@@ -151,9 +166,8 @@ pub async fn ipc_session_resize(
         .session_manager
         .get(&session_id)
         .ok_or("session not found")?;
-    if let Some(authority) = session.current_client_connection(&client_id, conn_gen) {
-        session.handle_authorized_resize(&authority, cols, rows);
-    }
+    let authority = require_current_connection(&session, &client_id, conn_gen)?;
+    session.handle_authorized_resize(&authority, cols, rows);
     Ok(())
 }
 
@@ -169,6 +183,7 @@ pub async fn ipc_session_ping(
         .session_manager
         .get(&session_id)
         .ok_or("session not found")?;
+    require_current_connection(&session, &client_id, conn_gen)?;
     // Reuse the ping handler from dispatch
     crate::server::dispatch::dispatch_message(
         &session,
@@ -197,6 +212,7 @@ pub async fn ipc_session_control(
         .session_manager
         .get(&session_id)
         .ok_or("session not found")?;
+    require_current_connection(&session, &client_id, conn_gen)?;
     crate::server::dispatch::dispatch_message(
         &session, &client_id, conn_gen, msg_type, &payload, &state,
     )

@@ -225,7 +225,11 @@ impl Session {
         tokio::spawn(async move {
             let guard = resize_tx.lock().await;
             if let Some(ref tx) = *guard {
-                let _ = tx.send(TermCtrl::Resize(cols, rows)).await;
+                // Apply whatever size is newest when this runs, not the size
+                // captured here: these spawned tasks are not ordered, so a
+                // fixed size could land after a newer one and leave the
+                // terminal at a stale size.
+                let _ = tx.send(TermCtrl::RestoreLast).await;
             }
         });
         true

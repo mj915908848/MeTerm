@@ -159,9 +159,26 @@ pub fn open_text_file(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Run a filesystem-heavy command body off the main thread. Synchronous Tauri
+/// commands run on the main (UI) thread, so a directory walk or a large read
+/// froze every window until it finished.
+async fn run_blocking<T, F>(f: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("background task failed: {}", e))?
+}
+
 /// List file/directory names in a directory. Returns Vec<(name, is_dir)>.
 #[tauri::command]
-pub fn list_dir_names(path: String) -> Result<Vec<(String, bool)>, String> {
+pub async fn list_dir_names(path: String) -> Result<Vec<(String, bool)>, String> {
+    run_blocking(move || list_dir_names_blocking(path)).await
+}
+
+fn list_dir_names_blocking(path: String) -> Result<Vec<(String, bool)>, String> {
     let resolved = normalize_path(&path);
     let entries = std::fs::read_dir(&resolved).map_err(|e| e.to_string())?;
     let mut result = Vec::new();
@@ -382,7 +399,19 @@ pub fn agent_read_path_requires_confirmation(
 /// Returns the UTF-8 content along with size + binary flag.
 /// Errors are returned as Err(String) with a human-readable message.
 #[tauri::command]
-pub fn agent_read_file(
+pub async fn agent_read_file(
+    path: String,
+    max_bytes: Option<u64>,
+    workspace_root: String,
+    approved_canonical_path: Option<String>,
+) -> Result<AgentReadResult, String> {
+    run_blocking(move || {
+        agent_read_file_blocking(path, max_bytes, workspace_root, approved_canonical_path)
+    })
+    .await
+}
+
+fn agent_read_file_blocking(
     path: String,
     max_bytes: Option<u64>,
     workspace_root: String,
@@ -629,7 +658,26 @@ pub struct AgentDirListing {
 /// callers wanting recursive enumeration should use agent_glob_search
 /// or run_command + find via the SSH path.
 #[tauri::command]
-pub fn agent_list_directory(
+pub async fn agent_list_directory(
+    path: String,
+    show_hidden: Option<bool>,
+    max_entries: Option<usize>,
+    workspace_root: String,
+    approved_canonical_path: Option<String>,
+) -> Result<AgentDirListing, String> {
+    run_blocking(move || {
+        agent_list_directory_blocking(
+            path,
+            show_hidden,
+            max_entries,
+            workspace_root,
+            approved_canonical_path,
+        )
+    })
+    .await
+}
+
+fn agent_list_directory_blocking(
     path: String,
     show_hidden: Option<bool>,
     max_entries: Option<usize>,
@@ -698,7 +746,26 @@ pub struct GlobMatch {
 /// (.git, node_modules, target, dist, build, .next, .venv) so the
 /// results stay focused on user code.
 #[tauri::command]
-pub fn agent_glob_search(
+pub async fn agent_glob_search(
+    pattern: String,
+    cwd: String,
+    max_results: Option<usize>,
+    workspace_root: String,
+    approved_canonical_path: Option<String>,
+) -> Result<Vec<GlobMatch>, String> {
+    run_blocking(move || {
+        agent_glob_search_blocking(
+            pattern,
+            cwd,
+            max_results,
+            workspace_root,
+            approved_canonical_path,
+        )
+    })
+    .await
+}
+
+fn agent_glob_search_blocking(
     pattern: String,
     cwd: String,
     max_results: Option<usize>,
@@ -908,7 +975,30 @@ fn contains_private_key_header(bytes: &[u8]) -> bool {
 /// (any file containing a NUL byte in the first 4 KB) and junk dirs.
 /// `glob` optionally constrains which files are scanned.
 #[tauri::command]
-pub fn agent_grep_search(
+pub async fn agent_grep_search(
+    pattern: String,
+    path: String,
+    glob: Option<String>,
+    case_insensitive: Option<bool>,
+    max_hits: Option<usize>,
+    workspace_root: String,
+    approved_canonical_path: Option<String>,
+) -> Result<GrepResult, String> {
+    run_blocking(move || {
+        agent_grep_search_blocking(
+            pattern,
+            path,
+            glob,
+            case_insensitive,
+            max_hits,
+            workspace_root,
+            approved_canonical_path,
+        )
+    })
+    .await
+}
+
+fn agent_grep_search_blocking(
     pattern: String,
     path: String,
     glob: Option<String>,
@@ -995,13 +1085,20 @@ pub fn agent_grep_search(
             }
         }
 
+        // Hard cap per-file size at 1 MB to avoid pathological cases. Check
+        // the size before reading: reading first pulled multi-GB files fully
+        // into memory just to skip them.
+        match entry.metadata() {
+            Ok(meta) if meta.len() <= 1024 * 1024 => {}
+            _ => continue,
+        }
         // Cheap binary sniff: read up to 4 KB, bail on NUL.
         let path = entry.path();
         let bytes = match std::fs::read(path) {
             Ok(b) => b,
             Err(_) => continue,
         };
-        // Hard cap per-file size at 1 MB to avoid pathological cases.
+        // The file may have grown since the metadata check.
         if bytes.len() > 1024 * 1024 {
             continue;
         }

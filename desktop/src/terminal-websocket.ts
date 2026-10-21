@@ -24,8 +24,12 @@ import { setSSHDirProbe } from './terminal-file-link';
 import { filterPostResizeNewlines } from './terminal-resize';
 import { applyMirror, clearMirror, enterMirror, exitMirror, isMirrored } from './viewer-mirror';
 import { IpcTransport, RemoteBrokerTransport } from './terminal-transport';
+import { feedThumbnail } from './terminal-thumbnail-feed';
 import type { AppSettings } from './themes';
 import type { ManagedTerminal } from './terminal-types';
+
+/** Streaming decoders for AI output listeners, one per terminal. */
+const outputDecoders = new WeakMap<ManagedTerminal, TextDecoder>();
 
 export interface WsCallbacks {
   scheduleSettleResize: (mt: ManagedTerminal) => void;
@@ -77,12 +81,19 @@ export function handleIncomingMessage(
 
     const outListeners = callbacks.getOutputListeners(mt.id);
     if (outListeners && outListeners.size > 0) {
-      const text = new TextDecoder().decode(outData);
+      // One streaming decoder per terminal: a multi-byte UTF-8 character
+      // split across frames would otherwise decode to U+FFFD.
+      let decoder = outputDecoders.get(mt);
+      if (!decoder) {
+        decoder = new TextDecoder();
+        outputDecoders.set(mt, decoder);
+      }
+      const text = decoder.decode(outData, { stream: true });
       outListeners.forEach(cb => cb(text));
     }
 
     mt.terminal.write(outData);
-    mt.thumbnailTerminal?.write(outData);
+    feedThumbnail(mt, outData);
 
     if (!mt.hasOscTitle) {
       callbacks.updateShellTitle(mt);
@@ -324,11 +335,16 @@ async function connectIpc(mt: ManagedTerminal, callbacks: WsCallbacks): Promise<
     if (mt.transport === transport) {
       mt.transport = null;
       DrawerManager.notifyDisconnect(mt.id);
+      // The backend dropped this connection (stale heartbeat while the window
+      // was hidden or asleep). Re-attach with the same client id so the
+      // session is not reaped behind a terminal that still looks alive.
+      if (!mt.ended) scheduleIpcReconnect(mt, callbacks);
     }
   };
 
   try {
     await transport.connect();
+    mt.reconnectAttempt = 0;
     // detach/destroy can run while the native invoke is still completing. In
     // that case no registry entry remains to close the newly created client.
     if (mt.ended) {
@@ -350,8 +366,33 @@ async function connectIpc(mt: ManagedTerminal, callbacks: WsCallbacks): Promise<
   } catch (e) {
     if (mt.ended) return;
     console.error(`[terminal] IPC connect failed for session ${mt.id}:`, e);
+    if (mt.reconnectAttempt > 0 && !String(e).includes('session not found')) {
+      // Reconnecting: the old client may already have been expired after the
+      // grace period. Fall back to joining as a new client.
+      if (String(e).includes('client not found')) mt.clientId = null;
+      scheduleIpcReconnect(mt, callbacks);
+      return;
+    }
     mt.onStatus('disconnected');
   }
+}
+
+const IPC_MAX_RECONNECT_ATTEMPTS = 5;
+
+function scheduleIpcReconnect(mt: ManagedTerminal, callbacks: WsCallbacks): void {
+  if (mt.ended) return;
+  if (mt.reconnectAttempt >= IPC_MAX_RECONNECT_ATTEMPTS) {
+    mt.onStatus('disconnected');
+    return;
+  }
+  const delay = Math.min(250 * Math.pow(2, mt.reconnectAttempt), 4000);
+  mt.reconnectAttempt += 1;
+  mt.onStatus('reconnecting');
+  if (mt.reconnectTimer) clearTimeout(mt.reconnectTimer);
+  mt.reconnectTimer = setTimeout(() => {
+    mt.reconnectTimer = null;
+    if (!mt.ended) void connectIpc(mt, callbacks);
+  }, delay);
 }
 
 export function connectTerminal(mt: ManagedTerminal, callbacks: WsCallbacks): void {

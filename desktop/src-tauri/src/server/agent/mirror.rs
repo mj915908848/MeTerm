@@ -24,6 +24,9 @@ use tokio_util::sync::CancellationToken;
 
 use super::events::AgentEvent;
 
+/// Upper bound on transcript bytes held in memory per read chunk.
+const MAX_TAIL_READ_CHUNK: u64 = 8 * 1024 * 1024;
+
 /// 默认轮询间隔(实证落盘 ≈ 一次 API 往返粒度,350ms 足够顺滑且开销可忽略)。
 const DEFAULT_POLL_INTERVAL: Duration = Duration::from_millis(350);
 
@@ -245,28 +248,40 @@ impl TailerState {
         if file.seek(SeekFrom::Start(self.offset)).await.is_err() {
             return true;
         }
-        let mut buf = Vec::new();
-        let n = match file.read_to_end(&mut buf).await {
-            Ok(n) => n,
-            Err(_) => return true,
-        };
-        self.offset += n as u64;
-        self.partial.extend_from_slice(&buf);
+        // Read in bounded chunks: a cold start on a long transcript used to
+        // pull the whole file into memory at once. All chunks are still
+        // consumed in this call, so callers relying on "caught up to EOF"
+        // (poke_turn_end) keep their meaning.
+        loop {
+            let mut buf = Vec::new();
+            let n = match (&mut file)
+                .take(MAX_TAIL_READ_CHUNK)
+                .read_to_end(&mut buf)
+                .await
+            {
+                Ok(n) => n,
+                Err(_) => return true,
+            };
+            self.offset += n as u64;
+            self.partial.extend_from_slice(&buf);
 
-        // 按 \n 切出完整行;尾部残段留缓冲下次拼(claude 写行是原子 append,但读端可能撞半截)。
-        let mut lines: Vec<Vec<u8>> = Vec::new();
-        let mut start = 0usize;
-        for (i, &b) in self.partial.iter().enumerate() {
-            if b == b'\n' {
-                lines.push(self.partial[start..i].to_vec());
-                start = i + 1;
+            // 按 \n 切出完整行;尾部残段留缓冲下次拼(claude 写行是原子 append,但读端可能撞半截)。
+            let mut lines: Vec<Vec<u8>> = Vec::new();
+            let mut start = 0usize;
+            for (i, &b) in self.partial.iter().enumerate() {
+                if b == b'\n' {
+                    lines.push(self.partial[start..i].to_vec());
+                    start = i + 1;
+                }
+            }
+            self.partial.drain(..start);
+            if !lines.is_empty() && !self.process_batch(lines).await {
+                return false;
+            }
+            if (n as u64) < MAX_TAIL_READ_CHUNK {
+                return true;
             }
         }
-        self.partial.drain(..start);
-        if lines.is_empty() {
-            return true;
-        }
-        self.process_batch(lines).await
     }
 
     /// 处理一个读批(一次增量读切出的所有完整行):逐行解析 → 映射 → 发送;
