@@ -205,9 +205,13 @@ async function nativeStreamPost(
 
   return new Promise<void>((resolve, reject) => {
     const channel = new Channel<string>();
+    const streamId = crypto.randomUUID();
     let buffer = '';
 
     const onAbort = () => {
+      // Drop the provider request in Rust too — otherwise it keeps
+      // generating (and billing) until the stream ends on its own.
+      void invoke('cancel_ai_stream', { streamId }).catch(() => {});
       reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }));
     };
     signal?.addEventListener('abort', onAbort, { once: true });
@@ -234,6 +238,7 @@ async function nativeStreamPost(
         model: provider.model,
       },
       body: JSON.stringify(body),
+      streamId,
       onEvent: channel,
     }).then(() => {
       signal?.removeEventListener('abort', onAbort);

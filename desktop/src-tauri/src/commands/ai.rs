@@ -1,4 +1,8 @@
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 use super::settings_secrets::{
     canonical_service_base, confidential_service_base, provider_secret, require_ai_settings_window,
@@ -9,6 +13,103 @@ const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_REQUEST_BODY_BYTES: usize = 16 * 1024 * 1024;
 const MAX_MODEL_BYTES: usize = 512;
 const MAX_SEARCH_QUERY_BYTES: usize = 8 * 1024;
+const MAX_STREAM_ID_BYTES: usize = 128;
+const STREAM_CONNECT_TIMEOUT_SECS: u64 = 30;
+// Silence allowed between stream chunks. A long answer may take far longer
+// than this overall; only a stalled connection should time out.
+const STREAM_IDLE_TIMEOUT_SECS: u64 = 180;
+
+/// Cancellation tokens of in-flight streams, keyed by the WebView's stream id.
+/// A cancel that lands before the stream registers leaves a cancelled token
+/// behind, which the stream then picks up and stops on immediately.
+static STREAM_CANCELS: LazyLock<Mutex<HashMap<String, CancellationToken>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn stream_token(stream_id: &str) -> CancellationToken {
+    let mut map = STREAM_CANCELS.lock().unwrap_or_else(|e| e.into_inner());
+    map.entry(stream_id.to_string()).or_default().clone()
+}
+
+fn release_stream_token(stream_id: &str) {
+    let mut map = STREAM_CANCELS.lock().unwrap_or_else(|e| e.into_inner());
+    map.remove(stream_id);
+}
+
+fn validate_stream_id(stream_id: &str) -> Result<(), String> {
+    if stream_id.is_empty()
+        || stream_id.len() > MAX_STREAM_ID_BYTES
+        || !stream_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("invalid AI stream id".to_string());
+    }
+    Ok(())
+}
+
+/// Decodes a byte stream as UTF-8 without splitting characters that straddle
+/// chunk boundaries. Invalid bytes become U+FFFD, as with `from_utf8_lossy`.
+#[derive(Default)]
+struct Utf8ChunkDecoder {
+    pending: Vec<u8>,
+}
+
+impl Utf8ChunkDecoder {
+    fn push(&mut self, chunk: &[u8]) -> String {
+        self.pending.extend_from_slice(chunk);
+        let mut out = String::new();
+        loop {
+            match std::str::from_utf8(&self.pending) {
+                Ok(text) => {
+                    out.push_str(text);
+                    self.pending.clear();
+                    return out;
+                }
+                Err(err) => {
+                    let valid = err.valid_up_to();
+                    out.push_str(
+                        std::str::from_utf8(&self.pending[..valid]).expect("validated prefix"),
+                    );
+                    match err.error_len() {
+                        // Incomplete trailing sequence: wait for the next chunk.
+                        None => {
+                            self.pending.drain(..valid);
+                            return out;
+                        }
+                        Some(bad) => {
+                            out.push(char::REPLACEMENT_CHARACTER);
+                            self.pending.drain(..valid + bad);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn finish(&mut self) -> String {
+        let rest = String::from_utf8_lossy(&self.pending).into_owned();
+        self.pending.clear();
+        rest
+    }
+}
+
+/// Transport errors keep a recognisable kind (timeout / connection) so the
+/// WebView can tell a network blip, which it retries, from a provider error.
+/// The URL and reqwest's source chain are left out of the message.
+fn transport_error(err: &reqwest::Error, while_streaming: bool) -> String {
+    let stage = if while_streaming {
+        "AI provider stream"
+    } else {
+        "AI provider request"
+    };
+    if err.is_timeout() {
+        format!("{stage} timed out")
+    } else if err.is_connect() {
+        format!("{stage} failed: connection error")
+    } else {
+        format!("{stage} failed: connection closed")
+    }
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +142,16 @@ pub struct FetchResponse {
     ok: bool,
     status: u16,
     body: String,
+}
+
+fn stream_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(STREAM_CONNECT_TIMEOUT_SECS))
+        .read_timeout(std::time::Duration::from_secs(STREAM_IDLE_TIMEOUT_SECS))
+        // Never forward a broker-injected credential through an HTTP redirect.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "failed to initialize HTTP client".to_string())
 }
 
 fn client(timeout_secs: u64) -> Result<reqwest::Client, String> {
@@ -260,9 +371,11 @@ pub async fn fetch_ai_stream(
     window: tauri::WebviewWindow,
     request: AiProviderRequest,
     body: String,
+    stream_id: String,
     on_event: tauri::ipc::Channel<String>,
 ) -> Result<(), String> {
     require_ai_settings_window(&window)?;
+    validate_stream_id(&stream_id)?;
     if body.len() > MAX_REQUEST_BODY_BYTES {
         return Err("AI request body is too large".to_string());
     }
@@ -270,17 +383,33 @@ pub async fn fetch_ai_stream(
     confidential_service_base(&base)?;
     let url = stream_url(&request, &base)?;
     let builder = add_provider_auth(
-        client(300)?
+        stream_client()?
             .post(url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
             .body(body),
         &request.provider_type,
         secret.as_deref(),
     );
+
+    let cancel = stream_token(&stream_id);
+    // Dropping the in-flight request when the user stops closes the provider
+    // connection, so generation (and billing) stops with it.
+    let result = tokio::select! {
+        _ = cancel.cancelled() => Err("AbortError".to_string()),
+        result = relay_stream(builder, &on_event) => result,
+    };
+    release_stream_token(&stream_id);
+    result
+}
+
+async fn relay_stream(
+    builder: reqwest::RequestBuilder,
+    on_event: &tauri::ipc::Channel<String>,
+) -> Result<(), String> {
     let mut response = builder
         .send()
         .await
-        .map_err(|_| "AI provider request failed".to_string())?;
+        .map_err(|e| transport_error(&e, false))?;
     let status = response.status().as_u16();
 
     if !(200..300).contains(&status) {
@@ -289,18 +418,30 @@ pub async fn fetch_ai_stream(
         return Err(format!("HTTP {status}: {snippet}"));
     }
 
+    let mut decoder = Utf8ChunkDecoder::default();
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|_| "failed to read AI provider stream".to_string())?
+        .map_err(|e| transport_error(&e, true))?
     {
-        if on_event
-            .send(String::from_utf8_lossy(&chunk).to_string())
-            .is_err()
-        {
-            break;
+        let text = decoder.push(&chunk);
+        if !text.is_empty() && on_event.send(text).is_err() {
+            return Ok(());
         }
     }
+    let rest = decoder.finish();
+    if !rest.is_empty() {
+        let _ = on_event.send(rest);
+    }
+    Ok(())
+}
+
+/// Stops an in-flight `fetch_ai_stream` and drops its provider request.
+#[tauri::command]
+pub fn cancel_ai_stream(window: tauri::WebviewWindow, stream_id: String) -> Result<(), String> {
+    require_ai_settings_window(&window)?;
+    validate_stream_id(&stream_id)?;
+    stream_token(&stream_id).cancel();
     Ok(())
 }
 
@@ -315,6 +456,49 @@ mod tests {
             base_url: base_url.to_string(),
             model: Some("gemini/test model".to_string()),
         }
+    }
+
+    #[test]
+    fn utf8_decoder_keeps_characters_split_across_chunks() {
+        let text = "data: 你好，世界 🎉\n";
+        let bytes = text.as_bytes();
+        for split in 0..=bytes.len() {
+            let mut decoder = Utf8ChunkDecoder::default();
+            let mut out = decoder.push(&bytes[..split]);
+            out.push_str(&decoder.push(&bytes[split..]));
+            out.push_str(&decoder.finish());
+            assert_eq!(out, text, "split at {split}");
+        }
+        let mut decoder = Utf8ChunkDecoder::default();
+        let out: String = bytes.iter().map(|b| decoder.push(&[*b])).collect();
+        assert_eq!(out + &decoder.finish(), text);
+    }
+
+    #[test]
+    fn utf8_decoder_replaces_invalid_bytes_and_flushes_a_truncated_tail() {
+        let mut decoder = Utf8ChunkDecoder::default();
+        assert_eq!(decoder.push(b"a\xffb"), "a\u{FFFD}b");
+        assert_eq!(decoder.push("中".as_bytes().get(..2).unwrap()), "");
+        assert_eq!(decoder.finish(), "\u{FFFD}");
+        assert_eq!(decoder.finish(), "");
+    }
+
+    #[test]
+    fn stream_ids_are_bounded_tokens() {
+        assert!(validate_stream_id("3f2b-41aa_9").is_ok());
+        assert!(validate_stream_id("").is_err());
+        assert!(validate_stream_id("a/b").is_err());
+        assert!(validate_stream_id(&"a".repeat(MAX_STREAM_ID_BYTES + 1)).is_err());
+    }
+
+    #[test]
+    fn a_cancel_before_the_stream_registers_still_stops_it() {
+        let id = "cancel-before-register";
+        stream_token(id).cancel();
+        assert!(stream_token(id).is_cancelled());
+        release_stream_token(id);
+        assert!(!stream_token(id).is_cancelled());
+        release_stream_token(id);
     }
 
     #[test]
