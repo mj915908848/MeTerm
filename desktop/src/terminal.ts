@@ -259,6 +259,29 @@ class TerminalRegistryClass {
     }));
   }
 
+  /** Pending title scans, one per session (see scheduleShellTitleScan). */
+  private titleScanTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * Coalesce title scans: the scan reads up to 80 buffer lines, and running it
+   * for every output frame saturated the main thread under heavy output. It
+   * also ran before xterm had parsed the frame; a deferred scan sees it.
+   */
+  private scheduleShellTitleScan(mt: ManagedTerminal): void {
+    if (this.titleScanTimers.has(mt.id)) return;
+    this.titleScanTimers.set(mt.id, setTimeout(() => {
+      this.titleScanTimers.delete(mt.id);
+      if (mt.ended || mt.hasOscTitle || this.terminals.get(mt.id) !== mt) return;
+      this.updateShellTitle(mt);
+    }, 250));
+  }
+
+  private clearShellTitleScan(sessionId: string): void {
+    const timer = this.titleScanTimers.get(sessionId);
+    if (timer) clearTimeout(timer);
+    this.titleScanTimers.delete(sessionId);
+  }
+
   private updateShellTitle(mt: ManagedTerminal): void {
     const titlePattern = /(?:^|\s)(?:title|session|chat)\s*[:：]\s*(.+)$/i;
     const buffer = mt.terminal.buffer.active;
@@ -738,7 +761,7 @@ class TerminalRegistryClass {
     getSettings: () => this.settings,
     sendEncoding: (mt: ManagedTerminal, encoding: string) => this.sendEncoding(mt, encoding),
     getOutputListeners: (sessionId: string) => this.outputListeners.get(sessionId),
-    updateShellTitle: (mt: ManagedTerminal) => this.updateShellTitle(mt),
+    updateShellTitle: (mt: ManagedTerminal) => this.scheduleShellTitleScan(mt),
     setPongTime: (sessionId: string, time: number) => this.lastPongTime.set(sessionId, time),
     getPingTimestamp: (sessionId: string) => this.pingTimestamps.get(sessionId),
     deletePingTimestamp: (sessionId: string) => this.pingTimestamps.delete(sessionId),
@@ -1139,6 +1162,7 @@ class TerminalRegistryClass {
     // timestamps and SSH dir probe.
     this.pingTimestamps.delete(sessionId);
     this.lastPongTime.delete(sessionId);
+    this.clearShellTitleScan(sessionId);
     this.lastInputPingTime.delete(sessionId);
     clearSSHDirProbe(sessionId);
     this.notifySessionDisposed(sessionId);
@@ -1504,6 +1528,7 @@ class TerminalRegistryClass {
     this.resizeGeneration.delete(sessionId);
     this.pingTimestamps.delete(sessionId);
     this.lastPongTime.delete(sessionId);
+    this.clearShellTitleScan(sessionId);
     this.lastInputPingTime.delete(sessionId);
     clearSSHDirProbe(sessionId);
     this.notifySessionDisposed(sessionId);
