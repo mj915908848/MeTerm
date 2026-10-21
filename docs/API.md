@@ -2,6 +2,10 @@
 
 本文记录当前 Rust 内置服务的安全相关契约。业务帧格式见 `docs/PROTOCOL.md`。
 
+> 分享功能(局域网访问、配对、mDNS 发现、手机中继与推送、自签 TLS)已移除。内置服务只监听
+> `127.0.0.1`,并在接受连接时拒绝非 loopback 对端。下文保留的设备凭据与 PoP 说明描述的是
+> 仍在代码中的认证框架,当前没有入口可以签发新的设备凭据。
+
 ## 认证与传输
 
 - 远程请求必须使用证书指纹固定的 `HTTPS/WSS`。只有进程所在机器的直接 loopback
@@ -32,9 +36,6 @@
 | 权限 | 方法 | 路径 | 说明 |
 |---|---|---|---|
 | 公开 | `GET` | `/api/ping` | 无凭据健康检查 |
-| 公开 + 远程 TLS | `POST` | `/api/pair/bootstrap` | 用一次性 QR ticket 换取设备 token |
-| 公开 + 远程 TLS | `POST` | `/api/pair` | 创建需要桌面批准的配对请求 |
-| 公开 + 远程 TLS | `POST` | `/api/pair/:id` | 在 JSON body 中查询配对状态 |
 | 设备 bearer bootstrap | `POST` | `/api/auth/challenge` | 签发一个 30 秒、单次、设备代次与 audience 绑定的 PoP nonce |
 | 设备（按会话 ACL 过滤） | `GET` | `/api/sessions` | 列出当前设备可访问的会话 |
 | 设备（会话 scope + 创建者 ACL） | `GET/DELETE` | `/api/sessions/:id` | 获取/删除会话 |
@@ -46,14 +47,8 @@
 | `ssh.desktop-connect` | `POST` | `/api/sessions/ssh/test` | 测试请求内显式 SSH 连接 |
 | `ssh.desktop-connect` | `GET` | `/api/ssh/connections` | 拉取保存连接的非敏感元数据 |
 | `ssh.connections-write` | `POST/PUT/DELETE` | `/api/ssh/connections[/:id]` | 写入保存连接及替换 secret |
-| 设备 | `GET` | `/api/info` | 桌面身份与该设备获准的中继能力；空 scope 不返回 relay 元数据 |
-| 续期隔离设备 | `POST` | `/api/relay/capability/renew` | 仅在 RelayRenewal ingress 上复核 mtd + HTTP PoP 后签发新 mrc2 |
-| `push.self` | `POST` | `/api/push/register` | 注册当前认证设备的推送目标 |
 | 设备 | `DELETE` | `/api/device-credential/self` | 幂等撤销当前设备凭据并清理同代次长连接/推送 |
 | 设备 | `GET` | `/ws/:session_id` | 终端 WebSocket |
-| `push.self` | `GET` | `/ws-events` | 当前设备的 presence/通知事件 WebSocket |
-| owner | `GET` | `/api/pair/pending` | 待批准配对 |
-| owner | `POST` | `/api/pair/:id/respond` | 批准/拒绝配对 |
 | owner | `GET` | `/api/device-credentials` | 列出持久设备凭据元数据 |
 | owner | `PUT` | `/api/device-credentials/:device_id` | 更新当前构建支持的设备 scope 并断开旧代次 |
 | owner | `DELETE` | `/api/device-credentials/:device_id` | 撤销单设备并立即断开 |
@@ -122,61 +117,6 @@ SSH 创建/测试接口不会把底层 SSH 库错误、私钥路径、代理细�
 会话建立后的后台 SFTP 初始化失败也不会透传底层诊断：终端 WebSocket 的 `MSG_ERROR` 使用
 `code=SFTP_NOT_AVAILABLE` 与固定 `message=sftp_init_failed`，原始 SFTP 错误只写入桌面本机日志。
 
-## v2 配对
-
-QR 数据只包含连接元数据、桌面证书指纹和一次性 `pair_ticket`，不包含 owner token、
-中继地址或任何中继全局密钥。
-
-```json
-{
-  "v": 2,
-  "addrs": ["192.0.2.10:8022"],
-  "token": "",
-  "pair_ticket": "<43-char-base64url>",
-  "name": "My Desktop",
-  "device_id": "<desktop-id>",
-  "cert_fp": "<sha256-hex>"
-}
-```
-
-QR 兑换：
-
-```http
-POST /api/pair/bootstrap
-Content-Type: application/json
-
-{"ticket":"...","device_id":"<phone-id>","device_name":"Phone","pop_alg":"ES256","pop_public_key":"<base64url-uncompressed-P256-key>","pop_signature":"<base64url-raw-r||s>"}
-```
-
-手动/mDNS 配对先创建请求，再把短期 secret 放在 POST body 中轮询，避免 URL、代理和访问
-日志泄漏：
-
-```http
-POST /api/pair
-Content-Type: application/json
-
-{"device_id":"<phone-id>","device_name":"Phone","pop_alg":"ES256","pop_public_key":"<base64url-uncompressed-P256-key>","pop_signature":"<base64url-raw-r||s>"}
-```
-
-```http
-POST /api/pair/<pair-id>
-Content-Type: application/json
-
-{"secret":"<pair-secret>"}
-```
-
-旧版 v1 QR、URL 中 token/secret、远程明文配对均 fail closed，需要升级并重新配对。
-
-`pop_public_key` 必须是 65 字节未压缩 SEC1 P-256 点（首字节 `0x04`）的无 padding
-base64url。`pop_signature` 是 64 字节 IEEE P1363 `r || s` 签名。签名消息按 UTF-8 精确为：
-
-```text
-MeTerm-Pair-v1\n<phone-device-id>\n<device-name>\n<context>
-```
-
-QR 兑换的 `<context>` 是 ticket 原文；桌面审批配对固定为 `approval`。服务端在签发 token 前
-验证签名，因此不能把任意公钥事后绑定到已经取得的 `mtd_`。
-
 ## 设备 HTTP / WebSocket PoP
 
 设备先通过同一条证书固定的 TLS 连接请求 nonce；这是唯一只需 bearer、不需先有 PoP 的设备
@@ -217,77 +157,6 @@ target 是客户端实际发送的 path 与 query，例如 `/api/info` 或
 请求 body 没有进入签名输入：它依赖已经固定桌面证书的 TLS 提供完整性。这一设计阻止复制
 token 后在另一进程离线重放，但不宣称能抵抗仍控制原 App 进程并实时调用不可导出密钥的 Hook
 签名 oracle；此边界见 `docs/SECURITY.md`。
-
-## `/api/info` 中继字段
-
-标准 Release 设备只有空 scope，响应不会下发中继地址、指纹或 capability。以下只是省略其它
-非敏感字段后的相关字段摘录：
-
-```json
-{"device_scopes": []}
-```
-
-开发控制包中，设备至少有一个 scope 且桌面启用中继时，响应可包含：
-
-```json
-{
-  "device_scopes": ["desktop.control", "ssh.desktop-connect", "ssh.connections-write", "push.self"],
-  "relay_url": "wss://relay.example.invalid:8443",
-  "relay_cert_fp": "<sha256-hex>",
-  "relay_access_token": "mrc2.<expiry>.<pop-key-thumbprint>.<mac>",
-  "relay_access_expires_at": 1700000000,
-  "relay_renewal_grant": "mrr1.<pair-epoch>.<pop-key-thumbprint>.<mac>"
-}
-```
-
-`relay_access_token` 只授权
-`(desktop_device_id, phone_device_id, expiry, SHA-256(phone-PoP-public-key))` 对应的中继隧道，
-不是桌面 API token，也不是 relay 注册或推送全局密钥。移动端必须把整组字段视为来自同一
-个已固定证书且已认证的响应，并按已配对桌面隔离保存。桌面按一分钟签发桶生成 token，
-单个 token 从签发时刻起有效期大于 9 分钟且不超过 10 分钟；relay 还会在绝对到期时截断
-已经建立的盲管。移动端在剩余约 2 分钟前通过仍有效的中继隧道重新请求 `/api/info`，并让
-后续新建隧道使用新 token。
-
-`relay_renewal_grant` 只允许进入 `/renew` 隔离通道。其 16-byte 随机 pairing epoch 持久化在
-桌面设备凭据记录中，桌面重启时保持不变，重新配对时轮换；它还绑定桌面 ID、手机 ID 与同一
-PoP 公钥 thumbprint。grant 随配对关系有效，不设置另一个几分钟级到期时间，否则会再次形成
-公网冷启动死锁。它不能用于 `/connect` 或桌面 API，单独复制也无法回答新的 Relay challenge。
-
-若 App 挂起至 `mrc2` 过期，移动端保留独立保存的 Relay authority/pin 与 `mrr1`，通过
-`/renew` 完成独立 Relay PoP。PoP 成功后，Relay 使用该桌面的 register secret 写入一个有界、
-HMAC 认证且绑定 `(desktop ID, phone ID, pairing epoch, PoP key thumbprint,
-SHA-256(exact mrr1))` 的续期 preface；`0xF1` 只是 preface 的首字节，单独发送不能选择续期
-Router。子流内随后仍是手机到桌面的证书固定 TLS，Relay 看不到 `mtd_`。手机先请求
-`/api/auth/challenge`，再以当前 `mtd_ + HTTP PoP` 调用 `/api/relay/capability/renew`。续期专用
-认证层会在生成 challenge nonce 前要求 outer desktop/phone ID 与当前桌面及 inner `mtd_` 设备
-身份完全一致；不匹配直接返回 403，且不占用 challenge 队列。桌面随后在同一设备凭据读事务内
-重新确认 preface、当前凭据代次、pairing epoch、PoP key、exact mrr1 digest、非空 scope 与撤销
-状态后才返回新 `mrc2`。续期 Router 不包含任何普通业务接口。
-
-成功响应带 `Cache-Control: no-store`，只包含如下字段；返回的 Relay authority 必须与手机已
-固定值完全一致，本协议不借续期静默迁移中继目标：
-
-```json
-{
-  "version": 1,
-  "device_id": "<desktop-device-id>",
-  "relay_url": "wss://relay.example.invalid:8443",
-  "relay_cert_fp": "<sha256-hex>",
-  "relay_access_token": "mrc2.<expiry>.<pop-key-thumbprint>.<mac>",
-  "relay_access_expires_at": 1700000000,
-  "relay_renewal_grant": "mrr1.<pair-epoch>.<pop-key-thumbprint>.<mac>"
-}
-```
-
-手机连接 `/connect` 时除 `Authorization: Bearer mrc2...` 外，还必须发送唯一
-`X-MeTerm-PoP-Key`，其值为配对公钥 65 字节 SEC1 表示的无 padding base64url。Relay 复核
-thumbprint 后才升级 WebSocket，并完成 `docs/PROTOCOL.md` 定义的随机挑战。只有 PoP 成功后才
-分配 yamux 子流。旧 `mrc1`、错误/重复 key header、复制到无私钥进程的 `mrc2`、重放旧连接
-签名、换桌面/手机、修改到期时间或超过 10 分钟均拒绝。
-
-`mrc2` HMAC 本身在到期前仍可重复提交，但每条实际连接都需要新的 Relay challenge 签名，因而
-复制 token 与公钥不能建立隧道。已建立盲管在绝对到期时仍会被截断。原 App 进程被 Hook 后充当
-实时签名 oracle 的剩余风险与 HTTP PoP 相同。
 
 ## WebSocket
 
