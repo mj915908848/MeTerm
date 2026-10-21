@@ -64,7 +64,7 @@ export function sortConnections<T>(
  * those rows, so the two names have to stay identical — `sort-sync.test.mts`
  * fails if either drifts.
  */
-const UNGROUPED_GROUP = '__ungrouped__';
+export const UNGROUPED_GROUP = '__ungrouped__';
 
 /**
  * Name/host/port of a stored connection, for the host- and name-based modes.

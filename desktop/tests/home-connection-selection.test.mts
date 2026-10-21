@@ -117,6 +117,8 @@ function boot(options: { confirm?: boolean } = {}) {
       visibleGroupName: (s: string | undefined) => s ?? null,
     },
     './icons': { icon: (name: string) => `<svg data-icon="${name}"></svg>` },
+    './group-sort-menu': { showGroupSortMenu: () => {} },
+    './connection-sort': { UNGROUPED_GROUP: '__ungrouped__' },
     './connection-drag': { attachConnectionDrag: () => () => {} },
     './connection-selection': selection,
     './ssh': {

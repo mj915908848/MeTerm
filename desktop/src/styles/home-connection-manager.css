@@ -245,3 +245,6 @@
   .hcm-list-pane { width: 220px; }
   .hcm-detail-body { padding: 0 16px; }
 }
+
+/* The sort icon is drawn on a 14-unit grid; render it 1:1 like .hsg-sort did. */
+.hcm-sort-btn svg { width: 14px; height: 14px; }

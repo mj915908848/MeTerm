@@ -2134,33 +2134,8 @@ html[data-theme="light"] .home-btn:hover { background: rgba(0, 0, 0, 0.07); }
 html[data-theme="light"] .group-modal-btn { background: rgba(0, 0, 0, 0.04); }
 html[data-theme="light"] .group-modal-btn:hover { background: rgba(0, 0, 0, 0.07); }
 
-/* Group sorting control, independent of the collapse target. Quiet until the
-   group header is hovered (like the chevron), so the list is not a column of
-   icons; it stays visible while focused or while its menu is open. */
-.hsg-sort {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  opacity: 0;
-  transition: opacity 0.12s;
-  cursor: pointer;
-}
-.home-side-group:hover .hsg-sort,
-.hsg-sort:focus-visible,
-.hsg-sort[aria-expanded="true"] { opacity: 1; }
-/* The glyph this replaced sized itself via font-size; the SVG needs an explicit box.
-   14px matches the icon's own 14-unit grid, so it renders 1:1 and stays crisp. */
-.hsg-sort svg { width: 14px; height: 14px; }
-.hsg-sort:hover, .hsg-sort[aria-expanded="true"] { background: rgba(var(--bg-button-hover), var(--app-window-opacity)); color: var(--text-primary); }
-.hsg-sort:focus-visible, .connection-sort-menu .home-card-menu-item:focus-visible {
+/* The sort-mode menu (group-sort-menu.ts). */
+.connection-sort-menu .home-card-menu-item:focus-visible {
   outline: 2px solid var(--text-secondary);
   outline-offset: -2px;
 }

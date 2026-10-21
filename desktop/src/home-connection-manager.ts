@@ -48,6 +48,8 @@ import {
 import { attachConnectionDrag } from './connection-drag';
 import { pruneSelection, resolveRowClick } from './connection-selection';
 import { icon } from './icons';
+import { showGroupSortMenu } from './group-sort-menu';
+import { UNGROUPED_GROUP } from './connection-sort';
 import { createEmbeddedSSHForm, loadRecentConnections, type SSHConnectionConfig } from './ssh';
 import type { JumpServerConfig } from './jumpserver-api';
 
@@ -136,7 +138,13 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
       },
     ]);
   });
-  toolbar.append(searchWrap, addBtn);
+  // One sort control for the whole list; a single group's sort is in its
+  // header's right-click menu.
+  const sortBtn = iconButton(icon('sort'), t('connectionSort'), (el) => {
+    showGroupSortMenu(el, [...loadGroupOrder(), UNGROUPED_GROUP], announce);
+  });
+  sortBtn.classList.add('hcm-sort-btn');
+  toolbar.append(searchWrap, sortBtn, addBtn);
   left.appendChild(toolbar);
 
   // The way back to the start content once a connection is selected. Drawn as
@@ -232,8 +240,9 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
       },
       onRowActivate: connect,
       onGroupContextMenu: (event, group) => {
-        if (group === null) return;
-        showGroupContextMenu(event, group, announce);
+        // The ungrouped bucket has nothing to rename or colour: just its sort.
+        if (group === null) showGroupSortMenu({ x: event.clientX, y: event.clientY }, UNGROUPED_GROUP, announce);
+        else showGroupContextMenu(event, group, announce);
       },
     });
     list.scrollTop = scrollTop;

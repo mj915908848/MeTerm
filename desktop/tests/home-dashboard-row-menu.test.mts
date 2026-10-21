@@ -121,6 +121,7 @@ function openMenu(opts: MenuOptions): string[] {
     './home-dashboard-card-order': { loadCardOrder: () => [], saveCardOrder: noop },
     './home-card-width': { clearCardWidth: noop, dragCardWidth: noop, loadCardWidths: () => ({}), setCardWidth: noop },
     './connection-sort': connectionSort,
+    './group-sort-menu': { showGroupSortMenu: noop },
     './connection-groups': groupExports,
     './connection-drag': { attachConnectionDrag: () => noop, UNGROUPED_DROP_GROUP: '__ungrouped__' },
     './connection-selection': { pruneSelection: (s: string[]) => s, resolveRowClick: noop },
@@ -223,6 +224,18 @@ test('a single row keeps the menu it always had', () => {
     ['→ staging', '→ homeGroupUngrouped'],
     "a row's own group and the ungrouped bucket are both no-ops for one row in `prod`",
   );
+  assert.equal(entries[0], 'sshConnectBtn', '"connect" heads a single row\'s menu');
+});
+
+test('a batch menu has no "connect"', () => {
+  const entries = openMenu({
+    order: ['prod'],
+    groups: {},
+    item: { key: 'ssh:a' },
+    currentGroup: null,
+    moveKeys: ['ssh:a', 'ssh:b'],
+  });
+  assert.ok(!entries.includes('sshConnectBtn'));
 });
 
 test('a batch that is already ungrouped is not offered the ungrouped bucket', () => {

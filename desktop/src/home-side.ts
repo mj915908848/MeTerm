@@ -170,32 +170,20 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
     header.innerHTML = `<span class="hsg-chevron">${icon('chevronRight')}</span>`
       + `<span class="hsg-name">${isUngrouped ? t('homeGroupUngrouped') : escapeHtml(g)}</span>`
       + `<span class="hsg-count">${items.length}</span>`;
-    const sortButton = document.createElement('button');
-    sortButton.type = 'button';
-    sortButton.className = 'hsg-sort';
-    sortButton.dataset.group = g;
-    sortButton.innerHTML = icon('sort');
-    sortButton.title = t('connectionSort');
-    sortButton.setAttribute('aria-label', `${isUngrouped ? t('homeGroupUngrouped') : g}: ${t('connectionSort')}`);
-    sortButton.setAttribute('aria-haspopup', 'menu');
-    sortButton.setAttribute('aria-expanded', 'false');
-    sortButton.onclick = event => {
-      event.stopPropagation();
-      showGroupSortMenu(sortButton, g, deps.refresh);
-    };
-    header.appendChild(sortButton);
     header.onclick = () => {
       if (query) return; // can't collapse while filtering
       toggleGroupCollapsed(g);
       deps.refresh();
     };
-    if (deps.onGroupContextMenu) {
-      const openGroupMenu = deps.onGroupContextMenu;
-      header.oncontextmenu = (event) => {
-        event.preventDefault();
-        openGroupMenu(event, isUngrouped ? null : g);
-      };
-    }
+    // Sorting lives in the header's right-click menu: a sort button on every
+    // header made the list a column of icons. A surface with its own group menu
+    // (the home page) puts the sort modes in it; otherwise the menu is just them.
+    header.title = isUngrouped ? '' : g;
+    header.oncontextmenu = (event) => {
+      event.preventDefault();
+      if (deps.onGroupContextMenu) deps.onGroupContextMenu(event, isUngrouped ? null : g);
+      else showGroupSortMenu({ x: event.clientX, y: event.clientY }, g, deps.refresh);
+    };
     (singleGroup ? headerSlot! : listEl).appendChild(header);
 
     if (isCollapsed) continue;

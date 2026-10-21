@@ -4,6 +4,7 @@
  * menus, deleting, and the group modal. The saved-connection manager itself
  * (list + detail panel) is home-connection-manager.ts.
  */
+import { showGroupSortMenu } from './group-sort-menu';
 import { settings } from './app-state';
 import { t } from './i18n';
 import { icon } from './icons';
@@ -310,6 +311,15 @@ export function showGroupContextMenu(event: MouseEvent, groupName: string, refre
   };
   menu.appendChild(renameItem);
 
+  const sortItem = document.createElement('button');
+  sortItem.className = 'home-card-menu-item';
+  sortItem.textContent = `${t('connectionSort')}…`;
+  sortItem.onclick = () => {
+    menu.remove();
+    showGroupSortMenu({ x: event.clientX, y: event.clientY }, groupName, refreshView);
+  };
+  menu.appendChild(sortItem);
+
   const divColor = document.createElement('div');
   divColor.className = 'custom-context-menu-divider';
   menu.appendChild(divColor);
@@ -483,6 +493,19 @@ export function showConnectionContextMenu(
   const moving = moveKeys && moveKeys.length > 0 ? [...moveKeys] : [item.key];
   const batch = moving.length > 1;
   const suffix = batch ? ` (${moving.length})` : '';
+
+  // "Connect" first: on the home page a click only selects, so the menu is the
+  // other quick way in besides a double-click.
+  if (!batch) {
+    const connectItem = document.createElement('button');
+    connectItem.className = 'home-card-menu-item';
+    connectItem.textContent = t('sshConnectBtn');
+    connectItem.onclick = () => { menu.remove(); handleConnectionClick(item); };
+    menu.appendChild(connectItem);
+    const divider = document.createElement('div');
+    divider.className = 'custom-context-menu-divider';
+    menu.appendChild(divider);
+  }
 
   // Editing is a one-connection action: with several rows picked the menu only
   // offers what applies to all of them (move, delete).
