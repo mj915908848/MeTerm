@@ -200,7 +200,10 @@ function buildShellHook(shellType: string): string {
         // replaces the whole array — silently dropping the user's 2nd..nth
         // entries. Both branches keep everything that was already there.
         `case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in 'declare -a'*) `,
-        `PROMPT_COMMAND=(__meterm_precmd "\${PROMPT_COMMAND[@]}");; `,
+        // The array form is bash-only syntax that a POSIX `sh` (dash) rejects
+        // while *parsing* the whole hook, so it is deferred behind `eval` and
+        // only parsed when this branch actually runs, which is always in bash.
+        `eval 'PROMPT_COMMAND=(__meterm_precmd "\${PROMPT_COMMAND[@]}")';; `,
         `*) PROMPT_COMMAND="__meterm_precmd\${PROMPT_COMMAND:+;$PROMPT_COMMAND}";; esac`,
       ].join('');
   }
