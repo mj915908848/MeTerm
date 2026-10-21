@@ -104,7 +104,12 @@ function harness() {
     pingTimestamps: new Map([['s1', 111]]),
     lastPongTime: new Map([['s1', 222]]),
     lastInputPingTime: new Map([['s1', 333]]),
+    titleScanTimers: new Map([['s1', setTimeout(() => {}, 0)]]),
+    thumbnailCache: new Map([['s1', { key: 'k', version: 1, url: 'data:', confirmed: true }]]),
   };
+  registry.clearShellTitleScan = loadMethod<(id: string) => void>(
+    'clearShellTitleScan', ['sessionId'], { clearTimeout },
+  );
 
   const onSessionDisposed = loadMethod<(cb: (id: string) => void) => () => void>(
     'onSessionDisposed', ['callback'], {
@@ -132,7 +137,12 @@ function harness() {
 
   // `clearSSHDirProbe` is imported by terminal.ts; supplying it is how the test
   // learns that teardown dropped the SSH dir probe.
-  const scope = { clearSSHDirProbe: (sessionId: string) => { probed.push(sessionId); }, clearTimeout };
+  const thumbnailFeedsDiscarded: unknown[] = [];
+  const scope = {
+    clearSSHDirProbe: (sessionId: string) => { probed.push(sessionId); },
+    discardThumbnailFeed: (mt: unknown) => { thumbnailFeedsDiscarded.push(mt); },
+    clearTimeout,
+  };
   const detach = loadMethod<(id: string) => void>('detach', ['sessionId'], scope);
   const destroy = loadMethod<(id: string) => void>('destroy', ['sessionId'], scope);
 
@@ -140,6 +150,7 @@ function harness() {
     registry,
     disposed,
     probed,
+    thumbnailFeedsDiscarded,
     register,
     detach,
     destroy,
@@ -148,7 +159,9 @@ function harness() {
   };
 }
 
-const LIVENESS_MAPS = ['pingTimestamps', 'lastPongTime', 'lastInputPingTime'] as const;
+const LIVENESS_MAPS = [
+  'pingTimestamps', 'lastPongTime', 'lastInputPingTime', 'titleScanTimers', 'thumbnailCache',
+] as const;
 
 for (const [label, pick] of [['destroy()', 'destroy'], ['detach()', 'detach']] as const) {
   test(`${label} drops every per-session entry it owns`, () => {
@@ -164,6 +177,7 @@ for (const [label, pick] of [['destroy()', 'destroy'], ['detach()', 'detach']] a
       );
     }
     assert.deepEqual(h.probed, ['s1'], `${label} must drop the SSH dir probe`);
+    assert.equal(h.thumbnailFeedsDiscarded.length, 1, `${label} must drop batched thumbnail output`);
     assert.deepEqual(h.disposed, ['s1'], `${label} must tell registered disposers the session is gone`);
     assert.equal((h.registry.terminals as Map<string, unknown>).has('s1'), false);
   });

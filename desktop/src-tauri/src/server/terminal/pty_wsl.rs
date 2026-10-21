@@ -205,7 +205,10 @@ impl Terminal for WslPtyTerminal {
     async fn write(&self, data: &[u8]) -> io::Result<usize> {
         let mut stdin_guard = self.stdin.lock().await;
         if let Some(ref mut stdin) = *stdin_guard {
-            stdin.write(data).await
+            // `write` on a pipe may accept only part of the buffer; the
+            // caller treats the call as "all of `data` delivered".
+            stdin.write_all(data).await?;
+            Ok(data.len())
         } else {
             Err(io::Error::new(io::ErrorKind::BrokenPipe, "stdin closed"))
         }

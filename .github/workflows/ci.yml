@@ -1,0 +1,150 @@
+name: CI
+
+# 在 main 的 push 和 PR 上跑测试与静态检查；只读，不产出安装包、不碰 Release。
+# Tests and static checks on pushes to main and on PRs. Read-only: no bundles, no releases.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同一分支 / PR 有新提交时取消旧的运行 / cancel superseded runs on the same ref
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # `npm test` 依赖 `node --experimental-strip-types`，需要 Node >= 22.6
+  # `npm test` relies on `node --experimental-strip-types`, which needs Node >= 22.6
+  NODE_VERSION: '22'
+  # 与 build-macos.yml / tauri.conf.json 的 minimumSystemVersion 保持一致
+  MACOSX_DEPLOYMENT_TARGET: '14.0'
+  CARGO_TERM_COLOR: always
+  # CI 不需要调试符号：编译、链接更快，缓存更小 / no debuginfo in CI: faster builds, smaller cache
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+
+jobs:
+  # PR 只改前端时跳过 Rust job；push 到 main 总是全跑（同时为 PR 预热 Rust 缓存）。
+  # Skip the Rust job on PRs that don't touch it; pushes to main always run it (and warm the cache).
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ github.event_name != 'pull_request' || steps.filter.outputs.rust == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'desktop/src-tauri/**'
+              - '.github/workflows/ci.yml'
+
+  frontend:
+    name: Frontend (test + tsc)
+    # 放在 macOS 上跑：shell hook 测试会调用系统的 `sh`，结果与本地 macOS 开发环境保持一致
+    # Runs on macOS so the shell-hook tests see the same `sh` as local development.
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - name: Web frontend build (tsc + vite)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Desktop frontend build (tsc + vite)
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run build
+
+      - name: Desktop frontend tests
+        working-directory: desktop
+        run: npm test
+
+  rust:
+    name: Rust (fmt + clippy + test)
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26 (same as build-macos.yml)
+        run: |
+          XCODE_26=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE_26" ]; then
+            sudo xcode-select -s "$XCODE_26"
+            echo "Selected: $XCODE_26"
+          fi
+          xcodebuild -version
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      # rust_embed 嵌入 frontend/dist/，tauri::generate_context! 需要 desktop/dist/
+      # rust_embed embeds frontend/dist/ and generate_context! needs desktop/dist/
+      - name: Build frontends for embedding
+        run: |
+          (cd frontend && npm ci && npm run build)
+          (cd desktop && npm ci && npm run build)
+
+      # 现有代码尚有少量未格式化处（部分在正被修改的 PTY/SSH 文件里），先只报告不拦截；
+      # 统一格式化后去掉 continue-on-error。
+      # Existing code has a few unformatted spots; report only until a formatting pass lands.
+      - name: cargo fmt --check
+        working-directory: desktop/src-tauri
+        continue-on-error: true
+        run: cargo fmt --all -- --check
+
+      # 先只报告不拦截：现有代码有 3 处 deny 级别的 clippy::never_loop（transfer.rs、
+      # dispatch/download.rs、pty_wsl.rs，行为无误，只是写法）和几十条 warning。
+      # 清理干净后去掉 continue-on-error，再考虑 -D warnings。
+      # Report-only for now: existing code trips 3 deny-level clippy::never_loop lints
+      # (behaviour is correct) plus dozens of warnings. Make it blocking once cleaned up.
+      - name: cargo clippy
+        working-directory: desktop/src-tauri
+        continue-on-error: true
+        run: cargo clippy --all-targets
+
+      - name: cargo test
+        working-directory: desktop/src-tauri
+        run: cargo test

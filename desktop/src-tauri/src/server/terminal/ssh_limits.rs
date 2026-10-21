@@ -15,6 +15,12 @@ pub(crate) const SSH_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const SSH_AUTH_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const SSH_CHANNEL_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const SSH_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
+/// SSH-level keepalive (OpenSSH `ServerAliveInterval` equivalent). Keeps NAT
+/// and firewall mappings alive while idle, and with [`SSH_KEEPALIVE_MAX`]
+/// unanswered probes (~90s) tears down a half-open connection instead of
+/// leaving the session silently dead.
+pub(crate) const SSH_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
+pub(crate) const SSH_KEEPALIVE_MAX: usize = 3;
 /// Authoritative wall-clock budget for creating an interactive SSH terminal.
 /// Individual stage limits above remain useful diagnostics, while this outer
 /// limit guarantees an HTTP caller cannot time out first and leave a session

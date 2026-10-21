@@ -44,6 +44,7 @@ import { sendToTerminal } from './terminal-transport';
 import { InlineCompletion } from './cmd-completion';
 import { globalCompletionIndex } from './cmd-completion-data';
 import { setupClickToMoveCursor } from './terminal-click-move';
+import { discardThumbnailFeed, flushThumbnail, thumbnailVersion } from './terminal-thumbnail-feed';
 import { registerWebglContextLossFallback, scheduleTerminalRendererRecovery } from './terminal-render-recovery';
 import {
   onTerminalSessionDisposed,
@@ -259,6 +260,31 @@ class TerminalRegistryClass {
     }));
   }
 
+  /** Last thumbnail capture per session (see captureThumbnail). */
+  private thumbnailCache = new Map<string, { key: string; version: number; url: string; confirmed: boolean }>();
+  /** Pending title scans, one per session (see scheduleShellTitleScan). */
+  private titleScanTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * Coalesce title scans: the scan reads up to 80 buffer lines, and running it
+   * for every output frame saturated the main thread under heavy output. It
+   * also ran before xterm had parsed the frame; a deferred scan sees it.
+   */
+  private scheduleShellTitleScan(mt: ManagedTerminal): void {
+    if (this.titleScanTimers.has(mt.id)) return;
+    this.titleScanTimers.set(mt.id, setTimeout(() => {
+      this.titleScanTimers.delete(mt.id);
+      if (mt.ended || mt.hasOscTitle || this.terminals.get(mt.id) !== mt) return;
+      this.updateShellTitle(mt);
+    }, 250));
+  }
+
+  private clearShellTitleScan(sessionId: string): void {
+    const timer = this.titleScanTimers.get(sessionId);
+    if (timer) clearTimeout(timer);
+    this.titleScanTimers.delete(sessionId);
+  }
+
   private updateShellTitle(mt: ManagedTerminal): void {
     const titlePattern = /(?:^|\s)(?:title|session|chat)\s*[:：]\s*(.+)$/i;
     const buffer = mt.terminal.buffer.active;
@@ -288,6 +314,17 @@ class TerminalRegistryClass {
   captureThumbnail(sessionId: string, width: number = 280, height: number = 160): string | null {
     const mt = this.terminals.get(sessionId);
     if (!mt || mt.ended || !mt.thumbnailTerminal) return null;
+
+    flushThumbnail(mt);
+    // Skip the PNG encode when nothing changed. A change is captured twice:
+    // xterm renders asynchronously, so the first capture after new output
+    // may still show the previous frame.
+    const key = `${width}x${height}:${this.settings?.theme ?? ''}`;
+    const version = thumbnailVersion(mt);
+    const cached = this.thumbnailCache.get(sessionId);
+    if (cached && cached.key === key && cached.version === version && cached.confirmed) {
+      return cached.url;
+    }
 
     try {
       mt.thumbnailTerminal.refresh(0, Math.max(0, mt.thumbnailTerminal.rows - 1));
@@ -322,6 +359,8 @@ class TerminalRegistryClass {
 
       if (dataUrl.length < 200) return null;
 
+      const confirmed = !!cached && cached.key === key && cached.version === version;
+      this.thumbnailCache.set(sessionId, { key, version, url: dataUrl, confirmed });
       return dataUrl;
     } catch {
       return null;
@@ -351,7 +390,8 @@ class TerminalRegistryClass {
       fontFamily: opts.fontFamily,
       fontWeight: opts.fontWeight as any,
       fontWeightBold: 'bold',
-      scrollback: 5000,
+      // Only the viewport is ever captured; a deep history just costs memory.
+      scrollback: 200,
       theme: opts.terminalTheme ? { ...opts.terminalTheme, background: '#00000000' } : undefined,
       allowTransparency: true,
     });
@@ -738,7 +778,7 @@ class TerminalRegistryClass {
     getSettings: () => this.settings,
     sendEncoding: (mt: ManagedTerminal, encoding: string) => this.sendEncoding(mt, encoding),
     getOutputListeners: (sessionId: string) => this.outputListeners.get(sessionId),
-    updateShellTitle: (mt: ManagedTerminal) => this.updateShellTitle(mt),
+    updateShellTitle: (mt: ManagedTerminal) => this.scheduleShellTitleScan(mt),
     setPongTime: (sessionId: string, time: number) => this.lastPongTime.set(sessionId, time),
     getPingTimestamp: (sessionId: string) => this.pingTimestamps.get(sessionId),
     deletePingTimestamp: (sessionId: string) => this.pingTimestamps.delete(sessionId),
@@ -1127,6 +1167,7 @@ class TerminalRegistryClass {
     if (mt.canvasAddon) mt.canvasAddon.dispose();
     if (mt.webglAddon) mt.webglAddon.dispose();
     mt._oscMarkerResolvers.clear();
+    discardThumbnailFeed(mt);
     mt.thumbnailTerminal?.dispose();
     mt.terminal.dispose();
     mt.thumbnailContainer.remove();
@@ -1139,6 +1180,8 @@ class TerminalRegistryClass {
     // timestamps and SSH dir probe.
     this.pingTimestamps.delete(sessionId);
     this.lastPongTime.delete(sessionId);
+    this.clearShellTitleScan(sessionId);
+    this.thumbnailCache.delete(sessionId);
     this.lastInputPingTime.delete(sessionId);
     clearSSHDirProbe(sessionId);
     this.notifySessionDisposed(sessionId);
@@ -1496,6 +1539,7 @@ class TerminalRegistryClass {
       mt.ws.close();
     }
     mt._oscMarkerResolvers.clear();
+    discardThumbnailFeed(mt);
     mt.thumbnailTerminal?.dispose();
     mt.terminal.dispose();
     mt.thumbnailContainer.remove();
@@ -1504,6 +1548,8 @@ class TerminalRegistryClass {
     this.resizeGeneration.delete(sessionId);
     this.pingTimestamps.delete(sessionId);
     this.lastPongTime.delete(sessionId);
+    this.clearShellTitleScan(sessionId);
+    this.thumbnailCache.delete(sessionId);
     this.lastInputPingTime.delete(sessionId);
     clearSSHDirProbe(sessionId);
     this.notifySessionDisposed(sessionId);

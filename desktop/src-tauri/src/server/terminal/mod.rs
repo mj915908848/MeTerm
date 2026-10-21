@@ -6,6 +6,8 @@
 #[cfg(unix)]
 pub mod hook_files;
 pub mod mouse_windows;
+#[cfg(any(unix, windows))]
+mod pty_input;
 #[cfg(unix)]
 pub mod pty_unix;
 #[cfg(windows)]

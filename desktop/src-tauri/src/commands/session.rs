@@ -148,8 +148,16 @@ pub struct ShellInfo {
     pub is_default: bool,
 }
 
+/// Async so the probing (on Windows, spawning each candidate shell with a 3s
+/// timeout) runs off the main thread instead of freezing the UI.
 #[tauri::command]
-pub fn list_available_shells() -> Vec<ShellInfo> {
+pub async fn list_available_shells() -> Vec<ShellInfo> {
+    tokio::task::spawn_blocking(list_available_shells_blocking)
+        .await
+        .unwrap_or_default()
+}
+
+fn list_available_shells_blocking() -> Vec<ShellInfo> {
     let mut shells = Vec::new();
 
     #[cfg(not(target_os = "windows"))]

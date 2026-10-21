@@ -3,6 +3,7 @@ import { isWindowsPlatform, isPipMode } from './app-state';
 import { sendToTerminal } from './terminal-transport';
 import { isMirrored, relayoutMirror } from './viewer-mirror';
 import type { ManagedTerminal } from './terminal-types';
+import { flushThumbnail, markThumbnailChanged } from './terminal-thumbnail-feed';
 
 export function isVisible(mt: ManagedTerminal): boolean {
   if (mt.ended || !mt.container.classList.contains('active')) {
@@ -164,6 +165,9 @@ export function doResizeInternal(
   }
 
   if (mt.thumbnailTerminal && (mt.thumbnailTerminal.cols !== cols || mt.thumbnailTerminal.rows !== rows)) {
+    // Batched output was produced at the old size; write it first.
+    flushThumbnail(mt);
+    markThumbnailChanged(mt);
     mt.thumbnailTerminal.resize(cols, rows);
   }
 

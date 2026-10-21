@@ -176,7 +176,7 @@ fn ttl_close_is_atomic_with_connected_client_and_cannot_be_resurrected() {
 #[test]
 fn failed_ipc_downstream_immediately_reconciles_session_state() {
     let session = test_session("dead-ipc");
-    let channel = tauri::ipc::Channel::<Vec<u8>>::new(|_| {
+    let channel = tauri::ipc::Channel::<tauri::ipc::InvokeResponseBody>::new(|_| {
         Err(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "test channel closed").into())
     });
     let client = Arc::new(super::client::Client::new_ipc(
@@ -205,7 +205,7 @@ fn failed_ipc_downstream_immediately_reconciles_session_state() {
 #[test]
 fn native_ipc_reconnect_keeps_owner_id_and_rejects_stale_generation() {
     let session = test_session("ipc-owner-reconnect");
-    let old_channel = tauri::ipc::Channel::<Vec<u8>>::new(|_| Ok(()));
+    let old_channel = tauri::ipc::Channel::<tauri::ipc::InvokeResponseBody>::new(|_| Ok(()));
     let owner = Arc::new(Client::new_ipc(
         "desktop-owner".to_string(),
         "ipc://local".to_string(),
@@ -215,7 +215,7 @@ fn native_ipc_reconnect_keeps_owner_id_and_rejects_stale_generation() {
     session.add_client(owner.clone()).unwrap();
     let old_gen = owner.conn_gen();
 
-    let replacement_channel = tauri::ipc::Channel::<Vec<u8>>::new(|_| Ok(()));
+    let replacement_channel = tauri::ipc::Channel::<tauri::ipc::InvokeResponseBody>::new(|_| Ok(()));
     let (replacement, new_gen) = session
         .reconnect_ipc_client("desktop-owner", replacement_channel)
         .unwrap();
@@ -240,7 +240,7 @@ fn native_ipc_reconnect_cannot_replace_a_websocket_client() {
     );
     session.add_client(remote.clone()).unwrap();
     let generation = remote.conn_gen();
-    let channel = tauri::ipc::Channel::<Vec<u8>>::new(|_| Ok(()));
+    let channel = tauri::ipc::Channel::<tauri::ipc::InvokeResponseBody>::new(|_| Ok(()));
 
     assert_eq!(
         session
@@ -894,4 +894,27 @@ async fn stale_websocket_generation_cannot_dispatch_master_release() {
     )
     .await;
     assert_eq!(session.master(), "desktop");
+}
+
+/// IPC output must reach the webview as raw bytes, not as a JSON number
+/// array (`Channel<Vec<u8>>` serialized each byte as `27,91,...`).
+#[test]
+fn ipc_downstream_sends_raw_bytes() {
+    let received = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = received.clone();
+    let channel = tauri::ipc::Channel::<tauri::ipc::InvokeResponseBody>::new(move |body| {
+        match body {
+            tauri::ipc::InvokeResponseBody::Raw(bytes) => sink.lock().unwrap().push(bytes),
+            other => panic!("expected raw bytes, got {other:?}"),
+        }
+        Ok(())
+    });
+    let client = super::client::Client::new_ipc(
+        "ipc-raw".to_string(),
+        "ipc://local".to_string(),
+        ClientRole::Viewer,
+        channel,
+    );
+    assert!(client.send(vec![0x01, 0x1b, b'[', b'A']));
+    assert_eq!(*received.lock().unwrap(), vec![vec![0x01, 0x1b, b'[', b'A']]);
 }
