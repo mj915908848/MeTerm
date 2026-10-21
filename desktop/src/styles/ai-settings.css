@@ -787,6 +787,23 @@
   word-break: break-all;
 }
 
+.ai-confirm-body {
+  margin: 4px 0 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  font-size: 12px;
+  font-family: var(--mono-font);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+[data-theme="light"] .ai-confirm-body {
+  background: rgba(0, 0, 0, 0.05);
+}
+
 .ai-confirm-buttons {
   display: flex;
   gap: 6px;
@@ -820,12 +837,16 @@
 
 .ai-confirm-editor {
   display: flex;
+  align-items: flex-start;
   gap: 6px;
   margin-bottom: 6px;
 }
 .ai-confirm-edit-input {
   flex: 1;
+  min-width: 0;
   padding: 3px 8px;
+  resize: vertical;
+  line-height: 1.4;
   background: rgba(255, 255, 255, 0.06);
   border: none;
   border-radius: 8px;
