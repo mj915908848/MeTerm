@@ -24,6 +24,7 @@ import { setSSHDirProbe } from './terminal-file-link';
 import { filterPostResizeNewlines } from './terminal-resize';
 import { applyMirror, clearMirror, enterMirror, exitMirror, isMirrored } from './viewer-mirror';
 import { IpcTransport, RemoteBrokerTransport } from './terminal-transport';
+import { feedThumbnail } from './terminal-thumbnail-feed';
 import type { AppSettings } from './themes';
 import type { ManagedTerminal } from './terminal-types';
 
@@ -82,7 +83,7 @@ export function handleIncomingMessage(
     }
 
     mt.terminal.write(outData);
-    mt.thumbnailTerminal?.write(outData);
+    feedThumbnail(mt, outData);
 
     if (!mt.hasOscTitle) {
       callbacks.updateShellTitle(mt);
