@@ -2065,3 +2065,43 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
 [data-theme="neo-brutalism-rounded"] *::after {
   border-radius: 5px !important;
 }
+
+/* Settings sidebar: plain list items, only the selected one is boxed. */
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .settings-nav-item {
+  border: 2px solid transparent !important;
+  box-shadow: none !important;
+}
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .settings-nav-item:not(.active) {
+  background: transparent !important;
+}
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .settings-card > * + * {
+  border-top: 2px solid var(--nb-border, #000);
+}
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .settings-nav-item.active {
+  border-color: var(--nb-border, #000) !important;
+  box-shadow: 2px 2px 0 var(--nb-shadow, #000) !important;
+}
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .settings-card {
+  border: 2px solid var(--nb-border, #000);
+  box-shadow: 3px 3px 0 var(--nb-shadow, #000);
+  background: var(--nb-card-bg, #fff);
+}
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .settings-card input[type="checkbox"] {
+  width: 36px !important;
+  height: 20px !important;
+  border: 2px solid var(--nb-border, #000) !important;
+  border-radius: 10px !important;
+  background: var(--nb-surface-alt, #F0F0E0) !important;
+  box-shadow: 2px 2px 0 var(--nb-shadow, #000) !important;
+}
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .settings-card input[type="checkbox"]::after {
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  background: var(--nb-border, #000);
+  box-shadow: none;
+}
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .settings-card input[type="checkbox"]:checked {
+  background: var(--nb-accent, #E94560) !important;
+}

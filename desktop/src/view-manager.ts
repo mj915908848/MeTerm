@@ -311,9 +311,9 @@ export async function openSettings(tab?: string): Promise<void> {
       label: 'settings',
       url: settingsUrl,
       title: t('settings'),
-      width: 480,
-      height: 580,
-      resizable: false,
+      width: 720,
+      height: 520,
+      resizable: true,
     });
     // Show after a brief delay for rendering
     const win = await WebviewWindow.getByLabel('settings');

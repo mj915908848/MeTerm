@@ -8,19 +8,20 @@ import { readTextFile } from '@tauri-apps/plugin-fs';
 import { exportConnectionsToFile, formatSSHExportResult, importConnectionsFromJSON } from './ssh';
 import { createSettingsSelect } from './custom-select';
 import { escapeHtml } from './status-bar';
+import { createGroup, createPage, switchRow, SETTINGS_ICONS, type SettingsPage } from './settings-layout';
 // emit removed — palette now syncs through update() → saveSettings → settings-changed
 
-export function createGeneralTab(
+/**
+ * Build every non-AI settings page. Each control is created once below with
+ * its handlers; the end of this function only decides where the rows go.
+ */
+export function createGeneralPages(
   current: AppSettings,
   update: (patch: Partial<AppSettings>) => void,
   onLanguageChange: () => void,
-): HTMLDivElement {
-  const tabGeneral = document.createElement('div');
+): SettingsPage[] {
 
-  // --- Language + Color Scheme (same row) ---
-  const langColorRow = document.createElement('div');
-  langColorRow.className = 'settings-row';
-
+  // --- Language + Color Scheme ---
   const langSection = document.createElement('div');
   langSection.className = 'settings-section';
   langSection.innerHTML = `<label>${t('language')}</label>`;
@@ -34,7 +35,6 @@ export function createGeneralTab(
     update({ language });
     onLanguageChange();
   };
-  langColorRow.appendChild(langSection);
 
   const colorSchemeSection = document.createElement('div');
   colorSchemeSection.className = 'settings-section';
@@ -49,8 +49,6 @@ export function createGeneralTab(
     { value: 'neo-brutalism-rounded', label: t('colorSchemeNeoBrutalismRounded'), selected: current.colorScheme === 'neo-brutalism-rounded' },
   ]);
   colorSchemeSection.appendChild(colorSchemeSelect.el);
-  langColorRow.appendChild(colorSchemeSection);
-  tabGeneral.appendChild(langColorRow);
 
   // --- Neo-Brutalism Palette (visible only when NB theme is active) ---
   const isNB = (s: string) => s === 'neo-brutalism' || s === 'neo-brutalism-rounded';
@@ -202,7 +200,6 @@ export function createGeneralTab(
   }
 
   nbSection.append(grid, presetRow, resetBtn);
-  tabGeneral.appendChild(nbSection);
 
   colorSchemeSelect.onchange = () => {
     const scheme = colorSchemeSelect.value as ColorScheme;
@@ -221,7 +218,6 @@ export function createGeneralTab(
   themeSelect.onchange = () => {
     update({ theme: themeSelect.value });
   };
-  tabGeneral.appendChild(themeSection);
 
   // --- Background Image ---
   const bgImageSection = document.createElement('div');
@@ -270,7 +266,6 @@ export function createGeneralTab(
     current.backgroundImage = '';
     update({ backgroundImage: '' });
   };
-  tabGeneral.appendChild(bgImageSection);
 
   // --- Opacity ---
   const opacitySection = document.createElement('div');
@@ -286,7 +281,6 @@ export function createGeneralTab(
     opacityValue.textContent = `${opacity}%`;
     update({ opacity });
   };
-  tabGeneral.appendChild(opacitySection);
 
   // --- AI Bar Opacity ---
   const aiBarOpacitySection = document.createElement('div');
@@ -302,7 +296,6 @@ export function createGeneralTab(
     aiBarOpacityValue.textContent = `${val}%`;
     update({ aiBarOpacity: val });
   };
-  tabGeneral.appendChild(aiBarOpacitySection);
 
   // --- Vibrancy (Background Blur) Toggle ---
   const vibrancySection = document.createElement('div');
@@ -318,12 +311,6 @@ export function createGeneralTab(
   vibrancyToggle.onchange = () => {
     update({ enableVibrancy: vibrancyToggle.checked });
   };
-  tabGeneral.appendChild(vibrancySection);
-
-  // --- Divider: Appearance / Terminal ---
-  const divider1 = document.createElement('hr');
-  divider1.className = 'settings-divider';
-  tabGeneral.appendChild(divider1);
 
   // --- Font Size ---
   const fontSection = document.createElement('div');
@@ -339,7 +326,6 @@ export function createGeneralTab(
     fontValue.textContent = `${fontSize}px`;
     update({ fontSize });
   };
-  tabGeneral.appendChild(fontSection);
 
   // --- Font Family ---
   const fontFamilySection = document.createElement('div');
@@ -356,7 +342,6 @@ export function createGeneralTab(
     updateFontToggles();
     update({ fontFamily: fontFamilySelect.value });
   };
-  tabGeneral.appendChild(fontFamilySection);
 
   // --- UI Font (interface font — independent of the terminal font) ---
   const uiFontSection = document.createElement('div');
@@ -373,7 +358,6 @@ export function createGeneralTab(
     current.uiFontFamily = uiFontSelect.value;
     update({ uiFontFamily: uiFontSelect.value });
   };
-  tabGeneral.appendChild(uiFontSection);
 
   // --- CJK Font Family ---
   const cjkFontSection = document.createElement('div');
@@ -393,7 +377,6 @@ export function createGeneralTab(
   cjkFontSelect.onchange = () => {
     update({ cjkFontFamily: cjkFontSelect.value });
   };
-  tabGeneral.appendChild(cjkFontSection);
 
   // --- Font Weight ---
   const fontWeightSection = document.createElement('div');
@@ -410,7 +393,6 @@ export function createGeneralTab(
   ]);
   fontWeightSection.appendChild(fontWeightSelect.el);
   fontWeightSelect.onchange = () => { update({ fontWeight: Number(fontWeightSelect.value) }); };
-  tabGeneral.appendChild(fontWeightSection);
 
   // --- Font Options (Nerd Font / Ligatures) ---
   const fontOptsSection = document.createElement('div');
@@ -429,7 +411,6 @@ export function createGeneralTab(
   nerdToggle.onchange = () => { update({ enableNerdFont: nerdToggle.checked }); };
   ligToggle.onchange = () => { update({ enableLigatures: ligToggle.checked }); };
   sharpnessToggle.onchange = () => { update({ fontSharpness: sharpnessToggle.checked }); };
-  tabGeneral.appendChild(fontOptsSection);
 
   // --- Encoding ---
   const encodingSection = document.createElement('div');
@@ -448,7 +429,6 @@ export function createGeneralTab(
   encodingSelect.onchange = () => {
     update({ encoding: encodingSelect.value });
   };
-  tabGeneral.appendChild(encodingSection);
 
   // --- Default Shell ---
   const shellSection = document.createElement('div');
@@ -458,7 +438,6 @@ export function createGeneralTab(
     { value: '', label: t('systemDefault'), selected: !current.defaultShell },
   ]);
   shellSection.appendChild(shellSelect.el);
-  tabGeneral.appendChild(shellSection);
 
   // Populate shell list asynchronously
   void invoke<{ path: string; name: string; is_default: boolean }[]>('list_available_shells').then((shells) => {
@@ -520,12 +499,6 @@ export function createGeneralTab(
       ctxMenuToggle.checked = !ctxMenuToggle.checked; // revert on failure
     }
   };
-  tabGeneral.appendChild(ctxMenuSection);
-
-  // --- Divider: Terminal / Other ---
-  const divider2 = document.createElement('hr');
-  divider2.className = 'settings-divider';
-  tabGeneral.appendChild(divider2);
 
   // --- File Manager Font Size ---
   const fileManagerFontSection = document.createElement('div');
@@ -541,7 +514,6 @@ export function createGeneralTab(
     fmFontValue.textContent = `${fileManagerFontSize}px`;
     update({ fileManagerFontSize });
   };
-  tabGeneral.appendChild(fileManagerFontSection);
 
   // --- File Manager Mode (drawer / sidebar) ---
   const fmModeSection = document.createElement('div');
@@ -556,7 +528,6 @@ export function createGeneralTab(
     const fileManagerMode = fmModeSelect.value as 'drawer' | 'sidebar';
     update({ fileManagerMode });
   };
-  tabGeneral.appendChild(fmModeSection);
 
   // --- Thumbnail Toggle + Preview Refresh Rate ---
   const thumbSection = document.createElement('div');
@@ -566,7 +537,6 @@ export function createGeneralTab(
   thumbGroup.innerHTML = `<label><input type="checkbox" id="enable-thumbnail-toggle" ${current.enableThumbnail ? 'checked' : ''}> ${t('enableThumbnail')}</label>`;
   thumbSection.appendChild(thumbGroup);
   const thumbCheckbox = thumbGroup.querySelector('#enable-thumbnail-toggle') as HTMLInputElement;
-  tabGeneral.appendChild(thumbSection);
 
   const rateSection = document.createElement('div');
   rateSection.className = 'settings-section';
@@ -590,7 +560,6 @@ export function createGeneralTab(
     update({ enableThumbnail: thumbCheckbox.checked });
     updateRateVisibility();
   });
-  tabGeneral.appendChild(rateSection);
 
   // --- SSH tab title ---
   const titleSection = document.createElement('div');
@@ -605,7 +574,6 @@ export function createGeneralTab(
   titleSelect.el.setAttribute('aria-label', t('sshTabTitleMode'));
   titleSection.appendChild(titleSelect.el);
   titleSelect.onchange = () => update({ sshTabTitleMode: titleSelect.value as AppSettings['sshTabTitleMode'] });
-  tabGeneral.appendChild(titleSection);
 
   // --- Remember Options ---
   const rememberSection = document.createElement('div');
@@ -640,7 +608,6 @@ export function createGeneralTab(
     autoRestoreAiToggle.disabled = !autoOpenAiToggle.checked;
   };
   autoRestoreAiToggle.onchange = () => update({ autoRestoreAiHistoryOnConnect: autoRestoreAiToggle.checked });
-  tabGeneral.appendChild(rememberSection);
 
   // --- PiP Scale ---
   const pipScaleSection = document.createElement('div');
@@ -656,7 +623,6 @@ export function createGeneralTab(
     pipScaleValue.textContent = `${val}%`;
     update({ pipScale: val });
   };
-  tabGeneral.appendChild(pipScaleSection);
 
   // --- PiP Scale by Screen ---
   const pipScreenSection = document.createElement('div');
@@ -669,7 +635,6 @@ export function createGeneralTab(
   pipScreenCheckbox.onchange = () => {
     update({ pipScaleByScreen: pipScreenCheckbox.checked });
   };
-  tabGeneral.appendChild(pipScreenSection);
 
   // SSH Connections import/export
   const sshIoSection = document.createElement('div');
@@ -731,7 +696,42 @@ export function createGeneralTab(
   sshIoBtnRow.appendChild(importBtn);
   sshIoSection.appendChild(sshIoBtnRow);
   sshIoSection.appendChild(sshIoStatus);
-  tabGeneral.appendChild(sshIoSection);
 
-  return tabGeneral;
+  nbSection.classList.add('settings-section-block');
+  sshIoSection.classList.add('settings-section-io');
+  const check = (root: HTMLElement, id: string) => switchRow(root.querySelector<HTMLInputElement>('#' + id));
+
+  const page = (key: string, label: string, icon: string, groups: HTMLElement[]): SettingsPage =>
+    ({ key, label, icon, el: createPage(label, groups), searchable: true });
+
+  return [
+    page('appearance', t('settingsPageAppearance'), SETTINGS_ICONS.appearance, [
+      createGroup(t('settingsGroupTheme'), [langSection, colorSchemeSection, nbSection, themeSection]),
+      createGroup(t('settingsGroupBackground'), [bgImageSection, opacitySection, aiBarOpacitySection, vibrancySection]),
+      createGroup(t('settingsGroupInterface'), [uiFontSection]),
+    ]),
+    page('terminal', t('settingsPageTerminal'), SETTINGS_ICONS.terminal, [
+      createGroup(t('settingsGroupFont'), [
+        fontSection, fontFamilySection, cjkFontSection, fontWeightSection,
+        check(fontOptsGroup, 'nerd-font-toggle'), check(fontOptsGroup, 'ligatures-toggle'), check(fontOptsGroup, 'sharpness-toggle'),
+      ]),
+      createGroup(t('settingsGroupShell'), [shellSection, encodingSection]),
+      createGroup(t('settingsGroupTerminalBehavior'), [
+        check(rememberGroup, 'terminal-notifications-toggle'), check(rememberGroup, 'file-link-confirm-toggle'),
+      ]),
+    ]),
+    page('files', t('settingsPageFileManager'), SETTINGS_ICONS.files, [
+      createGroup(null, [fmModeSection, fileManagerFontSection]),
+    ]),
+    page('window', t('settingsPageTabsWindows'), SETTINGS_ICONS.window, [
+      createGroup(t('settingsGroupTabs'), [titleSection, check(thumbGroup, 'enable-thumbnail-toggle'), rateSection, check(rememberGroup, 'auto-new-session-toggle')]),
+      createGroup(t('settingsGroupWindow'), [check(rememberGroup, 'remember-window-size'), check(rememberGroup, 'remember-drawer-layout')]),
+      createGroup(t('settingsGroupPip'), [pipScaleSection, pipScreenSection]),
+      createGroup(t('settingsGroupSystem'), [ctxMenuSection]),
+    ]),
+    page('connections', t('settingsPageConnections'), SETTINGS_ICONS.connections, [
+      createGroup(t('settingsGroupOnConnect'), [check(rememberGroup, 'auto-open-ai-toggle'), check(rememberGroup, 'auto-restore-ai-history-toggle')]),
+      createGroup(null, [sshIoSection]),
+    ]),
+  ];
 }
