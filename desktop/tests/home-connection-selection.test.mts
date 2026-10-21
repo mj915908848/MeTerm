@@ -84,6 +84,7 @@ function boot(options: { confirm?: boolean } = {}) {
     deleted: [] as string[][],
     moved: [] as { keys: string[]; group: string | null }[],
     confirms: 0,
+    menu: [] as { label: string; onPick: () => void; danger?: boolean }[],
     start: new El(),
     root: null as unknown as El,
   };
@@ -102,6 +103,7 @@ function boot(options: { confirm?: boolean } = {}) {
       handleDeleteConnections: async (keys: string[]) => { h.deleted.push([...keys]); },
       showGroupContextMenu: () => {},
       showGroupModal: () => {},
+      showActionMenu: (_a: El, entries: any[]) => { h.menu = entries; },
       showMoveMenu: (_a: El, _g: string[], onPick: (g: string | null) => void) => { onPick('prod'); },
     },
     './connection-groups': {
@@ -114,6 +116,7 @@ function boot(options: { confirm?: boolean } = {}) {
       sshKey: (name: string) => `ssh:${name}`,
       visibleGroupName: (s: string | undefined) => s ?? null,
     },
+    './icons': { icon: (name: string) => `<svg data-icon="${name}"></svg>` },
     './connection-drag': { attachConnectionDrag: () => () => {} },
     './connection-selection': selection,
     './ssh': {
@@ -173,6 +176,11 @@ test('a plain click selects and shows the connection; it does not connect', asyn
 
   buttonIn(detail(h), 'sshConnectBtn').onclick!();
   assert.deepEqual(h.connected, ['ssh:web-01'], 'the view\'s connect button opens it');
+
+  // Duplicate and delete sit behind "⋯".
+  findAll(detail(h), 'hcm-icon-btn').find((b) => b.title === '更多')!.onclick!();
+  h.menu.find((m) => m.danger)!.onPick();
+  assert.deepEqual(h.deleted, [['ssh:web-01']]);
 });
 
 test('"edit" swaps in the form, and cancel or save goes back to the view', async () => {
@@ -247,9 +255,10 @@ test('unsaved edits are not thrown away without asking', async () => {
   assert.equal(h.forms.length, 1);
 });
 
-test('"+ SSH" opens an empty form in the right pane, and saving selects the new connection', async () => {
+test('"+" → new SSH connection opens an empty form in the right pane, and saving selects the new connection', async () => {
   const { h } = boot();
-  buttonIn(h.root, '+ SSH').onclick!();
+  findAll(h.root, 'hcm-icon-btn').find((b) => b.title === '新建')!.onclick!();
+  h.menu.find((m) => m.label === '新建 SSH 连接')!.onPick();
   await flush();
   assert.equal(h.forms.length, 1);
   assert.equal(h.forms[0].prefill, undefined);

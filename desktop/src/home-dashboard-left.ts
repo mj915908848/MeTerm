@@ -196,6 +196,32 @@ export function showMoveMenu(anchorEl: HTMLElement, groups: string[], onPick: (g
   autoCloseMenu(menu);
 }
 
+/** A short menu of actions under a button, such as the manager's "+" and "⋯". */
+export function showActionMenu(
+  anchorEl: HTMLElement,
+  entries: { label: string; onPick: () => void; danger?: boolean }[],
+): void {
+  removeContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'home-card-menu';
+  menu.setAttribute('role', 'menu');
+  for (const entry of entries) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `home-card-menu-item${entry.danger ? ' danger' : ''}`;
+    item.setAttribute('role', 'menuitem');
+    item.textContent = entry.label;
+    item.onclick = () => { menu.remove(); entry.onPick(); };
+    menu.appendChild(item);
+  }
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.left = `${rect.left}px`;
+  menu.style.top = `${rect.bottom + 4}px`;
+  document.body.appendChild(menu);
+  clampMenu(menu);
+  autoCloseMenu(menu);
+}
+
 // ─── Asset history row (JumpServer) ───
 
 export function createAssetHistoryRow(entry: JSAssetHistoryEntry, config: JumpServerConfig): HTMLDivElement {
