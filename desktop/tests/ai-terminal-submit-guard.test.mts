@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { classifyTerminalInput } from '../src/ai-terminal-submit.ts';
-import { decideTerminalSubmitPermission, DEFAULT_PERMISSION_RULES } from '../src/ai-permission-rules.ts';
+import {
+  commandStartVariants,
+  decidePromptAnswerPermission,
+  decideTerminalSubmitPermission,
+  DEFAULT_PERMISSION_RULES,
+} from '../src/ai-permission-rules.ts';
 
 const commandHandler = {
   requiresConfirm: (args: { command: string }) => /\brm\s+-|\bsudo\b/.test(args.command),
@@ -55,4 +60,31 @@ test('bypass mode and stricter base decisions are left untouched', () => {
   const { submit } = classifyTerminalInput('press_keys', { keys: 'Enter' }, null);
   assert.deepEqual(decideTerminalSubmitPermission({ kind: 'allow' }, submit, undefined, commandHandler, 'bypass', []), { kind: 'allow' });
   assert.deepEqual(decideTerminalSubmitPermission({ kind: 'ask' }, submit, undefined, commandHandler, 'acceptAll', []), { kind: 'ask' });
+});
+
+test('a line read back with the shell prompt in front is still matched by anchored rules', () => {
+  // The prompt hook fires before PS1 is drawn, so the line starts with the prompt.
+  assert.equal(decide('press_keys', { keys: 'Enter' }, 'mj@mini MeTerm % git reset --hard', 'acceptAll').kind, 'deny');
+  assert.equal(decide('press_keys', { keys: 'Enter' }, 'user@host:~$ git push origin main --force', 'acceptAll').kind, 'deny');
+  assert.deepEqual(decide('press_keys', { keys: 'Enter' }, '❯ sudo id'), { kind: 'ask' });
+  assert.deepEqual(decide('press_keys', { keys: 'Enter' }, 'mj@mini MeTerm % git status'), { kind: 'allow' });
+  assert.deepEqual(decide('type_text', { text: 'git reset --hard\n' }, '[mj@mini ~]$ ', 'acceptAll').kind, 'deny');
+});
+
+test('a line with more words than can be checked one by one asks', () => {
+  const line = Array.from({ length: 80 }, (_, i) => `w${i}`).join(' ');
+  assert.equal(commandStartVariants(line), null);
+  assert.deepEqual(decide('press_keys', { keys: 'Enter' }, line), { kind: 'ask' });
+  assert.deepEqual(commandStartVariants('a  b'), ['a  b', 'b']);
+});
+
+test('an answer to a program question asks only when it looks like a dangerous command', () => {
+  const answer = (text: string, mode: any = 'acceptSafe') => decidePromptAnswerPermission(
+    { kind: 'allow' }, classifyTerminalInput('type_text', { text }, '').submit, commandHandler, mode);
+  assert.deepEqual(answer('y\r'), { kind: 'allow' });
+  assert.deepEqual(answer('rm -rf ~'), { kind: 'allow' }); // not submitted
+  assert.deepEqual(answer('sudo rm -r /tmp/x\n'), { kind: 'ask' });
+  assert.deepEqual(answer('rm -r build\n', 'acceptAll'), { kind: 'allow' });
+  assert.deepEqual(answer('rm -rf ~\n', 'acceptAll'), { kind: 'ask' });
+  assert.deepEqual(decidePromptAnswerPermission({ kind: 'ask' }, { kind: 'commands', lines: ['ls'] }, commandHandler, 'ask'), { kind: 'ask' });
 });

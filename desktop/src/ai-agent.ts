@@ -30,7 +30,7 @@ import {
   classifyError, calculateRetryDelay, RETRY_CONFIGS,
 } from './ai-agent-errors';
 import {
-  trimHistory, compressContext, microCompact, shouldAutoCompact,
+  trimHistory, compressContext, microCompact, shouldAutoCompact, estimateTextTokens,
 } from './ai-agent-history';
 import { buildRestoredMessages } from './ai-agent-restore';
 import type { ConvEntry } from './ai-capsule-types';
@@ -51,11 +51,14 @@ import {
   trustLevelToMode,
   mergePermissionRules,
   decideTerminalSubmitPermission,
+  decidePromptAnswerPermission,
   type PermissionDecision,
   type PermissionMode,
   type PermissionRule,
 } from './ai-permission-rules';
 import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit';
+import { outputTruncatedNotice } from './ai-tool-i18n';
+import { parseToolArguments } from './ai-provider-wire';
 import { readShellInputState } from './ai-tools-command';
 
 // Re-exports for backward compatibility
@@ -93,7 +96,14 @@ function checkTerminalInput(
   const sessionId = terminalSessionFor(context, args);
   if (!sessionId) return none;
   const state = readShellInputState(sessionId);
-  if (state.kind !== 'shell') return none;
+  if (state.kind === 'tui') return none;
+  if (state.kind === 'prompt') {
+    // The answer goes to the program, and only a risky-looking one is
+    // escalated; show it as a submitted line only in that case.
+    const { submit } = classifyTerminalInput(toolName, args, '');
+    const perm = decidePromptAnswerPermission(base, submit, commandHandler, mode);
+    return perm === base ? none : { perm, submit };
+  }
   const { submit } = classifyTerminalInput(toolName, args, state.line);
   return {
     perm: decideTerminalSubmitPermission(base, submit, args.pane, commandHandler, mode, rules, context),
@@ -288,6 +298,8 @@ export class ToolAgent {
   private messages: ChatMessage[] = [];
   private abortController: AbortController | null = null;
   private compactController: AbortController | null = null;
+  /** Estimated size of the last system prompt sent, for the compaction threshold. */
+  private lastSystemPromptTokens = 0;
   private aborted = false;
   private toolRegistry: ToolRegistry;
   /** Once set to false (e.g. after a 400 from a non-tool model),
@@ -698,6 +710,10 @@ export class ToolAgent {
       }
     }
 
+    // Sent on every call besides the history, so it counts against the
+    // compaction threshold too.
+    const toolSpecTokens = toolSpecs.length > 0 ? estimateTextTokens(JSON.stringify(toolSpecs)) : 0;
+
     let iteration = 0;
     let consecutiveErrors = 0;
     let llmRetryCount = 0;
@@ -745,6 +761,7 @@ export class ToolAgent {
           this.messages,
           historyBudgetTokens,
           settings.aiMaxTokens,
+          toolSpecTokens + this.lastSystemPromptTokens,
         )
       ) {
         await hooks.emitPreCompact({
@@ -839,8 +856,10 @@ export class ToolAgent {
         contextLines,
       });
 
+      this.lastSystemPromptTokens = estimateTextTokens(systemPrompt.text);
+
       const fullMessages: ChatMessage[] = [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: systemPrompt.text, stablePrefixChars: systemPrompt.stablePrefixChars },
         ...this.messages,
       ];
 
@@ -859,6 +878,10 @@ export class ToolAgent {
 
         // Reset retry counter on success
         llmRetryCount = 0;
+
+        if (response.truncated && !this.aborted) {
+          callbacks.onDegraded?.(outputTruncatedNotice());
+        }
 
         if (this.aborted) {
           this.abortController = null;
@@ -957,12 +980,21 @@ export class ToolAgent {
             continue;
           }
 
-          let args: Record<string, unknown> = {};
-          try {
-            args = JSON.parse(toolCall.function.arguments);
-          } catch {
-            args = {};
+          const parsedArgs = parseToolArguments(toolCall.function.arguments);
+          if (!parsedArgs.ok) {
+            // Running a call with made-up empty arguments hides the real
+            // problem (often a reply cut off by the token limit) from
+            // the model; tell it instead.
+            callbacks.onToolCall?.(toolCall.function.name, {});
+            decisions.set(toolCall.id, {
+              kind: 'reject',
+              message: `${parsedArgs.error} The call was not run.${response.truncated
+                ? ' The reply hit the output-token limit, so the arguments were cut off; split the work into smaller steps.'
+                : ' Call the tool again with complete, valid JSON arguments.'}`,
+            });
+            continue;
           }
+          let args: Record<string, unknown> = parsedArgs.args;
 
           // PreToolUse hook (in-process) — may deny or mutate args.
           const hookResult = await hooks.emitPreToolUse({
@@ -1480,7 +1512,7 @@ export class ToolAgent {
     tools: ToolSpec[] | undefined,
     callbacks: AgentCallbacks,
     signal: AbortSignal,
-  ): Promise<{ text: string; toolCalls?: ToolCall[]; reasoning?: string }> {
+  ): Promise<{ text: string; toolCalls?: ToolCall[]; reasoning?: string; truncated?: boolean }> {
     return abortableOperation(signal, (resolve, reject) => {
       let settled = false;
 
@@ -1494,10 +1526,10 @@ export class ToolAgent {
         onToolCall: () => {
           // Individual tool-call notifications are handled after onComplete
         },
-        onComplete: (fullText, toolCalls, reasoning) => {
+        onComplete: (fullText, toolCalls, reasoning, info) => {
           if (settled) return;
           settled = true;
-          resolve({ text: fullText, toolCalls: toolCalls ?? undefined, reasoning });
+          resolve({ text: fullText, toolCalls: toolCalls ?? undefined, reasoning, truncated: info?.truncated });
         },
         onError: (error) => {
           if (settled) return;

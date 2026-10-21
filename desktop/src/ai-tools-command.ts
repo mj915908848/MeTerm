@@ -398,7 +398,7 @@ export function createRunCommandTool(): ToolHandler {
           command: { type: 'string', description: 'The shell command to execute (single command)' },
           timeout: {
             type: 'number',
-            description: 'Timeout in seconds to wait for output (default: 30)',
+            description: 'Timeout in seconds to wait for output (default: 30, max: 1800)',
             default: 30,
           },
           pane: PANE_PARAM_SCHEMA,
@@ -420,7 +420,7 @@ export function createRunCommandTool(): ToolHandler {
 
     async execute(args, ctx): Promise<string> {
       const cmd = args.command as string;
-      const timeout = (args.timeout as number) || 30;
+      const timeout = clampCommandTimeout(args.timeout);
 
       const resolved = resolvePaneTarget(ctx, args.pane);
       if (!resolved.ok) return `Error: ${resolved.error}`;
@@ -432,10 +432,15 @@ export function createRunCommandTool(): ToolHandler {
         return `${paneHeaderFor(ctx, pane)}Error: terminal connection lost`;
       }
 
+      // Stopped before the command was sent: do not send it.
+      if (ctx.abortSignal?.aborted) {
+        return `${paneHeaderFor(ctx, pane)}[status: aborted]\n${buildNextStepHint('aborted')}`;
+      }
+
       const {
         output: raw, exitCode, cwd, status, detectorLine, promptInfo,
       } = await executeAgentCommand(
-        pane.sessionId, cmd, pane.shellType, timeout,
+        pane.sessionId, cmd, pane.shellType, timeout, ctx.abortSignal,
       );
       // executeAgentCommand already stripped ANSI + command echo + trailing
       // prompt lines via cleanOutput() — we only need size-limit truncation.
@@ -493,6 +498,17 @@ export function createRunCommandTool(): ToolHandler {
       return `${panePrefix}${header}${promptInfoLine}\n${body}${preWaitNote}`;
     },
   };
+}
+
+const DEFAULT_COMMAND_TIMEOUT_SEC = 30;
+const MAX_COMMAND_TIMEOUT_SEC = 1800;
+
+/** The model picks the wait; keep it a positive, bounded number of seconds. */
+export function clampCommandTimeout(raw: unknown): number {
+  const value = typeof raw === 'number' && Number.isFinite(raw) && raw > 0
+    ? raw
+    : DEFAULT_COMMAND_TIMEOUT_SEC;
+  return Math.min(value, MAX_COMMAND_TIMEOUT_SEC);
 }
 
 /** Terse next-step hint appended to run_command results for non-completed states. */

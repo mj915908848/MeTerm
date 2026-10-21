@@ -127,3 +127,10 @@ export function submittedLineUnknownLabel(): string {
     ? '将在终端中执行当前输入行（内容无法读取）'
     : 'Runs the current terminal line (its content could not be read)';
 }
+
+/** Notice shown when a reply stopped at the output-token limit. */
+export function outputTruncatedNotice(): string {
+  return getLanguage() === 'zh'
+    ? '回复达到了最大输出长度，内容可能不完整。可在 AI 设置中调大“最大 Token”。'
+    : 'The reply hit the maximum output length and may be incomplete. You can raise "Max Tokens" in the AI settings.';
+}

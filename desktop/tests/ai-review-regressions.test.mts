@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { abortableOperation } from '../src/ai-abortable-operation.ts';
 import { decidePermission, requiresReadScopeConfirmation } from '../src/ai-permission-rules.ts';
+import { parseToolArguments } from '../src/ai-provider-wire.ts';
 
 const source = (file: string) => ts.createSourceFile(file, readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8'), ts.ScriptTarget.Latest, true);
 function find(file: string, predicate: (node: ts.Node) => boolean): ts.Node {
@@ -60,7 +61,7 @@ function approvalHarness() {
   const body = `async check(response,callbacks) { const sessionId='test', iteration=1, permMode='acceptSafe', permRules=[], decisions=new Map(), terminalsWritten=new Set(); const toolCtx={abortSignal:this.abortController.signal, sessionId, cwd:'/workspace', isSSH:false, panes:[{isDefaultTarget:true, cwd:'/workspace', isSSH:false}]}; ${loop.getText()} ${after.getText()} }`;
   let preflightCalls = 0;
   const Agent = new Function('hooks', 'SCOPED_READ_TOOLS', 'invoke', 'decidePermission', 'requiresReadScopeConfirmation', 'abortableOperation',
-    'TERMINAL_INPUT_TOOLS', 'TERMINAL_WRITE_TOOLS', 'terminalSessionFor', 'checkTerminalInput', 'terminalConfirmArgs',
+    'TERMINAL_INPUT_TOOLS', 'TERMINAL_WRITE_TOOLS', 'terminalSessionFor', 'checkTerminalInput', 'terminalConfirmArgs', 'parseToolArguments',
     compile(`${resolveLocalToolPath}\n${resolvePaneTarget}\n${preflight}\nclass Agent { ${method('completeAbortedToolBatch')} ${body} }`) + ';return Agent;')(
     { emitPreToolUse: async () => ({}) },
     new Set(['read_file', 'grep_search', 'glob_search', 'list_directory']),
@@ -79,6 +80,7 @@ function approvalHarness() {
     () => null,
     () => assert.fail('terminal input check reached for a read tool'),
     (args: Record<string, unknown>) => args,
+    parseToolArguments,
   );
   const agent = new Agent(); agent.messages = []; agent.aborted = false;
   agent.abortController = new AbortController(); agent.toolRegistry = { get: () => ({ requiresConfirm: () => false, isDestructive: () => false }) };

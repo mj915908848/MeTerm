@@ -15,9 +15,10 @@ import type { ChatMessage, ContentPart } from './ai-provider';
 import { MESSAGE_HISTORY_MAX_CHARS } from './ai-history-budget.ts';
 import { buildTaskRetention, isTaskRetention } from './ai-agent-retention.ts';
 
-/** Char length estimate for a ChatMessage.content. Image parts are
- *  scored at a flat 1500 chars to match the rough token cost of a
- *  small image (~ 300-500 tokens) so they participate in the budget. */
+/** Char length of a ChatMessage.content, used by the character-based
+ *  history caps. Image parts are scored at a flat 1500 chars to match the
+ *  rough token cost of a small image (~ 300-500 tokens) so they
+ *  participate in the budget. */
 function contentCharLength(content: string | ContentPart[]): number {
   if (typeof content === 'string') return content.length;
   let total = 0;
@@ -35,16 +36,42 @@ function isStringContent(
   return typeof content === 'string';
 }
 
-/** Rough character → token ratio; 4 chars ≈ 1 token for English + code. */
-export function estimateTokensFromChars(chars: number): number {
-  return Math.ceil(chars / 4);
+/** Flat token cost of an image part (a small screenshot is ~300-500). */
+const IMAGE_TOKENS = 400;
+
+/**
+ * Token estimate for text. ASCII runs at ~4 chars per token, but CJK and
+ * other non-ASCII text is roughly one token per character (often more),
+ * so a flat chars/4 undercounted Chinese conversations about 4x and
+ * compaction fired long after the real context had overflowed.
+ */
+export function estimateTextTokens(text: string): number {
+  let ascii = 0;
+  let other = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text.charCodeAt(i) < 0x80) ascii++;
+    else other++;
+  }
+  return Math.ceil(ascii / 4) + other;
 }
 
-/** Estimate total token count of a message array. */
+function estimateContentTokens(content: string | ContentPart[]): number {
+  if (typeof content === 'string') return estimateTextTokens(content);
+  let total = 0;
+  for (const p of content) total += p.type === 'text' ? estimateTextTokens(p.text) : IMAGE_TOKENS;
+  return total;
+}
+
+/** Estimate total token count of a message array, including tool calls. */
 export function estimateMessageTokens(messages: ChatMessage[]): number {
-  let chars = 0;
-  for (const m of messages) chars += contentCharLength(m.content);
-  return estimateTokensFromChars(chars);
+  let tokens = 0;
+  for (const m of messages) {
+    tokens += estimateContentTokens(m.content);
+    for (const tc of m.tool_calls ?? []) {
+      tokens += estimateTextTokens(tc.function.name) + estimateTextTokens(tc.function.arguments);
+    }
+  }
+  return tokens;
 }
 
 /**
@@ -56,7 +83,9 @@ export function estimateMessageTokens(messages: ChatMessage[]): number {
  * input and output, hence the subtraction.
  *
  * Callers should pass REAL values: `contextBudgetTokens` from the
- * aiHistoryBudgetTokens setting and `maxOutputTokens` from aiMaxTokens.
+ * aiHistoryBudgetTokens setting, `maxOutputTokens` from aiMaxTokens, and
+ * `fixedPromptTokens` for what is sent besides the history (system
+ * prompt and tool definitions).
  * The defaults exist only so tests and offline callers work — relying on
  * them is exactly what previously made aiMaxTokens a no-op here.
  */
@@ -64,11 +93,12 @@ export function shouldAutoCompact(
   messages: ChatMessage[],
   contextBudgetTokens = 128_000,
   maxOutputTokens = 4_000,
+  fixedPromptTokens = 0,
 ): boolean {
   const headroom = 2_000;
   const budget = contextBudgetTokens - maxOutputTokens - headroom;
   const threshold = Math.floor(budget * 0.75);
-  return estimateMessageTokens(messages) > threshold;
+  return estimateMessageTokens(messages) + fixedPromptTokens > threshold;
 }
 
 /**

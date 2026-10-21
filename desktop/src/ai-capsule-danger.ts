@@ -3,38 +3,7 @@ import { loadSettings } from './themes';
 import { extractCommand, queryTldr } from './tldr-help';
 import { createTldrCard } from './tldr-card';
 
-export const DANGER_PATTERNS = [
-  /\brm\s+(-[^\s]*\s+)*-[^\s]*r/,   // rm -r, rm -rf, rm -fr, etc.
-  /\brm\s+(-[^\s]*\s+)*\//, // rm /path (root-level deletes)
-  /\brm\s+-/,              // rm with any flag (e.g. rm -f, rm -i)
-  /\bmkfs\b/,
-  /\bdd\s+/,
-  /\b(shutdown|reboot|poweroff|halt)\b/,
-  /\bsystemctl\s+(stop|disable|mask)\b/,
-  /\bkill\s+-9/,
-  /\bkillall\b/,
-  /\bpkill\b/,
-  /\bchmod\s+(-[^\s]*\s+)*[0-7]*0{2}/,  // chmod 000, 700 etc wide perms
-  /\bchown\s+-R/,
-  /\bchmod\s+-R/,
-  /\b>\s*\/dev\/sd/,
-  /\bdrop\s+(database|table|schema)\b/i,
-  /\btruncate\s+table\b/i,
-  /\bdelete\s+from\b/i,
-  /\bformat\b/,
-  /\bnewfs\b/,
-  /\bdiskutil\s+erase/,
-  /\bsudo\b/,
-  /\bgit\s+push\s+.*--force/,
-  /\bgit\s+reset\s+--hard/,
-  /\bgit\s+clean\s+-[^\s]*f/,
-  /\biptables\s+-F/,
-  /\b:(){ :\|:& };:/,  // fork bomb
-];
-
-export function isDangerousCommand(cmd: string): boolean {
-  return DANGER_PATTERNS.some((p) => p.test(cmd));
-}
+export { isDangerousCommand } from './ai-danger-patterns';
 
 export function confirmDangerousCommand(cmd: string): Promise<boolean> {
   return new Promise((resolve) => {

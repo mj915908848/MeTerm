@@ -754,6 +754,16 @@ export function updateToolResultImages(
  * Show inline confirmation card and return a Promise.
  * Resolves with: true (approve), false (reject), or string (edited command).
  */
+/** Characters of write_file content shown on the approval card. */
+const CONFIRM_CONTENT_PREVIEW_CHARS = 20_000;
+/** Characters of other tools' arguments shown on the approval card. */
+const CONFIRM_ARGS_PREVIEW_CHARS = 4_000;
+
+function clipForPreview(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n… (+${text.length - max} chars)`;
+}
+
 export function showConfirmCard(
   instance: AICapsuleInstance,
   toolName: string,
@@ -790,9 +800,13 @@ export function showConfirmCard(
     } else if (toolName === 'run_command' && args.command) {
       preview.innerHTML = `<code>$ ${escapeHtml(String(args.command))}</code>`;
     } else if (toolName === 'write_file' && args.path) {
-      preview.innerHTML = `<code>${escapeHtml(String(args.path))}</code>`;
+      // Show what will be written, not just where: approving a path alone
+      // is approving blind.
+      const content = typeof args.content === 'string' ? args.content : '';
+      preview.innerHTML = `<code>${escapeHtml(String(args.path))}</code>`
+        + `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(content, CONFIRM_CONTENT_PREVIEW_CHARS))}</pre>`;
     } else {
-      preview.innerHTML = `<code>${escapeHtml(JSON.stringify(args, null, 2).slice(0, 200))}</code>`;
+      preview.innerHTML = `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(JSON.stringify(args, null, 2), CONFIRM_ARGS_PREVIEW_CHARS))}</pre>`;
     }
 
     // Buttons
@@ -892,10 +906,11 @@ export function showConfirmCard(
       const cmd = String(args.command || '');
       const editorDiv = document.createElement('div');
       editorDiv.className = 'ai-confirm-editor';
-      const editInput = document.createElement('input');
-      editInput.type = 'text';
+      const editInput = document.createElement('textarea');
       editInput.className = 'ai-confirm-edit-input';
       editInput.value = cmd;
+      editInput.rows = Math.min(8, Math.max(1, cmd.split('\n').length));
+      editInput.spellcheck = false;
       const confirmEditBtn = document.createElement('button');
       confirmEditBtn.className = 'ai-confirm-btn ai-confirm-approve';
       confirmEditBtn.innerHTML = `${approveIcon(12)} <span>Run</span>`;
@@ -913,7 +928,11 @@ export function showConfirmCard(
 
       confirmEditBtn.addEventListener('click', runEdited);
       editInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') runEdited();
+        // Enter runs; Shift+Enter inserts a newline for multi-line commands.
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+          e.preventDefault();
+          runEdited();
+        }
         e.stopPropagation();
       });
     });
