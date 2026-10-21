@@ -990,6 +990,7 @@ pub fn run() {
             commands::ssh::detect_default_ssh_key,
             commands::ssh::check_ssh_agent,
             commands::ssh::ssh_host_identity,
+            commands::session::session_osc_token,
             commands::transfer::start_session_file_download,
             commands::transfer::control_session_file_download,
             commands::transfer::start_session_file_upload,

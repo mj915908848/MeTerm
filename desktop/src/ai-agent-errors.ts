@@ -48,18 +48,28 @@ export function classifyError(err: Error): { category: ErrorCategory; statusCode
   const httpMatch = msg.match(/HTTP (\d{3})/);
   const statusCode = httpMatch ? parseInt(httpMatch[1]) : 0;
 
-  // Context overflow — various provider error formats
+  // Context overflow — various provider error formats. A request whose
+  // max_tokens / output cap is too big also mentions "tokens" and
+  // "exceed", but compressing history cannot fix it, so errors about the
+  // output limit only count when they also talk about the input side.
+  const mentionsInput = /context|prompt|input|messages/.test(lowerMsg);
+  const mentionsOutputCap =
+    /max_tokens|max_completion_tokens|max_output_tokens|maxoutputtokens|output tokens|completion tokens/.test(lowerMsg);
+  const inputSideOnly = !mentionsOutputCap || mentionsInput;
   if (
     lowerMsg.includes('context_length') ||
     lowerMsg.includes('context length') ||
     lowerMsg.includes('maximum context') ||
-    lowerMsg.includes('too many tokens') ||
-    lowerMsg.includes('token limit') ||
+    lowerMsg.includes('context window') ||
     lowerMsg.includes('prompt is too long') ||
+    lowerMsg.includes('input is too long') ||
     lowerMsg.includes('payload size exceeds') ||
     lowerMsg.includes('request too large') ||
-    (lowerMsg.includes('max_tokens') && lowerMsg.includes('exceed')) ||
-    (statusCode === 400 && (
+    (inputSideOnly && (
+      lowerMsg.includes('too many tokens') ||
+      lowerMsg.includes('token limit')
+    )) ||
+    (statusCode === 400 && mentionsInput && (
       lowerMsg.includes('length') ||
       lowerMsg.includes('tokens') ||
       lowerMsg.includes('too long') ||

@@ -169,27 +169,65 @@ export function ensureStreamBubble(instance: AICapsuleInstance): HTMLDivElement 
   return msg;
 }
 
+// Streaming renders at most once per animation frame. Providers send a
+// token every few milliseconds, and rewriting the whole message (plus a
+// forced layout for the scroll) on each one made long replies stutter.
+const pendingStreamFrame = new WeakMap<AICapsuleInstance, number>();
+const pendingReasoningFrame = new WeakMap<AICapsuleInstance, number>();
+
+function scheduleFrame(
+  pending: WeakMap<AICapsuleInstance, number>,
+  instance: AICapsuleInstance,
+  render: () => void,
+): void {
+  if (pending.has(instance)) return;
+  pending.set(instance, requestAnimationFrame(() => {
+    pending.delete(instance);
+    render();
+  }));
+}
+
 export function appendStreamToken(instance: AICapsuleInstance, token: string): void {
   instance.streamBuffer += token;
-
   ensureStreamBubble(instance);
-  if (!instance.streamMsgEl) return;
+  scheduleFrame(pendingStreamFrame, instance, () => renderStreamText(instance));
+}
+
+/** Within this many px of the end counts as "following" the stream. */
+const FOLLOW_SLACK_PX = 40;
+
+/**
+ * Apply a streaming update and keep the view pinned to the end, but only if
+ * it was at the end before: a user who scrolled up to reread is left there.
+ */
+function followStream(container: Element | null | undefined, update: () => void): void {
+  const follow = !container
+    || container.scrollHeight - container.scrollTop - container.clientHeight <= FOLLOW_SLACK_PX;
+  update();
+  if (container && follow) container.scrollTop = container.scrollHeight;
+}
+
+function renderStreamText(instance: AICapsuleInstance): void {
+  // The message may have been finalized (buffer reset, bubble replaced)
+  // between the token and this frame; the final render already happened.
+  if (!instance.streamMsgEl || !instance.streamBuffer) return;
   const content = instance.streamMsgEl.querySelector('.ai-msg-content');
   if (!content) return;
+  followStream(instance.chatPanel?.querySelector('.ai-chat-messages'), () => writeStreamText(content, instance.streamBuffer));
+}
+
+function writeStreamText(content: Element, text: string): void {
 
   const textNode = content.querySelector('.ai-stream-text');
   if (textNode) {
-    textNode.textContent = instance.streamBuffer;
+    textNode.textContent = text;
   } else {
     const span = document.createElement('span');
     span.className = 'ai-stream-text';
-    span.textContent = instance.streamBuffer;
+    span.textContent = text;
     const cursor = content.querySelector('.ai-cursor');
     content.insertBefore(span, cursor);
   }
-
-  const container = instance.chatPanel?.querySelector('.ai-chat-messages');
-  if (container) container.scrollTop = container.scrollHeight;
 }
 
 export function collapseActiveThinking(instance: AICapsuleInstance): void {
@@ -197,6 +235,10 @@ export function collapseActiveThinking(instance: AICapsuleInstance): void {
   if (!container) return;
   const block = container.querySelector('.ai-thinking-block.active');
   if (block) {
+    // Write out reasoning still waiting for its frame before the block
+    // stops being the active one.
+    const textEl = block.querySelector('.ai-reasoning-text');
+    if (textEl && instance.reasoningBuffer) textEl.textContent = sanitizeReasoning(instance.reasoningBuffer);
     block.classList.remove('active');
     const details = block.querySelector('details');
     if (details) details.open = false;
@@ -249,10 +291,12 @@ export function appendReasoningToken(instance: AICapsuleInstance, token: string)
     sinkAgentPulse(instance);
   }
 
-  const textEl = block.querySelector('.ai-reasoning-text');
-  if (textEl) textEl.textContent = sanitizeReasoning(instance.reasoningBuffer);
-
-  container.scrollTop = container.scrollHeight;
+  scheduleFrame(pendingReasoningFrame, instance, () => {
+    const active = container.querySelector('.ai-thinking-block.active');
+    const textEl = active?.querySelector('.ai-reasoning-text');
+    if (!textEl || !instance.reasoningBuffer) return;
+    followStream(container, () => { textEl.textContent = sanitizeReasoning(instance.reasoningBuffer); });
+  });
 }
 
 export function finalizeMessage(

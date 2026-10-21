@@ -306,7 +306,10 @@ export function decidePermission(
   // though isConcurrencySafe is false (it's serialized, not read-only).
   if (mode === 'plan') {
     if (handler?.isConcurrencySafe || toolName === 'todo_write') {
-      return scopeNeedsConfirmation ? { kind: 'ask' } : { kind: 'allow' };
+      // A read that still wants confirmation (web_search sends its query
+      // off the machine) asks here too.
+      const needsConfirm = scopeNeedsConfirmation || !!handler?.requiresConfirm(args);
+      return needsConfirm ? { kind: 'ask' } : { kind: 'allow' };
     }
     return {
       kind: 'deny',

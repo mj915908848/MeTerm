@@ -223,6 +223,8 @@ pub struct SshTerminal {
     /// (agent / default key) so the UI can confirm what happened when
     /// the user left the key path empty.
     pub auth_used: SshAuthUsed,
+    /// OSC 7768 hook token written with the hook (see `Terminal::osc_token`).
+    osc_token: Option<String>,
 }
 
 fn terminal_client_config() -> client::Config {
@@ -675,15 +677,19 @@ impl SshTerminal {
         // session. This hook therefore carries a `preexec` timer, mirroring
         // the local pty hook in pty_unix.rs (same zsh/bash duration arithmetic,
         // kept in sync deliberately; see the hook-drift note in that file).
-        if !config.disable_hook {
-            let hook = SHELL_INTEGRATION_HOOK;
+        let osc_token = if config.disable_hook {
+            None
+        } else {
+            let token = crate::server::generate_token();
+            let hook = shell_integration_hook(&token);
             operation_with_timeout(
                 "terminal hook write",
                 SSH_CHANNEL_TIMEOUT,
                 channel.data(hook.as_bytes()),
             )
             .await?;
-        }
+            Some(token)
+        };
 
         let done_token = CancellationToken::new();
 
@@ -777,6 +783,7 @@ impl SshTerminal {
             done_token,
             sftp: None,
             auth_used,
+            osc_token,
         })
     }
 
@@ -895,6 +902,10 @@ impl Terminal for SshTerminal {
         Ok(data.len())
     }
 
+    fn osc_token(&self) -> Option<String> {
+        self.osc_token.clone()
+    }
+
     fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
         self.resize_tx.send_replace((cols, rows));
         Ok(())
@@ -982,6 +993,13 @@ pub async fn test_connection(config: &SshConfig) -> Result<SshAuthUsed, String> 
 /// bash-only syntax, so it sits behind `eval`: without that, dash rejects the
 /// entire line, nothing runs, and the trailing `stty echo` is lost with it,
 /// leaving the user typing blind.
+/// The hook line for one session: [`SHELL_INTEGRATION_HOOK`] preceded by the
+/// session's OSC 7768 token in a plain (unexported) shell variable, so commands
+/// the shell runs cannot read it. The token is base64url — safe in single quotes.
+fn shell_integration_hook(token: &str) -> String {
+    format!(" __meterm_tok='{token}';{SHELL_INTEGRATION_HOOK}")
+}
+
 pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meterm_cmd_running=0; __meterm_in_prompt=0; \
                 __meterm_preexec(){ \
                 [ -n \"${COMP_LINE:-}\" ] && return; \
@@ -1016,7 +1034,7 @@ pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meter
                 fi; fi; \
                 __meterm_cmd_running=0; __meterm_in_prompt=0; \
                 printf '\\033]7;file://%s%s\\007' \"$(hostname)\" \"$PWD\"; \
-                printf '\\033]7768;%d;%s;%s;%d\\007' \"$e\" \"$PWD\" \"$c\" \"$dur\"; \
+                printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' \"${__meterm_tok:-}\" \"$e\" \"$PWD\" \"$c\" \"$dur\"; \
                 }; \
                 if [ -n \"${ZSH_VERSION:-}\" ]; then \
                 zmodload zsh/datetime 2>/dev/null; \
@@ -1040,14 +1058,24 @@ mod hook_tests {
     #[test]
     fn ssh_hook_emits_four_field_osc7768() {
         assert!(
-            HOOK.contains("]7768;%d;%s;%s;%d\\007"),
-            "OSC 7768 must carry exit;cwd;last_cmd;duration_ms"
+            HOOK.contains("]7768;k=%s;%d;%s;%s;%d\\007"),
+            "OSC 7768 must carry token;exit;cwd;last_cmd;duration_ms"
         );
         assert_eq!(
             HOOK.matches("]7768;").count(),
             1,
             "exactly one OSC 7768 emitter is expected"
         );
+    }
+
+    /// The per-session token goes first, in an unexported variable, and the
+    /// line keeps its leading space so it stays out of history.
+    #[test]
+    fn ssh_hook_line_carries_the_session_token() {
+        let line = super::shell_integration_hook("Ab-_9");
+        assert!(line.starts_with(" __meterm_tok='Ab-_9'; __meterm_cmd_start=''"));
+        assert!(!line.contains("export __meterm_tok"));
+        assert!(line.ends_with(HOOK));
     }
 
     /// A duration can only be reported if something timestamps the command
@@ -1175,6 +1203,7 @@ mod drop_tests {
             done_token,
             sftp: None,
             auth_used: SshAuthUsed::Password,
+            osc_token: None,
         }
     }
 

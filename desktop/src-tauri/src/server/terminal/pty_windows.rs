@@ -22,6 +22,8 @@ pub struct ConPtyTerminal {
     input: super::pty_input::PtyInputWriter,
     master: Mutex<Box<dyn xpty::MasterPty + Send>>,
     done_token: CancellationToken,
+    /// OSC 7768 hook token (PowerShell only; see `Terminal::osc_token`).
+    osc_token: Option<String>,
 }
 
 impl ConPtyTerminal {
@@ -57,6 +59,7 @@ impl ConPtyTerminal {
             shell.to_string()
         };
 
+        let mut osc_token = None;
         let mut cmd = {
             let mut cmd = CommandBuilder::new(&resolved);
 
@@ -69,17 +72,24 @@ impl ConPtyTerminal {
             // PowerShell hook: OSC 7 (CWD) + OSC 7766 (init) + OSC 7768 (shell state)
             // Matches Go psStartupHook. Uses [char]27/[char]7 for PowerShell 5 compat.
             if basename.contains("pwsh") || basename.contains("powershell") {
-                let hook_script = "& { $global:__mtOrig = $function:prompt; function global:prompt { \
+                // The 7768 token arrives via env and is moved into a global so
+                // child processes do not inherit it (see `Terminal::osc_token`).
+                let hook_script = "& { $global:__mtTok = $env:METERM_OSC_TOKEN; \
+                    Remove-Item Env:METERM_OSC_TOKEN -ErrorAction SilentlyContinue; \
+                    $global:__mtOrig = $function:prompt; function global:prompt { \
                     [Console]::Write([string][char]27 + ']7;file:///' + (Get-Location).ProviderPath.Replace('\\','/') + [char]7); \
                     $e=[int](-not $?); \
                     if(-not $env:__meterm_hook_ready){$env:__meterm_hook_ready='1'; \
                     [Console]::Write([string][char]27 + ']7766;meterm_init;3' + [char]7);$c=''} \
                     else{try{$c=(Get-History -Count 1).CommandLine}catch{$c=''}}; \
-                    [Console]::Write([string][char]27 + ']7768;' + $e + ';' + (Get-Location) + ';' + $c + [char]7); \
+                    [Console]::Write([string][char]27 + ']7768;k=' + $global:__mtTok + ';' + $e + ';' + (Get-Location) + ';' + $c + [char]7); \
                     if($global:__mtOrig){return & $global:__mtOrig}else{return ''} } }";
                 cmd.arg("-NoExit");
                 cmd.arg("-Command");
                 cmd.arg(hook_script);
+                let tok = crate::server::generate_token();
+                cmd.env("METERM_OSC_TOKEN", &tok);
+                osc_token = Some(tok);
             }
             // cmd.exe: set PROMPT for OSC 7
             else if basename == "cmd.exe" || basename == "cmd" {
@@ -150,6 +160,7 @@ impl ConPtyTerminal {
             input: super::pty_input::PtyInputWriter::spawn(writer)?,
             master: Mutex::new(pair.master),
             done_token,
+            osc_token,
         })
     }
 }
@@ -174,6 +185,10 @@ impl Terminal for ConPtyTerminal {
 
     async fn write(&self, data: &[u8]) -> io::Result<usize> {
         self.input.write(data).await
+    }
+
+    fn osc_token(&self) -> Option<String> {
+        self.osc_token.clone()
     }
 
     fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {

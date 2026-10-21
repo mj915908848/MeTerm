@@ -100,7 +100,8 @@ export function withSessionPtyLock<T>(
 
 /**
  * Build the one-line precmd hook script for a given shell type.
- * Emits `OSC 7768;EXIT_CODE;CWD;LAST_CMD;DURATION_MS` before each prompt.
+ * Emits `OSC 7768;k=TOKEN;EXIT_CODE;CWD;LAST_CMD;DURATION_MS` before each prompt;
+ * the Rust OscFilter drops any 7768 whose token does not match the session's.
  *
  * The trailing `duration_ms` is **not** cosmetic: the Rust side turns
  * "duration ≥ 30s" into the "long command finished" push
@@ -132,10 +133,13 @@ export function withSessionPtyLock<T>(
  * treat the fish path as verified-where-available rather than covered. `pwsh`
  * is neither run nor verified anywhere.
  */
-function buildShellHook(shellType: string): string {
+function buildShellHook(shellType: string, token = ''): string {
+  // `token` is base64url (or empty for a session without one), so it is safe
+  // inside single quotes in every dialect below.
   switch (shellType) {
     case 'zsh':
       return [
+        `__meterm_tok='${token}';`,
         `__meterm_cmd_start='';__meterm_cmd_running=0;`,
         `__meterm_preexec(){ __meterm_cmd_running=1;`,
         `if [ -n "\${EPOCHREALTIME:-}" ];then __meterm_cmd_start="$EPOCHREALTIME";else __meterm_cmd_start="$SECONDS";fi; };`,
@@ -145,32 +149,35 @@ function buildShellHook(shellType: string): string {
         `if [ "$__meterm_cmd_running" = 1 ]&&[ -n "$__meterm_cmd_start" ]&&[ -n "\${EPOCHREALTIME:-}" ];then dur=$(( (EPOCHREALTIME - __meterm_cmd_start) * 1000 ));dur=\${dur%%.*};`,
         `case "$dur" in ''|*[!0-9-]*) dur=0;; esac;fi;fi;`,
         `__meterm_cmd_running=0;`,
-        `printf '\\033]7768;%d;%s;%s;%d\\007' "$e" "$PWD" "$c" "$dur"; };`,
+        `printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' "\${__meterm_tok:-}" "$e" "$PWD" "$c" "$dur"; };`,
         `zmodload zsh/datetime 2>/dev/null;`,
         `autoload -Uz add-zsh-hook 2>/dev/null&&{ add-zsh-hook preexec __meterm_preexec; add-zsh-hook precmd __meterm_precmd; }`,
       ].join('');
     case 'fish':
       return [
+        `set -g __meterm_tok '${token}';`,
         `function __meterm_postcmd --on-event fish_postexec;`,
         `if not set -q __meterm_hook_ready;set -gx __meterm_hook_ready 1;`,
-        `printf '\\033]7768;%d;%s;\\007' $status "$PWD";`,
+        `printf '\\033]7768;k=%s;%d;%s;\\007' "$__meterm_tok" $status "$PWD";`,
         `else;`,
-        `printf '\\033]7768;%d;%s;%s\\007' $status "$PWD" "$argv";`,
+        `printf '\\033]7768;k=%s;%d;%s;%s\\007' "$__meterm_tok" $status "$PWD" "$argv";`,
         `end;`,
         `end`,
       ].join('');
     case 'powershell':
       return [
+        `$global:__mtTok='${token}';`,
         `function prompt {`,
         `$e=$LASTEXITCODE;`,
         `if (-not $env:__meterm_hook_ready){$env:__meterm_hook_ready='1';$c=''}`,
         `else{$c=(Get-History -Count 1).CommandLine};`,
-        `[Console]::Write("$([char]0x1b)]7768;$e;$(Get-Location);$c$([char]7)");`,
+        `[Console]::Write("$([char]0x1b)]7768;k=$($global:__mtTok);$e;$(Get-Location);$c$([char]7)");`,
         `return "PS> "`,
         `}`,
       ].join('');
     default: // bash
       return [
+        `__meterm_tok='${token}';`,
         `__meterm_cmd_start='';__meterm_cmd_running=0;__meterm_in_prompt=0;`,
         `__meterm_preexec(){ [ -n "\${COMP_LINE:-}" ]&&return;`,
         `case "\${BASH_COMMAND:-}" in __meterm_precmd*) return;; esac;`,
@@ -188,7 +195,7 @@ function buildShellHook(shellType: string): string {
         `case "$dur" in ''|*[!0-9-]*) dur=0;; esac;`,
         `[ "$dur" -lt 0 ] 2>/dev/null&&dur=0;fi;fi;`,
         `__meterm_cmd_running=0;__meterm_in_prompt=0;`,
-        `printf '\\033]7768;%d;%s;%s;%d\\007' "$e" "$PWD" "$c" "$dur"; };`,
+        `printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' "\${__meterm_tok:-}" "$e" "$PWD" "$c" "$dur"; };`,
         // One DEBUG trap per shell and no "append" form: installing ours would
         // *delete* whatever was there — `bash-preexec` and everything built on
         // it, audit/telemetry hooks — permanently, on a host this app does not
@@ -295,6 +302,14 @@ type HostIdentity =
 const _hostIdentity = new Map<string, HostIdentity>();
 
 /**
+ * The session's OSC 7768 token (`session_osc_token`), fetched alongside the host
+ * identity so it is in hand before the first injection. The Rust OSC filter
+ * drops any 7768 that lacks it, so a hook injected without it would never be
+ * heard; absent = the session enforces none and the hook sends an empty token.
+ */
+const _oscToken = new Map<string, string>();
+
+/**
  * Ask the host we are connected to for its identity — never the shell, which may
  * be somewhere else by now. A `null` answer means "this session has no remote
  * exec channel" (local / JumpServer), which is not a failure and is remembered
@@ -311,6 +326,7 @@ const _hostIdentity = new Map<string, HostIdentity>();
  */
 async function probeHostIdentity(sessionId: string): Promise<void> {
   _hostIdentity.set(sessionId, { status: 'pending' });
+  const token = invoke<string | null>('session_osc_token', { sessionId }).catch(() => null);
   let next: HostIdentity;
   try {
     const value = await invoke<string | null>('ssh_host_identity', { sessionId });
@@ -318,11 +334,14 @@ async function probeHostIdentity(sessionId: string): Promise<void> {
   } catch {
     next = { status: 'none' };
   }
+  const tok = await token;
   // A session that went away while we were asking must not be re-created here.
   if (!TerminalRegistry.get(sessionId)) {
     _hostIdentity.delete(sessionId);
     return;
   }
+  if (tok) _oscToken.set(sessionId, tok);
+  else _oscToken.delete(sessionId);
   _hostIdentity.set(sessionId, next);
 }
 
@@ -593,9 +612,10 @@ function _injectShellHookImpl(
   /** The connected host's identity, when we were able to ask for one. */
   expectedHost?: string,
 ): boolean {
-  const zshHook = buildShellHook('zsh');
-  const bashHook = buildShellHook('bash');
-  const fishHook = buildShellHook('fish');
+  const token = _oscToken.get(sessionId) ?? '';
+  const zshHook = buildShellHook('zsh', token);
+  const bashHook = buildShellHook('bash', token);
+  const fishHook = buildShellHook('fish', token);
   const detectId = `det_${Date.now().toString(36)}`;
 
   // Whose shell is this, really? `expectedHost` is the answer from the exec
@@ -1115,4 +1135,5 @@ onTerminalSessionDisposed((sessionId) => {
   clearHookRetry(sessionId);
   // The host identity belongs to the connection, not to the session id.
   _hostIdentity.delete(sessionId);
+  _oscToken.delete(sessionId);
 });

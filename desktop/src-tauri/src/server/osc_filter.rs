@@ -29,7 +29,7 @@ pub enum OscEvent {
     #[serde(rename = "marker")]
     Marker { id: String, data: String },
 
-    /// OSC 7768: Shell state — `exit_code;cwd;last_cmd[;duration_ms]`
+    /// OSC 7768: Shell state — `[k=<token>;]exit_code;cwd;last_cmd[;duration_ms]`
     /// `duration_ms` 为第 4 段(可选),缺失或非法数字时为 `None`,兼容旧 3 字段格式。
     #[serde(rename = "shell")]
     ShellState {
@@ -85,6 +85,12 @@ pub struct OscFilter {
     /// Bytes pending after ESC that might not be an OSC start.
     /// If ESC is followed by something other than `]`, these are flushed to output.
     pending: Vec<u8>,
+    /// Per-session secret the shell hook prefixes to OSC 7768 (`k=<token>;`).
+    /// When set, a 7768 without the matching token is dropped: anything that
+    /// merely *prints* the sequence (a `cat`-ed file, a remote program) cannot
+    /// fake "command finished, exit 0" or move the agent's cwd. `None` keeps
+    /// the legacy behaviour for terminals that have no hook token.
+    token: Option<String>,
 }
 
 impl OscFilter {
@@ -95,7 +101,18 @@ impl OscFilter {
             osc_num: 0,
             osc_buf: Vec::with_capacity(256),
             pending: Vec::with_capacity(8),
+            token: None,
         }
+    }
+
+    /// Install the per-session hook token (see [`OscFilter::token`]).
+    pub fn set_token(&mut self, token: Option<String>) {
+        self.token = token.filter(|t| !t.is_empty());
+    }
+
+    /// The hook token this filter enforces, if any.
+    pub fn token(&self) -> Option<&str> {
+        self.token.as_deref()
     }
 
     /// Process a chunk of terminal output.
@@ -263,7 +280,21 @@ impl OscFilter {
                 Some(OscEvent::Marker { id, data })
             }
             7768 => {
-                // OSC 7768: exit_code;cwd;last_cmd[;duration_ms]
+                // OSC 7768: [k=<token>;]exit_code;cwd;last_cmd[;duration_ms]
+                // 带 token 的会话只认携带正确 token 的序列,其余(程序输出伪造)丢弃。
+                let body = match (body.strip_prefix("k="), self.token.as_deref()) {
+                    (Some(rest), expected) => {
+                        let (got, rest) = rest.split_once(';').unwrap_or((rest, ""));
+                        if let Some(expected) = expected {
+                            if !super::auth::constant_time_eq(expected.as_bytes(), got.as_bytes()) {
+                                return None;
+                            }
+                        }
+                        rest
+                    }
+                    (None, Some(_)) => return None,
+                    (None, None) => body,
+                };
                 // 第 4 段(duration_ms)为可选,兼容旧版 shell 钩子只发 3 段的情况。
                 // cmd 段可能包含分号(命令本身),所以先按 3 段切出 exit/cwd/剩余部分,
                 // 再从剩余部分里反切出末尾可能存在的 duration_ms。
@@ -569,5 +600,54 @@ mod tests {
             }
             _ => panic!("expected Notify"),
         }
+    }
+
+    #[test]
+    fn osc7768_with_token_requires_matching_token() {
+        let mut f = OscFilter::new();
+        f.set_token(Some("tok-123_abc".to_string()));
+
+        // The hook's own sequence: token stripped, fields parsed as usual.
+        let (clean, events) = f.feed(b"\x1b]7768;k=tok-123_abc;0;/tmp;ls;12\x07");
+        assert!(clean.is_empty());
+        match &events[..] {
+            [OscEvent::ShellState {
+                exit,
+                cwd,
+                cmd,
+                duration_ms,
+            }] => {
+                assert_eq!(*exit, 0);
+                assert_eq!(cwd, "/tmp");
+                assert_eq!(cmd, "ls");
+                assert_eq!(*duration_ms, Some(12));
+            }
+            other => panic!("expected one ShellState, got {other:?}"),
+        }
+
+        // Printed by a program (no token / wrong token): swallowed, no event.
+        for spoof in [
+            &b"\x1b]7768;0;/etc;done\x07"[..],
+            &b"\x1b]7768;k=guess;0;/etc;done\x07"[..],
+            &b"\x1b]7768;k=;0;/etc;done\x07"[..],
+        ] {
+            let (clean, events) = f.feed(spoof);
+            assert!(clean.is_empty());
+            assert!(events.is_empty(), "{:?}", String::from_utf8_lossy(spoof));
+        }
+    }
+
+    #[test]
+    fn osc7768_without_filter_token_accepts_both_forms() {
+        let mut f = OscFilter::new();
+        let (_, events) = f.feed(b"\x1b]7768;k=anything;1;/a;x\x07\x1b]7768;2;/b;y\x07");
+        let parsed: Vec<_> = events
+            .iter()
+            .map(|e| match e {
+                OscEvent::ShellState { exit, cwd, .. } => (*exit, cwd.clone()),
+                other => panic!("unexpected {other:?}"),
+            })
+            .collect();
+        assert_eq!(parsed, vec![(1, "/a".to_string()), (2, "/b".to_string())]);
     }
 }

@@ -90,3 +90,17 @@ test('temperature is only sent to Claude models that still accept it', () => {
     assert.equal(anthropicAcceptsTemperature(m), false, m);
   }
 });
+
+test('an output-limit 400 is not mistaken for context overflow', () => {
+  for (const msg of [
+    'HTTP 400: max_tokens: 200000 > 64000, which is the maximum allowed number of output tokens for claude-sonnet-4-6',
+    'HTTP 400: max_tokens is too large: 200000. This model supports at most 16384 completion tokens, whereas you provided 200000.',
+    'HTTP 400: Invalid value for maxOutputTokens: exceeds the supported range',
+  ]) assert.notEqual(classifyError(new Error(msg)).category, 'context_overflow', msg);
+  for (const msg of [
+    "HTTP 400: This model's maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens.",
+    'HTTP 400: prompt is too long: 210000 tokens > 200000 maximum',
+    'HTTP 400: The input token count (1100000) exceeds the maximum number of tokens allowed (1048576).',
+    'HTTP 413: request too large',
+  ]) assert.equal(classifyError(new Error(msg)).category, 'context_overflow', msg);
+});

@@ -43,7 +43,10 @@ export function handleOscEvents(
       case 'cwd': {
         const cwd = ev.cwd;
         if (cwd && cwd !== mt.shellState.cwd) {
-          mt.shellState.cwd = cwd;
+          // With the hook in place, the tokened OSC 7768 owns `shellState.cwd`
+          // (the agent's working directory). OSC 7 has no token, so any program
+          // output could forge it; it still drives the file drawer listing.
+          if (!mt.shellState.hookInjected) mt.shellState.cwd = cwd;
           if (DrawerManager.getServerInfo(mt.id)) {
             // SSH session: request remote directory listing via SFTP
             try {
