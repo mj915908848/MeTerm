@@ -18,7 +18,7 @@ use super::ssh_auth;
 pub use super::ssh_limits::ssh_exec;
 use super::ssh_limits::{
     operation_with_timeout, SSH_AUTH_TIMEOUT, SSH_CHANNEL_TIMEOUT, SSH_CLOSE_TIMEOUT,
-    SSH_HANDSHAKE_TIMEOUT,
+    SSH_HANDSHAKE_TIMEOUT, SSH_KEEPALIVE_INTERVAL, SSH_KEEPALIVE_MAX,
 };
 use super::ssh_transport::establish_connection;
 use super::Terminal;
@@ -230,6 +230,8 @@ fn terminal_client_config() -> client::Config {
         // compatibility issues.
         window_size: 16 * 1024 * 1024,
         preferred: preferred_algorithms(),
+        keepalive_interval: Some(SSH_KEEPALIVE_INTERVAL),
+        keepalive_max: SSH_KEEPALIVE_MAX,
         ..client::Config::default()
     }
 }
@@ -244,6 +246,8 @@ fn sftp_client_config() -> client::Config {
         // Must stay in step with `terminal_client_config`: a bastion the
         // terminal can reach must not become unreachable for file transfer.
         preferred: preferred_algorithms(),
+        keepalive_interval: Some(SSH_KEEPALIVE_INTERVAL),
+        keepalive_max: SSH_KEEPALIVE_MAX,
         ..client::Config::default()
     }
 }
@@ -686,66 +690,79 @@ impl SshTerminal {
         let (input_tx, mut input_rx) = mpsc::channel::<Vec<u8>>(256);
         let (resize_tx, mut resize_rx) = mpsc::channel::<(u16, u16)>(16);
 
-        let done_clone = done_token.clone();
+        // Split the channel so reading and writing never wait on each other.
+        // A single task doing both deadlocked under load: while it awaited
+        // `output_tx` (session slow to drain output) it could not take input,
+        // and the session run loop could block sending input to it.
+        let (mut read_half, write_half) = channel.split();
 
-        // Single task that owns the channel and handles read/write/resize
+        // Reader: remote output -> session. Only ever waits on the consumer.
+        let reader_done = done_token.clone();
+        tokio::spawn(async move {
+            loop {
+                let msg = tokio::select! {
+                    _ = reader_done.cancelled() => break,
+                    msg = read_half.wait() => msg,
+                };
+                let chunk = match msg {
+                    Some(ChannelMsg::Data { data }) => data.to_vec(),
+                    // stderr
+                    Some(ChannelMsg::ExtendedData { data, ext: 1 }) => data.to_vec(),
+                    Some(ChannelMsg::Eof) | None => Vec::new(), // EOF
+                    _ => continue,
+                };
+                let eof = chunk.is_empty();
+                tokio::select! {
+                    _ = reader_done.cancelled() => break,
+                    sent = output_tx.send(Ok(chunk)) => {
+                        if sent.is_err() {
+                            break;
+                        }
+                    }
+                }
+                if eof {
+                    break;
+                }
+            }
+            reader_done.cancel();
+        });
+
+        // Writer: input and resize -> remote. A remote that is slow to read
+        // stdin only delays input here; it no longer stalls output or tears
+        // the session down. A dead connection is caught by SSH keepalive,
+        // which makes the pending write fail.
+        let writer_done = done_token.clone();
         tokio::spawn(async move {
             loop {
                 tokio::select! {
-                    _ = done_clone.cancelled() => break,
+                    _ = writer_done.cancelled() => break,
 
-                    // Read from SSH channel
-                    msg = channel.wait() => {
-                        match msg {
-                            Some(ChannelMsg::Data { data }) => {
-                                if output_tx.send(Ok(data.to_vec())).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Some(ChannelMsg::ExtendedData { data, ext: 1 }) => {
-                                // stderr
-                                let chunk = data.to_vec();
-                                if output_tx.send(Ok(chunk)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            Some(ChannelMsg::Eof) | None => {
-                                let _ = output_tx.send(Ok(Vec::new())).await; // EOF
-                                break;
-                            }
-                            _ => continue,
-                        }
-                    }
-
-                    // Write input to SSH channel
                     Some(data) = input_rx.recv() => {
-                        match tokio::time::timeout(SSH_CHANNEL_TIMEOUT, channel.data(&data[..])).await {
-                            Ok(Ok(())) => {}
-                            Ok(Err(error)) => {
-                                eprintln!("[ssh] write error: {}", error);
-                                break;
-                            }
-                            Err(_) => {
-                                eprintln!("[ssh] write timed out");
-                                break;
-                            }
+                        let result = tokio::select! {
+                            _ = writer_done.cancelled() => break,
+                            result = write_half.data(&data[..]) => result,
+                        };
+                        if let Err(error) = result {
+                            eprintln!("[ssh] write error: {}", error);
+                            break;
                         }
                     }
 
-                    // Resize
                     Some((cols, rows)) = resize_rx.recv() => {
                         if tokio::time::timeout(
                             SSH_CHANNEL_TIMEOUT,
-                            channel.window_change(cols as u32, rows as u32, 0, 0),
+                            write_half.window_change(cols as u32, rows as u32, 0, 0),
                         ).await.is_err() {
                             eprintln!("[ssh] resize timed out");
                             break;
                         }
                     }
+
+                    else => break,
                 }
             }
-            let _ = tokio::time::timeout(SSH_CLOSE_TIMEOUT, channel.close()).await;
-            done_clone.cancel();
+            let _ = tokio::time::timeout(SSH_CLOSE_TIMEOUT, write_half.close()).await;
+            writer_done.cancel();
         });
 
         Ok(Self {

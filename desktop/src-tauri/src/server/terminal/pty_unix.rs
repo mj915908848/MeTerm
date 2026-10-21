@@ -23,7 +23,7 @@ pub struct PtyTerminal {
     /// Receiver for PTY output (from the dedicated reader thread).
     output_rx: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<io::Result<Vec<u8>>>>,
     /// Writer taken from the master PTY.
-    writer: Mutex<Option<Box<dyn io::Write + Send>>>,
+    input: super::pty_input::PtyInputWriter,
     /// Master PTY handle (for resize). Wrapped in Mutex because MasterPty is !Sync.
     master: Mutex<Box<dyn xpty::MasterPty + Send>>,
     /// Fired when the child exits.
@@ -226,7 +226,7 @@ impl PtyTerminal {
 
         Ok(Self {
             output_rx: tokio::sync::Mutex::new(output_rx),
-            writer: Mutex::new(Some(writer)),
+            input: super::pty_input::PtyInputWriter::spawn(writer)?,
             master: Mutex::new(pair.master),
             done_token,
             hook_dir,
@@ -253,13 +253,7 @@ impl Terminal for PtyTerminal {
     }
 
     async fn write(&self, data: &[u8]) -> io::Result<usize> {
-        let mut writer_guard = self.writer.lock().unwrap();
-        if let Some(ref mut writer) = *writer_guard {
-            use io::Write;
-            writer.write(data)
-        } else {
-            Err(io::Error::new(io::ErrorKind::BrokenPipe, "writer closed"))
-        }
+        self.input.write(data).await
     }
 
     fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
@@ -302,7 +296,7 @@ impl Terminal for PtyTerminal {
     }
 
     async fn close(&self) -> io::Result<()> {
-        *self.writer.lock().unwrap() = None;
+        self.input.close();
         self.done_token.cancel();
         if let Some(ref dir) = self.hook_dir {
             let _ = std::fs::remove_dir_all(dir);

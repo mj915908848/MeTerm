@@ -620,13 +620,46 @@ impl Session {
         mut resize_rx: tokio::sync::mpsc::Receiver<TermCtrl>,
     ) {
         let cancel = session.cancel.clone();
+        let term: Arc<dyn crate::server::terminal::Terminal> = Arc::from(term);
+        // Ends both halves together: the output loop exits when input closes
+        // (preserving the old single-loop shutdown), and the input pump exits
+        // when the output loop ends.
+        let stop = cancel.child_token();
+
+        // Input pump: runs beside the output loop instead of inside it. A
+        // terminal write may wait for a long time (PTY/SSH input queue full
+        // during a large paste); doing it inline stopped output draining and
+        // could deadlock the session.
+        {
+            let term = term.clone();
+            let stop = stop.clone();
+            tokio::spawn(async move {
+                loop {
+                    let data = tokio::select! {
+                        _ = stop.cancelled() => return,
+                        input = input_rx.recv() => match input {
+                            Some(data) => data,
+                            None => {
+                                stop.cancel();
+                                return;
+                            }
+                        },
+                    };
+                    tokio::select! {
+                        _ = stop.cancelled() => return,
+                        _ = write_all_input(term.as_ref(), &data) => {}
+                    }
+                }
+            });
+        }
 
         tokio::spawn(async move {
+            let _stop_input = stop.clone().drop_guard();
             let mut buf = vec![0u8; 32768];
 
             loop {
                 tokio::select! {
-                    _ = cancel.cancelled() => return,
+                    _ = stop.cancelled() => return,
 
                     // Handle resize/nudge → call terminal
                     Some(ctrl) = resize_rx.recv() => {
@@ -701,16 +734,6 @@ impl Session {
                                     session.dispatch_shell_prompt(&events);
                                 }
                             }
-                        }
-                    }
-
-                    // Receive input → write to terminal
-                    input = input_rx.recv() => {
-                        match input {
-                            Some(data) => {
-                                let _ = term.write(&data).await;
-                            }
-                            None => return,
                         }
                     }
                 }
@@ -1439,6 +1462,18 @@ impl Session {
     }
 }
 
+/// Deliver all of `data` to the terminal. `Terminal::write` may report a
+/// short count; errors are dropped as before (input to a dead terminal is
+/// discarded, and the output loop reports the exit).
+async fn write_all_input(term: &dyn crate::server::terminal::Terminal, mut data: &[u8]) {
+    while !data.is_empty() {
+        match term.write(data).await {
+            Ok(0) | Err(_) => return,
+            Ok(n) => data = &data[n.min(data.len())..],
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Ring buffer
 // ---------------------------------------------------------------------------
@@ -1754,6 +1789,83 @@ mod tests {
         let client = Arc::new(client);
         session.add_client(client.clone()).unwrap();
         (client, rx)
+    }
+
+    /// Terminal whose input side never accepts data (a PTY/SSH input queue
+    /// that stays full) while output keeps arriving.
+    struct StalledInputTerminal {
+        output: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<Vec<u8>>>,
+        writes_started: Arc<std::sync::atomic::AtomicUsize>,
+        done: CancellationToken,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::server::terminal::Terminal for StalledInputTerminal {
+        async fn read(&self, buf: &mut [u8]) -> std::io::Result<usize> {
+            match self.output.lock().await.recv().await {
+                Some(data) => {
+                    buf[..data.len()].copy_from_slice(&data);
+                    Ok(data.len())
+                }
+                None => Ok(0),
+            }
+        }
+        async fn write(&self, _data: &[u8]) -> std::io::Result<usize> {
+            self.writes_started
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::future::pending().await
+        }
+        fn resize(&self, _cols: u16, _rows: u16) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn done(&self) -> CancellationToken {
+            self.done.clone()
+        }
+        async fn close(&self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Regression: input used to be written inline in the run loop, so a
+    /// terminal write that never completed stopped output draining (and with a
+    /// real PTY deadlocked the session). Output must keep flowing.
+    #[tokio::test]
+    async fn stalled_terminal_input_does_not_stop_output() {
+        let session = ring_session("stalled-input", 4096);
+        let (out_tx, out_rx) = tokio::sync::mpsc::channel(4);
+        let writes_started = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let term = StalledInputTerminal {
+            output: tokio::sync::Mutex::new(out_rx),
+            writes_started: writes_started.clone(),
+            done: CancellationToken::new(),
+        };
+        Session::start_terminal(session.clone(), Box::new(term)).await;
+
+        let input_tx = session.input_tx.lock().await.clone().unwrap();
+        input_tx.send(b"pasted".to_vec()).await.unwrap();
+        for _ in 0..100 {
+            if writes_started.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(
+            writes_started.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "input write must be in flight (and stuck)"
+        );
+
+        out_tx.send(b"still-flowing".to_vec()).await.unwrap();
+        let mut seen = false;
+        for _ in 0..100 {
+            if session.ring_buf.lock().unwrap().read_all() == b"still-flowing" {
+                seen = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(seen, "output must be drained while input is stalled");
+        session.cancel();
     }
 
     fn ring_session(id: &str, ring_buffer_size: usize) -> Arc<Session> {
