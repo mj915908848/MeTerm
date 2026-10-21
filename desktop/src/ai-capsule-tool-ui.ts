@@ -19,6 +19,7 @@ import {
   waitCancelBtnLabel,
   waitCancellingBtnLabel,
   waitResolvedLabel,
+  submittedLineUnknownLabel,
 } from './ai-tool-i18n';
 
 /**
@@ -780,7 +781,13 @@ export function showConfirmCard(
     // Command preview
     const preview = document.createElement('div');
     preview.className = 'ai-confirm-preview';
-    if (toolName === 'run_command' && args.command) {
+    const submitted = Array.isArray(args.submittedCommands) ? args.submittedCommands.map(String) : null;
+    if (submitted) {
+      // type_text / press_keys that submit a shell line: show the commands, not the keystrokes.
+      const shown = submitted.map(c => `$ ${escapeHtml(c)}`);
+      if (args.submittedLineUnknown) shown.push(escapeHtml(submittedLineUnknownLabel()));
+      preview.innerHTML = `<code>${shown.join('<br>')}</code>`;
+    } else if (toolName === 'run_command' && args.command) {
       preview.innerHTML = `<code>$ ${escapeHtml(String(args.command))}</code>`;
     } else if (toolName === 'write_file' && args.path) {
       preview.innerHTML = `<code>${escapeHtml(String(args.path))}</code>`;
@@ -822,7 +829,9 @@ export function showConfirmCard(
     // notifyAgentWaiting prevents spam when multiple tool calls are
     // gated back-to-back.
     let previewText: string;
-    if (toolName === 'run_command' && args.command) {
+    if (submitted && submitted.length > 0) {
+      previewText = `$ ${submitted.join('; ').slice(0, 140)}`;
+    } else if (toolName === 'run_command' && args.command) {
       previewText = `$ ${String(args.command).slice(0, 140)}`;
     } else if (toolName === 'write_file' && args.path) {
       previewText = `write ${String(args.path)}`;

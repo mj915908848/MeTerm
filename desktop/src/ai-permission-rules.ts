@@ -10,6 +10,7 @@
 // User rules remain first-match-wins.
 
 import type { ToolContext, ToolHandler } from './ai-tools-core';
+import type { TerminalSubmit } from './ai-terminal-submit';
 
 // ─── Permission Modes ──────────────────────────────────────
 
@@ -351,4 +352,34 @@ export function decidePermission(
     case 'acceptAll':
       return handler.isDestructive(args) ? { kind: 'ask' } : { kind: 'allow' };
   }
+}
+
+/**
+ * type_text / press_keys that submit a line at a shell prompt run a
+ * command just like run_command, so each submitted line goes through
+ * run_command's rules and danger heuristic. A submit whose line content
+ * is unknown always asks (outside bypass). The stricter of `base` (the
+ * tool's own decision) and the per-line decisions wins.
+ */
+export function decideTerminalSubmitPermission(
+  base: PermissionDecision,
+  submit: TerminalSubmit,
+  pane: unknown,
+  commandHandler: ToolHandler | undefined,
+  mode: PermissionMode,
+  rules: PermissionRule[],
+  context?: ToolContext,
+): PermissionDecision {
+  if (base.kind !== 'allow' || submit.kind === 'none' || mode === 'bypass') return base;
+  let result: PermissionDecision = submit.kind === 'unknown' ? { kind: 'ask' } : base;
+  for (const command of submit.lines) {
+    const args: Record<string, unknown> = { command };
+    if (pane !== undefined) args.pane = pane;
+    const perLine = decidePermission('run_command', args, commandHandler, mode, rules, context);
+    if (perLine.kind === 'deny') {
+      return { kind: 'deny', reason: `${perLine.reason} The command was submitted through terminal input: ${command}` };
+    }
+    if (perLine.kind === 'ask') result = perLine;
+  }
+  return result;
 }
