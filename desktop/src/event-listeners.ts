@@ -21,7 +21,6 @@ import { updateGalleryView, setGalleryViewSettings } from './gallery';
 import { t } from './i18n';
 import { setLanguage } from './i18n';
 import { updateSSHHomeView, exportConnectionsToFile, formatSSHExportResult, importConnectionsFromJSON, type SSHConnectionConfig } from './ssh';
-import { showRemoteConnectDialog, type RemoteServerInfo } from './remote';
 import { StatusBar } from './status-bar';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, emitTo, listen } from '@tauri-apps/api/event';
@@ -32,7 +31,6 @@ import { confirmSystem, showInfoSystem, showAboutDialog, showHideToTrayDialog, r
 import { readTextFile } from '@tauri-apps/plugin-fs';
 import { performCopy, performPaste, performSelectAll } from './clipboard-actions';
 import { notifyUser } from './notify';
-import { showPairApprovalDialog } from './pairing';
 import {
   activateTab,
   showHomeView, hideHomeView, showGalleryView, hideGalleryView,
@@ -40,7 +38,7 @@ import {
   syncPaneStatusBar,
 } from './view-manager';
 import {
-  createNewSession, createNewPrivateSession,
+  createNewSession,
   closeAllSessions, createNewWindowNearCurrent,
 } from './session-actions';
 import {
@@ -53,7 +51,6 @@ import {
 } from './toolbar';
 import { showShellContextMenu, showCustomContextMenu } from './context-menu';
 import { handleSSHConnect } from './ssh-handler';
-import { handleRemoteConnect } from './remote-handler';
 import { checkUpdateNow } from './updater';
 import {
   showReconnectOverlay,
@@ -64,10 +61,9 @@ import {
 } from './overlays';
 import {
   port, authToken, metermReady, setPort, setAuthToken, setMetermReady,
-  handledPairIds,
   settings, setSettings,
   isHomeView, isGalleryView, isPipMode,
-  sshConfigMap, remoteInfoMap, sessionProgressMap,
+  sshConfigMap, sessionProgressMap,
   isMacPlatform, isWindowsPlatform, isLinuxPlatform,
   setLastFocusedMainWindowLabel,
 } from './app-state';
@@ -178,20 +174,6 @@ export function setupDomEventListeners(): void {
     // The connection sidebar stays visible alongside active terminals.
     updateSSHHomeView();
   });
-
-  // Remote connections changed
-  document.addEventListener('remote-connections-changed', () => {
-    updateSSHHomeView();
-  });
-
-  // Remote connect from home page button
-  document.addEventListener('remote-connect-request', () => showRemoteConnectDialog());
-
-  // Remote session selected from session list popup
-  document.addEventListener('remote-session-selected', ((e: CustomEvent<{ info: RemoteServerInfo; sessionId: string }>) => {
-    const { info, sessionId } = e.detail;
-    void handleRemoteConnect(info, sessionId);
-  }) as EventListener);
 
   // TabManager subscription
   TabManager.subscribe(() => {
@@ -403,38 +385,10 @@ export function setupDomEventListeners(): void {
     showReconnectOverlay(sessionId, tab.id);
   });
 
-  // Viewer popup: list connected clients when clicking viewer capsule
-  document.addEventListener('status-bar-viewers-clicked', async () => {
-    try {
-      const raw = await invoke<string>('list_clients');
-      const { clients } = JSON.parse(raw);
-      const connected = (clients || []).filter((c: any) => c.connected);
-      StatusBar.showViewerPopup(connected);
-    } catch (e) {
-      console.error('list_clients failed:', e);
-    }
-  });
-
-  // Handle kick from viewer popup
-  document.addEventListener('status-bar-kick-client', ((e: Event) => {
-    const { sessionId, clientId } = (e as CustomEvent).detail;
-    invoke('kick_client', { sessionId, clientId }).catch((err) => {
-      console.error('kick_client failed:', err);
-    });
-  }) as EventListener);
-
   // Master request approval dialog
   document.addEventListener('master-request', ((e: CustomEvent) => {
     const { sessionId, requesterId, requesterConnGen } = e.detail;
     showMasterApprovalDialog(sessionId, requesterId, requesterConnGen);
-  }) as EventListener);
-
-  // Pairing request approval dialog (with dedup against poller)
-  document.addEventListener('pair-request', ((e: CustomEvent) => {
-    const { pairId, deviceInfo, remoteAddr } = e.detail;
-    if (handledPairIds.has(pairId)) return;
-    handledPairIds.add(pairId);
-    showPairApprovalDialog(pairId, deviceInfo, remoteAddr);
   }) as EventListener);
 
   // Master lost — show appropriate overlay based on session type
@@ -634,14 +588,6 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     await getCurrentWindow().show();
     await getCurrentWindow().setFocus();
     await createNewSession(undefined, path);
-    renderToolbarActions();
-  });
-
-  void listen<{ target_window: string }>('menu-new-private-terminal', async (event) => {
-    if (!isForThisWindow(event.payload)) return;
-    await getCurrentWindow().show();
-    await getCurrentWindow().setFocus();
-    await createNewPrivateSession();
     renderToolbarActions();
   });
 

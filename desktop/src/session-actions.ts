@@ -2,7 +2,7 @@
  * session-actions.ts — Session lifecycle operations
  *
  * Extracted from main.ts. Contains:
- * - createNewSession(), createNewPrivateSession()
+ * - createNewSession()
  * - doSplitPane()
  * - closeAllSessions()
  * - ensureMeTermReady()
@@ -20,8 +20,6 @@ import { StatusBar } from './status-bar';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { createWindowAtPosition } from './window-utils';
-import { startPairPoller } from './pairing';
-import { startRemoteSessionPoller } from './remote-session-poller';
 import {
   removeKickedOverlay, removeReconnectOverlay,
   viewerModeSessionIds, privateSessionIds,
@@ -31,8 +29,8 @@ import { activateTab, showHomeView } from './view-manager';
 import {
   port, authToken, metermReady, setPort, setAuthToken, setMetermReady,
   settings,
-  sshConfigMap, remoteInfoMap, sessionProgressMap,
-  remoteTabNumbers, jumpServerConfigMap,
+  sshConfigMap, sessionProgressMap,
+  jumpServerConfigMap,
 } from './app-state';
 
 // ── Late-bound callbacks ──
@@ -98,27 +96,6 @@ export async function createNewSession(shell?: string, cwd?: string): Promise<vo
   _renderTabs();
 }
 
-export async function createNewPrivateSession(): Promise<void> {
-  const ready = await ensureMeTermReady();
-  if (!ready) return;
-  const effectiveShell = settings.defaultShell || getDefaultShellPath() || undefined;
-  await TabManager.addTab(port, authToken, effectiveShell);
-  if (TabManager.activeTabId) {
-    const sessionId = TabManager.getActiveSessionId();
-    if (sessionId) {
-      try {
-        await invoke('set_session_private', { sessionId, private: true });
-        privateSessionIds.add(sessionId);
-      } catch (err) {
-        console.error('set_session_private failed:', err);
-      }
-    }
-    await activateTab(TabManager.activeTabId);
-    StatusBar.setConnection('connected', 'Local');
-  }
-  _renderTabs();
-}
-
 /**
  * Boot the local meterm backend.
  *
@@ -140,8 +117,6 @@ export async function ensureMeTermReady(): Promise<boolean> {
     setPort(info.port);
     setAuthToken(info.token);
     setMetermReady(true);
-    startPairPoller(port, authToken);
-    startRemoteSessionPoller(port, authToken);
     return true;
   } catch (err) {
     setMetermReady(false);
@@ -159,9 +134,7 @@ export async function closeAllSessions(): Promise<void> {
       DrawerManager.destroy(leaf.sessionId);
       AICapsuleManager.destroy(leaf.sessionId);
       sshConfigMap.delete(leaf.sessionId);
-      remoteInfoMap.delete(leaf.sessionId);
       jumpServerConfigMap.delete(leaf.sessionId);
-      remoteTabNumbers.delete(leaf.sessionId);
       viewerModeSessionIds.delete(leaf.sessionId);
       reclaimSessionIds.delete(leaf.sessionId);
       sessionProgressMap.delete(leaf.sessionId);

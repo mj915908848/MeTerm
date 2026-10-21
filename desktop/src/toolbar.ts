@@ -17,10 +17,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile } from '@tauri-apps/plugin-fs';
 import { confirmSystem, showInfoSystem, requestQuitWithConfirm } from './window-lifecycle';
-import { hasRemoteTabs, showRemoteSessionListPopup } from './remote-list';
 import { updateSSHHomeView, exportConnectionsToFile, formatSSHExportResult, importConnectionsFromJSON } from './ssh';
 import { showHomeView, showGalleryView, openSettings } from './view-manager';
-import { createNewSession, createNewPrivateSession, closeAllSessions, createNewWindowNearCurrent } from './session-actions';
+import { createNewSession, closeAllSessions, createNewWindowNearCurrent } from './session-actions';
 import { renderTabs } from './tab-renderer';
 import { pendingUpdateVersion, openUpdaterWindow } from './updater';
 import { settings, isHomeView, isGalleryView, isWindowsPlatform, isLinuxPlatform, activeJumpServers } from './app-state';
@@ -31,7 +30,6 @@ import { AICapsuleManager } from './ai-capsule';
 import { toggleFileManager, isFileManagerOpen } from './file-manager-toggle';
 import { ServerInfoPanel, hasRemoteServerInfo } from './server-info-panel';
 import { openConnectionsWindow } from './connections-window';
-import { getLanAccessState, setLanAccess } from './lan-access';
 import appIconUrl from '../src-tauri/icons/icon.svg';
 
 /** Platforms that need custom window controls (no native overlay titlebar). */
@@ -146,9 +144,6 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
   addItem(t('newTerminal'), async () => {
     await createNewSession();
   });
-  addItem(t('newPrivateTerminal'), async () => {
-    await createNewPrivateSession();
-  });
   addItem(t('settings'), () => {
     openSettings();
   });
@@ -156,33 +151,6 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
     isPipActive() ? t('toolbarExitPictureInPicture') : t('toolbarPictureInPicture'),
     async () => { await togglePip(); },
   );
-  addDivider();
-  let lanAccessEnabled: boolean | undefined;
-  const lanAccessItem = addCheckItem(
-    t('settingsLanAccess'),
-    false,
-    async () => {
-      if (lanAccessEnabled === undefined) return;
-      const requested = !lanAccessEnabled;
-      if (!requested && !await confirmSystem(t('settingsLanAccessDisableConfirm'))) return;
-      try {
-        lanAccessEnabled = (await setLanAccess(requested)).enabled;
-      } catch (error) {
-        console.error('set_lan_access failed:', error);
-        await showInfoSystem(t('settingsLanAccessError'), t('settingsLanAccess'));
-      }
-    },
-  );
-  lanAccessItem.disabled = true;
-  void getLanAccessState().then((state) => {
-    lanAccessEnabled = state.enabled;
-    lanAccessItem.textContent = state.enabled
-      ? `✓ ${t('settingsLanAccess')}`
-      : `    ${t('settingsLanAccess')}`;
-    lanAccessItem.disabled = false;
-  }).catch((error) => {
-    console.error('get_lan_access_state failed:', error);
-  });
   addDivider();
   addItem(
     t('appMenuImportConnections'),
@@ -392,17 +360,6 @@ export function renderToolbarActions(): void {
   });
   toolbarLeftEl.appendChild(newBtn);
 
-  // Remote session list button — only visible when remote tabs exist
-  if (hasRemoteTabs()) {
-    const remoteListBtn = document.createElement('button');
-    remoteListBtn.className = 'toolbar-icon-btn remote-list-btn';
-    remoteListBtn.type = 'button';
-    remoteListBtn.title = t('remoteSessionList');
-    remoteListBtn.innerHTML = `<span class="tab-icon">${icon('remoteList')}</span>`;
-    remoteListBtn.onclick = () => showRemoteSessionListPopup(remoteListBtn);
-    toolbarRightEl.appendChild(remoteListBtn);
-  }
-
   // JumpServer asset browser button — only visible when authenticated JS connections exist
   if (activeJumpServers.size > 0) {
     const jsBtn = document.createElement('button');
@@ -417,7 +374,7 @@ export function renderToolbarActions(): void {
   }
 
   // AI agent button — toggles the AI chat side panel for the active session.
-  // Placed to the LEFT of the share button. Only shown when a terminal tab is
+  // Only shown when a terminal tab is
   // active (the AI capsule is session-scoped).
   if (TabManager.tabs.length > 0 && !isHomeView && !isGalleryView) {
     const agentSessionId = TabManager.getActiveSessionId();
@@ -438,14 +395,6 @@ export function renderToolbarActions(): void {
       toolbarRightEl.appendChild(agentBtn);
     }
   }
-
-  const shareBtn = document.createElement('button');
-  shareBtn.className = 'toolbar-icon-btn';
-  shareBtn.type = 'button';
-  shareBtn.title = t('settingsTabSharing');
-  shareBtn.innerHTML = `<span class="tab-icon">${icon('share')}</span>`;
-  shareBtn.onclick = () => openSettings('sharing');
-  toolbarRightEl.appendChild(shareBtn);
 
   // Update available icon (shown only when update is pending and user hasn't hidden it)
   if (pendingUpdateVersion && !localStorage.getItem('meterm-hide-update-icon')) {

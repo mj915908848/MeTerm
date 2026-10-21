@@ -27,15 +27,6 @@ import {
   getSSHConnectHandler,
 } from './ssh';
 import {
-  type RemoteServerInfo,
-  loadSavedRemoteConnections,
-  loadRecentRemoteConnections,
-  removeRecentRemoteConnection,
-  showRemoteEditDialog,
-  showRemoteCardSessionPopup,
-  removeRemoteConnection,
-} from './remote';
-import {
   type JumpServerConfig,
   loadJumpServerConfigs,
   removeJumpServerConfig,
@@ -46,7 +37,6 @@ import {
   visibleGroupName,
   getConnectionGroup,
   sshKey,
-  remoteKey,
   jumpserverKey,
   createGroup,
   renameGroup,
@@ -68,11 +58,11 @@ import {
 // ─── Types ───
 
 export interface ConnectionItem {
-  type: 'ssh' | 'remote' | 'jumpserver';
+  type: 'ssh' | 'jumpserver';
   key: string;
   name: string;
   detail: string;
-  raw: SSHConnectionConfig | RemoteServerInfo | JumpServerConfig;
+  raw: SSHConnectionConfig | JumpServerConfig;
 }
 
 const GROUP_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#a855f7', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#78716c'];
@@ -83,9 +73,6 @@ export function collectAllConnections(): ConnectionItem[] {
   const items: ConnectionItem[] = [];
   for (const c of loadSavedConnections()) {
     items.push({ type: 'ssh', key: sshKey(c.name), name: c.name || c.host, detail: `${c.username}@${c.host}:${c.port}`, raw: c });
-  }
-  for (const r of loadSavedRemoteConnections()) {
-    items.push({ type: 'remote', key: remoteKey(r.host, r.port), name: r.name || r.host, detail: `${r.host}:${r.port}`, raw: r });
   }
   for (const j of loadJumpServerConfigs()) {
     items.push({ type: 'jumpserver', key: jumpserverKey(j.name), name: j.name, detail: `${j.username}@${j.sshHost}:${j.sshPort}`, raw: j });
@@ -107,7 +94,7 @@ export function filterConnections(items: ConnectionItem[], query: string): Conne
  *
  * A compact card per entry (icon + name + user@host, × to forget it) laid out
  * left to right and scrolled sideways — a wide window shows several at once
- * instead of one tall column. Newest entries come from the SSH/remote history
+ * instead of one tall column. Newest entries come from the SSH history
  * stores; with neither populated the section stays empty and hides itself.
  */
 export function renderRecentActivity(query: string): void {
@@ -125,15 +112,6 @@ export function renderRecentActivity(query: string): void {
       raw: c,
     });
   }
-  for (const r of loadRecentRemoteConnections()) {
-    recentItems.push({
-      type: 'remote',
-      key: remoteKey(r.host, r.port),
-      name: r.name || r.host,
-      detail: `${r.host}:${r.port}`,
-      raw: r,
-    });
-  }
 
   const items = filterConnections(recentItems, query);
   if (items.length === 0) return;
@@ -147,7 +125,7 @@ export function renderRecentActivity(query: string): void {
   track.className = 'home-dash-recent-track';
 
   for (const item of items) {
-    const iconName = item.type === 'remote' ? 'remote' : item.type === 'jumpserver' ? 'jumpserver' : 'ssh';
+    const iconName = item.type === 'jumpserver' ? 'jumpserver' : 'ssh';
 
     const card = document.createElement('div');
     card.className = `home-dash-recent-card home-dash-recent-${item.type}`;
@@ -171,9 +149,6 @@ export function renderRecentActivity(query: string): void {
       if (item.type === 'ssh') {
         const c = item.raw as SSHConnectionConfig;
         removeRecentConnection(c.host, c.port ?? 22, c.username);
-      } else if (item.type === 'remote') {
-        const r = item.raw as RemoteServerInfo;
-        removeRecentRemoteConnection(r.host, r.port);
       }
       renderRecentActivity(query);
     };
@@ -286,11 +261,9 @@ export function renderGroupsSection(query: string, refreshView: () => void): voi
   // The per-type cards are the ungrouped bucket, split by kind, so they follow
   // the sort mode saved for that bucket (`null` = ungrouped).
   const ungroupedSSH = sortGroupConnections(ungrouped.filter((i) => i.type === 'ssh'), null, settings.language);
-  const ungroupedRemote = sortGroupConnections(ungrouped.filter((i) => i.type === 'remote'), null, settings.language);
   const ungroupedJumpserver = sortGroupConnections(ungrouped.filter((i) => i.type === 'jumpserver'), null, settings.language);
   const typeCardMap = new Map<string, HTMLDivElement>();
   if (ungroupedSSH.length > 0) typeCardMap.set('__type:ssh', createTypeGroupCard('ssh', ungroupedSSH, groupMap, refreshView));
-  if (ungroupedRemote.length > 0) typeCardMap.set('__type:remote', createTypeGroupCard('remote', ungroupedRemote, groupMap, refreshView));
   if (ungroupedJumpserver.length > 0) typeCardMap.set('__type:jumpserver', createTypeGroupCard('jumpserver', ungroupedJumpserver, groupMap, refreshView));
 
   // Determine render order using saved card order
@@ -489,17 +462,15 @@ function createGroupCard(
 
 const TYPE_GROUP_ICONS: Record<string, string> = {
   ssh: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12.9 6.69A5 5 0 0 0 8 2.67 4.99 4.99 0 0 0 3.57 5.36 4 4 0 0 0 0 9.33c0 2.21 1.79 4 4 4h8.67a3.33 3.33 0 0 0 .23-6.64z"/><path d="M5.5 7.5l1.5 1.5-1.5 1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 10.5h2" stroke-linecap="round"/></svg>',
-  remote: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2.5" width="14" height="9" rx="1.5"/><path d="M5.5 14h5"/><path d="M8 11.5V14"/></svg>',
   jumpserver: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1.5" width="12" height="13" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h3"/></svg>',
 };
 
 const TYPE_GROUP_LABELS: Record<string, string> = {
   ssh: 'SSH',
-  remote: 'Remote',
   jumpserver: 'JumpServer',
 };
 
-function createTypeGroupCard(type: 'ssh' | 'remote' | 'jumpserver', items: ConnectionItem[], groupMap: ConnectionGroupMap, refreshView: () => void): HTMLDivElement {
+function createTypeGroupCard(type: 'ssh' | 'jumpserver', items: ConnectionItem[], groupMap: ConnectionGroupMap, refreshView: () => void): HTMLDivElement {
   const card = document.createElement('div');
   card.className = `home-dash-group-card home-dash-group-type-${type}`;
   card.dataset.groupName = `__type:${type}`;
@@ -586,9 +557,6 @@ export function handleConnectionClick(item: ConnectionItem, anchor?: HTMLElement
         console.error('[SSH connect error]', err);
       }
     }
-  } else if (item.type === 'remote') {
-    const info = item.raw as RemoteServerInfo;
-    showRemoteCardSessionPopup(anchor || document.body, info);
   } else if (item.type === 'jumpserver') {
     const config = item.raw as JumpServerConfig;
     (async () => {
@@ -718,8 +686,8 @@ export function showGroupContextMenu(event: MouseEvent, groupName: string, refre
  * delegate here and forwards the request (type + key only, never credentials).
  * Left unset (the main window) means "connect right here".
  *
- * Mirrors how the SSH and remote dialogs already hand their connect outcome to
- * `setSSHConnectHandler` / `setRemoteConnectHandler`.
+ * Mirrors how the SSH dialog already hands its connect outcome to
+ * `setSSHConnectHandler`.
  */
 let editConnectDelegate: ((item: ConnectionItem) => void) | null = null;
 
@@ -730,8 +698,8 @@ export function setEditConnectDelegate(delegate: ((item: ConnectionItem) => void
 /**
  * Re-find a connection after an edit, matched on the fields its key is built from.
  *
- * Every key derives from user-editable data (`sshKey(name)`, `remoteKey(host,
- * port)`, `jumpserverKey(name)`), so the key captured when the menu opened goes
+ * Every key derives from user-editable data (`sshKey(name)`,
+ * `jumpserverKey(name)`), so the key captured when the menu opened goes
  * stale the moment the user renames or re-points the connection. Anything that has
  * to act on the *edited* connection must look it up again instead of reusing it.
  */
@@ -756,8 +724,8 @@ export function findConnectionItem(
  * something re-renders it. The dialogs also announce a save on the document, which
  * only a window running `setupDomEventListeners` (not this list's own window)
  * listens for, so the callback is what carries the news here. A save by the
- * JumpServer dialog already returned through this callback; SSH and remote used to
- * return before reaching it.
+ * JumpServer dialog already returned through this callback; SSH used to return
+ * before reaching it.
  *
  * In the window that does run those listeners the list is now rendered twice, by
  * two identical calls. That costs one re-render and saves telling the dialogs which
@@ -766,10 +734,6 @@ export function findConnectionItem(
 export function editConnection(item: ConnectionItem, refreshView: () => void = () => {}): void {
   if (item.type === 'ssh') {
     showSSHModal(item.raw as SSHConnectionConfig, () => refreshView());
-    return;
-  }
-  if (item.type === 'remote') {
-    showRemoteEditDialog(item.raw as RemoteServerInfo, () => refreshView());
     return;
   }
   // JumpServer: the dialog can request a connect, and a saved config changes the
@@ -914,9 +878,6 @@ async function handleDeleteConnection(item: ConnectionItem, refreshView: () => v
   try {
     if (item.type === 'ssh') {
       await removeSSHConnection((item.raw as SSHConnectionConfig).name);
-    } else if (item.type === 'remote') {
-      const info = item.raw as RemoteServerInfo;
-      await removeRemoteConnection(info.host, info.port);
     } else if (item.type === 'jumpserver') {
       await removeJumpServerConfig((item.raw as JumpServerConfig).name);
     }

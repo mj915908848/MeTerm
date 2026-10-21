@@ -81,11 +81,6 @@ test('the overlays still exist, so the dialogs stay dismissable', () => {
   );
 
   assert.match(
-    readSource('remote.ts'),
-    /overlay\.className = 'remote-modal-overlay'/,
-    'the remote overlay was removed',
-  );
-  assert.match(
     readSource('jumpserver-ui.ts'),
     /overlay\.className = 'ssh-modal-overlay'/,
     'the JumpServer dialogs rely on the shared SSH overlay class',

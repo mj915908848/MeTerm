@@ -93,8 +93,8 @@ test('the home page sends its per-type cards to the ungrouped bucket', () => {
 
   assert.equal(
     ungroupedCalls.length,
-    3,
-    'the ssh / remote / jumpserver cards each need the ungrouped mode',
+    2,
+    'the ssh / jumpserver cards each need the ungrouped mode',
   );
 });
 

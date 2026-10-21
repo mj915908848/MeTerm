@@ -411,7 +411,7 @@ function createEmptyState(text: string): HTMLDivElement {
 function createConnectionResultRow(item: ConnectionItem): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'home-search-overlay-row';
-  const iconName = item.type === 'ssh' ? 'ssh' : item.type === 'remote' ? 'remote' : item.type === 'jumpserver' ? 'jumpserver' : 'terminal';
+  const iconName = item.type === 'ssh' ? 'ssh' : item.type === 'jumpserver' ? 'jumpserver' : 'terminal';
   row.innerHTML = `<span class="home-search-overlay-row-icon">${icon(iconName)}</span><span class="home-search-overlay-row-name">${escapeHtml(item.name)}</span><span class="home-search-overlay-row-detail">${escapeHtml(item.detail)}</span>`;
   row.onclick = () => handleConnectionClick(item);
   return row;

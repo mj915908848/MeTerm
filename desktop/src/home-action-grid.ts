@@ -2,29 +2,24 @@
  * Home action grid — layout plan for the full-page home's "new connection"
  * buttons.
  *
- * The restored full-page home shows the four session kinds in a 2×2 grid, the
- * way it did before v0.2.11 removed the page. The phone-pairing entry arrived
- * after that grid existed and has no cell of its own, so it renders full-width
- * underneath instead of being dropped — losing an entry the connections window
- * still offers would be a silent feature regression.
+ * The full-page home shows local and SSH side by side in a two-column grid,
+ * with JumpServer full-width underneath so the grid has no empty cell.
  *
  * Zero-dependency on purpose: the node test runner cannot load the modules that
  * pull in xterm or the Tauri APIs, so the placement rules live here, apart from
  * the DOM, and are covered by home-action-grid.test.mts.
  */
 
-export type HomeActionKind = 'local' | 'ssh' | 'remote' | 'jumpserver' | 'phone';
+export type HomeActionKind = 'local' | 'ssh' | 'jumpserver';
 
-/** Cards that fill the 2×2 grid, in reading order. */
+/** Cards that fill the grid, in reading order. */
 export const HOME_GRID_ACTIONS: readonly HomeActionKind[] = [
   'local',
   'ssh',
-  'remote',
-  'jumpserver',
 ];
 
 /** Cards that get a full-width row under the grid. */
-export const HOME_WIDE_ACTIONS: readonly HomeActionKind[] = ['phone'];
+export const HOME_WIDE_ACTIONS: readonly HomeActionKind[] = ['jumpserver'];
 
 /** Columns in the grid. Kept in one place: the CSS grid uses the same number. */
 export const HOME_GRID_COLUMNS = 2;

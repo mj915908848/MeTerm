@@ -203,10 +203,9 @@ test('explicit plaintext migration scrubs each item only after its native write'
   assert.match(migration, /markSshCredentialMigrationManualRequired\('legacy_plaintext', 'previous_failure'\)/);
 });
 
-test('Remote and JumpServer startup migration is main-window-only and never probes metadata-only Keychain entries', async () => {
-  const [main, remote, jumpServer] = await Promise.all([
+test('JumpServer startup migration is main-window-only and never probes metadata-only Keychain entries', async () => {
+  const [main, jumpServer] = await Promise.all([
     readFile(new URL('../src/main.ts', import.meta.url), 'utf8'),
-    readFile(new URL('../src/remote-storage.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/jumpserver-api.ts', import.meta.url), 'utf8'),
   ]);
 
@@ -214,17 +213,7 @@ test('Remote and JumpServer startup migration is main-window-only and never prob
     main.indexOf("if (currentWindowLabel === 'main')"),
     main.indexOf('// Fire-and-forget: reverse pull'),
   );
-  assert.match(startupMigration, /detectRemoteCredentialMigrationPendingAtStartup\(\)/);
   assert.match(startupMigration, /detectJumpServerCredentialMigrationPendingAtStartup\(\)/);
-
-  const remoteMigration = remote.slice(
-    remote.indexOf('export async function detectRemoteCredentialMigrationPendingAtStartup'),
-    remote.indexOf('export function loadSavedRemoteConnections'),
-  );
-  assert.match(remote, /meterm-remote-credential-migration-v1/);
-  assert.match(remoteMigration, /CREDENTIAL_MIGRATION_MANUAL/);
-  assert.match(remoteMigration, /!hasPlaintext[\s\S]*CREDENTIAL_MIGRATION_COMPLETE/);
-  assert.doesNotMatch(remoteMigration, /invoke\(|storeRemoteToken|hasRemoteToken/);
 
   const jumpServerMigration = jumpServer.slice(
     jumpServer.indexOf('export async function detectJumpServerCredentialMigrationPendingAtStartup'),

@@ -136,14 +136,13 @@ test('every dialog kind hands its connect outcome to the main window', () => {
 
   // Between one handler and the next, so each is checked on its own instead of
   // matching the neighbouring handler's fields.
-  const handlers = ['setSSHConnectHandler(', 'setRemoteConnectHandler(', 'setEditConnectDelegate('];
+  const handlers = ['setSSHConnectHandler(', 'setEditConnectDelegate('];
   for (const marker of handlers) {
     assert.ok(source.includes(marker), `the dialogs need ${marker}`);
   }
   assert.ok(
-    source.indexOf(handlers[0]) < source.indexOf(handlers[1]) &&
-      source.indexOf(handlers[1]) < source.indexOf(handlers[2]),
-    'the handlers must be installed in one place, SSH then remote then JumpServer',
+    source.indexOf(handlers[0]) < source.indexOf(handlers[1]),
+    'the handlers must be installed in one place, SSH then JumpServer',
   );
 
   const ssh = source.slice(source.indexOf(handlers[0]), source.indexOf(handlers[1]));
@@ -152,39 +151,25 @@ test('every dialog kind hands its connect outcome to the main window', () => {
   for (const field of ['saved.name', 'saved.host', 'saved.port']) {
     assert.ok(ssh.includes(field), `the SSH matcher must compare ${field}`);
   }
-
-  const remote = source.slice(source.indexOf(handlers[1]), source.indexOf(handlers[2]));
-  for (const field of ['saved.host', 'saved.port']) {
-    assert.ok(remote.includes(field), `the remote matcher must compare ${field}`);
-  }
-  assert.ok(
-    !remote.includes('saved.name'),
-    'a remote connection has no name of its own — matching on one would never match',
-  );
 });
 
 // ── The row menu ──
 
 /**
  * The hole this covers: `editConnection` took a `refreshView` and never used it
- * on the SSH and remote branches (only JumpServer returned through it), so saving
+ * on the SSH branch (only JumpServer returned through it), so saving
  * an edit closed the dialog and left the list rendering the row it was built from
  * — an old name, an old host — until the window was re-focused. The test above
  * could not see it: it checks that `editConnection(item, afterMutation)` is
  * written, and a callback that is passed and never called satisfies that.
  */
-test('an SSH or remote save reaches the list that opened the dialog', () => {
+test('an SSH save reaches the list that opened the dialog', () => {
   const edit = bodyAfter(read('home-dashboard-left.ts'), 'export function editConnection');
 
   assert.match(
     edit,
     /showSSHModal\(item\.raw as SSHConnectionConfig,\s*\(\)\s*=>\s*refreshView\(\)\)/,
     'the SSH dialog has to be given a way to say it saved',
-  );
-  assert.match(
-    edit.slice(edit.indexOf("item.type === 'remote'")),
-    /showRemoteEditDialog\(item\.raw as RemoteServerInfo,\s*\(\)\s*=>\s*refreshView\(\)\)/,
-    'the remote dialog has to be given a way to say it saved',
   );
 
   // Both SSH buttons save — "save" and "connect and save" — and a callback wired
@@ -199,10 +184,6 @@ test('an SSH or remote save reaches the list that opened the dialog', () => {
     bodyAfter(read('ssh.ts'), 'export function showSSHModal('),
     /createConnectionForm\(prefill,[\s\S]*?onSaved\)/,
     'showSSHModal has to pass its onSaved through, or the form has nowhere to report',
-  );
-  assert.ok(
-    bodyAfter(read('remote.ts'), 'export function showRemoteEditDialog(').includes('if (onSave) onSave('),
-    'the remote dialog already had this hook — it has to keep calling it',
   );
 });
 
@@ -234,8 +215,6 @@ test('the row menu offers a plain edit entry, without the dev-only extras', () =
 /** Modules whose behaviour the connection window actually runs. */
 const REACHABLE_MODULES = [
   'ssh.ts',
-  'remote.ts',
-  'remote-storage.ts',
   'jumpserver-ui.ts',
   'jumpserver-api.ts',
   'connection-sync.ts',
@@ -250,8 +229,6 @@ const REACHABLE_MODULES = [
 const NOT_ON_THIS_WINDOWS_PATHS: Readonly<Record<string, string>> = {
   create_ssh_session: 'a session belongs to the main window — see the test below',
   export_ssh_connections: 'reached from the toolbar, the app menu and the settings window',
-  remote_list_sessions: 'the session list lives in the main window; the edit dialog never enumerates sessions',
-  ping_remote: 'startup pruning of unreachable recents, run by the main window',
   sync_import_named_connection: 'the import flow, run from the settings window or the app menu',
   sync_get_connections: "the main window's startup pull and its 10s poll",
 };
@@ -307,10 +284,6 @@ test('the connection window can never start a session', () => {
   assert.ok(
     source.includes('setSSHConnectHandler('),
     'without the SSH handler the dialog would call createSSHSession in this window',
-  );
-  assert.ok(
-    source.includes('setRemoteConnectHandler('),
-    'without the remote handler the dialog would open the session in this window',
   );
 });
 

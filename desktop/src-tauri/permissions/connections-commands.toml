@@ -13,10 +13,6 @@ commands.allow = [
   "sync_upsert_connection",
   "sync_update_connection_password",
   "sync_delete_connection",
-  # Remote.
-  "remote_store_token",
-  "remote_has_token",
-  "remote_delete_token",
   # JumpServer. `migrate` is on the save path too: editing a config without
   # retyping its secret sends an empty submission, and addJumpServerConfig then
   # asks whether a credential for that binding already exists in the vault.

@@ -2,7 +2,7 @@
 use tauri::menu::Submenu;
 use tauri::State;
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     AppHandle, Manager,
 };
 
@@ -13,27 +13,23 @@ pub fn tray_label(language: &str, key: &str) -> &'static str {
         ("zh", "new_window") => "新窗口",
         ("zh", "show_home") => "显示主页",
         ("zh", "new_terminal") => "新建终端",
-        ("zh", "new_private_terminal") => "新建私有终端",
         ("zh", "settings") => "设置",
         ("zh", "close_all_sessions") => "关闭所有会话",
         ("zh", "quit") => "关闭窗口",
         ("zh", "quit_all") => "退出应用",
         ("zh", "import_connections") => "导入连接",
         ("zh", "export_connections") => "导出连接",
-        ("zh", "lan_discover") => "局域网连接",
         ("zh", "check_updates") => "检查更新",
         ("zh", "pip_toggle") => "画中画",
         (_, "new_window") => "New Window",
         (_, "show_home") => "Show Home",
         (_, "new_terminal") => "New Terminal",
-        (_, "new_private_terminal") => "New Private Terminal",
         (_, "settings") => "Settings",
         (_, "close_all_sessions") => "Close All Sessions",
         (_, "quit") => "Close Window",
         (_, "quit_all") => "Quit Application",
         (_, "import_connections") => "Import Connections",
         (_, "export_connections") => "Export Connections",
-        (_, "lan_discover") => "LAN Access",
         (_, "check_updates") => "Check for Updates",
         (_, "pip_toggle") => "Picture-in-Picture",
         _ => "",
@@ -442,14 +438,6 @@ pub fn set_tray_language(app: AppHandle, language: String) -> Result<(), String>
         None::<&str>,
     )
     .map_err(|e| e.to_string())?;
-    let new_private_terminal_item = MenuItem::with_id(
-        &app,
-        "new_private_terminal",
-        tray_label(&language, "new_private_terminal"),
-        true,
-        None::<&str>,
-    )
-    .map_err(|e| e.to_string())?;
     let settings_item = MenuItem::with_id(
         &app,
         "settings",
@@ -508,17 +496,6 @@ pub fn set_tray_language(app: AppHandle, language: String) -> Result<(), String>
     )
     .map_err(|e| e.to_string())?;
 
-    let checked = lifecycle.is_lan_access_menu_checked();
-    let lan_discover_item = CheckMenuItem::with_id(
-        &app,
-        "lan_discover",
-        tray_label(&language, "lan_discover"),
-        true,
-        checked,
-        None::<&str>,
-    )
-    .map_err(|e| e.to_string())?;
-
     let check_updates_label = build_check_updates_label(&language, pending_version.as_deref());
     let check_updates_item = MenuItem::with_id(
         &app,
@@ -531,7 +508,6 @@ pub fn set_tray_language(app: AppHandle, language: String) -> Result<(), String>
 
     let separator = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
     let separator2 = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
-    let separator3 = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
     let separator4 = PredefinedMenuItem::separator(&app).map_err(|e| e.to_string())?;
 
     let menu = Menu::with_items(
@@ -540,11 +516,8 @@ pub fn set_tray_language(app: AppHandle, language: String) -> Result<(), String>
             &new_window_item,
             &show_home_item,
             &new_terminal_item,
-            &new_private_terminal_item,
             &settings_item,
             &pip_toggle_item,
-            &separator3,
-            &lan_discover_item,
             &separator2,
             &import_connections_item,
             &export_connections_item,

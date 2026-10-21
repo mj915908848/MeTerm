@@ -140,30 +140,6 @@ test("xterm's hidden textarea is never treated as a form field", () => {
   );
 });
 
-// The remote port box used to be `type="number"` — exactly the type the model
-// above refuses to serve — so it was the one field in the app whose right-click
-// fell back to the WebView's own English menu. It is a text field with a numeric
-// keyboard and a digit filter instead, like the SSH form's port box.
-test('the remote port box is a text field, so it keeps the app menu', () => {
-  const source = read('remote.ts');
-  const start = source.indexOf('const portInput = document.createElement');
-  assert.ok(start > 0, 'the remote edit dialog must still build a port field');
-  const field = source.slice(start, source.indexOf('portGroup.appendChild(portInput)', start));
-
-  assert.ok(
-    field.includes("portInput.type = 'text'"),
-    'a number input carries no selection, which is what the model above rules out',
-  );
-  assert.ok(
-    field.includes("portInput.inputMode = 'numeric'"),
-    'the numeric keyboard is the one thing the number type was actually providing',
-  );
-  assert.ok(
-    field.includes('replace(/\\D/g'),
-    'a text field has to filter its own digits, or the port is no longer a port',
-  );
-});
-
 // The point of replacing the menu is that the four commands still work. Copy,
 // cut and paste have to reach the real clipboard, and paste has to write through
 // the `input` event the dialogs listen on.

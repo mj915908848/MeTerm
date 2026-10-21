@@ -263,67 +263,6 @@ async fn post_pinned_push_inner(
 
 // ─────────────────────────────── Tauri 命令 ───────────────────────────────
 
-/// Redacted configuration exposed to the settings WebView. Secret-bearing
-/// `RelayConfig` is deliberately runtime-only and has no serialization path.
-#[derive(serde::Serialize)]
-pub struct RelayConfigView {
-    pub url: String,
-    pub cert_fp: String,
-    pub enabled: bool,
-    pub has_registration_token: bool,
-    pub has_push_token: bool,
-}
-
-/// 读取当前中继配置。前端设置面板用。无 app 数据目录时返回默认值。
-#[tauri::command]
-pub async fn get_relay_config(
-    window: WebviewWindow,
-    state: State<'_, Arc<ServerState>>,
-) -> Result<RelayConfigView, String> {
-    require_relay_window(&window)?;
-    let dir = state.config.log_dir.clone();
-    let config = if dir.is_empty() {
-        RelayConfig::default()
-    } else {
-        load_relay_config(&dir)
-    };
-    Ok(RelayConfigView {
-        url: config.url,
-        cert_fp: config.cert_fp,
-        enabled: config.enabled,
-        has_registration_token: !config.token.is_empty(),
-        has_push_token: config.push_token.is_some_and(|token| !token.is_empty()),
-    })
-}
-
-/// 写入中继配置并落盘。改动在**下次启动**生效(v1 不做在线重连,避免管理任务句柄的复杂度)。
-#[tauri::command]
-pub async fn set_relay_config(
-    window: WebviewWindow,
-    state: State<'_, Arc<ServerState>>,
-    url: String,
-    token: String,
-    push_token: Option<String>,
-    cert_fp: String,
-    enabled: bool,
-) -> Result<(), String> {
-    require_relay_window(&window)?;
-    let dir = state.config.log_dir.clone();
-    if dir.is_empty() {
-        return Err("no app data dir; relay config cannot be persisted".to_string());
-    }
-    update_relay_config(&dir, url, token, push_token, cert_fp, enabled)
-}
-
-fn require_relay_window(window: &WebviewWindow) -> Result<(), String> {
-    let label = window.label();
-    if label == "main" || label == "settings" || label.starts_with("window-") {
-        Ok(())
-    } else {
-        Err("relay configuration is unavailable to this window".to_string())
-    }
-}
-
 // ─────────────────────────────── 证书指纹钉死校验器 ───────────────────────────────
 
 /// 自定义 rustls 服务端证书校验器:只认叶子证书 SHA256 == `expected_fp`(小写 hex),

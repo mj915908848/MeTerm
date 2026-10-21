@@ -42,19 +42,15 @@ interface Harness {
   bar: string[];
   /** How many times the sidecar readiness wait was entered. */
   waits: () => number;
-  pollers: string[];
   state: () => { metermReady: boolean; port: number; authToken: string };
 }
 
 function harness(waitForMeTerm: () => Promise<{ port: number; token: string }>): Harness {
   const bar: string[] = [];
-  const pollers: string[] = [];
   let waits = 0;
 
   const build = new Function(
     'waitForMeTerm',
-    'startPairPoller',
-    'startRemoteSessionPoller',
     'StatusBar',
     `let metermReady = false, port = 0, authToken = '';
      const setPort = (v) => { port = v; };
@@ -66,15 +62,13 @@ function harness(waitForMeTerm: () => Promise<{ port: number; token: string }>):
 
   const api = build(
     () => { waits += 1; return waitForMeTerm(); },
-    () => { pollers.push('pair'); },
-    () => { pollers.push('remote'); },
     {
       setConnection: (status: string, label?: string) => { bar.push(`setConnection:${status}:${label ?? ''}`); },
       setError: (message: string) => { bar.push(`setError:${message}`); },
     },
   );
 
-  return { ...api, bar, waits: () => waits, pollers, state: api.state };
+  return { ...api, bar, waits: () => waits, state: api.state };
 }
 
 test('a successful boot leaves the status bar describing nothing at all', async () => {
@@ -86,7 +80,6 @@ test('a successful boot leaves the status bar describing nothing at all', async 
     'the bar must not advertise a local connection before a session exists',
   );
   assert.deepEqual({ ...h.state() }, { metermReady: true, port: 12345, authToken: 'tok' });
-  assert.deepEqual([...h.pollers], ['pair', 'remote'], 'the pollers still start with the backend');
 });
 
 test('a second call is a no-op and never re-announces anything', async () => {
@@ -109,5 +102,4 @@ test('a failed boot still reports the error on the status bar', async () => {
     'the error must say what failed, not just that something did',
   );
   assert.equal(h.state().metermReady, false);
-  assert.deepEqual([...h.pollers], [], 'no pollers may start for a backend that never came up');
 });

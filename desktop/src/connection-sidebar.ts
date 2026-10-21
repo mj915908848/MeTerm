@@ -12,12 +12,12 @@ import { t } from './i18n';
 import { icon } from './icons';
 import { showSSHModal } from './ssh';
 
-export type NewConnectionKind = 'local' | 'ssh' | 'remote' | 'jumpserver' | 'phone';
+export type NewConnectionKind = 'local' | 'ssh' | 'jumpserver';
 
 export interface NewAction {
   kind: NewConnectionKind;
-  iconName: 'terminal' | 'ssh' | 'remote' | 'jumpserver' | 'phone';
-  labelKey: 'homeNewLocalSession' | 'homeNewSSHSession' | 'homeRemoteConnect' | 'homeNewJumpServer' | 'homeNewPhonePairing';
+  iconName: 'terminal' | 'ssh' | 'jumpserver';
+  labelKey: 'homeNewLocalSession' | 'homeNewSSHSession' | 'homeNewJumpServer';
   cls: string;
   action: () => void;
   ctxMenu?: boolean;
@@ -31,7 +31,6 @@ export interface NewAction {
 export const NEW_ACTIONS: NewAction[] = [
   { kind: 'local', iconName: 'terminal', labelKey: 'homeNewLocalSession', cls: 'local', ctxMenu: true, action: () => document.dispatchEvent(new CustomEvent('new-local-session')) },
   { kind: 'ssh', iconName: 'ssh', labelKey: 'homeNewSSHSession', cls: 'ssh', action: () => showSSHModal() },
-  { kind: 'remote', iconName: 'remote', labelKey: 'homeRemoteConnect', cls: 'remote', action: () => document.dispatchEvent(new CustomEvent('remote-connect-request')) },
   {
     kind: 'jumpserver', iconName: 'jumpserver', labelKey: 'homeNewJumpServer', cls: 'jumpserver',
     action: async () => {
@@ -41,13 +40,6 @@ export const NEW_ACTIONS: NewAction[] = [
         const { handleJumpServerConnect } = await import('./jumpserver-handler');
         handleJumpServerConnect(result.config);
       }
-    },
-  },
-  {
-    kind: 'phone', iconName: 'phone', labelKey: 'homeNewPhonePairing', cls: 'phone',
-    action: async () => {
-      const { showPairingDialog } = await import('./pairing');
-      await showPairingDialog();
     },
   },
 ];

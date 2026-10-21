@@ -20,7 +20,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem},
+    menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, RunEvent,
 };
@@ -133,7 +133,6 @@ pub struct AppLifecycleState {
     /// Tracks when each window was created for grace period protection
     window_created_at: Mutex<HashMap<String, Instant>>,
     current_language: Mutex<String>,
-    lan_access_menu_checked: Mutex<bool>,
     pending_update: Mutex<Option<String>>,
     /// Path from CLI args — consumed once by frontend on first load.
     initial_open_path: Mutex<Option<String>>,
@@ -150,7 +149,6 @@ impl AppLifecycleState {
             initialized_windows: Mutex::new(HashSet::new()),
             window_created_at: Mutex::new(HashMap::new()),
             current_language: Mutex::new("en".to_string()),
-            lan_access_menu_checked: Mutex::new(false),
             pending_update: Mutex::new(None),
         }
     }
@@ -257,19 +255,6 @@ impl AppLifecycleState {
             .unwrap_or_else(|_| "en".to_string())
     }
 
-    pub fn set_lan_access_menu_checked(&self, value: bool) {
-        if let Ok(mut guard) = self.lan_access_menu_checked.lock() {
-            *guard = value;
-        }
-    }
-
-    pub fn is_lan_access_menu_checked(&self) -> bool {
-        self.lan_access_menu_checked
-            .lock()
-            .map(|guard| *guard)
-            .unwrap_or(false)
-    }
-
     pub fn set_pending_update(&self, version: Option<String>) {
         if let Ok(mut guard) = self.pending_update.lock() {
             *guard = version;
@@ -303,7 +288,6 @@ fn normalize_menu_id(raw: &str) -> Option<&'static str> {
         "new_window" => Some("new_window"),
         "show_home" => Some("show_home"),
         "new_terminal" => Some("new_terminal"),
-        "new_private_terminal" => Some("new_private_terminal"),
         "settings" => Some("settings"),
         "close_all_sessions" => Some("close_all_sessions"),
         "quit_all" => Some("quit_all"),
@@ -319,7 +303,6 @@ fn normalize_menu_id(raw: &str) -> Option<&'static str> {
         "show_shortcuts" => Some("show_shortcuts"),
         "import_connections" => Some("import_connections"),
         "export_connections" => Some("export_connections"),
-        "lan_discover" => Some("lan_discover"),
         "check_updates" => Some("check_updates"),
         "pip_toggle" => Some("pip_toggle"),
         _ => None,
@@ -534,20 +517,6 @@ fn dispatch_menu_action(app: &tauri::AppHandle, action: &str) {
                 Err(_e) => debug_log!("[DEBUG] Failed to emit menu-new-terminal: {}", _e),
             }
         }
-        "new_private_terminal" => {
-            let _ = window.show();
-            let _ = window.set_focus();
-            let payload = WindowEvent {
-                target_window: window_label.clone(),
-            };
-            match app.emit("menu-new-private-terminal", payload) {
-                Ok(_) => debug_log!(
-                    "[DEBUG] Successfully emitted menu-new-private-terminal to {}",
-                    window_label
-                ),
-                Err(_e) => debug_log!("[DEBUG] Failed to emit menu-new-private-terminal: {}", _e),
-            }
-        }
         "settings" => {
             let _ = window.show();
             let _ = window.set_focus();
@@ -715,13 +684,6 @@ fn dispatch_menu_action(app: &tauri::AppHandle, action: &str) {
                 },
             );
         }
-        "lan_discover" => {
-            if let Some(server) = app.try_state::<Arc<server::ServerState>>() {
-                if let Err(error) = commands::lan::toggle_tray_lan_access(app, server.as_ref()) {
-                    eprintln!("[lan] tray transition failed: {error}");
-                }
-            }
-        }
         "check_updates" => {
             let _ = window.show();
             let _ = window.set_focus();
@@ -754,7 +716,7 @@ fn handle_menu_event(app: &tauri::AppHandle, raw_id: &str) {
     // Block window-creating actions until at least one main window has fully initialized.
     // During startup, Tauri/Windows may fire spurious menu events that should not
     // create new windows.
-    if (action == "new_window" || action == "new_terminal" || action == "new_private_terminal")
+    if (action == "new_window" || action == "new_terminal")
         && !lifecycle.has_any_initialized_main_window()
     {
         debug_log!(
@@ -895,7 +857,6 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(lifecycle)
         .manage(tldr::TldrState::new())
-        .manage(commands::remote_broker::RemoteBrokerState::default())
         .setup(|app| {
             startup_log("Setup: begin");
 
@@ -967,9 +928,6 @@ pub fn run() {
                     }
                 }
             };
-            let initial_lan_status = server_state.lan_access_status();
-            app.state::<AppLifecycleState>()
-                .set_lan_access_menu_checked(initial_lan_status.enabled);
             app.manage(server_state);
 
             let quit_item = MenuItem::with_id(app, "quit", "Close Window", true, None::<&str>)?;
@@ -977,26 +935,16 @@ pub fn run() {
             let new_window_item = MenuItem::with_id(app, "new_window", "New Window", true, None::<&str>)?;
             let show_home_item = MenuItem::with_id(app, "show_home", "Show Home", true, None::<&str>)?;
             let new_terminal_item = MenuItem::with_id(app, "new_terminal", "New Terminal", true, None::<&str>)?;
-            let new_private_terminal_item = MenuItem::with_id(app, "new_private_terminal", "New Private Terminal", true, None::<&str>)?;
             let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
             let pip_toggle_item = MenuItem::with_id(app, "pip_toggle", "Picture-in-Picture", true, None::<&str>)?;
             let import_connections_item = MenuItem::with_id(app, "import_connections", "Import Connections", true, None::<&str>)?;
             let export_connections_item = MenuItem::with_id(app, "export_connections", "Export Connections", true, None::<&str>)?;
             let close_all_sessions_item = MenuItem::with_id(app, "close_all_sessions", "Close All Sessions", true, None::<&str>)?;
-            let lan_discover_item = CheckMenuItem::with_id(
-                app,
-                "lan_discover",
-                "LAN Access",
-                true,
-                initial_lan_status.enabled,
-                None::<&str>,
-            )?;
             let check_updates_item = MenuItem::with_id(app, "check_updates", "Check for Updates", true, None::<&str>)?;
 
             use tauri::menu::PredefinedMenuItem;
             let separator = PredefinedMenuItem::separator(app)?;
             let separator2 = PredefinedMenuItem::separator(app)?;
-            let separator3 = PredefinedMenuItem::separator(app)?;
             let separator4 = PredefinedMenuItem::separator(app)?;
 
             let menu = Menu::with_items(
@@ -1005,11 +953,8 @@ pub fn run() {
                     &new_window_item,
                     &show_home_item,
                     &new_terminal_item,
-                    &new_private_terminal_item,
                     &settings_item,
                     &pip_toggle_item,
-                    &separator3,
-                    &lan_discover_item,
                     &separator2,
                     &import_connections_item,
                     &export_connections_item,
@@ -1081,7 +1026,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // session
             commands::session::get_meterm_connection_info,
-            commands::session::get_pairing_info,
             commands::session::create_session,
             commands::session::list_sessions,
             commands::session::delete_session,
@@ -1120,35 +1064,9 @@ pub fn run() {
             commands::window::set_traffic_lights_visible,
             commands::window::restart_app_via_open,
             commands::window::reveal_window,
-            // lan
-            commands::lan::get_lan_access_state,
-            commands::lan::set_lan_access,
-            commands::lan::set_lan_discovery,
-            commands::lan::discover_lan,
-            commands::lan::get_device_name,
-            commands::lan::set_device_name,
-            commands::lan::ping_remote,
-            commands::lan::list_clients,
-            commands::lan::kick_client,
-            commands::lan::list_devices,
-            commands::lan::list_paired_credentials,
-            commands::lan::revoke_paired_credential,
-            commands::lan::kick_device,
-            commands::lan::set_session_private,
-            // Fixed-operation remote desktop broker. Stored tokens stay native.
-            commands::remote_broker::remote_store_token,
-            commands::remote_broker::remote_has_token,
-            commands::remote_broker::remote_delete_token,
-            commands::remote_broker::remote_list_sessions,
-            commands::remote_broker::remote_connect_session,
-            commands::remote_broker::remote_send_frame,
-            commands::remote_broker::remote_close_session,
             // Identity-confirmed native export; credential bytes never cross WebView IPC.
             commands::connection_export::export_ssh_connections,
             commands::connections_dispatch::connections_dispatch,
-            // relay tunnel(公网中继隧道配置:出站注册客户端)
-            server::relay_client::get_relay_config,
-            server::relay_client::set_relay_config,
             // connection sync(桌面前端进程内桥接 ConnectionRegistry/secret_vault)
             commands::connection_sync::sync_get_connections,
             commands::connection_sync::sync_import_named_connection,
@@ -1160,12 +1078,6 @@ pub fn run() {
             commands::connection_sync::sync_import_production_credential_for_development,
             // security
             commands::security::consume_legacy_ui_preferences,
-            commands::security::list_banned_ips,
-            commands::security::ban_ip,
-            commands::security::unban_ip,
-            commands::security::refresh_token,
-            commands::security::set_custom_token,
-            commands::security::revoke_all_clients,
             commands::security::set_proxy_mode,
             // authority-bound JumpServer credential broker (never returns secrets)
             commands::jumpserver_credentials::jumpserver_migrate_credentials,

@@ -24,55 +24,6 @@ pub fn get_meterm_connection_info(
     })
 }
 
-#[tauri::command]
-pub fn get_pairing_info(
-    window: tauri::WebviewWindow,
-    state: State<'_, Arc<ServerState>>,
-) -> Result<String, String> {
-    require_operational_window(&window)?;
-    if !state.is_running() {
-        return Err("server is not running".into());
-    }
-    let pair_ticket = state.pairing_manager.create_bootstrap_ticket()?;
-
-    let port = state.lan_port();
-
-    let host = state.display_name();
-
-    let addrs: Vec<String> = local_ip_address::list_afinet_netifas()
-        .map(|list| {
-            list.into_iter()
-                .filter_map(|(_, ip)| {
-                    let v4 = match ip {
-                        std::net::IpAddr::V4(v4) => v4,
-                        _ => return None,
-                    };
-                    let o = v4.octets();
-                    let is_private = o[0] == 10
-                        || (o[0] == 172 && (16..=31).contains(&o[1]))
-                        || (o[0] == 192 && o[1] == 168);
-                    is_private.then(|| format!("{}:{}", v4, port))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let info = serde_json::json!({
-        "v": 2,
-        "addrs": addrs,
-        // Compatibility field for existing QR decoders. Owner credentials are
-        // never embedded; v2 clients redeem `pair_ticket` once over pinned TLS.
-        "token": "",
-        "pair_ticket": pair_ticket,
-        "name": host,
-        "device_id": state.device_id(),
-        // 自签 TLS 证书指纹(SHA256 hex),供手机钉死信任(设计稿 §4)。未启用 TLS 时为空串。
-        "cert_fp": state.cert_fp(),
-    });
-
-    Ok(info.to_string())
-}
-
 fn require_operational_window(window: &tauri::WebviewWindow) -> Result<(), String> {
     let label = window.label();
     if label == "main" || label == "settings" || label.starts_with("window-") {

@@ -1,8 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, OnceLock};
-use tauri::State;
-
-use crate::server::ServerState;
+use std::sync::{Mutex, OnceLock};
 
 // ─── Native-only cleanup for insecure legacy Keychain ACLs ───
 
@@ -304,95 +301,6 @@ fn validate_legacy_preference(key: &str, value: String) -> Option<String> {
         }
         _ => None,
     }
-}
-
-// ─── IP ban management ───
-
-#[tauri::command]
-pub async fn list_banned_ips(
-    window: tauri::WebviewWindow,
-    state: State<'_, Arc<ServerState>>,
-) -> Result<String, String> {
-    require_security_window(&window)?;
-    let bans = state.ban_manager.list();
-    Ok(serde_json::json!({ "banned_ips": bans }).to_string())
-}
-
-#[tauri::command]
-pub async fn ban_ip(
-    window: tauri::WebviewWindow,
-    state: State<'_, Arc<ServerState>>,
-    ip: String,
-    reason: Option<String>,
-) -> Result<String, String> {
-    require_security_window(&window)?;
-    super::validate_ip(&ip)?;
-    state
-        .ban_manager
-        .ban(&ip, &reason.unwrap_or_default())
-        .map_err(|e| e)?;
-    state.session_manager.kick_by_ip(&ip);
-    Ok(serde_json::json!({ "ok": true }).to_string())
-}
-
-#[tauri::command]
-pub async fn unban_ip(
-    window: tauri::WebviewWindow,
-    state: State<'_, Arc<ServerState>>,
-    ip: String,
-) -> Result<String, String> {
-    require_security_window(&window)?;
-    super::validate_ip(&ip)?;
-    let found = state.ban_manager.unban(&ip);
-    Ok(serde_json::json!({ "ok": true, "found": found }).to_string())
-}
-
-// ─── Token management ───
-
-#[tauri::command]
-pub async fn refresh_token(
-    window: tauri::WebviewWindow,
-    state: State<'_, Arc<ServerState>>,
-) -> Result<String, String> {
-    require_security_window(&window)?;
-    let new_token = crate::server::generate_token();
-    state.update_token(new_token.clone())?;
-    Ok(serde_json::json!({ "ok": true, "token": new_token }).to_string())
-}
-
-#[tauri::command]
-pub async fn set_custom_token(
-    window: tauri::WebviewWindow,
-    state: State<'_, Arc<ServerState>>,
-    token: String,
-) -> Result<String, String> {
-    require_security_window(&window)?;
-    state.update_token(token)?;
-    Ok(serde_json::json!({ "ok": true }).to_string())
-}
-
-#[tauri::command]
-pub async fn revoke_all_clients(
-    window: tauri::WebviewWindow,
-    state: State<'_, Arc<ServerState>>,
-) -> Result<String, String> {
-    require_security_window(&window)?;
-    let new_token = crate::server::generate_token();
-    let outcome = state
-        .revoke_all_for_local_owner(new_token.clone())
-        .map_err(|error| error.to_string())?;
-    let cleanup = state.disconnect_device_generations(&outcome.retired_devices);
-    Ok(serde_json::json!({
-        "ok": outcome.devices_revoked,
-        "new_token": new_token,
-        "owner_rotated": true,
-        "devices_revoked": outcome.devices_revoked,
-        "device_error": outcome.device_error,
-        "disconnected": cleanup.disconnected,
-        "presence_disconnected": cleanup.presence_disconnected,
-        "push_removed": cleanup.push_removed,
-    })
-    .to_string())
 }
 
 // ─── Proxy settings ───

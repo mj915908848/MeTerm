@@ -34,8 +34,8 @@ import {
 } from './overlays';
 import {
   isHomeView, isGalleryView,
-  sshConfigMap, remoteInfoMap, sessionProgressMap,
-  remoteTabNumbers, jumpServerConfigMap,
+  sshConfigMap, sessionProgressMap,
+  jumpServerConfigMap,
 } from './app-state';
 
 // ── DOM elements (lazily cached) ──
@@ -168,21 +168,13 @@ export function renderTabs(): void {
     node.type = 'button';
     const isJumpServer = tabLeaves.some((l) => jumpServerConfigMap.has(l.sessionId));
     const focusedSessionId = (tabLeaves.find(leaf => leaf.id === tab.focusedPaneId) ?? tabLeaves[0])?.sessionId;
-    const focusedConfig = focusedSessionId && !remoteInfoMap.has(focusedSessionId)
-      ? sshConfigMap.get(focusedSessionId) : undefined;
+    const focusedConfig = focusedSessionId ? sshConfigMap.get(focusedSessionId) : undefined;
     const displayTitle = resolveSshTabTitle(tab.title, focusedConfig, sshTabTitleMode);
     const isSSH = !isJumpServer && tabLeaves.some((l) => sshConfigMap.has(l.sessionId));
-    const isRemoteTab = tabLeaves.some((l) => TerminalRegistry.get(l.sessionId)?.isRemote);
-    const remoteLeaf = isRemoteTab ? tabLeaves.find((l) => TerminalRegistry.get(l.sessionId)?.isRemote) : null;
-    const remoteNum = remoteLeaf ? remoteTabNumbers.get(remoteLeaf.sessionId) : undefined;
     const jsIconSvg = isJumpServer ? '<svg class="tab-js-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5Z"/><path d="M12 12L3 7M12 12l9-5M12 12v10" stroke-width="1.5"/></svg>' : '';
     const cloudIconSvg = isSSH ? '<svg class="tab-ssh-icon" width="12" height="12" viewBox="0 0 24 24" fill="#3b82f6"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>' : '';
-    const isKickedTab = isRemoteTab && tabLeaves.some((l) => TerminalRegistry.get(l.sessionId)?.kicked);
-    const remoteIconSvg = isRemoteTab
-      ? `<span class="tab-remote-icon-wrap${isKickedTab ? ' kicked' : ''}"><svg class="tab-remote-icon" width="12" height="12" viewBox="0 0 24 24" fill="#22c55e"><circle cx="12" cy="12" r="9" fill="none" stroke="#22c55e" stroke-width="2"/><ellipse cx="12" cy="12" rx="4" ry="9" fill="none" stroke="#22c55e" stroke-width="1.7"/><path d="M3.5 9h17M3.5 15h17" fill="none" stroke="#22c55e" stroke-width="1.5"/></svg>${isKickedTab ? '<svg class="tab-kicked-x" width="12" height="12" viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="2" x2="2" y2="10" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/></svg>' : ''}${remoteNum !== undefined ? `<span class="tab-remote-badge">${remoteNum}</span>` : ''}</span>`
-      : '';
-    const hasIcon = isSSH || isJumpServer || isRemoteTab;
-    const iconArea = hasIcon ? `<span class="tab-icon-area">${jsIconSvg}${cloudIconSvg}${remoteIconSvg}</span>` : '';
+    const hasIcon = isSSH || isJumpServer;
+    const iconArea = hasIcon ? `<span class="tab-icon-area">${jsIconSvg}${cloudIconSvg}</span>` : '';
     node.innerHTML = `${iconArea}<span class="title-tab-track"><span class="title-tab-track-inner"><span class="title-tab-text primary">${escapeHtml(displayTitle)}</span><span class="title-tab-text duplicate" aria-hidden="true">${escapeHtml(displayTitle)}</span></span></span>`;
     node.title = `${displayTitle} · ${statusLabel(tab.status)}`;
     node.onclick = async () => {
@@ -206,8 +198,6 @@ export function renderTabs(): void {
         AICapsuleManager.destroy(leaf.sessionId);
         sshConfigMap.delete(leaf.sessionId);
         jumpServerConfigMap.delete(leaf.sessionId);
-        remoteInfoMap.delete(leaf.sessionId);
-        remoteTabNumbers.delete(leaf.sessionId);
         viewerModeSessionIds.delete(leaf.sessionId);
         reclaimSessionIds.delete(leaf.sessionId);
         privateSessionIds.delete(leaf.sessionId);
