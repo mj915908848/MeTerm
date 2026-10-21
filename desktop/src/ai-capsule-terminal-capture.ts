@@ -7,7 +7,7 @@ import { TerminalRegistry } from './terminal';
 import { globalCompletionIndex } from './cmd-completion-data';
 import { loadSettings } from './themes';
 import { injectShellHook } from './ai-tools';
-import { jumpServerConfigMap, sshConfigMap, remoteInfoMap } from './app-state';
+import { jumpServerConfigMap, sshConfigMap } from './app-state';
 import type { AICapsuleInstance } from './ai-capsule-types';
 
 export function startTerminalCapture(
@@ -77,10 +77,9 @@ export function startTerminalCapture(
     }
   });
 
-  // Shell hook injection for SSH/remote sessions
+  // Shell hook injection for SSH sessions
   const sid = instance.sessionId;
-  const isRemoteSession = sshConfigMap.has(sid) || remoteInfoMap.has(sid);
-  if (isRemoteSession && !jumpServerConfigMap.has(sid) && loadSettings().shellHookInjection) {
+  if (sshConfigMap.has(sid) && !jumpServerConfigMap.has(sid) && loadSettings().shellHookInjection) {
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
     const tryInject = () => {
       unsubOutput();

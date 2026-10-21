@@ -54,7 +54,6 @@ import {
 import { attachConnectionDrag } from './connection-drag';
 import { pruneSelection, resolveRowClick } from './connection-selection';
 import { setSSHConnectHandler, type SSHConnectionConfig } from './ssh';
-import { setRemoteConnectHandler, type RemoteServerInfo } from './remote';
 import { makeNewButtons, runNewConnectionAction, type NewConnectionKind } from './connection-sidebar';
 import { applyNbPalette } from './nb-palette';
 import { setSettings, settings, isWindowsPlatform, isLinuxPlatform } from './app-state';
@@ -257,7 +256,6 @@ export function setupConnectionsWindowBridge(): void {
   // not a request for one.
   void listen(EVENT_MUTATED, () => {
     document.dispatchEvent(new CustomEvent('ssh-connections-changed'));
-    document.dispatchEvent(new CustomEvent('remote-connections-changed'));
   });
 }
 
@@ -544,12 +542,6 @@ export function initConnectionsWindow(): void {
     requestConnectInMainWindow('ssh', (raw) => {
       const saved = raw as SSHConnectionConfig;
       return saved.name === config.name && saved.host === config.host && saved.port === config.port;
-    });
-  });
-  setRemoteConnectHandler((info) => {
-    requestConnectInMainWindow('remote', (raw) => {
-      const saved = raw as RemoteServerInfo;
-      return saved.host === info.host && saved.port === info.port;
     });
   });
   // The JumpServer edit dialog hands over the saved item, already re-resolved.

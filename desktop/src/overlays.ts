@@ -15,8 +15,7 @@ import { notifyUser } from './notify';
 import {
   port, authToken,
   isHomeView, isGalleryView,
-  sshConfigMap, remoteInfoMap, remoteTabNumbers,
-  sessionProgressMap, jumpServerConfigMap,
+  sshConfigMap, sessionProgressMap, jumpServerConfigMap,
   activeJumpServers,
 } from './app-state';
 import { isSessionExpired, markSessionExpired } from './jumpserver-auth-state';
@@ -330,8 +329,6 @@ export function showKickedOverlay(sessionId: string, msg?: string): void {
       AICapsuleManager.destroy(leaf.sessionId);
       sshConfigMap.delete(leaf.sessionId);
       jumpServerConfigMap.delete(leaf.sessionId);
-      remoteInfoMap.delete(leaf.sessionId);
-      remoteTabNumbers.delete(leaf.sessionId);
       viewerModeSessionIds.delete(leaf.sessionId);
       reclaimSessionIds.delete(leaf.sessionId);
       { const pr = pendingMasterRequests.get(leaf.sessionId); if (pr) { clearTimeout(pr.timerId); pendingMasterRequests.delete(leaf.sessionId); } }

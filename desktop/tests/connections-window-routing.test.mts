@@ -87,7 +87,7 @@ test('a mutation stays a broadcast, unlike a request', () => {
     'an edit made in the launcher is news for every window, not a request for one',
   );
   assert.ok(
-    mutated.includes("'ssh-connections-changed'") && mutated.includes("'remote-connections-changed'"),
+    mutated.includes("'ssh-connections-changed'"),
     'the broadcast has to reach the listeners the home view already has',
   );
 });

@@ -35,8 +35,8 @@ import {
 } from './overlays';
 import {
   settings,
-  sshConfigMap, remoteInfoMap, sessionProgressMap,
-  remoteTabNumbers, jumpServerConfigMap,
+  sshConfigMap, sessionProgressMap,
+  jumpServerConfigMap,
 } from './app-state';
 import type { SSHConnectionConfig } from './ssh';
 
@@ -116,8 +116,6 @@ export function showTabContextMenu(event: MouseEvent, tab: Tab, tabIndex: number
         AICapsuleManager.destroy(leaf.sessionId);
         sshConfigMap.delete(leaf.sessionId);
         jumpServerConfigMap.delete(leaf.sessionId);
-        remoteInfoMap.delete(leaf.sessionId);
-        remoteTabNumbers.delete(leaf.sessionId);
         viewerModeSessionIds.delete(leaf.sessionId);
         reclaimSessionIds.delete(leaf.sessionId);
         privateSessionIds.delete(leaf.sessionId);
@@ -202,42 +200,6 @@ export function showTabContextMenu(event: MouseEvent, tab: Tab, tabIndex: number
       void createNewSession();
     }
   });
-
-  // Lock/Unlock session (for local and SSH sessions, not remote viewer)
-  const tabLeaves = getAllLeaves(tab.splitRoot);
-  const isOwnedTab = tabLeaves.every((l) => !viewerModeSessionIds.has(l.sessionId) && !remoteInfoMap.has(l.sessionId));
-  if (isOwnedTab) {
-    const activeLeaf = tabLeaves[0];
-    if (activeLeaf) {
-      const isPrivate = privateSessionIds.has(activeLeaf.sessionId);
-      addItem(isPrivate ? t('tabMenuUnlockSession') : t('tabMenuLockSession'), () => {
-        const newPrivate = !isPrivate;
-        void (async () => {
-          if (newPrivate) {
-            const confirmed = await confirm(t('lockSessionConfirm'), {
-              title: t('tabMenuLockSession'),
-              kind: 'warning',
-              okLabel: t('tabMenuLockSession'),
-              cancelLabel: t('hideToTrayTipCancel'),
-            });
-            if (!confirmed) return;
-          }
-          try {
-            await invoke('set_session_private', { sessionId: activeLeaf.sessionId, private: newPrivate });
-            if (newPrivate) {
-              privateSessionIds.add(activeLeaf.sessionId);
-            } else {
-              privateSessionIds.delete(activeLeaf.sessionId);
-            }
-            syncLockIconForActiveTab();
-            renderTabs();
-          } catch (err) {
-            console.error('set_session_private failed:', err);
-          }
-        })();
-      });
-    }
-  }
 
   addDivider();
 
@@ -627,8 +589,6 @@ export function showCustomContextMenu(event: MouseEvent): void {
           AICapsuleManager.destroy(leaf.sessionId);
           sshConfigMap.delete(leaf.sessionId);
           jumpServerConfigMap.delete(leaf.sessionId);
-          remoteInfoMap.delete(leaf.sessionId);
-          remoteTabNumbers.delete(leaf.sessionId);
           viewerModeSessionIds.delete(leaf.sessionId);
           reclaimSessionIds.delete(leaf.sessionId);
           sessionProgressMap.delete(leaf.sessionId);
@@ -701,8 +661,6 @@ export function showCustomContextMenu(event: MouseEvent): void {
           AICapsuleManager.destroy(closingLeaf.sessionId);
           sshConfigMap.delete(closingLeaf.sessionId);
           jumpServerConfigMap.delete(closingLeaf.sessionId);
-          remoteInfoMap.delete(closingLeaf.sessionId);
-          remoteTabNumbers.delete(closingLeaf.sessionId);
           viewerModeSessionIds.delete(closingLeaf.sessionId);
           reclaimSessionIds.delete(closingLeaf.sessionId);
           { const pr = pendingMasterRequests.get(closingLeaf.sessionId); if (pr) { clearTimeout(pr.timerId); pendingMasterRequests.delete(closingLeaf.sessionId); } }

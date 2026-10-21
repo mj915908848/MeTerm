@@ -18,8 +18,7 @@ import {
   viewerModeSessionIds, reclaimSessionIds,
 } from './overlays';
 import {
-  sshConfigMap, remoteInfoMap, sessionProgressMap, remoteTabNumbers,
-  jumpServerConfigMap,
+  sshConfigMap, sessionProgressMap, jumpServerConfigMap,
   settings, setSettings,
 } from './app-state';
 import { showQuickHelp } from './tldr-card';
@@ -145,8 +144,6 @@ export function setupKeyboardShortcuts(): void {
             AICapsuleManager.destroy(leaf.sessionId);
             sshConfigMap.delete(leaf.sessionId);
             jumpServerConfigMap.delete(leaf.sessionId);
-            remoteInfoMap.delete(leaf.sessionId);
-            remoteTabNumbers.delete(leaf.sessionId);
             viewerModeSessionIds.delete(leaf.sessionId);
             reclaimSessionIds.delete(leaf.sessionId);
             sessionProgressMap.delete(leaf.sessionId);

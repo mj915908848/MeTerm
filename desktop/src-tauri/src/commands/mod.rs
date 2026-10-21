@@ -7,10 +7,8 @@ pub mod fs;
 pub mod ipc_terminal;
 pub mod jumpserver_browser;
 pub mod jumpserver_credentials;
-pub mod lan;
 pub mod lifecycle;
 pub mod menu;
-pub mod remote_broker;
 pub mod security;
 pub mod session;
 pub mod settings_secrets;
@@ -37,13 +35,6 @@ fn validate_id(id: &str) -> Result<(), String> {
     } else {
         Err("invalid id format".to_string())
     }
-}
-
-/// Validates that a string is a valid IP address.
-fn validate_ip(ip: &str) -> Result<(), String> {
-    ip.parse::<std::net::IpAddr>()
-        .map(|_| ())
-        .map_err(|_| "invalid IP address".to_string())
 }
 
 #[derive(Serialize)]

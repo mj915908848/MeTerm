@@ -3,7 +3,6 @@ import { createOverlayScrollbar } from './overlay-scrollbar';
 import { t } from './i18n';
 import { createGeneralTab } from './settings-general';
 import { createAITab } from './settings-ai';
-import { createSharingTab } from './settings-sharing';
 import { createAboutTab } from './settings-about';
 
 export interface SettingsPanelOptions {
@@ -71,7 +70,6 @@ export function createSettingsPanel(options: SettingsPanelOptions): HTMLDivEleme
   const tabDefs = [
     { key: 'general', label: t('settingsTabGeneral') },
     { key: 'ai', label: t('settingsTabAI') },
-    { key: 'sharing', label: t('settingsTabSharing') },
     { key: 'about', label: t('settingsTabAbout') },
   ];
 
@@ -124,11 +122,6 @@ export function createSettingsPanel(options: SettingsPanelOptions): HTMLDivEleme
   const aiContent = createAITab(current, update);
   const tabAI = tabContents['ai'];
   tabAI.appendChild(aiContent);
-
-  // ========== Sharing Tab ==========
-  const sharingContent = createSharingTab();
-  const tabSharing = tabContents['sharing'];
-  tabSharing.appendChild(sharingContent);
 
   // ========== About Tab ==========
   const aboutContent = createAboutTab();

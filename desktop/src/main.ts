@@ -56,7 +56,6 @@ import { initMacFullscreen } from './fullscreen-mac';
 import { initLanguage, setLanguage } from './i18n';
 import { setSSHConnectHandler } from './ssh';
 import { detectSshMigrationPendingAtStartup, pullConnections } from './connection-sync';
-import { fetchRemoteSessions, setRemoteConnectHandler, detectRemoteCredentialMigrationPendingAtStartup, pruneUnreachableRecentRemotes } from './remote';
 import { detectJumpServerCredentialMigrationPendingAtStartup } from './jumpserver-api';
 import { setupTabTransferListener, type TabTransferSessionInfo } from './tab-drag';
 import { escapeHtml } from './status-bar';
@@ -87,7 +86,6 @@ import {
 } from './toolbar';
 import { showTabContextMenu, showShellContextMenu, preloadShells } from './context-menu';
 import { handleSSHConnect } from './ssh-handler';
-import { handleRemoteConnect } from './remote-handler';
 import { setupKeyboardShortcuts } from './keyboard-shortcuts';
 import {
   setOverlayCallbacks,
@@ -95,8 +93,7 @@ import {
 import {
   port, authToken,
   settings, setSettings,
-  sshConfigMap, remoteInfoMap, sessionProgressMap,
-  remoteTabNumbers, incrementNextRemoteTabNumber,
+  sshConfigMap, sessionProgressMap,
 } from './app-state';
 import { setupDomEventListeners, setupTauriEventListeners, setupPostReadyEventListeners } from './event-listeners';
 import { initTldr, getTldrCommands } from './tldr-help';
@@ -165,7 +162,6 @@ async function init(): Promise<void> {
   // Lazy import keeps the main bundle lean.
   void import('./ai-audit-log').then(({ installAuditLog }) => installAuditLog());
 
-  if (settings.deviceName) void invoke('set_device_name', { name: settings.deviceName });
   setLanguage(settings.language);
   setCloseAllSessionsHandler(closeAllSessions);
   setOverlayCallbacks({ activateTab, renderTabs, showHomeView, terminalPanelEl });
@@ -189,13 +185,6 @@ async function init(): Promise<void> {
       // Startup only records a redacted pending/manual state. Credential reads
       // and writes require the explicit migration UI or normal user edits.
       console.warn('[security] SSH credential migration requires explicit action:', error);
-    }
-    try {
-      await detectRemoteCredentialMigrationPendingAtStartup();
-    } catch (error) {
-      // The durable manual marker prevents startup retries. Plaintext is kept
-      // for an explicit connection attempt or re-save by the user.
-      console.warn('[security] Remote credential migration incomplete:', error);
     }
     try {
       await detectJumpServerCredentialMigrationPendingAtStartup();
@@ -249,7 +238,6 @@ async function init(): Promise<void> {
   await restoreMainWindowGeometry(currentWindow);
 
   setSSHConnectHandler(handleSSHConnect);
-  setRemoteConnectHandler((info, sessionId) => { void handleRemoteConnect(info, sessionId); });
 
   // Register all DOM and Tauri event listeners
   setupDomEventListeners();
@@ -275,63 +263,12 @@ async function init(): Promise<void> {
     () => TabManager.getActiveSessionId(),
     (sessionId) => TerminalRegistry.sendPing(sessionId),
   );
-  StatusBar.startViewerMonitor(
-    () => TabManager.getActiveSessionId(),
-    async (sessionId) => {
-      // Skip placeholder session IDs (tab still connecting)
-      if (sessionId.startsWith('pending-')) return 0;
-      // Skip ended sessions to avoid 404 polling
-      if (!TerminalRegistry.isSessionActive(sessionId)) return 0;
-      try {
-        // For remote sessions, query the remote server; for local, query localhost
-        const remoteInfo = remoteInfoMap.get(sessionId);
-        if (remoteInfo) {
-          const sessions = await fetchRemoteSessions(remoteInfo);
-          const data = sessions.find((session) => session.id === sessionId) as (typeof sessions[number] & {
-            connected_clients?: number;
-            clients?: number;
-          }) | undefined;
-          if (!data) return 0;
-          const totalClients = typeof data.connected_clients === 'number'
-            ? data.connected_clients
-            : (typeof data.clients === 'number' ? data.clients : 0);
-          return Math.max(0, totalClients - 1);
-        }
-        const apiUrl = `http://127.0.0.1:${port}/api/sessions/${sessionId}`;
-        const resp = await fetch(apiUrl, {
-          headers: { Authorization: `Bearer ${authToken}` },
-        });
-        if (!resp.ok) return 0;
-        const data = await resp.json();
-        // Prefer connected_clients (active only), fall back to clients (total)
-        const totalClients = typeof data.connected_clients === 'number'
-          ? data.connected_clients
-          : (typeof data.clients === 'number' ? data.clients : 0);
-        // Subtract 1 for self to get other viewer count
-        const otherCount = Math.max(0, totalClients - 1);
-        return otherCount;
-      } catch {
-        return 0;
-      }
-    },
-  );
 
   showHomeView();
   renderTabs();
   renderToolbarActions();
 
   await ensureMeTermReady();
-
-  // Prune unreachable remote connections from recent list (async, non-blocking)
-  pruneUnreachableRecentRemotes()
-    .then(async () => {
-      // Refresh home view if still showing, so pruned items disappear
-      if (document.getElementById('home-view')) {
-        const { updateSSHHomeView } = await import('./ssh');
-        updateSSHHomeView();
-      }
-    })
-    .catch(() => {});
 
   // Initialize tldr help data + completion index (async, non-blocking)
   if (settings.tldrEnabled) {
@@ -396,16 +333,6 @@ async function init(): Promise<void> {
         username: sess.sshInfo.username,
         authMethod: 'password',
       });
-    }
-    // Restore remote info map so the globe icon and remote list button appear
-    if (sess.isRemote && sess.remoteHost && sess.remotePort) {
-      remoteInfoMap.set(sess.sessionId, {
-        host: sess.remoteHost,
-        port: sess.remotePort,
-        token: '',
-        secure: true,
-      });
-      remoteTabNumbers.set(sess.sessionId, incrementNextRemoteTabNumber());
     }
   });
 

@@ -8,7 +8,7 @@ const read = (name: string) => fs.readFileSync(new URL(`../src/${name}`, import.
 
 test('connection change notifications refresh while a terminal is active', () => {
   const source = read('event-listeners.ts');
-  const handlers = source.slice(source.indexOf('  // SSH connections changed'), source.indexOf('  // Remote connect from home page button'));
+  const handlers = source.slice(source.indexOf('  // SSH connections changed'), source.indexOf('  // TabManager subscription'));
   assert.ok(handlers.includes('ssh-connections-changed'));
   const listeners = new Map<string, () => void>();
   let refreshes = 0;
@@ -19,8 +19,6 @@ test('connection change notifications refresh while a terminal is active', () =>
   });
   listeners.get('ssh-connections-changed')!();
   assert.equal(refreshes, 1);
-  listeners.get('remote-connections-changed')!();
-  assert.equal(refreshes, 2);
 });
 
 function deletionHarness(reject = false) {

@@ -10,7 +10,6 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
         allocate_port_persistent(&config.log_dir)?
     };
     let token = generate_token();
-    let persisted_lan_policy = lan_access::load_policy(&config.log_dir);
 
     let ban_file = if config.log_dir.is_empty() {
         None
@@ -70,48 +69,12 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
         load_or_create_device_id(&config.log_dir)
     };
 
-    // 自签 TLS:有 state_dir 时证书元数据落盘，私钥只从 OS credential vault 读取。
-    // vault 缺失、authority 错配、旧文件转换失败或证书/私钥不匹配都必须阻止启动，
-    // 不能退回明文 HTTP。空 state_dir 仅保留给无持久化的内部测试模式。
-    let (tls_acceptor, cert_fp) = if config.log_dir.is_empty() {
-        (None, String::new())
-    } else {
-        let (server_config, fp) = tls::load_or_create_cert(&config.log_dir, &device_id)
-            .map_err(|error| format!("TLS identity initialization failed: {error}"))?;
-        eprintln!("[meterm-server] TLS ready, cert fingerprint(sha256)={}", fp);
-        (
-            Some(tokio_rustls::TlsAcceptor::from(Arc::new(server_config))),
-            fp,
-        )
-    };
-
-    let discovery_manager = match DiscoveryManager::new(port, device_id.clone(), cert_fp.clone()) {
-        Ok(dm) => {
-            eprintln!("[meterm] mDNS discovery manager initialized");
-            Some(dm)
-        }
-        Err(e) => {
-            eprintln!(
-                "[meterm] mDNS discovery manager failed: {} — LAN scanning disabled",
-                e
-            );
-            None
-        }
-    };
-
-    // 中继配置:提前加载一次(供 relay_url/relay_cert_fp 展示字段用),隧道 spawn 复用同一份,
-    // 避免重复读盘。仅启用时对已认证手机发布 url/指纹与 scoped capability;
-    // 桌面登记/HMAC 根密钥从不返回给客户端。
-    let relay_config = if config.log_dir.is_empty() {
-        relay_client::RelayConfig::default()
-    } else {
-        relay_client::load_relay_config(&config.log_dir)
-    };
-    let (relay_url, relay_cert_fp) = if relay_config.enabled {
-        (relay_config.url.clone(), relay_config.cert_fp.clone())
-    } else {
-        (String::new(), String::new())
-    };
+    // Sharing (LAN access, mDNS discovery, phone relay/push) has been removed:
+    // the server only serves this app's own windows over loopback, so it needs
+    // no TLS identity, no discovery advertisement and no relay tunnel.
+    let tls_acceptor: Option<tokio_rustls::TlsAcceptor> = None;
+    let cert_fp = String::new();
+    let discovery_manager: Option<DiscoveryManager> = None;
 
     let lan_access = lan_access::LanAccessControl::new(&config.log_dir);
     let state = Arc::new(ServerState {
@@ -129,19 +92,15 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
         connections,
         discovery_manager,
         bypass_proxy: AtomicBool::new(true),
-        // Runtime always starts closed. Persisted policy is restored only after
-        // the listener exists and before the accept loop is spawned.
+        // Always closed: the listener is loopback-only and no persisted LAN
+        // policy is restored.
         lan_access,
         device_name: std::sync::Mutex::new(String::new()),
         device_id,
         cert_fp,
-        relay_url,
-        relay_cert_fp,
-        relay_register_token: if relay_config.enabled {
-            relay_config.token.clone()
-        } else {
-            String::new()
-        },
+        relay_url: String::new(),
+        relay_cert_fp: String::new(),
+        relay_register_token: String::new(),
         event_bus,
         presence: PresenceRegistry::new(),
         push: PushRegistry::new(),
@@ -151,24 +110,16 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
         permission_bridge: agent::PermissionBridge::new(),
     });
 
-    let addr = format!("0.0.0.0:{}", port);
+    let addr = format!("127.0.0.1:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .map_err(|e| format!("bind {}: {}", addr, e))?;
-
-    if let Err(error) = state.restore_lan_access(persisted_lan_policy) {
-        eprintln!("[lan] persisted policy restore failed; staying closed: {error}");
-    }
 
     // Spawn the serve loop inside a supervisor that auto-restarts on
     // panic, error, or unexpected exit. Without this, a single panic in
     // the serve loop silently kills the server and ALL WebSocket sessions
     // fail with "Socket is not connected".
     //
-    // 每条连接经 run_accept_loop → serve_connection:peek 首字节分流 TLS / 明文,
-    // 两条路都喂 build_router 出来的同一个 Router(TLS 供钉指纹的手机,明文供现有手机 + 本机前端)。
-    // 中继隧道复用同一 TLS acceptor(子流始终端到端 TLS),故先克隆一份留给它。
-    let tls_acceptor_for_relay = tls_acceptor.clone();
     let state_for_serve = state.clone();
     let addr_for_restart = addr.clone();
     tokio::spawn(async move {
@@ -217,26 +168,7 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
     });
 
     state.ready.store(true, Ordering::SeqCst);
-    eprintln!("[meterm-server] ready on 0.0.0.0:{}", port);
-
-    // 离线手机推送分发器(终端通知 Phase 3):订阅 event_bus,对当前不在线的已注册手机
-    // seal+POST 给中继代发 APNs。中继未启用/未配置时分发器内部整体 no-op(见 push_dispatch::run)。
-    tokio::spawn(push_dispatch::run(state.clone()));
-
-    // 中继隧道客户端(出站注册):复用上面已加载的 relay_config(避免重复读盘);enabled 时后台建立
-    // 持久 WSS 到中继,跑 yamux(Server 模式)接子流,每条子流喂进 serve_tls_stream(同一 Router)。
-    // 需要 TLS(子流始终端到端 TLS)才启用;disabled / 无 TLS / 无目录 → no-op,LAN 与既有行为完全不变。
-    if let Some(acceptor) = tls_acceptor_for_relay {
-        if relay_config.enabled {
-            eprintln!("[relay-client] enabled — spawning configured tunnel");
-            let state_for_relay = state.clone();
-            tokio::spawn(relay_client::run_relay_tunnel(
-                state_for_relay,
-                acceptor,
-                relay_config,
-            ));
-        }
-    }
+    eprintln!("[meterm-server] ready on 127.0.0.1:{}", port);
 
     Ok(state)
 }

@@ -45,8 +45,8 @@ export function togglePin(key: string): void {
   localStorage.setItem(PIN_KEY, JSON.stringify([...s]));
 }
 
-export const connTypeIcon = (type: ConnectionItem['type']): 'ssh' | 'remote' | 'jumpserver' =>
-  type === 'remote' ? 'remote' : type === 'jumpserver' ? 'jumpserver' : 'ssh';
+export const connTypeIcon = (type: ConnectionItem['type']): 'ssh' | 'jumpserver' =>
+  type === 'jumpserver' ? 'jumpserver' : 'ssh';
 
 export interface SidebarListDeps {
   onSelect: (item: ConnectionItem) => void;

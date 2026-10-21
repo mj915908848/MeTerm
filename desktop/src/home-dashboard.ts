@@ -91,7 +91,7 @@ export function createDashboardHomeView(): HTMLDivElement {
   searchRow.appendChild(overlay);
   scroll.appendChild(searchRow);
 
-  // ── Session grid: the four kinds in 2×2, phone pairing full-width below ──
+  // ── Session grid: local and SSH side by side, JumpServer full-width below ──
   const controlGrid = document.createElement('div');
   controlGrid.className = 'home-dash-control-grid';
   controlGrid.id = 'home-control-grid';

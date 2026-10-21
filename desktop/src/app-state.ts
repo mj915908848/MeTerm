@@ -4,7 +4,6 @@
  */
 import type { AppSettings } from './themes';
 import type { SSHConnectionConfig } from './ssh';
-import type { RemoteServerInfo } from './remote';
 import type { JumpServerConfig, JumpServerAsset, JumpServerAccount } from './jumpserver-api';
 
 // ── Core connection state ──
@@ -15,11 +14,6 @@ export let metermReady = false;
 export function setPort(v: number): void { port = v; }
 export function setAuthToken(v: string): void { authToken = v; }
 export function setMetermReady(v: boolean): void { metermReady = v; }
-
-// ── Pair request deduplication and polling ──
-export const handledPairIds = new Set<string>();
-export let pairPollTimer: ReturnType<typeof setInterval> | null = null;
-export function setPairPollTimer(v: ReturnType<typeof setInterval> | null): void { pairPollTimer = v; }
 
 // ── Settings ──
 export let settings: AppSettings;
@@ -38,9 +32,7 @@ export function setIsQuitFlowRunning(v: boolean): void { isQuitFlowRunning = v; 
 
 // ── Session maps ──
 export const sshConfigMap = new Map<string, SSHConnectionConfig>();
-export const remoteInfoMap = new Map<string, RemoteServerInfo>();
 export const sessionProgressMap = new Map<string, { state: number; percent: number }>();
-export const remoteTabNumbers = new Map<string, number>();
 export const jumpServerConfigMap = new Map<string, {
   config: JumpServerConfig;
   asset: JumpServerAsset;
@@ -48,10 +40,6 @@ export const jumpServerConfigMap = new Map<string, {
 }>();
 // Active (authenticated) JumpServer connections — keyed by config name
 export const activeJumpServers = new Map<string, JumpServerConfig>();
-
-export let nextRemoteTabNumber = 1;
-export function setNextRemoteTabNumber(v: number): void { nextRemoteTabNumber = v; }
-export function incrementNextRemoteTabNumber(): number { return nextRemoteTabNumber++; }
 
 // ── Last-focused main window tracking (for JumpServer multi-window routing) ──
 export let lastFocusedMainWindowLabel = 'main';
