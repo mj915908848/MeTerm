@@ -2,8 +2,9 @@
  * home-connection-manager.ts — the home page's saved-connection manager.
  *
  * Two panes: the grouped connection list on the left, the selected connection
- * on the right. Managing happens in the open: the SSH form is embedded in the
- * right pane instead of a modal, and connect / duplicate / delete are buttons.
+ * on the right. A selected SSH connection is shown read-only first (its facts
+ * and connect / edit / duplicate / delete); "edit" swaps in the SSH form,
+ * embedded in the pane instead of a modal, and saving returns to the view.
  *
  * A single click only *selects*. Connecting takes a double-click, Enter, or the
  * "connect" button — on a page for managing connections, a click that opens a
@@ -13,7 +14,8 @@
  * ⌘/Ctrl-click and Shift-click select several (rules in connection-selection.ts);
  * the right pane then offers the batch actions. Rows drag onto a group header.
  * With nothing selected, the right pane shows the page's start content: search,
- * the new-session grid and recent connections.
+ * the new-session grid and recent connections. The "home" entry at the top of
+ * the list is the way back to it.
  */
 import { t } from './i18n';
 import { settings } from './app-state';
@@ -56,6 +58,10 @@ let picked: string[] = [];
 let anchor: string | null = null;
 /** "new" shows an empty SSH form (or a prefilled copy) in the right pane. */
 let draft: { prefill?: SSHConnectionConfig } | null = null;
+/** The one selected SSH connection is open in its form rather than its read-only view. */
+let editing = false;
+
+const HOME_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11.5 12 5l8 6.5"/><path d="M6.5 10v9h11v-9"/></svg>';
 
 interface Mounted {
   root: HTMLElement;
@@ -67,6 +73,16 @@ let mounted: Mounted | null = null;
 export function refreshConnectionManager(): void {
   if (mounted && !mounted.root.isConnected) mounted = null;
   mounted?.refresh();
+}
+
+/** The SSH dialog's small pill buttons, so the page reads as one with the form it embeds. */
+function button(label: string, onClick: () => void, kind: 'primary' | 'danger' | 'secondary' = 'secondary'): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = `ssh-btn ssh-btn-sm ssh-btn-${kind}`;
+  b.textContent = label;
+  b.onclick = onClick;
+  return b;
 }
 
 export function createConnectionManager(startContent: HTMLElement): HTMLElement {
@@ -92,17 +108,24 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
   toolbar.appendChild(searchWrap);
   left.appendChild(toolbar);
 
+  // The way back to the start content once a connection is selected.
+  const homeNav = document.createElement('button');
+  homeNav.type = 'button';
+  homeNav.className = 'hcm-home';
+  homeNav.innerHTML = `${HOME_ICON}<span>${escapeHtml(L('首页', 'Home'))}</span>`;
+  left.appendChild(homeNav);
+
   const actions = document.createElement('div');
   actions.className = 'hcm-list-actions';
-  const newSshBtn = document.createElement('button');
-  newSshBtn.type = 'button';
-  newSshBtn.className = 'hcm-btn';
-  newSshBtn.textContent = '+ SSH';
+  const newSshBtn = button('+ SSH', () => { void select([], null, {}); });
   newSshBtn.title = t('homeNewSSHSession');
-  const newGroupBtn = document.createElement('button');
-  newGroupBtn.type = 'button';
-  newGroupBtn.className = 'hcm-btn';
-  newGroupBtn.textContent = `+ ${t('homeGroupNew')}`;
+  const newGroupBtn = button(`+ ${t('homeGroupNew')}`, () => {
+    showGroupModal('', '', (name, color) => {
+      createGroup(name);
+      if (color) setGroupColor(name, color);
+      announce();
+    });
+  });
   actions.append(newSshBtn, newGroupBtn);
   left.appendChild(actions);
 
@@ -149,11 +172,20 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
   /** Change what is selected (and so what the right pane shows), asking first if a form has unsaved edits. */
   const select = async (keys: string[], nextAnchor: string | null, nextDraft: typeof draft = null): Promise<void> => {
     const same = keys.join('\n') === picked.join('\n') && nextDraft === draft;
-    if (!same && !(await confirmDiscard())) return;
+    if (same) { anchor = nextAnchor; return; }
+    if (!(await confirmDiscard())) return;
     picked = keys;
     anchor = nextAnchor;
     draft = nextDraft;
+    editing = false;
     render();
+  };
+
+  /** Switch the selected SSH connection between its view and its form. */
+  const setEditing = async (on: boolean): Promise<void> => {
+    if (!on && !(await confirmDiscard())) return;
+    editing = on;
+    renderDetail();
   };
 
   const moveKeys = (keys: readonly string[], group: string | null): void => {
@@ -196,6 +228,9 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
 
   // ── Right pane renderers ──
 
+  /** The centred column the detail renderers fill. */
+  let body: HTMLElement = right;
+
   const header = (title: string, subtitle: string, buttons: HTMLElement[]): HTMLElement => {
     const el = document.createElement('div');
     el.className = 'hcm-detail-header';
@@ -208,15 +243,6 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     btns.append(...buttons);
     el.append(text, btns);
     return el;
-  };
-
-  const button = (label: string, onClick: () => void, kind: 'primary' | 'danger' | '' = ''): HTMLButtonElement => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = `hcm-btn${kind ? ` hcm-btn-${kind}` : ''}`;
-    b.textContent = label;
-    b.onclick = onClick;
-    return b;
   };
 
   const deleteKeys = (keys: string[]): void => {
@@ -236,32 +262,79 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     return index === 0 ? L('最近一次连接', 'Most recently used') : L(`最近连接第 ${index + 1} 位`, `#${index + 1} in recent connections`);
   };
 
+  const factList = (): { el: HTMLElement; add: (label: string, value: string) => void } => {
+    const el = document.createElement('dl');
+    el.className = 'hcm-facts';
+    const add = (label: string, value: string): void => {
+      if (!value) return;
+      const dt = document.createElement('dt');
+      dt.textContent = label;
+      const dd = document.createElement('dd');
+      dd.textContent = value;
+      el.append(dt, dd);
+    };
+    return { el, add };
+  };
+
+  const authLabel = (config: SSHConnectionConfig): string => {
+    if (config.authMethod === 'password') return L('密码', 'Password');
+    if (config.usesDesktopKeyLadder) return L('SSH Agent / 默认密钥', 'SSH agent / default keys');
+    return L('私钥', 'Private key');
+  };
+
   const showSsh = (item: ConnectionItem): void => {
     const config = item.raw as SSHConnectionConfig;
-    const detail = `${config.username}@${config.host}:${config.port || 22}`;
-    const used = lastUsedLabel(config);
-    right.appendChild(header(item.name, used ? `${detail} · ${used}` : detail, [
+    const address = `${config.username}@${config.host}:${config.port || 22}`;
+    if (editing) {
+      body.appendChild(header(item.name, L('编辑连接', 'Edit connection'), [
+        button(L('取消', 'Cancel'), () => { void setEditing(false); }),
+      ]));
+      const embedded = createEmbeddedSSHForm(config, (saved) => {
+        // A rename moves the key; keep the saved connection selected.
+        picked = [sshKey(saved.name)];
+        anchor = picked[0];
+        editing = false;
+        form = null;
+        shownKey = '';
+        announce();
+      });
+      form = embedded;
+      body.appendChild(embedded.el);
+      return;
+    }
+
+    body.appendChild(header(item.name, address, [
       button(t('sshConnectBtn'), () => connect(item), 'primary'),
+      button(t('homeEditConnection'), () => { void setEditing(true); }),
       button(L('复制', 'Duplicate'), () => {
         const copy: SSHConnectionConfig = { ...config, serverConnectionId: undefined, name: `${config.name} ${L('副本', 'copy')}` };
         void select([], null, { prefill: copy });
       }),
       button(t('sshDeleteConnection'), () => deleteKeys([item.key]), 'danger'),
     ]));
-    const embedded = createEmbeddedSSHForm(config, (saved) => {
-      // A rename moves the key; keep the saved connection selected.
-      picked = [sshKey(saved.name)];
-      anchor = picked[0];
-      form = null;
-      shownKey = '';
-      announce();
-    });
-    form = embedded;
-    right.appendChild(embedded.el);
+    const facts = factList();
+    facts.add(L('主机', 'Host'), config.host);
+    facts.add(L('端口', 'Port'), String(config.port || 22));
+    facts.add(L('用户', 'User'), config.username);
+    facts.add(L('认证', 'Auth'), authLabel(config));
+    facts.add(L('分组', 'Group'), visibleGroupName(loadGroupMap()[item.key]) ?? t('homeGroupUngrouped'));
+    if (config.proxyType && config.proxyHost) {
+      facts.add(L('代理', 'Proxy'), `${config.proxyType.toUpperCase()} ${config.proxyHost}${config.proxyPort ? `:${config.proxyPort}` : ''}`);
+    }
+    facts.add(L('最近使用', 'Last used'), lastUsedLabel(config));
+    body.appendChild(facts.el);
+    body.appendChild(tip(L('双击左侧的连接或按回车，也可以直接打开', 'Double-click it in the list, or press Enter, to connect')));
+  };
+
+  const tip = (text: string): HTMLElement => {
+    const el = document.createElement('div');
+    el.className = 'hcm-tip';
+    el.textContent = text;
+    return el;
   };
 
   const showNewSsh = (prefill?: SSHConnectionConfig): void => {
-    right.appendChild(header(
+    body.appendChild(header(
       prefill ? L('复制连接', 'Duplicate connection') : L('新建 SSH 连接', 'New SSH connection'),
       L('填写后保存，连接会出现在左侧列表里', 'Save it and it appears in the list on the left'),
       [button(L('取消', 'Cancel'), () => { void select([], null); })],
@@ -275,42 +348,34 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
       announce();
     });
     form = embedded;
-    right.appendChild(embedded.el);
+    body.appendChild(embedded.el);
     requestAnimationFrame(() => embedded.el.querySelector<HTMLInputElement>('input')?.focus());
   };
 
   const showJumpServer = (item: ConnectionItem): void => {
     const config = item.raw as JumpServerConfig;
-    right.appendChild(header(item.name, `${config.username}@${config.sshHost}:${config.sshPort}`, [
+    body.appendChild(header(item.name, `${config.username}@${config.sshHost}:${config.sshPort}`, [
       button(t('sshConnectBtn'), () => connect(item), 'primary'),
       button(t('homeEditConnection'), () => editConnection(item, announce)),
       button(t('sshDeleteConnection'), () => deleteKeys([item.key]), 'danger'),
     ]));
-    const facts = document.createElement('dl');
-    facts.className = 'hcm-facts';
-    const fact = (label: string, value: string): void => {
-      if (!value) return;
-      const dt = document.createElement('dt');
-      dt.textContent = label;
-      const dd = document.createElement('dd');
-      dd.textContent = value;
-      facts.append(dt, dd);
-    };
-    fact('API', config.baseUrl);
-    fact(L('用户', 'User'), config.username);
-    fact(L('认证', 'Auth'), config.authMethod === 'token' ? 'Token' : L('密码', 'Password'));
-    right.appendChild(facts);
+    const facts = factList();
+    facts.add('API', config.baseUrl);
+    facts.add(L('用户', 'User'), config.username);
+    facts.add(L('认证', 'Auth'), config.authMethod === 'token' ? 'Token' : L('密码', 'Password'));
+    facts.add(L('分组', 'Group'), visibleGroupName(loadGroupMap()[item.key]) ?? t('homeGroupUngrouped'));
+    body.appendChild(facts.el);
 
     const history = getJSAssetHistoryByFrequency(config.name).slice(0, 8);
     if (history.length > 0) {
       const title = document.createElement('div');
       title.className = 'hcm-section-title';
       title.textContent = L('常用资产（单击连接）', 'Frequent assets (click to connect)');
-      right.appendChild(title);
+      body.appendChild(title);
       const box = document.createElement('div');
       box.className = 'hcm-assets';
       for (const entry of history) box.appendChild(createAssetHistoryRow(entry, config));
-      right.appendChild(box);
+      body.appendChild(box);
     }
   };
 
@@ -319,7 +384,7 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     const moveBtn = button(t('connectionMoveToGroup'), () => {
       showMoveMenu(moveBtn, loadGroupOrder(), (group) => moveKeys(keys, group));
     });
-    right.appendChild(header(L(`已选 ${chosen.length} 个连接`, `${chosen.length} connections selected`), '', [
+    body.appendChild(header(L(`已选 ${chosen.length} 个连接`, `${chosen.length} connections selected`), '', [
       moveBtn,
       button(t('sshDeleteConnection'), () => deleteKeys(keys), 'danger'),
       button(t('connectionClearSelection'), () => { void select([], null); }),
@@ -331,15 +396,12 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
       li.innerHTML = `<span>${escapeHtml(item.name)}</span><span class="hcm-batch-detail">${escapeHtml(item.detail)}</span>`;
       names.appendChild(li);
     }
-    right.appendChild(names);
-    const tip = document.createElement('div');
-    tip.className = 'hcm-hint';
-    tip.textContent = L('也可以把选中的连接拖到左侧的分组上', 'You can also drag the selection onto a group on the left');
-    right.appendChild(tip);
+    body.appendChild(names);
+    body.appendChild(tip(L('也可以把选中的连接拖到左侧的分组上', 'You can also drag the selection onto a group on the left')));
   };
 
   const renderDetail = (): void => {
-    const key = draft ? `draft:${draft.prefill?.name ?? ''}` : picked.join('\n');
+    const key = draft ? `draft:${draft.prefill?.name ?? ''}` : `${editing ? 'edit:' : ''}${picked.join('\n')}`;
     // Re-rendering the same form would throw away what is being typed.
     if (key === shownKey && form) return;
     shownKey = key;
@@ -347,14 +409,24 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     right.replaceChildren();
     right.scrollTop = 0;
 
-    if (draft) { showNewSsh(draft.prefill); return; }
-    if (picked.length > 1) { showBatch(picked); return; }
     const item = picked.length === 1 ? itemFor(picked[0]) : undefined;
-    if (item?.type === 'ssh') { showSsh(item); return; }
-    if (item?.type === 'jumpserver') { showJumpServer(item); return; }
-    right.appendChild(startContent);
-    // The recent track renders by id, so it can only be refreshed while attached.
-    renderRecentActivity('');
+    const atHome = !draft && picked.length <= 1 && !item;
+    homeNav.classList.toggle('active', atHome);
+    homeNav.setAttribute('aria-current', atHome ? 'page' : 'false');
+    if (atHome) {
+      right.appendChild(startContent);
+      // The recent track renders by id, so it can only be refreshed while attached.
+      renderRecentActivity('');
+      return;
+    }
+
+    body = document.createElement('div');
+    body.className = 'hcm-detail-body';
+    right.appendChild(body);
+    if (draft) showNewSsh(draft.prefill);
+    else if (picked.length > 1) showBatch(picked);
+    else if (item?.type === 'ssh') showSsh(item);
+    else if (item?.type === 'jumpserver') showJumpServer(item);
   };
 
   const render = (): void => {
@@ -371,14 +443,7 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     if (e.key === 'Escape') { searchInput.value = ''; renderList(); }
     if (e.key === 'ArrowDown') { e.preventDefault(); list.focus(); moveCursor(1); }
   });
-  newSshBtn.onclick = () => { void select([], null, {}); };
-  newGroupBtn.onclick = () => {
-    showGroupModal('', '', (name, color) => {
-      createGroup(name);
-      if (color) setGroupColor(name, color);
-      announce();
-    });
-  };
+  homeNav.onclick = () => { void select([], null); };
 
   /** Arrow keys walk the visible rows; Enter connects the selected one. */
   const visibleRowKeys = (): string[] =>

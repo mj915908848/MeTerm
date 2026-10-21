@@ -26,7 +26,7 @@
 
 .hcm-toolbar {
   flex-shrink: 0;
-  padding: 8px 8px 0;
+  padding: 4px 8px 0;
 }
 .hcm-toolbar .hcm-search { margin: 0; }
 
@@ -34,8 +34,9 @@
   flex-shrink: 0;
   display: flex;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 8px 10px 6px;
 }
+.hcm-list-actions .ssh-btn { flex: 1; }
 
 .hcm-list {
   flex: 1;
@@ -83,28 +84,30 @@
 }
 .hcm-list-pane > .hcm-hint { border-top: 1px solid var(--border-subtle); }
 
-/* ── Buttons ── */
-
-.hcm-btn {
-  padding: 4px 10px;
-  border: 1px solid var(--border-primary);
+/* "Home": back to the start content. Styled like a list row so it reads as
+   the first entry of the list, not as another button. */
+.hcm-home {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 8px 2px;
+  padding: 6px 10px;
+  border: 0;
   border-radius: 6px;
-  background: rgba(var(--bg-button, 50, 50, 52), 0.5);
-  color: var(--text-primary);
+  background: transparent;
+  color: var(--text-secondary);
   font-family: inherit;
-  font-size: 12px;
-  white-space: nowrap;
+  font-size: 12.5px;
+  text-align: left;
   cursor: pointer;
 }
-.hcm-btn:hover { background: rgba(var(--bg-button-hover, 60, 60, 63), var(--app-window-opacity, 1)); }
-.hcm-btn:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: 1px; }
-.hcm-btn-primary {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.9);
-  border-color: transparent;
-  color: #fff;
+.hcm-home:hover { background: rgba(var(--bg-button-hover), var(--app-window-opacity, 1)); color: var(--text-primary); }
+.hcm-home.active {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.14);
+  color: var(--text-primary);
 }
-.hcm-btn-primary:hover { background: rgba(var(--accent-rgb, 106, 164, 255), 1); }
-.hcm-btn-danger { color: var(--error-text); }
+.hcm-home:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: -2px; }
+.hcm-home svg { flex-shrink: 0; }
 
 /* ── Right: the selection ── */
 
@@ -120,10 +123,13 @@
 /* The start content brings its own padding and scroll. */
 .hcm-detail-pane > .home-dash-scroll { min-width: 0; }
 
-.hcm-detail-pane > :not(.home-dash-scroll) {
-  margin-left: 28px;
-  margin-right: 28px;
-  max-width: 620px;
+/* Everything else sits in one centred column. */
+.hcm-detail-body {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 28px;
+  box-sizing: border-box;
 }
 
 .hcm-detail-header {
@@ -132,8 +138,8 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 10px 16px;
-  padding: 22px 0 14px;
-  margin-bottom: 14px;
+  padding: 28px 0 16px;
+  margin-bottom: 16px;
   border-bottom: 1px solid var(--border-subtle);
 }
 .hcm-detail-title { min-width: 0; }
@@ -161,9 +167,9 @@
 .hcm-facts {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 6px 16px;
-  margin: 0 0 18px;
-  font-size: 12.5px;
+  gap: 10px 24px;
+  margin: 0 0 20px;
+  font-size: 13px;
 }
 .hcm-facts dt { color: var(--text-muted); }
 .hcm-facts dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
@@ -199,9 +205,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.hcm-detail-pane > .hcm-hint { padding: 0; }
+.hcm-tip {
+  margin-bottom: 24px;
+  font-size: 11.5px;
+  color: var(--text-dim, var(--text-muted));
+}
 
 @media (max-width: 760px) {
   .hcm-list-pane { width: 220px; }
-  .hcm-detail-pane > :not(.home-dash-scroll) { margin-left: 16px; margin-right: 16px; }
+  .hcm-detail-body { padding: 0 16px; }
 }

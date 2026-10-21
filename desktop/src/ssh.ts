@@ -1251,10 +1251,12 @@ function createConnectionForm(
   btnRow.appendChild(testBtn);
   btnRow.appendChild(spacer);
   btnRow.appendChild(saveBtn);
-  btnRow.appendChild(connectSaveBtn);
-  // Embedded on the home page, the detail header already has a "connect" button
-  // for the saved connection; a second one here would connect with unsaved edits.
-  if (!options.embedded) btnRow.appendChild(connectBtn);
+  // Embedded on the home page the form is only for editing: connecting is the
+  // detail view's job, so the form keeps just "test" and "save".
+  if (!options.embedded) {
+    btnRow.appendChild(connectSaveBtn);
+    btnRow.appendChild(connectBtn);
+  }
   form.appendChild(btnRow);
 
   // Dirty tracking: snapshot initial state, track saves

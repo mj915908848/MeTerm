@@ -2,10 +2,11 @@
  * The home page's connection manager: list on the left, selection on the right.
  *
  * What is pinned here is the interaction Jie asked for: on this page a single
- * click only *selects* (connecting on click was too easy to trigger by accident),
- * double-click or Enter connects, ⌘/Ctrl/Shift-click select several and the
- * right pane turns into the batch actions, and an unsaved form is not thrown
- * away without asking.
+ * click only *selects* (connecting on click was too easy to trigger by accident)
+ * and shows the connection read-only; "edit" opens its form. Double-click or
+ * Enter connects, ⌘/Ctrl/Shift-click select several and the right pane turns
+ * into the batch actions, "home" goes back to the start content, and an unsaved
+ * form is not thrown away without asking.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -150,6 +151,7 @@ function boot(options: { confirm?: boolean } = {}) {
 
 const deps = (h: any) => h.renderCalls[h.renderCalls.length - 1].deps;
 const detail = (h: any): El => findAll(h.root, 'hcm-detail-pane')[0];
+const buttonIn = (root: El, label: string): El => findAll(root, 'ssh-btn').find((b) => b.textContent === label)!;
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 const plain = { toggle: false, range: false };
 const visible = ITEMS.map((i) => i.key);
@@ -157,16 +159,55 @@ const visible = ITEMS.map((i) => i.key);
 test('with nothing selected the right pane shows the start content', () => {
   const { h } = boot();
   assert.equal(detail(h).children[0], h.start);
+  assert.ok(findAll(h.root, 'hcm-home')[0].classList.contains('active'), '"home" is the current entry');
 });
 
-test('a plain click selects and opens the editor; it does not connect', async () => {
+test('a plain click selects and shows the connection; it does not connect', async () => {
   const { h } = boot();
   assert.equal(deps(h).onRowClick(ITEMS[0], plain, visible), false, 'the list must not run its own connect');
   await flush();
   assert.deepEqual(h.connected, [], 'a click on this page never opens a session');
   assert.equal(deps(h).getSelectedKey(), 'ssh:web-01');
+  assert.equal(h.forms.length, 0, 'a selection opens the read-only view, not the form');
+  assert.equal(findAll(detail(h), 'hcm-facts').length, 1);
+
+  buttonIn(detail(h), 'sshConnectBtn').onclick!();
+  assert.deepEqual(h.connected, ['ssh:web-01'], 'the view\'s connect button opens it');
+});
+
+test('"edit" swaps in the form, and cancel or save goes back to the view', async () => {
+  const { h, mod } = boot();
+  deps(h).onRowClick(ITEMS[0], plain, visible);
+  await flush();
+  buttonIn(detail(h), 'homeEditConnection').onclick!();
+  await flush();
   assert.equal(h.forms.length, 1, 'the SSH form is embedded in the right pane');
   assert.equal(h.forms[0].prefill, SSH_A);
+
+  buttonIn(detail(h), '取消').onclick!();
+  await flush();
+  assert.equal(findAll(detail(h), 'ssh-form-embedded').length, 0);
+  assert.equal(findAll(detail(h), 'hcm-facts').length, 1);
+
+  buttonIn(detail(h), 'homeEditConnection').onclick!();
+  await flush();
+  h.forms[1].onSaved({ name: 'web-01' });
+  mod.refreshConnectionManager(); // what the save's 'ssh-connections-changed' does in the app
+  assert.equal(findAll(detail(h), 'hcm-facts').length, 1, 'saving returns to the view');
+  assert.equal(deps(h).getSelectedKey(), 'ssh:web-01');
+});
+
+test('"home" goes back to the start content', async () => {
+  const { h } = boot();
+  deps(h).onRowClick(ITEMS[0], plain, visible);
+  await flush();
+  const home = findAll(h.root, 'hcm-home')[0];
+  assert.ok(!home.classList.contains('active'));
+  home.onclick!();
+  await flush();
+  assert.equal(deps(h).getSelectedKey(), null);
+  assert.equal(detail(h).children[0], h.start);
+  assert.ok(home.classList.contains('active'));
 });
 
 test('double-click connects', () => {
@@ -184,7 +225,7 @@ test('several picked rows turn the right pane into the batch actions', async () 
   assert.deepEqual([...deps(h).getSelection()], ['ssh:web-01', 'ssh:db-01']);
   assert.ok(findAll(detail(h), 'hcm-batch-list').length === 1, 'the batch panel lists what is picked');
 
-  const buttons = findAll(detail(h), 'hcm-btn');
+  const buttons = findAll(detail(h), 'ssh-btn');
   buttons.find((b) => b.textContent === 'connectionMoveToGroup')!.onclick!();
   assert.deepEqual(h.moved, [{ keys: ['ssh:web-01', 'ssh:db-01'], group: 'prod' }], 'one write for the whole batch');
 
@@ -196,6 +237,8 @@ test('unsaved edits are not thrown away without asking', async () => {
   const { h } = boot({ confirm: false });
   deps(h).onRowClick(ITEMS[0], plain, visible);
   await flush();
+  buttonIn(detail(h), 'homeEditConnection').onclick!();
+  await flush();
   h.forms[0].dirty = true;
   deps(h).onRowClick(ITEMS[1], plain, visible);
   await flush();
@@ -206,7 +249,7 @@ test('unsaved edits are not thrown away without asking', async () => {
 
 test('"+ SSH" opens an empty form in the right pane, and saving selects the new connection', async () => {
   const { h } = boot();
-  findAll(h.root, 'hcm-btn').find((b) => b.textContent === '+ SSH')!.onclick!();
+  buttonIn(h.root, '+ SSH').onclick!();
   await flush();
   assert.equal(h.forms.length, 1);
   assert.equal(h.forms[0].prefill, undefined);
