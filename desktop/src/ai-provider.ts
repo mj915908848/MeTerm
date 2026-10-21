@@ -4,7 +4,7 @@
 
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { thinkingFieldsFor } from './ai-thinking-budget';
-import { sseData, streamPayloadError } from './ai-provider-wire';
+import { anthropicCacheLayout, sseData, streamPayloadError } from './ai-provider-wire';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -57,6 +57,14 @@ export interface ChatMessage {
    * it on the message object so the provider's serializer can attach it.
    */
   reasoning_content?: string;
+  /**
+   * System messages only: length of the leading part of `content` that stays
+   * identical across agent iterations. The rest is per-turn context
+   * (terminal output, plan, attachments). Anthropic caches only the stable
+   * part and sends the context after the conversation; other providers
+   * ignore this and send `content` as is.
+   */
+  stablePrefixChars?: number;
 }
 
 /** Convenience: turn a ChatMessage's content into a plain-text view. */
@@ -626,26 +634,19 @@ class AnthropicProvider implements AIProvider {
     };
 
     if (systemMessages.length > 0) {
-      // Prompt Cache beta: mark the system prompt as cacheable.
-      // The system field accepts an array of content blocks; the last
-      // block with cache_control becomes a cache breakpoint.  We pack
-      // all system messages into a single cached text block.
-      //
-      // Cost impact: first call still pays full input tokens, but
-      // subsequent calls within ~5 minutes with an identical prefix
-      // only pay 10% for the cached portion.
+      // Prompt caching: the system prompt and (when the agent marks where
+      // its stable part ends) the conversation history are cache
+      // breakpoints. Subsequent calls within ~5 minutes with an identical
+      // prefix only pay 10% for the cached portion. See anthropicCacheLayout.
       // System prompt is always text in MeTerm; flatten any accidental
       // multimodal content to plain text for the API.
       const combinedSystem = systemMessages
         .map((m) => (typeof m.content === 'string' ? m.content : contentToText(m.content)))
         .join('\n\n');
-      body.system = [
-        {
-          type: 'text',
-          text: combinedSystem,
-          cache_control: { type: 'ephemeral' },
-        },
-      ];
+      const stablePrefixChars = systemMessages.length === 1 ? systemMessages[0].stablePrefixChars : undefined;
+      const layout = anthropicCacheLayout(combinedSystem, stablePrefixChars, mergedMessages);
+      body.system = layout.system;
+      body.messages = layout.messages;
     }
 
     if (tools && tools.length > 0) {

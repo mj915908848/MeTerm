@@ -1,7 +1,8 @@
 // ─── AI Provider: Wire-format Helpers ───────────────────────────
-// Pure parsing of what providers send back: SSE lines, error events
-// inside a 200 stream, and tool-call argument JSON. No imports beyond
-// types, so `node --test` can load it directly.
+// Pure parsing of what providers send back (SSE lines, error events
+// inside a 200 stream, tool-call argument JSON) and the Anthropic
+// prompt-cache layout. No imports beyond types, so `node --test` can
+// load it directly.
 
 import type { ProviderType } from './ai-provider';
 
@@ -67,4 +68,52 @@ export function parseToolArguments(
     return { ok: false, error: 'Invalid tool arguments: expected a JSON object.' };
   }
   return { ok: true, args: value as Record<string, unknown> };
+}
+
+const EPHEMERAL = { type: 'ephemeral' } as const;
+
+/** Heading for the per-turn context when it is moved after the conversation. */
+export const TURN_CONTEXT_HEADING = '[Current terminal context, refreshed every turn. Supplied by MeTerm, not typed by the user.]';
+
+/**
+ * Lay out the system prompt and conversation for Anthropic prompt caching.
+ *
+ * Anthropic caches by exact prefix in the order tools → system → messages.
+ * The agent's system prompt ends with terminal output that changes on every
+ * iteration, so caching it whole meant every request rewrote the cache and
+ * the conversation history was never cached at all.
+ *
+ * When `stablePrefixChars` marks where the unchanging part ends, only that
+ * part stays in `system`. The rest is appended to the final user message,
+ * after a cache breakpoint, so tools + instructions + history are a
+ * prefix the next iteration can reuse.
+ */
+export function anthropicCacheLayout(
+  systemText: string,
+  stablePrefixChars: number | undefined,
+  messages: Record<string, unknown>[],
+): { system: unknown[]; messages: Record<string, unknown>[] } {
+  const split = stablePrefixChars !== undefined && stablePrefixChars > 0 && stablePrefixChars < systemText.length;
+  if (!split) {
+    return { system: [{ type: 'text', text: systemText, cache_control: EPHEMERAL }], messages };
+  }
+  const stable = systemText.slice(0, stablePrefixChars).trimEnd();
+  const context = systemText.slice(stablePrefixChars).trim();
+  const system: unknown[] = [{ type: 'text', text: stable, cache_control: EPHEMERAL }];
+  if (!context) return { system, messages };
+
+  const last = messages[messages.length - 1];
+  const blocks = last?.role === 'user' ? userBlocks(last.content) : [];
+  if (blocks.length === 0) {
+    system.push({ type: 'text', text: context });
+    return { system, messages };
+  }
+  blocks[blocks.length - 1] = { ...(blocks[blocks.length - 1] as object), cache_control: EPHEMERAL };
+  blocks.push({ type: 'text', text: `${TURN_CONTEXT_HEADING}\n\n${context}` });
+  return { system, messages: [...messages.slice(0, -1), { ...last, content: blocks }] };
+}
+
+function userBlocks(content: unknown): unknown[] {
+  if (typeof content === 'string') return content ? [{ type: 'text', text: content }] : [];
+  return Array.isArray(content) ? [...content] : [];
 }

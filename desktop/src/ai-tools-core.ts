@@ -202,52 +202,7 @@ export const TOKEN_BUDGET = {
 
 // ─── Danger Detection ────────────────────────────────────────────
 
-const DANGER_PATTERNS = [
-  /\brm\s+(-[^\s]*\s+)*-[^\s]*r/,
-  /\brm\s+(-[^\s]*\s+)*\//,
-  /\brm\s+-/,              // rm with any flag (e.g. rm -f, rm -i)
-  /\bmkfs\b/,
-  /\bdd\s+/,
-  /\b(shutdown|reboot|poweroff|halt)\b/,
-  /\bsystemctl\s+(stop|disable|mask)\b/,
-  /\bkill\s+-9/,
-  /\bkillall\b/,
-  /\bpkill\b/,
-  /\bchmod\s+(-[^\s]*\s+)*[0-7]*0{2}/,
-  /\bchown\s+-R/,
-  /\bchmod\s+-R/,
-  /\b>\s*\/dev\/sd/,
-  /\bdrop\s+(database|table|schema)\b/i,
-  /\btruncate\s+table\b/i,
-  /\bdelete\s+from\b/i,
-  /\bformat\b/,
-  /\bnewfs\b/,
-  /\bdiskutil\s+erase/,
-  /\bsudo\b/,
-  /\bgit\s+push\s+.*--force/,
-  /\bgit\s+reset\s+--hard/,
-  /\bgit\s+clean\s+-[^\s]*f/,
-  /\biptables\s+-F/,
-  /\b:(){ :\|:& };:/,
-];
-
-/** Subset of DANGER_PATTERNS that are truly catastrophic */
-const EXTREME_DANGER_PATTERNS = [
-  /\brm\s+(-[^\s]*\s+)*-[^\s]*r[^\s]*\s+\//,  // rm -rf /
-  /\bmkfs\b/,
-  /\bdd\s+.*of=\/dev/,
-  /\b:(){ :\|:& };:/,
-  /\b>\s*\/dev\/sd/,
-  /\bdiskutil\s+erase/,
-];
-
-export function isDangerousCommand(cmd: string): boolean {
-  return DANGER_PATTERNS.some((p) => p.test(cmd));
-}
-
-export function isExtremelyDangerous(cmd: string): boolean {
-  return EXTREME_DANGER_PATTERNS.some((p) => p.test(cmd));
-}
+export { isDangerousCommand, isExtremelyDangerous } from './ai-danger-patterns';
 
 // ─── Utility Functions ───────────────────────────────────────────
 

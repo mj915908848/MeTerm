@@ -18,7 +18,7 @@ import {
 } from '../src/ai-terminal-watch-lifecycle.ts';
 import { buildTaskRetention, isTaskRetention } from '../src/ai-agent-retention.ts';
 import type { ChatMessage } from '../src/ai-provider.ts';
-import { trimHistory, compressContext, shouldAutoCompact } from '../src/ai-agent-history.ts';
+import { trimHistory, compressContext, shouldAutoCompact, estimateMessageTokens } from '../src/ai-agent-history.ts';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 
@@ -435,6 +435,21 @@ test('the default arguments reproduce the previously hardcoded threshold', () =>
   // Pinned so that changing the defaults has to be a deliberate act.
   assert.equal(shouldAutoCompact(charsAsMessage(365_000)), false);
   assert.equal(shouldAutoCompact(charsAsMessage(367_000)), true);
+});
+
+test('token estimate counts CJK per character and includes tool calls', () => {
+  assert.equal(estimateMessageTokens([{ role: 'user', content: 'abcd' }]), 1);
+  assert.equal(estimateMessageTokens([{ role: 'user', content: '中文测试' }]), 4);
+  assert.equal(estimateMessageTokens([{
+    role: 'assistant', content: '',
+    tool_calls: [{ id: '1', type: 'function', function: { name: 'run_', arguments: '{"command":"ls -la"}' } }],
+  } as ChatMessage]), 1 + 5);
+});
+
+test('system prompt and tool definitions count toward the threshold', () => {
+  // threshold = 5250 tokens; 20000 chars ≈ 5000 tokens of history.
+  assert.equal(shouldAutoCompact(charsAsMessage(20_000), 10_000, 1_000), false);
+  assert.equal(shouldAutoCompact(charsAsMessage(20_000), 10_000, 1_000, 500), true);
 });
 
 test('the default history budget sits on the settings slider grid', () => {

@@ -30,7 +30,7 @@ import {
   classifyError, calculateRetryDelay, RETRY_CONFIGS,
 } from './ai-agent-errors';
 import {
-  trimHistory, compressContext, microCompact, shouldAutoCompact,
+  trimHistory, compressContext, microCompact, shouldAutoCompact, estimateTextTokens,
 } from './ai-agent-history';
 import { buildRestoredMessages } from './ai-agent-restore';
 import type { ConvEntry } from './ai-capsule-types';
@@ -298,6 +298,8 @@ export class ToolAgent {
   private messages: ChatMessage[] = [];
   private abortController: AbortController | null = null;
   private compactController: AbortController | null = null;
+  /** Estimated size of the last system prompt sent, for the compaction threshold. */
+  private lastSystemPromptTokens = 0;
   private aborted = false;
   private toolRegistry: ToolRegistry;
   /** Once set to false (e.g. after a 400 from a non-tool model),
@@ -708,6 +710,10 @@ export class ToolAgent {
       }
     }
 
+    // Sent on every call besides the history, so it counts against the
+    // compaction threshold too.
+    const toolSpecTokens = toolSpecs.length > 0 ? estimateTextTokens(JSON.stringify(toolSpecs)) : 0;
+
     let iteration = 0;
     let consecutiveErrors = 0;
     let llmRetryCount = 0;
@@ -755,6 +761,7 @@ export class ToolAgent {
           this.messages,
           historyBudgetTokens,
           settings.aiMaxTokens,
+          toolSpecTokens + this.lastSystemPromptTokens,
         )
       ) {
         await hooks.emitPreCompact({
@@ -849,8 +856,10 @@ export class ToolAgent {
         contextLines,
       });
 
+      this.lastSystemPromptTokens = estimateTextTokens(systemPrompt.text);
+
       const fullMessages: ChatMessage[] = [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: systemPrompt.text, stablePrefixChars: systemPrompt.stablePrefixChars },
         ...this.messages,
       ];
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { parseToolArguments, sseData, streamPayloadError } from '../src/ai-provider-wire.ts';
+import { anthropicCacheLayout, parseToolArguments, sseData, streamPayloadError, TURN_CONTEXT_HEADING } from '../src/ai-provider-wire.ts';
 import { classifyError } from '../src/ai-agent-errors.ts';
 
 test('SSE data lines are read with or without a space after the colon', () => {
@@ -44,4 +44,38 @@ test('a history error that names tool_use does not switch tools off', () => {
 test('run_command passes the stop signal into its wait loop', () => {
   const source = readFileSync(new URL('../src/ai-tools-command.ts', import.meta.url), 'utf8');
   assert.match(source, /executeAgentCommand\(\s*pane\.sessionId, cmd, pane\.shellType, timeout, ctx\.abortSignal,\s*\)/);
+});
+
+test('anthropic cache layout keeps per-turn context out of the cached prefix', () => {
+  const system = 'INSTRUCTIONS\n\nPANE OUTPUT';
+  const stable = 'INSTRUCTIONS\n\n'.length;
+  const messages = [
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: 'ok' },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'done' }] },
+  ];
+  const out = anthropicCacheLayout(system, stable, messages);
+  assert.deepEqual(out.system, [{ type: 'text', text: 'INSTRUCTIONS', cache_control: { type: 'ephemeral' } }]);
+  const last = out.messages[2].content as any[];
+  assert.deepEqual(last[0], { type: 'tool_result', tool_use_id: 't1', content: 'done', cache_control: { type: 'ephemeral' } });
+  assert.equal(last[1].text, `${TURN_CONTEXT_HEADING}\n\nPANE OUTPUT`);
+  assert.equal(last[1].cache_control, undefined);
+  // The caller's messages are not mutated, so the next request's prefix matches.
+  assert.equal((messages[2].content as any[])[0].cache_control, undefined);
+  assert.equal(out.messages[0], messages[0]);
+});
+
+test('anthropic cache layout falls back to system blocks when it cannot split', () => {
+  const whole = anthropicCacheLayout('ALL', undefined, [{ role: 'user', content: 'hi' }]);
+  assert.deepEqual(whole.system, [{ type: 'text', text: 'ALL', cache_control: { type: 'ephemeral' } }]);
+  const noUser = anthropicCacheLayout('A\nB', 2, [{ role: 'assistant', content: 'x' }]);
+  assert.deepEqual(noUser.system, [
+    { type: 'text', text: 'A', cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: 'B' },
+  ]);
+  const user = anthropicCacheLayout('A\nB', 2, [{ role: 'user', content: 'hi' }]);
+  assert.deepEqual(user.messages[0].content, [
+    { type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: `${TURN_CONTEXT_HEADING}\n\nB` },
+  ]);
 });

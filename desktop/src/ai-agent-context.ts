@@ -252,6 +252,12 @@ function renderTopologySection(ctx: TerminalContext, contextLines: number): stri
   return lines.join('\n');
 }
 
+export interface SystemPrompt {
+  text: string;
+  /** Length of the leading part of `text` that does not change between iterations. */
+  stablePrefixChars: number;
+}
+
 export function buildSystemPrompt(
   ctx: TerminalContext,
   hasTools: boolean,
@@ -261,7 +267,7 @@ export function buildSystemPrompt(
     /** Pane excerpt lines, sourced from the user's `aiContextLines` setting. */
     contextLines?: number;
   },
-): string {
+): SystemPrompt {
   const lang = getLanguage();
   const langInstr = lang === 'zh'
     ? '请使用中文回复用户。'
@@ -284,7 +290,7 @@ export function buildSystemPrompt(
 
   const toolInstructions = hasTools
     ? `Instructions:
-1. MINIMIZE TOOL CALLS. Before calling any tool, check if the answer is already visible in the terminal context above. If it is, answer directly — do not re-run commands to get information you already have.
+1. MINIMIZE TOOL CALLS. Before calling any tool, check if the answer is already visible in the terminal context (the pane topology section). If it is, answer directly — do not re-run commands to get information you already have.
 2. run_command already returns the command output. Avoid unnecessary read_terminal calls — use read_terminal only when you need to check terminal state before acting or read output from user-initiated commands. For full-screen TUI programs (vim, htop, less, tmux, ncurses dialogs) where the text buffer is ambiguous, use read_screen to capture a PNG of what's actually displayed.
    • TUI INSPECTION RULE — when the terminal is in a TUI (alternate screen — vim, less, htop, top, btop, k9s, lazygit, fzf, mc, nano, man, tig, ncurses dialogs, …), you MUST use read_screen to inspect it. NEVER use watch_terminal or read_terminal for TUI inspection — those return the raw byte stream, which for TUIs is mostly cursor-positioning escape sequences and does NOT match what the user actually sees on screen. watch_terminal is for non-TUI processes that stream text.
    • TUI LIFECYCLE RULE — every type_text / press_keys / run_command result ends with a \`[Terminal: ...]\` line that authoritatively reports the current TUI state ("TUI active", "TUI just exited", "TUI just started", "shell prompt"). TRUST THIS LINE. After sending an exit key (q, :q+Enter, Ctrl-C), if the line says "TUI just exited", STOP — you are back at the shell. Do NOT keep firing more exit keys just because the program printed something on its way out.
@@ -356,7 +362,7 @@ export function buildSystemPrompt(
 17. web_search (if available): Only use when the user asks to search, you encounter an unknown error/command, or need real-time info. Do NOT search for basic knowledge. Always specify relevant sites when the context is clear.
 18. command_help (if available): Use to look up command syntax, flags, and usage examples from the tldr database. Useful when you need to recall exact syntax for a command.
 19. REPEAT-ACTION SAFETY — if a tool result begins with \`[WARNING: You have called ... 3 times ...]\`, you are stuck in a loop. STOP. Do NOT make a 4th identical call. Instead: (a) call read_screen to see what is actually on screen right now, (b) if you are operating an unfamiliar TUI/program and don't know how to control it, call web_search "how to quit <program>" or "<program> keyboard shortcuts" before sending any more keys, (c) reconsider whether the action you keep repeating is even applicable — the program may have already moved on. The same rule applies BEFORE you get the warning: if 2 attempts at the same action have not produced the state change you expected, switch tactics immediately rather than trying a 3rd time.
-20. MULTI-PANE WORKSPACE — a tab can hold up to 4 panes, each with its own shell. The topology block above lists every pane with its pane number and short environment.
+20. MULTI-PANE WORKSPACE — a tab can hold up to 4 panes, each with its own shell. The pane topology section lists every pane with its pane number and short environment.
     • DEFAULT TARGET: every tool you call acts on the pane marked "[DEFAULT TARGET]" (the pane the user was focused on when they hit Send). This lock is stable for the whole agent run — it does NOT follow live user focus.
     • CROSS-PANE TARGETING: every terminal tool (run_command / type_text / press_keys / read_terminal / read_screen / watch_terminal) accepts an optional \`pane: <number>\` parameter. Pass it to operate on a non-default pane. Example: run_command({command: "curl localhost:3000", pane: 2}) asks pane 2's shell to run curl while the default pane keeps running its dev server.
     • READ FREELY, WRITE DELIBERATELY: read_terminal / read_screen / watch_terminal can target any pane without user confirmation — use this to correlate state across panes (e.g. check pane 2's logs after hitting the API on pane 1). Write tools (run_command / type_text / press_keys) also accept \`pane\`, but the user sees the target pane badge on the tool card, so target carefully.
@@ -397,13 +403,21 @@ export function buildSystemPrompt(
   const todoSection = todoBlock ? `\n${todoBlock}\n` : '';
   const attachmentsSection = attachmentsBlock ? `\n${attachmentsBlock}\n` : '';
 
-  return `You are a terminal AI assistant embedded in a terminal application. Help the user work efficiently in their terminal environment.
+  // Instructions first, per-turn context last: the instructions are
+  // identical on every iteration, so providers with prompt caching can
+  // reuse them (see anthropicCacheLayout).
+  const stable = `You are a terminal AI assistant embedded in a terminal application. Help the user work efficiently in their terminal environment.
 
 ${UNTRUSTED_DATA_RULE}
 
-${topology}
-${attachmentsSection}${todoSection}
-${toolInstructions}`;
+${toolInstructions}
+
+`;
+  return {
+    text: `${stable}${topology}
+${attachmentsSection}${todoSection}`,
+    stablePrefixChars: stable.length,
+  };
 }
 
 // ─── Code Block Post-Processing ─────────────────────────────────
