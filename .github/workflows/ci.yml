@@ -149,9 +149,6 @@ jobs:
     if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: windows-latest
     timeout-minutes: 60
-    # 首次在 Windows 上跑测试就有 18 个失败（此前从未在 Windows 上跑过），修完前先不阻塞。
-    # The first Windows test run had 18 pre-existing failures; non-blocking until they're fixed.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 

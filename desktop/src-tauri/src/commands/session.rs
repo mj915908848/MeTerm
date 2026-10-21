@@ -322,7 +322,7 @@ fn list_available_shells_blocking() -> Vec<ShellInfo> {
             }
 
             let mut cmd = Command::new(&vswhere);
-            cmd.args(&["-all", "-prerelease", "-format", "json"]);
+            cmd.args(["-all", "-prerelease", "-format", "json"]);
             #[cfg(target_os = "windows")]
             {
                 use std::os::windows::process::CommandExt;
@@ -382,7 +382,7 @@ fn list_available_shells_blocking() -> Vec<ShellInfo> {
         fn detect_wsl_distros() -> Vec<ShellInfo> {
             let mut result = Vec::new();
             let mut cmd = Command::new("wsl.exe");
-            cmd.args(&["--list", "--quiet"]);
+            cmd.args(["--list", "--quiet"]);
             #[cfg(target_os = "windows")]
             {
                 use std::os::windows::process::CommandExt;
@@ -397,8 +397,10 @@ fn list_available_shells_blocking() -> Vec<ShellInfo> {
                             || bytes.len() >= 4 && bytes[1] == 0x00);
                     let text = if is_utf16 {
                         let u16s: Vec<u16> = bytes
-                            .chunks_exact(2)
-                            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                            .as_chunks::<2>()
+                            .0
+                            .iter()
+                            .map(|pair| u16::from_le_bytes(*pair))
                             .collect();
                         String::from_utf16_lossy(&u16s)
                     } else {
@@ -460,7 +462,7 @@ fn list_available_shells_blocking() -> Vec<ShellInfo> {
 
             // 3. Registry: HKLM\SOFTWARE\GitForWindows\InstallPath
             let mut reg_cmd = Command::new("reg");
-            reg_cmd.args(&["query", r"HKLM\SOFTWARE\GitForWindows", "/v", "InstallPath"]);
+            reg_cmd.args(["query", r"HKLM\SOFTWARE\GitForWindows", "/v", "InstallPath"]);
             #[cfg(target_os = "windows")]
             {
                 use std::os::windows::process::CommandExt;
@@ -496,7 +498,7 @@ fn list_available_shells_blocking() -> Vec<ShellInfo> {
                 let t_pwsh = s.spawn(|| try_shell("pwsh.exe", &["--version"]));
                 let t_ps = s.spawn(|| try_shell("powershell.exe", &["-Command", "echo ok"]));
                 let t_cmd = s.spawn(|| try_shell("cmd.exe", &["/C", "echo ok"]));
-                let t_git = s.spawn(|| detect_git_bash());
+                let t_git = s.spawn(detect_git_bash);
                 let t_vs = s.spawn(detect_vs_shells);
                 let t_wsl = s.spawn(detect_wsl_distros);
                 (

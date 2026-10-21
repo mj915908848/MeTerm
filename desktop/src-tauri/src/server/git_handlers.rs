@@ -172,11 +172,18 @@ async fn run_git(cwd: String, args: Vec<String>) -> Result<(bool, String, String
 
 /// 仓库内相对路径校验(防穿越):非空、非绝对、组件级无 `..`。
 fn rel_path_ok(p: &str) -> bool {
+    // Windows 上 `/etc/passwd`、`C:x` 不算 is_absolute,但 join 后会离开仓库目录,
+    // 所以根目录和盘符前缀也要拒绝。
+    // On Windows `/etc/passwd` and `C:x` are not `is_absolute`, yet joining them
+    // escapes the repo, so reject root and drive-prefix components too.
     !p.is_empty()
         && !Path::new(p).is_absolute()
-        && !Path::new(p)
-            .components()
-            .any(|c| matches!(c, Component::ParentDir))
+        && !Path::new(p).components().any(|c| {
+            matches!(
+                c,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
 }
 
 /// 解析 `git status --porcelain=v1 -b` 输出(纯函数,单测):
@@ -801,6 +808,8 @@ mod fix14_tests {
             );
         };
         git(&["init", "-b", "main"]);
+        // Windows 上 git 默认 autocrlf=true,会把检出内容改成 CRLF / git on Windows defaults to autocrlf
+        git(&["config", "core.autocrlf", "false"]);
         std::fs::write(dir.join("a.txt"), "v1\n").unwrap();
         git(&["add", "-A"]);
         git(&[

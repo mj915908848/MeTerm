@@ -201,7 +201,7 @@ impl Terminal for ConPtyTerminal {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     fn done(&self) -> CancellationToken {

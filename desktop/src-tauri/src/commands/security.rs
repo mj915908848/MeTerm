@@ -3,6 +3,8 @@ use std::sync::{Mutex, OnceLock};
 
 // ─── Native-only cleanup for insecure legacy Keychain ACLs ───
 
+// 只有 macOS 和测试用到 / used on macOS and in tests only
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const RELEASE_INSECURE_LEGACY_KEYCHAIN_SERVICES: &[&str] = &[
     "com.meterm.dev.ssh",
     "com.meterm.app.jumpserver",
@@ -18,8 +20,10 @@ const RELEASE_INSECURE_LEGACY_KEYCHAIN_SERVICES: &[&str] = &[
 // requirement, and SecItemDelete then returns errSecInvalidOwnerEdit. Legacy
 // cleanup remains a strict release migration; development uses fresh,
 // channel-specific vault services instead.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 const DEBUG_INSECURE_LEGACY_KEYCHAIN_SERVICES: &[&str] = &[];
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn insecure_legacy_keychain_services_for_build(debug_build: bool) -> &'static [&'static str] {
     if debug_build {
         DEBUG_INSECURE_LEGACY_KEYCHAIN_SERVICES

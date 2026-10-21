@@ -1,9 +1,10 @@
-use super::super::operation_tests::{sftp_pair, SftpTestConfig, TestDir};
+use super::super::operation_tests::{remote_path, sftp_pair, SftpTestConfig, TestDir};
 use super::handle_sftp_file_save;
 use crate::server::protocol;
 
 fn request(path: &std::path::Path, content: &[u8]) -> Vec<u8> {
-    let path = path.to_str().unwrap().as_bytes();
+    let path = remote_path(path);
+    let path = path.as_bytes();
     let mut payload = (path.len() as u32).to_be_bytes().to_vec();
     payload.extend_from_slice(path);
     payload.extend_from_slice(content);
@@ -211,7 +212,7 @@ async fn failed_remote_editor_rollback_retains_recoverable_backup() {
         b"original configuration"
     );
     assert!(
-        message.contains(backups[0].path().to_str().unwrap()),
+        message.contains(&remote_path(&backups[0].path())),
         "response must name recovery path"
     );
 }

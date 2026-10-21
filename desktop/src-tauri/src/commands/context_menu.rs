@@ -134,7 +134,7 @@ fn register_windows_context_menu() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let (cmd_key, _) = hkcu
-        .create_subkey(&format!(r"{}\command", base))
+        .create_subkey(format!(r"{}\command", base))
         .map_err(|e| e.to_string())?;
     cmd_key
         .set_value("", &format!("\"{}\" \"%V\"", exe_path))
@@ -151,7 +151,7 @@ fn register_windows_context_menu() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let (bg_cmd_key, _) = hkcu
-        .create_subkey(&format!(r"{}\command", bg_base))
+        .create_subkey(format!(r"{}\command", bg_base))
         .map_err(|e| e.to_string())?;
     bg_cmd_key
         .set_value("", &format!("\"{}\" \"%V\"", exe_path))
