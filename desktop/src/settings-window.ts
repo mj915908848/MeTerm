@@ -10,7 +10,7 @@ import { createSettingsPanel } from './settings';
 import { suppressNativeContextMenu } from './context-menu';
 import { initLanguage, setLanguage, t } from './i18n';
 import { emit, listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { revealAfterPaint } from './window-utils';
 import { readText as clipboardReadText } from '@tauri-apps/plugin-clipboard-manager';
 import { applyVibrancy } from './appearance';
@@ -136,12 +136,11 @@ export function initSettingsWindow(): void {
 
   function renderPanel(): void {
     // Keep the user's place when the panel is rebuilt for an outside change.
-    const activeTab = container.querySelector<HTMLElement>('.settings-tab.active')?.dataset.tab;
+    const activeTab = container.querySelector<HTMLElement>('.settings-nav-item.active')?.dataset.tab;
     const scrollTop = container.querySelector<HTMLElement>('.settings-content')?.scrollTop ?? 0;
     container.innerHTML = '';
     const panel = createSettingsPanel({
       settings,
-      isWindow: true,
       initialTab: activeTab ?? urlTab,
       onSettingsChange: (newSettings) => {
         settings = newSettings;
@@ -165,9 +164,6 @@ export function initSettingsWindow(): void {
         broadcast.flush();
         void emit('settings-changed');
         renderPanel();
-      },
-      onClose: () => {
-        void getCurrentWindow().close();
       },
     });
     container.appendChild(panel);
@@ -207,6 +203,10 @@ export function initSettingsWindow(): void {
       renderPanel();
     });
   });
+
+  // The window is resizable; below this the sidebar and a two-column card row
+  // no longer fit side by side.
+  void getCurrentWindow().setMinSize(new LogicalSize(600, 420)).catch(() => { /* older shells */ });
 
   void revealAfterPaint(getCurrentWindow().label);
 

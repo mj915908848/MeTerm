@@ -18,6 +18,24 @@ export interface Translations {
   settingsTabAppearance: string;
   settingsTabTerminal: string;
   settingsTabGeneral: string;
+  settingsPageAppearance: string;
+  settingsPageTerminal: string;
+  settingsPageFileManager: string;
+  settingsPageTabsWindows: string;
+  settingsPageConnections: string;
+  settingsGroupTheme: string;
+  settingsGroupBackground: string;
+  settingsGroupInterface: string;
+  settingsGroupFont: string;
+  settingsGroupShell: string;
+  settingsGroupTerminalBehavior: string;
+  settingsGroupTabs: string;
+  settingsGroupWindow: string;
+  settingsGroupPip: string;
+  settingsGroupSystem: string;
+  settingsGroupOnConnect: string;
+  settingsSearchPlaceholder: string;
+  settingsSearchNoResults: string;
   theme: string;
   opacity: string;
   enableVibrancy: string;
@@ -708,6 +726,24 @@ const translations: Record<Language, Translations> = {
     settingsTabAppearance: 'Appearance',
     settingsTabTerminal: 'Terminal',
     settingsTabGeneral: 'General',
+    settingsPageAppearance: 'Appearance',
+    settingsPageTerminal: 'Terminal',
+    settingsPageFileManager: 'File Manager',
+    settingsPageTabsWindows: 'Tabs & Windows',
+    settingsPageConnections: 'Connections',
+    settingsGroupTheme: 'Theme',
+    settingsGroupBackground: 'Window Background',
+    settingsGroupInterface: 'Interface',
+    settingsGroupFont: 'Font',
+    settingsGroupShell: 'Shell & Encoding',
+    settingsGroupTerminalBehavior: 'Behavior',
+    settingsGroupTabs: 'Tabs',
+    settingsGroupWindow: 'Windows',
+    settingsGroupPip: 'Picture in Picture',
+    settingsGroupSystem: 'System Integration',
+    settingsGroupOnConnect: 'After Connecting',
+    settingsSearchPlaceholder: 'Search settings',
+    settingsSearchNoResults: 'No matching settings',
     theme: 'Terminal Theme',
     opacity: 'Background Opacity',
     enableVibrancy: 'Background Blur (Vibrancy)',
@@ -1405,6 +1441,24 @@ const translations: Record<Language, Translations> = {
     settingsTabAppearance: '外观',
     settingsTabTerminal: '终端',
     settingsTabGeneral: '通用',
+    settingsPageAppearance: '外观',
+    settingsPageTerminal: '终端',
+    settingsPageFileManager: '文件管理器',
+    settingsPageTabsWindows: '标签与窗口',
+    settingsPageConnections: '连接',
+    settingsGroupTheme: '主题',
+    settingsGroupBackground: '窗口背景',
+    settingsGroupInterface: '界面',
+    settingsGroupFont: '字体',
+    settingsGroupShell: 'Shell 与编码',
+    settingsGroupTerminalBehavior: '行为',
+    settingsGroupTabs: '标签页',
+    settingsGroupWindow: '窗口',
+    settingsGroupPip: '画中画',
+    settingsGroupSystem: '系统集成',
+    settingsGroupOnConnect: '连接后',
+    settingsSearchPlaceholder: '搜索设置',
+    settingsSearchNoResults: '没有匹配的设置',
     theme: '终端主题',
     opacity: '背景透明度',
     enableVibrancy: '背景模糊（毛玻璃）',
