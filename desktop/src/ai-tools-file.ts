@@ -18,6 +18,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { resolveLocalToolPath, ToolHandler } from './ai-tools-core';
 import { executeViaTerminal } from './ai-tools-shell';
 import { hasSensitivePathComponent } from './ai-permission-rules';
+import { quoteRemotePath } from './ai-remote-path';
 
 interface AgentReadResult {
   content: string | null;
@@ -81,11 +82,8 @@ export function createReadFileTool(): ToolHandler {
       const maxLines = requestedMaxLines ?? 200;
 
       if (ctx.isSSH) {
-        // SSH: read via terminal command. Single-quote the path to
-        // prevent shell expansion of $ / `, but escape embedded
-        // single quotes correctly.
-        const safePath = path.replace(/'/g, `'\\''`);
-        const cmd = `head -n ${maxLines} '${safePath}' 2>&1`;
+        // SSH: read via terminal command (see quoteRemotePath).
+        const cmd = `head -n ${maxLines} ${quoteRemotePath(path)} 2>&1`;
         try {
           return await executeViaTerminal(ctx.sessionId, cmd, 15, ctx.shellType);
         } catch (e) {
@@ -171,10 +169,10 @@ export function createWriteFileTool(): ToolHandler {
       if (ctx.isSSH) {
         // A quoted printf argument preserves the exact text, including whether
         // the final line has a newline. Heredocs always add a final newline.
-        const safePath = filePath.replace(/'/g, `'\\''`);
+        const safePath = quoteRemotePath(filePath);
         const safeContent = content.replace(/'/g, `'\\''`);
-        const dirCmd = `mkdir -p "$(dirname '${safePath}')"`;
-        const writeCmd = `${dirCmd} && printf '%s' '${safeContent}' > '${safePath}'`;
+        const dirCmd = `mkdir -p "$(dirname ${safePath})"`;
+        const writeCmd = `${dirCmd} && printf '%s' '${safeContent}' > ${safePath}`;
         try {
           const result = await executeViaTerminal(ctx.sessionId, writeCmd, 15, ctx.shellType);
           // Heuristic error sniff — anything containing the word

@@ -4,7 +4,7 @@
 
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { thinkingFieldsFor } from './ai-thinking-budget';
-import { anthropicAcceptsTemperature, anthropicCacheLayout, sseData, streamPayloadError } from './ai-provider-wire';
+import { anthropicAcceptsTemperature, anthropicCacheLayout, openAICompatParams, sseData, streamPayloadError } from './ai-provider-wire';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -423,19 +423,19 @@ class OpenAIProvider implements AIProvider {
     const body: Record<string, unknown> = {
       model: this.config.model,
       messages: apiMessages,
-      max_tokens: this.config.maxTokens,
-      temperature: this.config.temperature,
       stream: true,
+      // Token limit, temperature and the thinking-mode toggle, shaped for
+      // the server (see openAICompatParams). The thinking field names, the
+      // tier list and the "only cap it while thinking is on" rule live in
+      // ai-thinking-budget.ts so the settings UI never drifts from the wire.
+      ...openAICompatParams({
+        baseUrl: this.config.baseUrl,
+        model: this.config.model,
+        maxTokens: this.config.maxTokens,
+        temperature: this.config.temperature,
+        thinkingFields: thinkingFieldsFor(this.config.enableThinking, this.config.thinkingBudget),
+      }),
     };
-
-    // Thinking-mode toggle + optional reasoning-token cap. The field
-    // names, the tier list, and the "only cap it while thinking is on"
-    // rule all live in ai-thinking-budget.ts so the settings UI can
-    // never drift from what actually goes on the wire.
-    Object.assign(
-      body,
-      thinkingFieldsFor(this.config.enableThinking, this.config.thinkingBudget),
-    );
 
     if (tools && tools.length > 0) {
       body.tools = tools.map((t) => ({

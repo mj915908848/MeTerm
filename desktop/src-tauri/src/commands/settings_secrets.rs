@@ -163,11 +163,50 @@ fn validate_provider_type(value: &str) -> Result<(), String> {
     }
 }
 
+/// The URL's host as an IP address (IPv6 hosts come bracketed in `host_str`).
+fn host_ip(url: &Url) -> Option<IpAddr> {
+    let host = url.host_str()?;
+    host.trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse()
+        .ok()
+}
+
 fn is_loopback_host(url: &Url) -> bool {
-    match url.host_str() {
-        Some(host) if host.eq_ignore_ascii_case("localhost") => true,
-        Some(host) => host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback()),
-        None => false,
+    match host_ip(url) {
+        Some(ip) => ip.is_loopback(),
+        None => url
+            .host_str()
+            .is_some_and(|host| host.eq_ignore_ascii_case("localhost")),
+    }
+}
+
+/// A host on the user's own network: loopback, private / link-local / CGNAT
+/// (Tailscale) addresses, IPv6 unique-local and link-local, single-label names
+/// and the usual LAN suffixes (`.local`, `.lan`, `.home.arpa`, `.internal`).
+fn is_local_network_host(url: &Url) -> bool {
+    if is_loopback_host(url) {
+        return true;
+    }
+    match host_ip(url) {
+        Some(IpAddr::V4(ip)) => {
+            let [a, b, ..] = ip.octets();
+            ip.is_private() || ip.is_link_local() || (a == 100 && (64..128).contains(&b))
+        }
+        Some(IpAddr::V6(ip)) => {
+            let first = ip.segments()[0];
+            (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+        }
+        None => {
+            let Some(host) = url.host_str() else {
+                return false;
+            };
+            let host = host.trim_end_matches('.').to_ascii_lowercase();
+            !host.contains('.')
+                || [".local", ".lan", ".home.arpa", ".internal"]
+                    .iter()
+                    .any(|suffix| host.ends_with(suffix))
+        }
     }
 }
 
@@ -203,6 +242,20 @@ pub(crate) fn confidential_service_base(raw: &str) -> Result<String, String> {
         Ok(base)
     } else {
         Err("plaintext HTTP is allowed only for loopback services".to_string())
+    }
+}
+
+/// Transport check for a chat request that carries **no** credential. The
+/// conversation (terminal output included) still travels in it, so plaintext
+/// HTTP is accepted only inside the user's own network — enough for a keyless
+/// Ollama / LM Studio on another machine in the LAN — and HTTPS everywhere.
+pub(crate) fn keyless_service_base(raw: &str) -> Result<String, String> {
+    let base = canonical_service_base(raw)?;
+    let url = Url::parse(&base).map_err(|_| "invalid service URL".to_string())?;
+    if url.scheme() == "https" || (url.scheme() == "http" && is_local_network_host(&url)) {
+        Ok(base)
+    } else {
+        Err("plaintext HTTP is allowed only for local-network services".to_string())
     }
 }
 
@@ -719,8 +772,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn keyless_chat_allows_plain_http_only_inside_the_local_network() {
+        for ok in [
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+            "http://[::1]:11434",
+            "http://192.168.1.20:11434",
+            "http://10.0.0.5:1234",
+            "http://172.20.1.1:8080",
+            "http://169.254.10.1:11434",
+            "http://100.101.102.103:11434",
+            "http://[fd12:3456::1]:11434",
+            "http://ollama:11434",
+            "http://gpu-box.local:11434",
+            "http://nas.home.arpa:11434",
+            "https://api.example.com",
+        ] {
+            assert!(keyless_service_base(ok).is_ok(), "{ok}");
+        }
+        for bad in [
+            "http://example.com",
+            "http://8.8.8.8:11434",
+            "http://172.32.0.1:11434",
+            "http://100.128.0.1:11434",
+            "http://[2001:db8::1]:11434",
+        ] {
+            assert!(keyless_service_base(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn canonical_base_rejects_remote_plaintext_and_url_credentials() {
         assert!(confidential_service_base("http://example.com").is_err());
+        assert!(confidential_service_base("http://[::1]:11434").is_ok());
+        assert!(confidential_service_base("http://192.168.1.20:11434").is_err());
         assert!(canonical_service_base("https://user:pass@example.com").is_err());
         assert_eq!(
             canonical_service_base("http://127.0.0.1:11434/").unwrap(),

@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ts from 'typescript';
+import { quoteRemotePath } from '../src/ai-remote-path.ts';
 
 function sshFileTools() {
   const file = new URL('../src/ai-tools-file.ts', import.meta.url);
@@ -17,12 +18,13 @@ function sshFileTools() {
   const code = ts.transpileModule(declarations.join('\n'), {
     compilerOptions: { target: ts.ScriptTarget.ES2021, module: ts.ModuleKind.CommonJS },
   }).outputText;
-  const tools = new Function('executeViaTerminal', 'invoke', 'resolveLocalToolPath',
+  const tools = new Function('executeViaTerminal', 'invoke', 'resolveLocalToolPath', 'quoteRemotePath',
     `${code}\nreturn { read: createReadFileTool(), write: createWriteFileTool() };`,
   )(
     async (_sessionId: string, command: string) => execFileSync('sh', ['-c', command], { encoding: 'utf8' }),
     () => assert.fail('SSH tool must not invoke local filesystem command'),
     () => assert.fail('SSH tool must not resolve a local path'),
+    quoteRemotePath,
   );
   const context = { isSSH: true, sessionId: 'test-ssh', shellType: 'bash' };
   return { ...tools, context } as {
@@ -63,5 +65,21 @@ test('SSH write_file preserves quotes, shell symbols, and existing newlines', as
     assert.deepEqual(readFileSync(path), Buffer.from(content));
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('SSH read_file and write_file expand a ~/ path on the remote side', async () => {
+  const { read, write, context } = sshFileTools();
+  const home = mkdtempSync(join(tmpdir(), 'meterm-ssh-home-'));
+  const saved = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const result = await write.execute({ path: '~/sub/note.txt', content: 'hello' }, context);
+    assert.match(result, /^File written successfully:/);
+    assert.equal(readFileSync(join(home, 'sub/note.txt'), 'utf8'), 'hello');
+    assert.equal(await read.execute({ path: '~/sub/note.txt' }, context), 'hello');
+  } finally {
+    process.env.HOME = saved;
+    rmSync(home, { recursive: true, force: true });
   }
 });
