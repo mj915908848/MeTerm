@@ -3,7 +3,6 @@ import {
   decodeMessage,
   encodeMessage,
   ErrSessionNotFound,
-  ErrNotMaster,
   ErrKicked,
   MsgError,
   MsgHello,
@@ -14,16 +13,12 @@ import {
   MsgSessionEnd,
   MsgSetEncoding,
   MsgMasterRequestNotify,
-  MsgPairNotify,
-  MsgFileListResp,
   MsgOscEvent,
 } from './protocol';
-import { buildWsProtocols, buildWsUrl } from './connection';
 import { DrawerManager } from './drawer';
-import { setSSHDirProbe } from './terminal-file-link';
 import { filterPostResizeNewlines } from './terminal-resize';
 import { applyMirror, clearMirror, enterMirror, exitMirror, isMirrored } from './viewer-mirror';
-import { IpcTransport, RemoteBrokerTransport } from './terminal-transport';
+import { IpcTransport } from './terminal-transport';
 import { feedThumbnail } from './terminal-thumbnail-feed';
 import type { AppSettings } from './themes';
 import type { ManagedTerminal } from './terminal-types';
@@ -40,7 +35,6 @@ export interface WsCallbacks {
   setPongTime: (sessionId: string, time: number) => void;
   getPingTimestamp: (sessionId: string) => number | undefined;
   deletePingTimestamp: (sessionId: string) => void;
-  onReconnectNeeded: (mt: ManagedTerminal) => void;
   /** Handle OSC events from Rust backend (MSG_OSC_EVENT) */
   onOscEvent: (mt: ManagedTerminal, payload: Uint8Array) => void;
 }
@@ -162,16 +156,6 @@ export function handleIncomingMessage(
     return;
   }
 
-  if (type === MsgPairNotify) {
-    try {
-      const d = JSON.parse(new TextDecoder().decode(payload));
-      document.dispatchEvent(new CustomEvent('pair-request', {
-        detail: { pairId: d.pair_id, deviceInfo: d.device_info, remoteAddr: d.remote_addr },
-      }));
-    } catch { /* ignore malformed */ }
-    return;
-  }
-
   if (type === MsgSessionEnd) {
     console.warn(`[terminal] MsgSessionEnd received for session ${mt.id} — marking as ended`);
     clearMirror(mt.id);   // 会话终结,清镜像状态(防 Map 泄漏/同 id 复用残留)
@@ -216,110 +200,8 @@ export function handleIncomingMessage(
       mt.onStatus('ended');
       document.dispatchEvent(new CustomEvent('client-kicked', { detail: { sessionId: mt.id } }));
       if (closeFn) closeFn();
-    } else if (code === ErrNotMaster) {
-      document.dispatchEvent(new CustomEvent('master-request-denied', { detail: { sessionId: mt.id } }));
     }
     return;
-  }
-}
-
-export function connectWebSocket(mt: ManagedTerminal, callbacks: WsCallbacks): void {
-  mt.onStatus('connecting');
-  const wsUrl = buildWsUrl(mt._port, mt.id, mt.clientId);
-  const wsToken = mt._token;
-  const socket = new WebSocket(wsUrl, buildWsProtocols(wsToken));
-  socket.binaryType = 'arraybuffer';
-  mt.ws = socket;
-
-  socket.onopen = () => {
-    mt.reconnectAttempt = 0;
-    mt.onStatus('connected');
-    document.dispatchEvent(new CustomEvent('meterm-terminal-connected', { detail: { sessionId: mt.id } }));
-    callbacks.scheduleSettleResize(mt);
-
-    // 发送当前编码设置
-    const settings = callbacks.getSettings();
-    if (settings && settings.encoding !== 'utf-8') {
-      callbacks.sendEncoding(mt, settings.encoding);
-    }
-
-    // 通知 DrawerManager WebSocket 已就绪
-    DrawerManager.setWebSocket(mt.id, socket);
-
-    // SSH 会话：CWD 追踪 + 远程目录缓存
-    if (DrawerManager.getServerInfo(mt.id)) {
-      socket.addEventListener('message', (ev) => {
-        try {
-          const buf = ev.data as ArrayBuffer;
-          if (buf.byteLength < 2) return;
-          const msgType = new DataView(buf).getUint8(0);
-          if (msgType === MsgFileListResp) {
-            const p = new Uint8Array(buf, 1);
-            const resp = JSON.parse(new TextDecoder().decode(p));
-            if (resp.path && Array.isArray(resp.files)) {
-              setSSHDirProbe(mt.id, resp.path, resp.files);
-            }
-          }
-        } catch { /* ignore */ }
-      });
-    }
-  };
-
-  socket.onmessage = (event) => {
-    handleIncomingMessage(mt, event.data as ArrayBuffer, callbacks, () => socket.close());
-  };
-
-  socket.onclose = () => {
-    if (mt.ws === socket) {
-      mt.ws = null;
-      DrawerManager.notifyDisconnect(mt.id);
-      if (!mt.ended) {
-        callbacks.onReconnectNeeded(mt);
-      }
-    }
-  };
-
-  socket.onerror = () => {
-    if (!mt.ended) {
-      mt.onStatus('disconnected');
-    }
-  };
-}
-
-async function connectRemoteBroker(mt: ManagedTerminal, callbacks: WsCallbacks): Promise<void> {
-  if (!mt.remoteHost || !mt.remotePort) {
-    mt.onStatus('disconnected');
-    return;
-  }
-  mt.onStatus('connecting');
-  const transport = new RemoteBrokerTransport(mt.remoteHost, mt.remotePort, mt.id, mt.clientId);
-  transport.onmessage = (data) => {
-    handleIncomingMessage(mt, data, callbacks, () => transport.close());
-  };
-  transport.onclose = () => {
-    if (mt.transport === transport) {
-      mt.transport = null;
-      DrawerManager.notifyDisconnect(mt.id);
-      if (!mt.ended) callbacks.onReconnectNeeded(mt);
-    }
-  };
-
-  try {
-    await transport.connect();
-    mt.transport = transport;
-    mt.reconnectAttempt = 0;
-    mt.onStatus('connected');
-    document.dispatchEvent(new CustomEvent('meterm-terminal-connected', { detail: { sessionId: mt.id } }));
-    callbacks.scheduleSettleResize(mt);
-    const settings = callbacks.getSettings();
-    if (settings && settings.encoding !== 'utf-8') {
-      callbacks.sendEncoding(mt, settings.encoding);
-    }
-    DrawerManager.setTransport(mt.id, transport);
-  } catch (error) {
-    console.error(`[terminal] Remote broker connect failed for session ${mt.id}:`, error);
-    mt.onStatus('disconnected');
-    callbacks.onReconnectNeeded(mt);
   }
 }
 
@@ -396,31 +278,5 @@ function scheduleIpcReconnect(mt: ManagedTerminal, callbacks: WsCallbacks): void
 }
 
 export function connectTerminal(mt: ManagedTerminal, callbacks: WsCallbacks): void {
-  if (mt.isRemote) {
-    void connectRemoteBroker(mt, callbacks);
-  } else {
-    void connectIpc(mt, callbacks);
-  }
-}
-
-export function scheduleReconnect(mt: ManagedTerminal, connectFn: (mt: ManagedTerminal) => void): void {
-  if (!mt.isRemote) return;
-
-  if (mt.reconnectAttempt >= 30 || mt.ended) {
-    mt.onStatus('disconnected');
-    return;
-  }
-
-  // Exponential backoff: 1s, 2s, 4s, 8s, then cap at 10s.
-  // 30 attempts × ~10s max ≈ 5 minutes of retries — enough for server restart.
-  const delay = Math.min(1000 * Math.pow(2, mt.reconnectAttempt), 10000);
-  mt.reconnectAttempt += 1;
-  mt.onStatus('reconnecting');
-  mt.reconnectTimer = setTimeout(() => {
-    // Suppress role-change events briefly to prevent false overlays when old
-    // and new server-side connections overlap during reconnect.
-    mt._transferGrace = true;
-    setTimeout(() => { mt._transferGrace = false; }, 3000);
-    connectFn(mt);
-  }, delay);
+  void connectIpc(mt, callbacks);
 }

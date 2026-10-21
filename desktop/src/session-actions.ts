@@ -22,7 +22,6 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { createWindowAtPosition } from './window-utils';
 import {
   removeKickedOverlay, removeReconnectOverlay,
-  viewerModeSessionIds, privateSessionIds,
   reclaimSessionIds,
 } from './overlays';
 import { activateTab, showHomeView } from './view-manager';
@@ -135,7 +134,6 @@ export async function closeAllSessions(): Promise<void> {
       AICapsuleManager.destroy(leaf.sessionId);
       sshConfigMap.delete(leaf.sessionId);
       jumpServerConfigMap.delete(leaf.sessionId);
-      viewerModeSessionIds.delete(leaf.sessionId);
       reclaimSessionIds.delete(leaf.sessionId);
       sessionProgressMap.delete(leaf.sessionId);
       removeKickedOverlay(leaf.sessionId);

@@ -1197,3 +1197,17 @@ html.vibrancy-active .settings-panel {
   color: #666;
 }
 
+/* Settings: SSH import/export status */
+.settings-ssh-io-status {
+  font-size: 12px;
+  margin-top: 6px;
+  min-height: 16px;
+}
+
+.settings-ssh-io-status.ssh-status-success {
+  color: var(--status-connected-text);
+}
+
+.settings-ssh-io-status.ssh-status-error {
+  color: var(--error-text);
+}

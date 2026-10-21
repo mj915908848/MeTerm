@@ -48,7 +48,7 @@ test('old settings default off and all successful transport paths announce conne
   assert.match(themes, /autoOpenAiOnConnect:\s*false/);
   assert.match(themes, /autoRestoreAiHistoryOnConnect:\s*false/);
   const connections = readFileSync(new URL('../src/terminal-websocket.ts', import.meta.url), 'utf8');
-  assert.equal((connections.match(/'meterm-terminal-connected'/g) ?? []).length, 3);
+  assert.equal((connections.match(/'meterm-terminal-connected'/g) ?? []).length, 1);
 });
 test('latest history restoration is triggered only when its setting and auto-open are enabled', () => {
   const h = harness(true); h.settings.autoRestoreAiHistoryOnConnect = true;

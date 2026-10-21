@@ -108,9 +108,6 @@ html.platform-linux #window-toolbar {
   padding-right: 0;
 }
 
-
-
-
 /* Windows/Linux: window controls must fill the full toolbar height.
    The win-control-btn elements have height: 32px and are center-aligned. */
 html.platform-windows #window-toolbar-right,
@@ -316,27 +313,6 @@ html[data-theme="light"] .win-close-btn:hover {
 }
 .tab-js-icon {
   flex-shrink: 0;
-}
-
-.tab-remote-icon {
-  flex-shrink: 0;
-}
-
-.tab-remote-icon-wrap {
-  position: relative;
-  display: inline-flex;
-  flex-shrink: 0;
-}
-
-.tab-remote-badge {
-  position: absolute;
-  bottom: -3px;
-  right: -4px;
-  font-size: 7px;
-  font-weight: 700;
-  line-height: 1;
-  color: #22c55e;
-  pointer-events: none;
 }
 
 .title-tab-track {

@@ -148,9 +148,7 @@
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .context-menu,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .tab-drag-ghost,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .jumpserver-card,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .remote-card,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .file-details-modal,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-popup {
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .file-details-modal {
   box-shadow: 4px 4px 0 var(--nb-shadow, #000) !important;
 }
 
@@ -166,9 +164,7 @@
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .toast-notification,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .context-menu,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .jumpserver-card,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .remote-card,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .file-details-modal,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-popup {
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .file-details-modal {
   border: 2px solid var(--nb-border, #000) !important;
 }
 
@@ -323,7 +319,6 @@
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .editor-preview-btn.active,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .pip-pin-btn.active,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .always-on-top-btn.active,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .remote-tab.active,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .settings-tab.active,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .js-narrow-filter-btn.active,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .speed-limit-item.active,
@@ -669,7 +664,6 @@
   box-shadow: 0 0 0 var(--nb-shadow, #000) !important;
 }
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .home-dash-ctrl-btn.home-btn-ssh { border-left: 4px solid #118AB2 !important; }
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .home-dash-ctrl-btn.home-btn-remote { border-left: 4px solid #06D6A0 !important; }
 
 /* Dashboard search box — target the WRAPPER not the input */
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .home-dash-search-wrap {
@@ -890,17 +884,14 @@
 
 /* ─── O. SSH / Remote Modals ────────────────────────────────────── */
 
-/* The SSH/JumpServer and remote dialogs deliberately have no scrim in any theme,
-   so they are NOT re-dimmed here — see the note in ssh-modal.css. `.remote-overlay`
-   is kept even though no element carries that class today. */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .remote-overlay,
+/* The SSH/JumpServer dialogs deliberately have no scrim in any theme,
+   so they are NOT re-dimmed here — see the note in ssh-modal.css. */
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .drawer-modal-overlay,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .navigate-confirm-overlay {
   background: rgba(0, 0, 0, 0.5) !important;
 }
 
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .ssh-modal,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .remote-modal {
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .ssh-modal {
   background: var(--nb-bg, #FFFEF0) !important;
   border: 3px solid var(--nb-border, #000) !important;
   box-shadow: 6px 6px 0 var(--nb-shadow, #000) !important;
@@ -1047,20 +1038,6 @@
 }
 
 
-/* ─── X. Pairing / Sharing ──────────────────────────────────────── */
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .pairing-overlay,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .sharing-overlay {
-  background: rgba(0, 0, 0, 0.5) !important;
-}
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .pairing-modal,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .sharing-modal {
-  background: var(--nb-bg, #FFFEF0) !important;
-  border: 3px solid var(--nb-border, #000) !important;
-  box-shadow: 6px 6px 0 var(--nb-shadow, #000) !important;
-}
-
 
 /* ─── Y. Terminal Area ──────────────────────────────────────────── */
 
@@ -1175,11 +1152,6 @@
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .file-editor-panel {
   background: var(--nb-bg, #FFFEF0) !important;
   border: 2px solid var(--nb-border, #000) !important;
-}
-
-/* Viewer popup */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-popup {
-  background: var(--nb-bg, #FFFEF0) !important;
 }
 
 /* Text selection across the app */
@@ -1395,24 +1367,9 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
 
 
 /* ─── Pairing dialog (not just modal) ───────────────────────────── */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .pairing-dialog {
-  background: var(--nb-bg, #FFFEF0) !important;
-  border: 3px solid var(--nb-border, #000) !important;
-  box-shadow: 6px 6px 0 var(--nb-shadow, #000) !important;
-  color: var(--nb-text, #1A1A2E) !important;
-}
 
 
 /* ─── Sharing panel ─────────────────────────────────────────────── */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .sharing-overlay {
-  background: rgba(0, 0, 0, 0.5) !important;
-}
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .sharing-panel {
-  background: var(--nb-bg, #FFFEF0) !important;
-  border: 2px solid var(--nb-border, #000) !important;
-  box-shadow: 4px 4px 0 var(--nb-shadow, #000) !important;
-}
 
 
 /* ─── kbd element ───────────────────────────────────────────────── */
@@ -1484,10 +1441,6 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
 
 /* Modals — reduce from 6px to 4px for less visual weight */
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .ssh-modal,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .remote-modal,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .pairing-modal,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .sharing-modal,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .pairing-dialog,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-modal,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .pip-tab-select-dialog,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .js-account-dialog {
@@ -2075,17 +2028,6 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
 
 
 /* ─── Sharing panel ─────────────────────────────────────────────── */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .device-card {
-  border: 2px solid var(--nb-border, #000) !important;
-  box-shadow: 2px 2px 0 var(--nb-shadow, #000) !important;
-  background: var(--nb-card-bg, #fff) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .device-card:hover {
-  background: var(--nb-highlight, #FFD93D) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .sharing-qr-canvas {
-  border: 2px solid var(--nb-border, #000) !important;
-}
 
 
 /* ─── Pairing dialogs ───────────────────────────────────────────── */
@@ -2097,22 +2039,8 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
   border: 3px solid var(--nb-border, #000) !important;
   box-shadow: 4px 4px 0 var(--nb-shadow, #000) !important;
 }
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .reclaim-overlay,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-overlay {
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .reclaim-overlay {
   background: rgba(0, 0, 0, 0.5) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-overlay-badge {
-  background: var(--nb-highlight, #FFD93D) !important;
-  border: 2px solid var(--nb-border, #000) !important;
-  color: var(--nb-text, #1A1A2E) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-request-btn {
-  border: 2px solid var(--nb-border, #000) !important;
-  box-shadow: 2px 2px 0 var(--nb-shadow, #000) !important;
-  background: var(--nb-card-bg, #fff) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-request-btn:hover {
-  background: var(--nb-highlight, #FFD93D) !important;
 }
 
 
@@ -2151,22 +2079,6 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
 
 
 /* ─── Viewer popup internals ────────────────────────────────────── */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-popup-item {
-  border: 1.5px solid var(--nb-border, #000) !important;
-  background: var(--nb-card-bg, #fff) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-popup-item:hover {
-  background: var(--nb-highlight, #FFD93D) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-popup-kick {
-  border: 1.5px solid var(--nb-accent, #E94560) !important;
-  background: var(--nb-danger-light, #FFB3B3) !important;
-  color: var(--nb-text, #1A1A2E) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .viewer-popup-kick:hover {
-  background: var(--nb-accent, #E94560) !important;
-  color: #fff !important;
-}
 
 
 /* ═══════════════════════════════════════════════════════════════════

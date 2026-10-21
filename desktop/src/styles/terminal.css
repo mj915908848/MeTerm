@@ -209,17 +209,6 @@
   border-color: rgba(220, 38, 38, 0.4);
 }
 
-/* Tab kicked red X on globe */
-.tab-remote-icon-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.tab-remote-icon-wrap .tab-kicked-x {
-  position: absolute;
-  top: 0;
-  left: 0;
-}
-
 .terminal-bg-image {
   position: absolute;
   inset: 0;

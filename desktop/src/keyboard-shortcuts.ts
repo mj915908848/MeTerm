@@ -15,7 +15,7 @@ import { createNewSession, doSplitPane } from './session-actions';
 import { renderTabs } from './tab-renderer';
 import {
   removeKickedOverlay, removeReconnectOverlay,
-  viewerModeSessionIds, reclaimSessionIds,
+  reclaimSessionIds,
 } from './overlays';
 import {
   sshConfigMap, sessionProgressMap, jumpServerConfigMap,
@@ -144,7 +144,6 @@ export function setupKeyboardShortcuts(): void {
             AICapsuleManager.destroy(leaf.sessionId);
             sshConfigMap.delete(leaf.sessionId);
             jumpServerConfigMap.delete(leaf.sessionId);
-            viewerModeSessionIds.delete(leaf.sessionId);
             reclaimSessionIds.delete(leaf.sessionId);
             sessionProgressMap.delete(leaf.sessionId);
             removeKickedOverlay(leaf.sessionId);

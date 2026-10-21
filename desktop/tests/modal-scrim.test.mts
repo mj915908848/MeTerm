@@ -19,8 +19,8 @@ const STYLES = new URL('../src/styles/', import.meta.url);
 const readSource = (name: string): string =>
   fs.readFileSync(new URL(`../src/${name}`, import.meta.url), 'utf8');
 
-/** The three overlays the connection dialogs mount. */
-const OVERLAYS = ['ssh-modal-overlay', 'remote-modal-overlay', 'js-asset-browser-overlay'];
+/** The overlays the connection dialogs mount. */
+const OVERLAYS = ['ssh-modal-overlay', 'js-asset-browser-overlay'];
 
 /** Every `selector { body }` rule in a stylesheet. */
 function* rules(css: string): Generator<{ selector: string; body: string }> {

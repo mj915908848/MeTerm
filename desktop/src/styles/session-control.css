@@ -1,0 +1,176 @@
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ============================================================================
+   Master Request Approval Dialog
+   ============================================================================ */
+/* Tab breathing animation for pending control requests */
+.title-tab.tab-breathing {
+  animation: tab-breathing 2s ease-in-out infinite;
+}
+@keyframes tab-breathing {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: inset 0 0 8px var(--accent, #007acc); }
+}
+
+.master-approval-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  animation: fade-in 0.2s ease;
+}
+html.vibrancy-active .master-approval-overlay {
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.master-approval-dialog {
+  background: rgba(var(--bg-toolbar, 33, 33, 35), 1);
+  border: 1px solid var(--border-primary);
+  border-radius: 14px;
+  padding: 24px;
+  min-width: 340px;
+  max-width: 400px;
+  text-align: center;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.35),
+              0 0 0 0.5px rgba(255, 255, 255, 0.06);
+}
+html.vibrancy-active .master-approval-dialog {
+  background: rgba(var(--bg-toolbar, 33, 33, 35), 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.master-approval-icon {
+  color: var(--accent, #007acc);
+  margin-bottom: 12px;
+}
+
+.master-approval-dialog h3 {
+  color: var(--text-heading, #fff);
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.master-approval-dialog p {
+  color: var(--text-muted, #888);
+  font-size: 13px;
+  margin: 0 0 6px 0;
+}
+
+.master-approval-requester {
+  font-family: monospace;
+  font-size: 12px;
+  color: var(--text-dim, #666);
+  background: rgba(var(--bg-button, 50, 50, 52), 0.6);
+  padding: 4px 10px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: 16px;
+}
+
+.master-approval-buttons {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.master-approval-btn {
+  padding: 8px 24px;
+  border-radius: 9999px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.master-approval-btn.deny {
+  color: var(--text-muted, #888);
+}
+
+.master-approval-btn.deny:hover {
+  background: rgba(255, 69, 58, 0.15);
+  color: var(--status-disconnected-text, #f87171);
+}
+
+.master-approval-btn.approve {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.28);
+  color: var(--accent, #007acc);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.15);
+}
+
+.master-approval-btn.approve:hover {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.38);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.25);
+}
+
+[data-theme="light"] .master-approval-dialog {
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.06);
+}
+[data-theme="light"] .master-approval-btn {
+  background: rgba(0, 0, 0, 0.04);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.6);
+}
+[data-theme="light"] .master-approval-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .master-approval-btn.approve {
+  background: rgba(var(--accent-rgb, 0, 102, 204), 0.12);
+  color: var(--accent);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.5);
+}
+[data-theme="light"] .master-approval-btn.approve:hover {
+  background: rgba(var(--accent-rgb, 0, 102, 204), 0.18);
+}
+
+/* ============================================================================
+   Reclaim Control Overlay (covers terminal panel)
+   ============================================================================ */
+.reclaim-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fade-in 0.2s ease;
+}
+
+.reclaim-overlay-content {
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.reclaim-overlay-text {
+  font-size: 22px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.6);
+  letter-spacing: 1px;
+}
+
+.reclaim-overlay-subtext {
+  margin-top: 8px;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}

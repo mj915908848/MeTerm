@@ -329,10 +329,8 @@ export function showKickedOverlay(sessionId: string, msg?: string): void {
       AICapsuleManager.destroy(leaf.sessionId);
       sshConfigMap.delete(leaf.sessionId);
       jumpServerConfigMap.delete(leaf.sessionId);
-      viewerModeSessionIds.delete(leaf.sessionId);
       reclaimSessionIds.delete(leaf.sessionId);
       { const pr = pendingMasterRequests.get(leaf.sessionId); if (pr) { clearTimeout(pr.timerId); pendingMasterRequests.delete(leaf.sessionId); } }
-      privateSessionIds.delete(leaf.sessionId);
       sessionProgressMap.delete(leaf.sessionId);
     }
     removeKickedOverlay(sessionId);
@@ -579,111 +577,5 @@ export function syncReclaimOverlayForActiveTab(): void {
     }
   } else {
     hideReclaimButton();
-  }
-}
-
-// ── Viewer Overlay ──
-
-export const viewerModeSessionIds = new Set<string>();
-export const privateSessionIds = new Set<string>();
-let viewerOverlayEl: HTMLDivElement | null = null;
-let viewerOverlaySessionId: string | null = null;
-
-function createViewerOverlayEl(sessionId: string): HTMLDivElement {
-  const overlay = document.createElement('div');
-  overlay.className = 'viewer-overlay';
-
-  const content = document.createElement('div');
-  content.className = 'viewer-overlay-content';
-
-  const badge = document.createElement('div');
-  badge.className = 'viewer-overlay-badge';
-  badge.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3.5 9h17M3.5 15h17"/></svg><span>${t('viewerObserving')}</span>`;
-
-  const requestBtn = document.createElement('button');
-  requestBtn.className = 'viewer-request-btn';
-  requestBtn.type = 'button';
-  requestBtn.textContent = t('viewerRequestControl');
-  requestBtn.onclick = () => {
-    TerminalRegistry.sendMasterRequest(sessionId);
-    requestBtn.textContent = t('viewerRequesting');
-    requestBtn.disabled = true;
-    requestBtn.classList.add('requesting');
-    setTimeout(() => {
-      if (requestBtn.disabled && document.body.contains(requestBtn)) {
-        requestBtn.textContent = t('viewerRequestControl');
-        requestBtn.disabled = false;
-        requestBtn.classList.remove('requesting');
-      }
-    }, 10000);
-  };
-
-  content.appendChild(badge);
-  content.appendChild(requestBtn);
-  overlay.appendChild(content);
-  return overlay;
-}
-
-export function showViewerOverlay(sessionId: string): void {
-  hideViewerOverlayDom();
-  viewerOverlaySessionId = sessionId;
-  const overlay = createViewerOverlayEl(sessionId);
-  _terminalPanelEl.appendChild(overlay);
-  viewerOverlayEl = overlay;
-}
-
-export function hideViewerOverlayDom(): void {
-  if (viewerOverlayEl) {
-    viewerOverlayEl.remove();
-    viewerOverlayEl = null;
-  }
-  viewerOverlaySessionId = null;
-}
-
-/** Mark session as viewer mode and show overlay if it's the active tab */
-export function enterViewerMode(sessionId: string): void {
-  viewerModeSessionIds.add(sessionId);
-  syncViewerOverlayForActiveTab();
-}
-
-/** Remove session from viewer mode and hide overlay if needed */
-export function exitViewerMode(sessionId: string): void {
-  viewerModeSessionIds.delete(sessionId);
-  syncViewerOverlayForActiveTab();
-}
-
-/** Show or hide viewer overlay based on whether the active tab has a viewer session */
-export function syncViewerOverlayForActiveTab(): void {
-  if (isHomeView || isGalleryView) { hideViewerOverlayDom(); return; }
-  const activeTab = TabManager.getActiveTab();
-  if (!activeTab) { hideViewerOverlayDom(); return; }
-
-  const leaves = getAllLeaves(activeTab.splitRoot);
-  const viewerLeaf = leaves.find((l) => viewerModeSessionIds.has(l.sessionId));
-
-  if (viewerLeaf) {
-    // Active tab has a viewer session — show overlay if not already for this session
-    if (viewerOverlaySessionId !== viewerLeaf.sessionId) {
-      showViewerOverlay(viewerLeaf.sessionId);
-    }
-  } else {
-    hideViewerOverlayDom();
-  }
-}
-
-export function showViewerRequestDenied(): void {
-  if (!viewerOverlayEl) return;
-  const btn = viewerOverlayEl.querySelector('.viewer-request-btn') as HTMLButtonElement | null;
-  if (btn) {
-    btn.textContent = t('viewerRequestDenied');
-    btn.classList.remove('requesting');
-    btn.classList.add('denied');
-    setTimeout(() => {
-      if (document.body.contains(btn)) {
-        btn.textContent = t('viewerRequestControl');
-        btn.disabled = false;
-        btn.classList.remove('denied');
-      }
-    }, 3000);
   }
 }

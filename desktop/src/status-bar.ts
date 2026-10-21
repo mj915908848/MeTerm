@@ -1,5 +1,4 @@
 import type { SessionStatus } from './terminal';
-import { t } from './i18n';
 
 // ─── Data Structures ─────────────────────────────────────────────
 
@@ -14,7 +13,6 @@ interface CapsuleState {
   connectionLabel: string;
   latencyMs: number | null;
   sessionCount: number;
-  viewerCount: number;
   transfer: TransferInfo | null;
   aiActive: boolean;
   /** Pane number of the currently-focused pane, or null when the
@@ -55,12 +53,6 @@ const svgIcons = {
   transfer: `<svg ${SVG_ATTR}><path d="M5 13V3"/><path d="M2.5 5.5L5 3l2.5 2.5"/><path d="M11 3v10"/><path d="M8.5 10.5L11 13l2.5-2.5"/></svg>`,
   /** AI sparkle */
   ai: `<svg ${SVG_ATTR}><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/><path d="M3.5 3.5l2 2M10.5 10.5l2 2M10.5 3.5l-2 2M3.5 10.5l2-2"/><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/></svg>`,
-  /** 📱 viewers / connected devices */
-  viewers: `<svg ${SVG_ATTR}><rect x="4.5" y="1.5" width="7" height="13" rx="1.2"/><path d="M7 12h2"/></svg>`,
-  /** 👁 eye / watching indicator */
-  eye: `<svg ${SVG_ATTR}><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.2" fill="currentColor" stroke="none"/></svg>`,
-  /** 🔒 lock / private session */
-  lock: `<svg ${SVG_ATTR}><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none"/><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none"/><circle cx="8" cy="10.5" r="1" fill="currentColor" stroke="none"/></svg>`,
 } as const;
 
 // ─── StatusBar Class ─────────────────────────────────────────────
@@ -72,10 +64,8 @@ class StatusBarClass {
 
   // Capsule DOM elements (null means not yet created or removed)
   private connectionCapsule: HTMLDivElement | null = null;
-  private lockCapsule: HTMLDivElement | null = null;
   private latencyCapsule: HTMLDivElement | null = null;
   private sessionsCapsule: HTMLDivElement | null = null;
-  private viewersCapsule: HTMLDivElement | null = null;
   private transferCapsule: HTMLDivElement | null = null;
   private aiCapsule: HTMLDivElement | null = null;
 
@@ -100,8 +90,6 @@ class StatusBarClass {
   private transferListener: EventListener | null = null;
   private aiListener: EventListener | null = null;
   private pongListener: EventListener | null = null;
-  private viewerPopup: HTMLDivElement | null = null;
-  private viewerPopupCloseHandler: ((e: Event) => void) | null = null;
 
   private paneCapsule: HTMLDivElement | null = null;
 
@@ -110,7 +98,6 @@ class StatusBarClass {
     connectionLabel: 'Disconnected',
     latencyMs: null,
     sessionCount: 0,
-    viewerCount: 0,
     transfer: null,
     aiActive: false,
     paneNumber: null,
@@ -180,11 +167,6 @@ class StatusBarClass {
     this.renderSessionsCapsule();
   }
 
-  setViewers(count: number): void {
-    this.state.viewerCount = count;
-    this.renderViewersCapsule();
-  }
-
   setTransfer(info: TransferInfo | null): void {
     // Clear any pending hide timer
     if (this.transferHideTimer !== null) {
@@ -209,31 +191,6 @@ class StatusBarClass {
       this.state.transfer = info;
       this.renderTransferCapsule();
     }
-  }
-
-  setLocked(locked: boolean): void {
-    if (!this.leftZone) return;
-
-    if (!locked) {
-      if (this.lockCapsule) {
-        this.removeCapsuleAnimated(this.lockCapsule, () => {
-          this.lockCapsule = null;
-        });
-      }
-      return;
-    }
-
-    if (!this.lockCapsule) {
-      this.lockCapsule = document.createElement('div');
-      this.lockCapsule.className = 'status-capsule capsule-lock';
-      this.addCapsuleAnimated(this.lockCapsule);
-      // Insert after connection capsule
-      const afterConnection = this.connectionCapsule?.nextSibling ?? null;
-      this.leftZone.insertBefore(this.lockCapsule, afterConnection);
-    }
-
-    this.lockCapsule.innerHTML =
-      `<span>${svgIcons.lock} ${t('sessionPrivate')}</span>`;
   }
 
   setAIActive(active: boolean): void {
@@ -354,8 +311,8 @@ class StatusBarClass {
       this.paneCapsule = document.createElement('div');
       this.paneCapsule.className = 'status-capsule capsule-pane';
       this.addCapsuleAnimated(this.paneCapsule);
-      // Insert after connection + lock capsules, before latency.
-      const anchor = (this.lockCapsule ?? this.connectionCapsule)?.nextSibling ?? null;
+      // Insert after the connection capsule, before latency.
+      const anchor = this.connectionCapsule?.nextSibling ?? null;
       this.leftZone.insertBefore(this.paneCapsule, anchor);
     }
     // Use circled numbers ①..⑳ when possible, else Pane N.
@@ -419,41 +376,6 @@ class StatusBarClass {
 
     this.sessionsCapsule.innerHTML =
       `<span>${svgIcons.sessions} ${this.state.sessionCount}</span>`;
-  }
-
-  private renderViewersCapsule(): void {
-    if (!this.rightZone) return;
-
-    if (this.state.viewerCount <= 0) {
-      if (this.viewersCapsule) {
-        this.removeCapsuleAnimated(this.viewersCapsule, () => {
-          this.viewersCapsule = null;
-        });
-      }
-      return;
-    }
-
-    if (!this.viewersCapsule) {
-      this.viewersCapsule = document.createElement('div');
-      this.viewersCapsule.className = 'status-capsule capsule-viewers';
-      this.addCapsuleAnimated(this.viewersCapsule);
-      // Insert at the beginning of right zone (before transfer/AI capsules)
-      this.rightZone.insertBefore(this.viewersCapsule, this.rightZone.firstChild);
-    }
-
-    this.viewersCapsule.innerHTML =
-      `<span class="viewer-eye-icon">${svgIcons.eye}</span>` +
-      `<span>${this.state.viewerCount}</span>`;
-    this.viewersCapsule.title = `${this.state.viewerCount} device${this.state.viewerCount !== 1 ? 's' : ''} watching`;
-
-    // Click to dispatch event for viewer popup
-    this.viewersCapsule.style.cursor = 'pointer';
-    this.viewersCapsule.onclick = (e) => {
-      e.stopPropagation();
-      document.dispatchEvent(new CustomEvent('status-bar-viewers-clicked', {
-        detail: { capsuleEl: this.viewersCapsule },
-      }));
-    };
   }
 
   private renderTransferCapsule(): void {
@@ -652,50 +574,6 @@ class StatusBarClass {
     this.setLatency(null);
   }
 
-  // ── Viewer Monitor ────────────────────────────────────────
-
-  private viewerTimer: ReturnType<typeof setInterval> | null = null;
-  private viewerFetchFn: ((sessionId: string) => Promise<number>) | null = null;
-  private getViewerSessionId: (() => string | null) | null = null;
-
-  startViewerMonitor(
-    getActiveSessionId: () => string | null,
-    fetchViewerCount: (sessionId: string) => Promise<number>,
-  ): void {
-    this.getViewerSessionId = getActiveSessionId;
-    this.viewerFetchFn = fetchViewerCount;
-
-    this.viewerTimer = setInterval(() => {
-      this.doViewerFetch();
-    }, 5000);
-
-    // First fetch after short delay
-    setTimeout(() => this.doViewerFetch(), 800);
-  }
-
-  private async doViewerFetch(): Promise<void> {
-    if (!this.getViewerSessionId || !this.viewerFetchFn) return;
-    const sessionId = this.getViewerSessionId();
-    if (!sessionId) {
-      this.setViewers(0);
-      return;
-    }
-    try {
-      const count = await this.viewerFetchFn(sessionId);
-      this.setViewers(count);
-    } catch {
-      // Silently ignore fetch errors
-    }
-  }
-
-  stopViewerMonitor(): void {
-    if (this.viewerTimer) {
-      clearInterval(this.viewerTimer);
-      this.viewerTimer = null;
-    }
-    this.setViewers(0);
-  }
-
   // ── Transfer Event Listener ────────────────────────────────
 
   private listenForTransfers(): void {
@@ -742,110 +620,10 @@ class StatusBarClass {
     document.addEventListener('status-bar-ai', this.aiListener);
   }
 
-  // ── Viewer Popup ──────────────────────────────────────────
-
-  showViewerPopup(clients: Array<{ id: string; session_id: string; role: string; remote_addr: string; connected: boolean }>): void {
-    this.hideViewerPopup();
-    if (!this.viewersCapsule) return;
-
-    const popup = document.createElement('div');
-    popup.className = 'viewer-popup';
-
-    if (clients.length === 0) {
-      popup.innerHTML = `<div class="viewer-popup-empty">${escapeHtml(t('noConnectedDevices'))}</div>`;
-    } else {
-      const rows = clients.map(c => {
-        const idShort = c.id.substring(0, 8);
-        const roleBadge = c.role === 'master'
-          ? '<span class="viewer-popup-badge badge-master">M</span>'
-          : c.role === 'readonly'
-            ? '<span class="viewer-popup-badge badge-readonly">R</span>'
-            : '<span class="viewer-popup-badge badge-viewer">V</span>';
-        return `<div class="viewer-popup-row" data-session-id="${escapeHtml(c.session_id)}" data-client-id="${escapeHtml(c.id)}">
-          <span class="viewer-popup-id">${escapeHtml(idShort)}</span>
-          ${roleBadge}
-          <span class="viewer-popup-ip">${escapeHtml(c.remote_addr || '?')}</span>
-          <button class="viewer-popup-kick" title="${escapeHtml(t('kickAndBan'))}">${escapeHtml(t('kickClient'))}</button>
-        </div>`;
-      }).join('');
-      popup.innerHTML = `<div class="viewer-popup-header">${escapeHtml(t('connectedDevices'))}</div>${rows}`;
-    }
-
-    // Position below the capsule (status bar is near the top)
-    const rect = this.viewersCapsule.getBoundingClientRect();
-    popup.style.position = 'fixed';
-    popup.style.visibility = 'hidden';
-    document.body.appendChild(popup);
-    this.viewerPopup = popup;
-
-    const popupRect = popup.getBoundingClientRect();
-    const gap = 4;
-
-    // Vertical: prefer below, fallback above if overflow
-    const spaceBelow = window.innerHeight - rect.bottom - gap;
-    if (spaceBelow >= popupRect.height) {
-      popup.style.top = `${rect.bottom + gap}px`;
-    } else {
-      popup.style.bottom = `${window.innerHeight - rect.top + gap}px`;
-    }
-
-    // Horizontal: align right edge with capsule, clamp to viewport
-    let right = window.innerWidth - rect.right;
-    if (right + popupRect.width > window.innerWidth) {
-      right = Math.max(4, window.innerWidth - popupRect.width - 4);
-    }
-    popup.style.right = `${Math.max(4, right)}px`;
-    popup.style.visibility = '';
-
-    // Kick button handlers
-    popup.querySelectorAll('.viewer-popup-kick').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const row = (e.target as HTMLElement).closest('.viewer-popup-row') as HTMLElement;
-        if (row) {
-          document.dispatchEvent(new CustomEvent('status-bar-kick-client', {
-            detail: {
-              sessionId: row.dataset.sessionId,
-              clientId: row.dataset.clientId,
-            },
-          }));
-          row.remove();
-        }
-      });
-    });
-
-    // Close on click outside / ESC
-    this.viewerPopupCloseHandler = (e: Event) => {
-      if (e instanceof KeyboardEvent && e.key === 'Escape') {
-        this.hideViewerPopup();
-      } else if (e instanceof MouseEvent && this.viewerPopup && !this.viewerPopup.contains(e.target as Node) && !this.viewersCapsule?.contains(e.target as Node)) {
-        this.hideViewerPopup();
-      }
-    };
-    setTimeout(() => {
-      document.addEventListener('click', this.viewerPopupCloseHandler!);
-      document.addEventListener('keydown', this.viewerPopupCloseHandler!);
-    }, 0);
-  }
-
-  hideViewerPopup(): void {
-    if (this.viewerPopup) {
-      this.viewerPopup.remove();
-      this.viewerPopup = null;
-    }
-    if (this.viewerPopupCloseHandler) {
-      document.removeEventListener('click', this.viewerPopupCloseHandler);
-      document.removeEventListener('keydown', this.viewerPopupCloseHandler);
-      this.viewerPopupCloseHandler = null;
-    }
-  }
-
   // ── Teardown ────────────────────────────────────────────────
 
   destroy(): void {
     this.stopLatencyMonitor();
-    this.stopViewerMonitor();
-    this.hideViewerPopup();
 
     if (this.transferListener) {
       document.removeEventListener('status-bar-transfer', this.transferListener);
@@ -873,10 +651,8 @@ class StatusBarClass {
 
     this.activeTransfers.clear();
     this.connectionCapsule = null;
-    this.lockCapsule = null;
     this.latencyCapsule = null;
     this.sessionsCapsule = null;
-    this.viewersCapsule = null;
     this.transferCapsule = null;
     this.aiCapsule = null;
     this.leftZone = null;

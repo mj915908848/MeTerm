@@ -24,12 +24,11 @@ import {
   writeText as clipboardWriteText,
 } from '@tauri-apps/plugin-clipboard-manager';
 import { getSelection, performCopy, performPaste } from './clipboard-actions';
-import { activateTab, showHomeView, openSettings, syncLockIconForActiveTab } from './view-manager';
+import { activateTab, showHomeView, openSettings } from './view-manager';
 import { doSplitPane, createNewSession, closeAllSessions } from './session-actions';
 import { renderTabs } from './tab-renderer';
 import {
   pendingMasterRequests,
-  viewerModeSessionIds, privateSessionIds,
   reclaimSessionIds,
   removeKickedOverlay, removeReconnectOverlay,
 } from './overlays';
@@ -116,9 +115,7 @@ export function showTabContextMenu(event: MouseEvent, tab: Tab, tabIndex: number
         AICapsuleManager.destroy(leaf.sessionId);
         sshConfigMap.delete(leaf.sessionId);
         jumpServerConfigMap.delete(leaf.sessionId);
-        viewerModeSessionIds.delete(leaf.sessionId);
         reclaimSessionIds.delete(leaf.sessionId);
-        privateSessionIds.delete(leaf.sessionId);
         sessionProgressMap.delete(leaf.sessionId);
         removeKickedOverlay(leaf.sessionId);
         removeReconnectOverlay(leaf.sessionId);
@@ -589,7 +586,6 @@ export function showCustomContextMenu(event: MouseEvent): void {
           AICapsuleManager.destroy(leaf.sessionId);
           sshConfigMap.delete(leaf.sessionId);
           jumpServerConfigMap.delete(leaf.sessionId);
-          viewerModeSessionIds.delete(leaf.sessionId);
           reclaimSessionIds.delete(leaf.sessionId);
           sessionProgressMap.delete(leaf.sessionId);
           removeKickedOverlay(leaf.sessionId);
@@ -661,7 +657,6 @@ export function showCustomContextMenu(event: MouseEvent): void {
           AICapsuleManager.destroy(closingLeaf.sessionId);
           sshConfigMap.delete(closingLeaf.sessionId);
           jumpServerConfigMap.delete(closingLeaf.sessionId);
-          viewerModeSessionIds.delete(closingLeaf.sessionId);
           reclaimSessionIds.delete(closingLeaf.sessionId);
           { const pr = pendingMasterRequests.get(closingLeaf.sessionId); if (pr) { clearTimeout(pr.timerId); pendingMasterRequests.delete(closingLeaf.sessionId); } }
           sessionProgressMap.delete(closingLeaf.sessionId);

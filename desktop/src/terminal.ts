@@ -39,7 +39,7 @@ import { isMirrored } from './viewer-mirror';
 import { setupKeyHandler, setupPasteListener, applyWKWebViewIMEFix } from './terminal-ime';
 import { handleOscEvents, type OscHandlerCallbacks } from './terminal-osc';
 import { setShellType } from './ai-tools';
-import { connectTerminal, connectWebSocket, scheduleReconnect as _scheduleReconnect } from './terminal-websocket';
+import { connectTerminal } from './terminal-websocket';
 import { sendToTerminal } from './terminal-transport';
 import { InlineCompletion } from './cmd-completion';
 import { globalCompletionIndex } from './cmd-completion-data';
@@ -748,23 +748,6 @@ class TerminalRegistryClass {
     return mt;
   }
 
-  createRemote(
-    sessionId: string,
-    remoteHost: string,
-    remotePort: number,
-    onStatus: (status: SessionStatus) => void,
-    onTitleChange: (title: string) => void,
-  ): ManagedTerminal {
-    // Create terminal UI without connecting (port=-1 signals skip-connect).
-    const mt = this.create(sessionId, -1, '', onStatus, onTitleChange);
-    mt.remoteHost = remoteHost;
-    mt.remotePort = remotePort;
-    mt.isRemote = true;
-    // Now connect with remote URL
-    this.connect(mt);
-    return mt;
-  }
-
   private oscCallbacks: OscHandlerCallbacks = {
     onShellIdle: (sid) => {
       const listeners = this.shellStateListeners.get(sid);
@@ -782,7 +765,6 @@ class TerminalRegistryClass {
     setPongTime: (sessionId: string, time: number) => this.lastPongTime.set(sessionId, time),
     getPingTimestamp: (sessionId: string) => this.pingTimestamps.get(sessionId),
     deletePingTimestamp: (sessionId: string) => this.pingTimestamps.delete(sessionId),
-    onReconnectNeeded: (mt: ManagedTerminal) => this.scheduleReconnect(mt),
     onOscEvent: (mt: ManagedTerminal, payload: Uint8Array) => {
       handleOscEvents(mt, payload, this.oscCallbacks);
     },
@@ -790,10 +772,6 @@ class TerminalRegistryClass {
 
   private connect(mt: ManagedTerminal): void {
     connectTerminal(mt, this.wsCallbacks);
-  }
-
-  private scheduleReconnect(mt: ManagedTerminal): void {
-    _scheduleReconnect(mt, (m) => this.connect(m));
   }
 
   mountTo(sessionId: string, panel: HTMLElement): void {
@@ -1438,7 +1416,7 @@ class TerminalRegistryClass {
     const mouseSnapshots = new Map<string, { protocol: string; encoding: string }>();
 
     for (const mt of this.terminals.values()) {
-      if (mt.isRemote || mt.ended) continue;
+      if (mt.ended) continue;
 
       // Save mouse mode state from xterm.js internals
       try {
