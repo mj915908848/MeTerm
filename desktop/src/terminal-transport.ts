@@ -10,6 +10,14 @@ export interface TerminalTransport {
   onclose: (() => void) | null;
 }
 
+/** Backend error meaning this IPC connection was dropped server-side
+ *  (`IPC_CLIENT_STALE` in `commands/ipc_terminal.rs`). */
+export const IPC_CLIENT_STALE = 'ipc-client-stale';
+
+export function isIpcClientStaleError(error: unknown): boolean {
+  return String(error).includes(IPC_CLIENT_STALE);
+}
+
 export class IpcTransport implements TerminalTransport {
   private _connected = false;
   private _sessionId: string;
@@ -62,7 +70,7 @@ export class IpcTransport implements TerminalTransport {
           connGen,
           data: payload,
         }) as Promise<void>
-      ).catch((error) => console.error('IPC input error:', error));
+      ).catch((error) => this.handleInvokeError('IPC input error:', error));
     } else if (msgType === MsgResize) {
       if (payload.length >= 4) {
         const cols = (payload[0] << 8) | payload[1];
@@ -72,7 +80,7 @@ export class IpcTransport implements TerminalTransport {
           clientId: this._clientId,
           connGen: this._connGen,
           cols, rows,
-        });
+        }).catch((error) => this.handleInvokeError('IPC resize error:', error));
       }
     } else {
       // Per-transfer queues to guarantee ordering within each transfer while
@@ -101,9 +109,24 @@ export class IpcTransport implements TerminalTransport {
           msgType,
           payload,
         }) as Promise<void>
-      ).catch(err => console.error('IPC control error:', err));
+      ).catch(err => this.handleInvokeError('IPC control error:', err));
       this._controlQueues.set(queueKey, queue);
     }
+  }
+
+  /** The backend dropped this connection (it no longer accepts our frames
+   *  and stopped sending output). Surface it as a close so the owner can
+   *  reconnect, instead of leaving a terminal that silently ignores input. */
+  private handleInvokeError(label: string, error: unknown): void {
+    if (!isIpcClientStaleError(error)) {
+      console.error(label, error);
+      return;
+    }
+    if (!this._connected) return;
+    this._connected = false;
+    this._clientId = null;
+    this._connGen = null;
+    this.onclose?.();
   }
 
   close(): void {
