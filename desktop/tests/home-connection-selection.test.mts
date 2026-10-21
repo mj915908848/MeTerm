@@ -207,6 +207,16 @@ test('"edit" swaps in the form, and cancel or save goes back to the view', async
   assert.equal(deps(h).getSelectedKey(), 'ssh:web-01');
 });
 
+test('"back" in the detail pane goes back to the start content', async () => {
+  const { h } = boot();
+  deps(h).onRowClick(ITEMS[0], plain, visible);
+  await flush();
+  findAll(detail(h), 'hcm-back')[0].onclick!();
+  await flush();
+  assert.equal(deps(h).getSelectedKey(), null);
+  assert.equal(detail(h).children[0], h.start);
+});
+
 test('"home" goes back to the start content', async () => {
   const { h } = boot();
   deps(h).onRowClick(ITEMS[0], plain, visible);

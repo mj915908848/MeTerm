@@ -464,6 +464,13 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     body = document.createElement('div');
     body.className = 'hcm-detail-body';
     right.appendChild(body);
+    // Back to the start content (the same as "Home" in the list).
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'hcm-back';
+    back.innerHTML = `${icon('chevronLeft')}<span>${escapeHtml(L('返回', 'Back'))}</span>`;
+    back.onclick = () => { void select([], null); };
+    body.appendChild(back);
     if (draft) showNewSsh(draft.prefill);
     else if (picked.length > 1) showBatch(picked);
     else if (item?.type === 'ssh') showSsh(item);

@@ -259,3 +259,22 @@
   padding-top: clamp(24px, 14vh, 160px);
   box-sizing: border-box;
 }
+
+/* "← Back" above the detail header. */
+.hcm-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 18px 0 -14px -8px;
+  padding: 4px 10px 4px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.hcm-back svg { width: 16px; height: 16px; }
+.hcm-back:hover { background: rgba(var(--bg-button-hover), var(--app-window-opacity, 1)); color: var(--text-primary); }
+.hcm-back:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: 1px; }
