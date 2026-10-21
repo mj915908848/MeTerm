@@ -1051,6 +1051,7 @@ pub fn run() {
             commands::ai::fetch_ai_models,
             commands::ai::fetch_searxng_search,
             commands::ai::fetch_ai_stream,
+            commands::ai::cancel_ai_stream,
             // fs
             commands::fs::stat_path,
             commands::fs::open_path,

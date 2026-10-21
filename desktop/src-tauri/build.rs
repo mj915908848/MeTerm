@@ -61,6 +61,7 @@ const APP_COMMANDS: &[&str] = &[
     "fetch_ai_models",
     "fetch_searxng_search",
     "fetch_ai_stream",
+    "cancel_ai_stream",
     "stat_path",
     "open_path",
     "open_text_file",
