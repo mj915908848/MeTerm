@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { anthropicAcceptsTemperature, anthropicCacheLayout, parseToolArguments, sseData, streamPayloadError, TURN_CONTEXT_HEADING } from '../src/ai-provider-wire.ts';
+import { anthropicAcceptsTemperature, anthropicCacheLayout, parseToolArguments, sseData, streamPayloadError, TURN_CONTEXT_HEADING, openAICompatParams, openAIRejectsTemperature } from '../src/ai-provider-wire.ts';
 import { classifyError } from '../src/ai-agent-errors.ts';
 
 test('SSE data lines are read with or without a space after the colon', () => {
@@ -103,4 +103,31 @@ test('an output-limit 400 is not mistaken for context overflow', () => {
     'HTTP 400: The input token count (1100000) exceeds the maximum number of tokens allowed (1048576).',
     'HTTP 413: request too large',
   ]) assert.equal(classifyError(new Error(msg)).category, 'context_overflow', msg);
+});
+
+test('OpenAI-compatible params are shaped for the server they go to', () => {
+  const thinking = { thinking: { type: 'enabled' }, enable_thinking: true, chat_template_kwargs: { enable_thinking: true } };
+  const params = (baseUrl: string, model: string) =>
+    openAICompatParams({ baseUrl, model, maxTokens: 4096, temperature: 0.2, thinkingFields: thinking });
+
+  // Official OpenAI: no unknown fields, max_completion_tokens, and no
+  // temperature for the reasoning families.
+  assert.deepEqual(params('https://api.openai.com', 'gpt-4o'), { max_completion_tokens: 4096, temperature: 0.2 });
+  assert.deepEqual(params('https://api.openai.com/', 'gpt-5.4'), { max_completion_tokens: 4096 });
+  assert.deepEqual(params('https://api.openai.com', 'o4-mini'), { max_completion_tokens: 4096 });
+  // Groq: strict about unknown fields too, but its models take temperature.
+  assert.deepEqual(params('https://api.groq.com/openai', 'openai/gpt-oss-120b'), { max_completion_tokens: 4096, temperature: 0.2 });
+  // Everyone else keeps exactly what was sent before.
+  for (const base of ['http://localhost:11434', 'https://open.bigmodel.cn/api/paas/v4', 'https://api.deepseek.com', 'https://my-proxy.example/v1']) {
+    assert.deepEqual(params(base, 'glm-4.5'), { max_tokens: 4096, temperature: 0.2, ...thinking }, base);
+  }
+});
+
+test('only OpenAI reasoning model ids drop temperature', () => {
+  for (const id of ['o1', 'o3-mini', 'o4-mini-2025-04-16', 'gpt-5', 'gpt-5-mini', 'gpt-5.4', 'gpt-6', 'openai/gpt-5']) {
+    assert.equal(openAIRejectsTemperature(id), true, id);
+  }
+  for (const id of ['gpt-4o', 'gpt-4.1-mini', 'gpt-3.5-turbo', 'omni-moderation', 'gpt-50x-custom']) {
+    assert.equal(openAIRejectsTemperature(id), false, id);
+  }
 });

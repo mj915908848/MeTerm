@@ -130,3 +130,51 @@ export function anthropicAcceptsTemperature(model: string): boolean {
   if (/^claude-(instant|2|3)([-.]|$)/.test(id)) return true;
   return /^claude-(opus|sonnet|haiku)-4(-[0-6])?([-@]\d{8})?(-v\d+(:\d+)?)?$/.test(id);
 }
+
+/**
+ * Hosts that implement the OpenAI chat API strictly: they reject request
+ * fields they do not know (`Unrecognized request argument supplied`), so
+ * the vendor-specific thinking toggles meant for DeepSeek / GLM / Qwen / vLLM
+ * must not reach them, and they take `max_completion_tokens` (OpenAI's
+ * reasoning models reject `max_tokens` outright).
+ */
+function strictOpenAIHost(baseUrl: string): boolean {
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return host === 'api.openai.com' || host === 'api.groq.com';
+}
+
+/**
+ * OpenAI's reasoning families (o1/o3/o4…, gpt-5 and later) accept only the
+ * default temperature; any other value is a 400.
+ */
+export function openAIRejectsTemperature(model: string): boolean {
+  const id = model.trim().toLowerCase().replace(/^openai\//, '');
+  return /^o\d/.test(id) || /^gpt-([5-9]|\d{2,})([-.]|$)/.test(id);
+}
+
+/**
+ * The token-limit, temperature and thinking fields of an OpenAI-compatible
+ * chat request, shaped for the server it goes to. Other servers (Ollama,
+ * LM Studio, vLLM, DeepSeek, GLM, Qwen, proxies) keep the fields they have
+ * always been sent.
+ */
+export function openAICompatParams(opts: {
+  baseUrl: string;
+  model: string;
+  maxTokens: number;
+  temperature: number;
+  thinkingFields: Record<string, unknown>;
+}): Record<string, unknown> {
+  if (!strictOpenAIHost(opts.baseUrl)) {
+    return { max_tokens: opts.maxTokens, temperature: opts.temperature, ...opts.thinkingFields };
+  }
+  const isOpenAI = new URL(opts.baseUrl).hostname.toLowerCase() === 'api.openai.com';
+  const params: Record<string, unknown> = { max_completion_tokens: opts.maxTokens };
+  if (!(isOpenAI && openAIRejectsTemperature(opts.model))) params.temperature = opts.temperature;
+  return params;
+}

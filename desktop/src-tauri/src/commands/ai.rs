@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use super::settings_secrets::{
-    canonical_service_base, confidential_service_base, provider_secret, require_ai_settings_window,
-    searxng_password,
+    canonical_service_base, confidential_service_base, keyless_service_base, provider_secret,
+    require_ai_settings_window, searxng_password,
 };
 
 const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
@@ -380,7 +380,13 @@ pub async fn fetch_ai_stream(
         return Err("AI request body is too large".to_string());
     }
     let (base, secret) = validated_binding(&request)?;
-    confidential_service_base(&base)?;
+    // A credential needs HTTPS (or loopback); a keyless local model server may
+    // also be reached over plain HTTP inside the LAN.
+    if secret.is_some() {
+        confidential_service_base(&base)?;
+    } else {
+        keyless_service_base(&base)?;
+    }
     let url = stream_url(&request, &base)?;
     let builder = add_provider_auth(
         stream_client()?
