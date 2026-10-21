@@ -15,6 +15,7 @@ import { revealAfterPaint } from './window-utils';
 import { readText as clipboardReadText } from '@tauri-apps/plugin-clipboard-manager';
 import { applyVibrancy } from './appearance';
 import { applyNbPalette } from './nb-palette';
+import { changedSettingKeys, createTrailingThrottle, SETTINGS_PANEL_KEYS } from './settings-sync';
 
 const ua = navigator.userAgent.toLowerCase();
 const isWindowsPlatform = ua.includes('windows');
@@ -122,12 +123,26 @@ export function initSettingsWindow(): void {
 
   const urlTab = new URLSearchParams(window.location.search).get('tab') || undefined;
 
+  // Other windows reload credentials from Keychain on this event, so do not
+  // notify them before the serialized secret write has completed. A slider
+  // fires many changes a second and every one used to make each window reload
+  // fonts and re-theme all terminals; coalesce them into one per interval.
+  const broadcast = createTrailingThrottle(() => {
+    void flushSettingsSecrets()
+      .then(() => emit('settings-changed'))
+      .catch(error => console.warn('[settings] Credential update failed; value remains dirty:', error));
+  }, 100);
+  window.addEventListener('pagehide', () => broadcast.flush());
+
   function renderPanel(): void {
+    // Keep the user's place when the panel is rebuilt for an outside change.
+    const activeTab = container.querySelector<HTMLElement>('.settings-tab.active')?.dataset.tab;
+    const scrollTop = container.querySelector<HTMLElement>('.settings-content')?.scrollTop ?? 0;
     container.innerHTML = '';
     const panel = createSettingsPanel({
       settings,
       isWindow: true,
-      initialTab: urlTab,
+      initialTab: activeTab ?? urlTab,
       onSettingsChange: (newSettings) => {
         settings = newSettings;
         applyTheme(settings);
@@ -144,13 +159,10 @@ export function initSettingsWindow(): void {
         // Update vibrancy for this window
         void applyVibrancy(settings.enableVibrancy);
 
-        // Other windows reload credentials from Keychain on this event, so do
-        // not notify them before the serialized secret write has completed.
-        void flushSettingsSecrets()
-          .then(() => emit('settings-changed'))
-          .catch(error => console.warn('[settings] Credential update failed; value remains dirty:', error));
+        broadcast.schedule();
       },
       onLanguageChange: () => {
+        broadcast.flush();
         void emit('settings-changed');
         renderPanel();
       },
@@ -159,9 +171,42 @@ export function initSettingsWindow(): void {
       },
     });
     container.appendChild(panel);
+    const content = panel.querySelector<HTMLElement>('.settings-content');
+    if (content) content.scrollTop = scrollTop;
   }
 
   renderPanel();
+
+  // Follow changes made elsewhere (e.g. Cmd/Ctrl +/- font size in the main
+  // window). This window's own broadcasts arrive here too and find nothing new.
+  // While a text field is being edited the rebuild waits, so typing is not lost.
+  let resyncPending = false;
+  const isEditingText = () => {
+    const el = document.activeElement;
+    return !!el && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && !['checkbox', 'radio', 'range'].includes((el as HTMLInputElement).type)));
+  };
+  const resync = () => {
+    const latest = loadSettings();
+    const shown = changedSettingKeys(settings, latest).some((k) => SETTINGS_PANEL_KEYS.has(k));
+    settings = latest;
+    if (!shown) return;
+    if (isEditingText()) { resyncPending = true; return; }
+    setLanguage(settings.language);
+    applyTheme(settings);
+    renderPanel();
+  };
+  void listen('settings-changed', resync);
+  document.addEventListener('focusout', () => {
+    if (!resyncPending) return;
+    // focusout fires before focus moves on; wait for the new activeElement.
+    setTimeout(() => {
+      if (!resyncPending || isEditingText()) return;
+      resyncPending = false;
+      setLanguage(settings.language);
+      applyTheme(settings);
+      renderPanel();
+    });
+  });
 
   void revealAfterPaint(getCurrentWindow().label);
 

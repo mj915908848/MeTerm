@@ -14,26 +14,6 @@ export interface SettingsPanelOptions {
   onClose: () => void;
 }
 
-function getRateLabel(rate: number, lang: 'en' | 'zh'): string {
-  const labels: Record<string, Record<number, string>> = {
-    en: {
-      100: '100ms (Fastest)',
-      500: '500ms (Fast)',
-      1000: '1s (Normal)',
-      2000: '2s (Slow)',
-      5000: '5s (Slowest)',
-    },
-    zh: {
-      100: '100毫秒 (最快)',
-      500: '500毫秒 (快)',
-      1000: '1秒 (正常)',
-      2000: '2秒 (慢)',
-      5000: '5秒 (最慢)',
-    },
-  };
-  return labels[lang][rate] || labels[lang][1000];
-}
-
 export function createSettingsPanel(options: SettingsPanelOptions): HTMLDivElement {
   const { isWindow, onSettingsChange, onLanguageChange, onClose } = options;
   let current = { ...options.settings };
@@ -114,7 +94,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): HTMLDivEleme
   createOverlayScrollbar({ viewport: contentWrapper, container: contentWrapper });
 
   // ========== General Tab ==========
-  const generalContent = createGeneralTab(current, update, onLanguageChange, getRateLabel);
+  const generalContent = createGeneralTab(current, update, onLanguageChange);
   const tabGeneral = tabContents['general'];
   tabGeneral.appendChild(generalContent);
 

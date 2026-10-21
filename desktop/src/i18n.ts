@@ -34,6 +34,14 @@ export interface Translations {
   fileManagerFontSize: string;
   enableThumbnail: string;
   previewRefreshRate: string;
+  previewRate100: string;
+  previewRate500: string;
+  previewRate1000: string;
+  previewRate2000: string;
+  previewRate5000: string;
+  fileManagerPosition: string;
+  fileManagerPositionDrawer: string;
+  fileManagerPositionSidebar: string;
   newTerminal: string;
   noSessions: string;
   newSessionHint: string;
@@ -716,6 +724,14 @@ const translations: Record<Language, Translations> = {
     fileManagerFontSize: 'File Manager Font Size',
     enableThumbnail: 'Session Thumbnail Preview',
     previewRefreshRate: 'Preview Refresh Rate',
+    previewRate100: '100ms (Fastest)',
+    previewRate500: '500ms (Fast)',
+    previewRate1000: '1s (Normal)',
+    previewRate2000: '2s (Slow)',
+    previewRate5000: '5s (Slowest)',
+    fileManagerPosition: 'File Manager Position',
+    fileManagerPositionDrawer: 'Bottom Drawer',
+    fileManagerPositionSidebar: 'Left Sidebar (Tree View)',
     newTerminal: 'New Terminal',
     noSessions: 'No terminal sessions',
     newSessionHint: 'Press ⌘T or click "New Terminal" to create one',
@@ -1405,6 +1421,14 @@ const translations: Record<Language, Translations> = {
     fileManagerFontSize: '文件管理器字体大小',
     enableThumbnail: '会话缩略图预览',
     previewRefreshRate: '预览刷新频率',
+    previewRate100: '100毫秒 (最快)',
+    previewRate500: '500毫秒 (快)',
+    previewRate1000: '1秒 (正常)',
+    previewRate2000: '2秒 (慢)',
+    previewRate5000: '5秒 (最慢)',
+    fileManagerPosition: '文件管理器位置',
+    fileManagerPositionDrawer: '底部抽屉',
+    fileManagerPositionSidebar: '左侧边栏 (树形视图)',
     newTerminal: '新建终端',
     noSessions: '没有终端会话',
     newSessionHint: '按 ⌘T 或点击 "新建终端" 创建一个',
