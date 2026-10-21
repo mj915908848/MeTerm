@@ -14,7 +14,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoPath = Split-Path $DesktopUncPath -Parent
-if (-not (Test-Path (Join-Path $repoPath "frontend\package.json"))) {
+if (-not (Test-Path (Join-Path $repoPath "desktop\package.json"))) {
     throw "DesktopUncPath must point to the repository desktop directory: $DesktopUncPath"
 }
 

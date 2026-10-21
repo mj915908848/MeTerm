@@ -6,7 +6,6 @@
 pub(crate) mod access;
 pub mod client;
 pub mod downloads;
-mod lan_access;
 pub mod manager;
 pub mod modes;
 pub mod state;

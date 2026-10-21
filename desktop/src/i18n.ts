@@ -432,17 +432,6 @@ export interface Translations {
   splitHorizontal: string;
   splitVertical: string;
   closePane: string;
-  pairingTitle: string;
-  pairingSubtitle: string;
-  pairingDeviceName: string;
-  pairingAddress: string;
-  pairingCopyData: string;
-  pairingCopied: string;
-  pairingClose: string;
-  pairingAutoClose: string;
-  pairingPaired: string;
-  pairingAutoCloseIn: string;
-  pairingMore: string;
   pairingToken: string;
   homeMobilePairing: string;
   masterRequestTitle: string;
@@ -454,7 +443,6 @@ export interface Translations {
   reclaimSpaceHint: string;
   shareLink: string;
   shareLinkCopied: string;
-  settingsTabSharing: string;
   settingsTabAbout: string;
   aboutVersion: string;
   aboutDescription: string;
@@ -484,52 +472,9 @@ export interface Translations {
   sshExportMissingCredential: string;
   sshExportMobileUnsupported: string;
   sshNoConnectionsToExport: string;
-  homeRemoteConnect: string;
-  remoteConnectTitle: string;
-  remoteConnectSubtitle: string;
-  remoteTabUrl: string;
-  remoteTabJson: string;
-  remoteTabScan: string;
-  remoteUrlPlaceholder: string;
-  remoteJsonPlaceholder: string;
-  remoteConnectBtn: string;
-  remoteConnecting: string;
-  remoteConnected: string;
-  remoteFailed: string;
-  remoteTokenExpired: string;
-  remoteRepairBtn: string;
-  remoteRepairWaiting: string;
-  remoteRepairApproved: string;
-  remoteRepairDenied: string;
-  remoteInvalidUrl: string;
-  remoteInvalidJson: string;
-  remoteCredentialInUrlRejected: string;
-  remoteSecurePairingUnavailable: string;
   remoteSecureTransportRequired: string;
   remoteScanComingSoon: string;
-  remoteSelectSession: string;
-  remoteNoSessions: string;
-  remoteViewerMode: string;
-  remoteTokenLabel: string;
-  remoteTokenPlaceholder: string;
-  remoteSessionList: string;
-  remoteSessionRefresh: string;
   remoteSessionAutoRefresh: string;
-  remoteSessionServer: string;
-  remoteSessionNoRemote: string;
-  remoteSessionOpened: string;
-  viewerRequestControl: string;
-  viewerRequesting: string;
-  viewerRequestDenied: string;
-  viewerObserving: string;
-  remoteEditTitle: string;
-  remoteSaveBtn: string;
-  remoteConnectionName: string;
-  remoteHost: string;
-  remotePort: string;
-  remoteToken: string;
-  remoteSavedToHome: string;
-  remoteSaveConnection: string;
   remoteDeleteConnection: string;
   sshHostKeyUnknownTitle: string;
   sshHostKeyUnknownMsg: string;
@@ -537,91 +482,25 @@ export interface Translations {
   sshHostKeyFingerprint: string;
   sshHostKeyTrust: string;
   sshHostKeyMismatchMsg: string;
-  remotePairRequest: string;
   remotePairing: string;
   remotePairApproved: string;
   remotePairDenied: string;
   remotePairTimeout: string;
-  remotePairCancel: string;
-  pairApprovalTitle: string;
-  pairApprovalMessage: string;
-  pairApprovalDevice: string;
-  pairApprovalAddress: string;
-  pairApprovalApprove: string;
-  pairApprovalDeny: string;
-  remoteAddressLabel: string;
   remoteScanBtn: string;
   remoteScanStop: string;
-  remoteScanScanning: string;
-  remoteScanFound: string;
-  remoteScanEmpty: string;
-  remoteScanVerifying: string;
-  remoteScanVerified: string;
-  remoteScanUnreachable: string;
-  remoteScanConnect: string;
-  remoteScanNoLocalServer: string;
-  remoteScanError: string;
-  settingsLanAccess: string;
-  settingsLanAccessHint: string;
-  settingsDiscoverable: string;
-  settingsLanDiscoveryHint: string;
-  settingsLanPairingDisabled: string;
-  settingsLanAccessDisableConfirm: string;
-  settingsLanAccessDisableAction: string;
-  settingsLanAccessError: string;
-  connectedDevices: string;
-  kickClient: string;
-  kickAndBan: string;
-  ipBanList: string;
-  unbanIp: string;
-  noConnectedDevices: string;
-  pairedDeviceCredentials: string;
-  noPairedDeviceCredentials: string;
-  revokePairedDevice: string;
-  confirmRevokePairedDevice: string;
-  pairedDeviceCreated: string;
-  noBannedIps: string;
-  tokenManagement: string;
-  currentToken: string;
-  refreshToken: string;
-  tokenRefreshed: string;
   customToken: string;
-  customTokenPlaceholder: string;
-  customTokenTooShort: string;
-  setToken: string;
-  revokeAllClients: string;
-  confirmRevokeAll: string;
-  tokenSetSuccess: string;
-  revokeSuccess: string;
-  revokePartialFailure: string;
   kickSuccess: string;
-  deviceCardSessions: string;
-  devicePairedIdle: string;
   deviceCardKickDevice: string;
   kickDeviceConfirm: string;
   kickDeviceSuccess: string;
-  tabMenuLockSession: string;
-  tabMenuUnlockSession: string;
-  lockSessionConfirm: string;
-  sessionPrivate: string;
-  newPrivateTerminal: string;
   kickedByHost: string;
   kickedOverlayMsg: string;
   closeTab: string;
   confirmBanIp: string;
   banIpYes: string;
-  banIpSkip: string;
-  confirmKickClient: string;
-  confirmLockAfterKick: string;
-  sessionPrivateCannotConnect: string;
-  remoteSessionClosed: string;
   enableTerminalNotifications: string;
   jsBypassProxy: string;
-  banDevice: string;
-  banDeviceConfirm: string;
   remoteTypeBadge: string;
-  remoteScanLan: string;
-  remoteRescan: string;
   aiChatHistory: string;
   aiChatHistoryEmpty: string;
   aiChatHistoryTitle: string;
@@ -683,8 +562,6 @@ export interface Translations {
   autoNewSession: string;
   deviceName: string;
   deviceNamePlaceholder: string;
-  deviceAlias: string;
-  deviceAliasPlaceholder: string;
   // tldr & command completion
   tldrHelp: string;
   tldrEnable: string;
@@ -763,7 +640,6 @@ export interface Translations {
   jsCredentialAuthorityChanged: string;
   jsReturnToMainWindow: string;
   homeNewJumpServer: string;
-  homeNewPhonePairing: string;
   jsSaveAndConnect: string;
   homeSearchPlaceholder: string;
   homeGroupDefault: string;
@@ -1249,17 +1125,6 @@ const translations: Record<Language, Translations> = {
     splitHorizontal: 'Split Horizontal',
     splitVertical: 'Split Vertical',
     closePane: 'Close Pane',
-    pairingTitle: 'Mobile Pairing',
-    pairingSubtitle: 'Scan QR code or copy pairing data in mobile app',
-    pairingDeviceName: 'Device Name',
-    pairingAddress: 'Address',
-    pairingCopyData: 'Copy Pairing Data',
-    pairingCopied: 'Copied!',
-    pairingClose: 'Close',
-    pairingAutoClose: 'Auto-close after pairing',
-    pairingPaired: '✓ Paired',
-    pairingAutoCloseIn: 'closing in {n}s',
-    pairingMore: 'Details / Copy',
     pairingToken: 'Token',
     homeMobilePairing: 'Mobile Pairing',
     masterRequestTitle: 'Control Request',
@@ -1271,7 +1136,6 @@ const translations: Record<Language, Translations> = {
     reclaimSpaceHint: '(Press Space to reclaim)',
     shareLink: 'Copy Share Link',
     shareLinkCopied: 'Link Copied!',
-    settingsTabSharing: 'Sharing',
     sshExportConnections: 'Export Connections',
     sshImportConnections: 'Import Connections',
     sshExportSuccess: 'Connections exported successfully',
@@ -1284,52 +1148,9 @@ const translations: Record<Language, Translations> = {
     sshExportMissingCredential: '{count} connection(s) have no portable password/private key and cannot be used offline on mobile',
     sshExportMobileUnsupported: '{count} connection(s) were exported but current mobile direct SSH import will reject their proxy, credential format, or size',
     sshNoConnectionsToExport: 'No connections to export',
-    homeRemoteConnect: 'Remote Connect',
-    remoteConnectTitle: 'Remote Connect',
-    remoteConnectSubtitle: 'Connect to a running MeTerm server on the network',
-    remoteTabUrl: 'URL',
-    remoteTabJson: 'JSON',
-    remoteTabScan: 'Scan',
-    remoteUrlPlaceholder: '192.168.1.10:8080 or https://host:port/',
-    remoteJsonPlaceholder: 'Paste pairing JSON data here...',
-    remoteConnectBtn: 'Connect',
-    remoteConnecting: 'Connecting...',
-    remoteConnected: 'Connected',
-    remoteFailed: 'Connection failed',
-    remoteTokenExpired: 'Token expired or revoked',
-    remoteRepairBtn: 'Re-pair',
-    remoteRepairWaiting: 'Waiting for approval...',
-    remoteRepairApproved: 'Paired! Loading sessions...',
-    remoteRepairDenied: 'Pairing denied or timed out',
-    remoteInvalidUrl: 'Invalid address or missing token',
-    remoteInvalidJson: 'Invalid JSON format',
-    remoteCredentialInUrlRejected: 'Credentials in URLs are blocked. Enter the device token in the separate token field or pair again.',
-    remoteSecurePairingUnavailable: 'Secure desktop pairing requires native certificate pinning and is unavailable here. Use the MeTerm mobile app.',
     remoteSecureTransportRequired: 'Remote credentials require HTTPS/WSS. Plaintext LAN connections are blocked.',
     remoteScanComingSoon: 'LAN scan coming soon',
-    remoteSelectSession: 'Select a session to view',
-    remoteNoSessions: 'No active sessions on this server',
-    remoteViewerMode: 'Viewer',
-    remoteTokenLabel: 'Token',
-    remoteTokenPlaceholder: 'Authentication token',
-    remoteSessionList: 'Remote Sessions',
-    remoteSessionRefresh: 'Refresh',
     remoteSessionAutoRefresh: 'Auto Refresh',
-    remoteSessionServer: 'Server',
-    remoteSessionNoRemote: 'No remote connections',
-    remoteSessionOpened: 'Opened',
-    viewerRequestControl: 'Request Control',
-    viewerRequesting: 'Requesting...',
-    viewerRequestDenied: 'Request Denied',
-    viewerObserving: 'Observing',
-    remoteEditTitle: 'Edit Remote Connection',
-    remoteSaveBtn: 'Save',
-    remoteConnectionName: 'Connection Name',
-    remoteHost: 'Host',
-    remotePort: 'Port',
-    remoteToken: 'Token',
-    remoteSavedToHome: 'Saved to home page',
-    remoteSaveConnection: 'Save Connection',
     remoteDeleteConnection: 'Delete',
     sshHostKeyUnknownTitle: 'Unknown Host Key',
     sshHostKeyUnknownMsg: 'The authenticity of host "{hostname}" cannot be established. Do you want to trust this host and continue connecting?',
@@ -1337,91 +1158,25 @@ const translations: Record<Language, Translations> = {
     sshHostKeyFingerprint: 'Fingerprint',
     sshHostKeyTrust: 'Trust & Connect',
     sshHostKeyMismatchMsg: 'WARNING: Host key for {hostname} has CHANGED! This may indicate a man-in-the-middle attack. Key type: {keyType}, Fingerprint: {fingerprint}. Connection refused.',
-    remotePairRequest: 'Request Pairing',
     remotePairing: 'Requesting pairing...',
     remotePairApproved: 'Pairing approved!',
     remotePairDenied: 'Pairing denied',
     remotePairTimeout: 'Pairing request timed out',
-    remotePairCancel: 'Cancel',
-    pairApprovalTitle: 'New Device Pairing',
-    pairApprovalMessage: 'A new device wants to connect to your terminal.',
-    pairApprovalDevice: 'Device',
-    pairApprovalAddress: 'Address',
-    pairApprovalApprove: 'Approve',
-    pairApprovalDeny: 'Deny',
-    remoteAddressLabel: 'Address',
     remoteScanBtn: 'Scan',
     remoteScanStop: 'Stop',
-    remoteScanScanning: 'Scanning LAN...',
-    remoteScanFound: 'Found {count} server(s)',
-    remoteScanEmpty: 'No meterm servers found on LAN',
-    remoteScanVerifying: 'Verifying...',
-    remoteScanVerified: 'Verified',
-    remoteScanUnreachable: 'Unreachable',
-    remoteScanConnect: 'Connect',
-    remoteScanNoLocalServer: 'Local server not running',
-    remoteScanError: 'Scan failed',
-    settingsLanAccess: 'Allow LAN connections',
-    settingsLanAccessHint: 'Turning this off disconnects LAN-direct sessions. Paired devices remain saved and relay connections are unaffected.',
-    settingsDiscoverable: 'Advertise this computer on the LAN',
-    settingsLanDiscoveryHint: 'Controls mDNS discovery only. Known, paired addresses can still connect while LAN access is enabled.',
-    settingsLanPairingDisabled: 'Enable LAN connections before showing or copying pairing data.',
-    settingsLanAccessDisableConfirm: 'Turn off LAN connections and disconnect current LAN-direct sessions? Relay sessions and paired-device records will remain.',
-    settingsLanAccessDisableAction: 'Turn Off LAN Access',
-    settingsLanAccessError: 'The LAN setting was not changed. The desktop kept the last confirmed secure state.',
-    connectedDevices: 'Connected Devices',
-    kickClient: 'Kick',
-    kickAndBan: 'Kick & Ban',
-    ipBanList: 'IP Ban List',
-    unbanIp: 'Unban',
-    noConnectedDevices: 'No connected devices',
-    pairedDeviceCredentials: 'Paired Device Access',
-    noPairedDeviceCredentials: 'No paired device credentials',
-    revokePairedDevice: 'Revoke Access',
-    confirmRevokePairedDevice: 'Revoke this device credential and disconnect it immediately?',
-    pairedDeviceCreated: 'Paired',
-    noBannedIps: 'No banned IPs',
-    tokenManagement: 'Token Management',
-    currentToken: 'Current Token',
-    refreshToken: 'Refresh Token',
-    tokenRefreshed: 'Token refreshed',
     customToken: 'Custom Token',
-    customTokenPlaceholder: 'Enter 32-128 visible ASCII characters',
-    customTokenTooShort: 'Use 32-128 visible ASCII characters without spaces',
-    setToken: 'Set',
-    revokeAllClients: 'Revoke All Paired Devices',
-    confirmRevokeAll: 'This will revoke every paired device credential, disconnect remote devices, clear push registrations, and refresh the local owner token. All devices must pair again.',
-    tokenSetSuccess: 'Token updated',
-    revokeSuccess: 'Device access revoked',
-    revokePartialFailure: 'Owner token refreshed, but device revocation failed. Retry.',
     kickSuccess: 'Kicked',
-    deviceCardSessions: 'Sessions',
-    devicePairedIdle: 'Paired (idle)',
     deviceCardKickDevice: 'Kick Device',
     kickDeviceConfirm: 'Kick all connections from this device?',
     kickDeviceSuccess: 'Device kicked',
-    tabMenuLockSession: 'Lock (Private)',
-    tabMenuUnlockSession: 'Unlock',
-    lockSessionConfirm: 'Lock this session? Remote viewers will be disconnected.',
-    sessionPrivate: 'Private',
-    newPrivateTerminal: 'New Private Terminal',
     kickedByHost: 'Kicked',
     kickedOverlayMsg: 'You have been disconnected by the host.',
     closeTab: 'Close Tab',
     confirmBanIp: 'Also ban this device\'s IP address?',
     banIpYes: 'Ban IP',
-    banIpSkip: 'Skip',
-    confirmKickClient: 'Kick this client?',
-    confirmLockAfterKick: 'Lock this session to prevent reconnection?',
-    sessionPrivateCannotConnect: 'This session is private and cannot be connected.',
-    remoteSessionClosed: 'The remote session has been closed by the host.',
     enableTerminalNotifications: 'Terminal Notifications',
     jsBypassProxy: 'Bypass system proxy (for internal JumpServer)',
-    banDevice: 'Ban Device',
-    banDeviceConfirm: 'Ban this device and disconnect all its connections?',
     remoteTypeBadge: 'Remote',
-    remoteScanLan: 'Scan LAN',
-    remoteRescan: 'Rescan',
     aiChatHistory: 'Chat History',
     aiChatHistoryEmpty: 'No chat history',
     aiChatHistoryTitle: 'Chat History',
@@ -1483,8 +1238,6 @@ const translations: Record<Language, Translations> = {
     autoNewSession: 'Auto-create local session on startup',
     deviceName: 'Device Name',
     deviceNamePlaceholder: 'Use OS hostname',
-    deviceAlias: 'Alias',
-    deviceAliasPlaceholder: 'Set a nickname',
     // JumpServer
     jsEditServer: 'Edit JumpServer',
     jsAddServer: 'Add JumpServer',
@@ -1546,7 +1299,6 @@ const translations: Record<Language, Translations> = {
     jsCredentialAuthorityChanged: 'Server, account, or proxy changed. Re-enter the primary credential before saving.',
     jsReturnToMainWindow: 'Return to main window',
     homeNewJumpServer: 'JumpServer',
-    homeNewPhonePairing: 'Pair Phone',
     jsSaveAndConnect: 'Save & Connect',
     homeSearchPlaceholder: 'Search connections, commands or docs',
     homeGroupDefault: 'Default',
@@ -2062,17 +1814,6 @@ const translations: Record<Language, Translations> = {
     splitHorizontal: '水平分屏',
     splitVertical: '垂直分屏',
     closePane: '关闭面板',
-    pairingTitle: '手机配对',
-    pairingSubtitle: '在手机端 App 中扫描此 QR 码或复制配对数据',
-    pairingDeviceName: '设备名称',
-    pairingAddress: '地址',
-    pairingCopyData: '复制配对数据',
-    pairingCopied: '已复制!',
-    pairingClose: '关闭',
-    pairingAutoClose: '配对成功后自动关闭',
-    pairingPaired: '✓ 已配对',
-    pairingAutoCloseIn: '{n} 秒后自动关闭',
-    pairingMore: '详情 / 复制',
     pairingToken: '令牌',
     homeMobilePairing: '手机配对',
     masterRequestTitle: '控制权申请',
@@ -2084,7 +1825,6 @@ const translations: Record<Language, Translations> = {
     reclaimSpaceHint: '(空格取消远控)',
     shareLink: '复制分享链接',
     shareLinkCopied: '链接已复制!',
-    settingsTabSharing: '分享',
     sshExportConnections: '导出连接',
     sshImportConnections: '导入连接',
     sshExportSuccess: '连接导出成功',
@@ -2097,52 +1837,9 @@ const translations: Record<Language, Translations> = {
     sshExportMissingCredential: '其中 {count} 个连接没有可迁移的密码或私钥，无法在手机离线直连',
     sshExportMobileUnsupported: '其中 {count} 个连接已导出，但其代理、凭据格式或大小不受当前手机直连导入支持',
     sshNoConnectionsToExport: '没有可导出的连接',
-    homeRemoteConnect: '远程连接',
-    remoteConnectTitle: '远程连接',
-    remoteConnectSubtitle: '连接到网络中运行的 MeTerm 服务端',
-    remoteTabUrl: 'URL',
-    remoteTabJson: 'JSON',
-    remoteTabScan: '扫描',
-    remoteUrlPlaceholder: '192.168.1.10:8080 或 https://host:port/',
-    remoteJsonPlaceholder: '在此粘贴配对 JSON 数据...',
-    remoteConnectBtn: '连接',
-    remoteConnecting: '连接中...',
-    remoteConnected: '已连接',
-    remoteFailed: '连接失败',
-    remoteTokenExpired: '令牌已过期或被撤销',
-    remoteRepairBtn: '重新配对',
-    remoteRepairWaiting: '等待对方批准...',
-    remoteRepairApproved: '已配对！加载会话...',
-    remoteRepairDenied: '配对被拒绝或超时',
-    remoteInvalidUrl: '地址无效或缺少令牌',
-    remoteInvalidJson: 'JSON 格式无效',
-    remoteCredentialInUrlRejected: '已拦截 URL 中的凭据。请在独立令牌输入框中填写设备令牌，或重新配对。',
-    remoteSecurePairingUnavailable: '安全的桌面间配对需要原生证书指纹固定，当前入口暂不可用。请使用 MeTerm 手机端配对。',
     remoteSecureTransportRequired: '远程凭据必须通过 HTTPS/WSS 传输，已拦截局域网明文连接。',
     remoteScanComingSoon: '局域网扫描即将推出',
-    remoteSelectSession: '选择要查看的会话',
-    remoteNoSessions: '此服务器上没有活跃会话',
-    remoteViewerMode: '观察者',
-    remoteTokenLabel: '令牌',
-    remoteTokenPlaceholder: '认证令牌',
-    remoteSessionList: '远程会话',
-    remoteSessionRefresh: '刷新',
     remoteSessionAutoRefresh: '自动刷新',
-    remoteSessionServer: '服务器',
-    remoteSessionNoRemote: '无远程连接',
-    remoteSessionOpened: '已打开',
-    viewerRequestControl: '申请控制',
-    viewerRequesting: '申请中...',
-    viewerRequestDenied: '申请被拒绝',
-    viewerObserving: '观察中',
-    remoteEditTitle: '编辑远程连接',
-    remoteSaveBtn: '保存',
-    remoteConnectionName: '连接名称',
-    remoteHost: '主机',
-    remotePort: '端口',
-    remoteToken: '令牌',
-    remoteSavedToHome: '已保存到主页',
-    remoteSaveConnection: '保存连接',
     remoteDeleteConnection: '删除',
     sshHostKeyUnknownTitle: '未知主机密钥',
     sshHostKeyUnknownMsg: '无法验证主机 "{hostname}" 的真实性。是否信任此主机并继续连接？',
@@ -2150,91 +1847,25 @@ const translations: Record<Language, Translations> = {
     sshHostKeyFingerprint: '指纹',
     sshHostKeyTrust: '信任并连接',
     sshHostKeyMismatchMsg: '警告：主机 {hostname} 的密钥已变更！这可能表示中间人攻击。密钥类型：{keyType}，指纹：{fingerprint}。连接已拒绝。',
-    remotePairRequest: '请求配对',
     remotePairing: '正在请求配对...',
     remotePairApproved: '配对已通过!',
     remotePairDenied: '配对被拒绝',
     remotePairTimeout: '配对请求超时',
-    remotePairCancel: '取消',
-    pairApprovalTitle: '新设备配对请求',
-    pairApprovalMessage: '一个新设备请求连接到您的终端。',
-    pairApprovalDevice: '设备',
-    pairApprovalAddress: '地址',
-    pairApprovalApprove: '批准',
-    pairApprovalDeny: '拒绝',
-    remoteAddressLabel: '地址',
     remoteScanBtn: '扫描',
     remoteScanStop: '停止',
-    remoteScanScanning: '正在扫描局域网...',
-    remoteScanFound: '发现 {count} 个服务',
-    remoteScanEmpty: '未在局域网中发现 meterm 服务',
-    remoteScanVerifying: '验证中...',
-    remoteScanVerified: '已验证',
-    remoteScanUnreachable: '不可达',
-    remoteScanConnect: '连接',
-    remoteScanNoLocalServer: '本地服务未启动',
-    remoteScanError: '扫描失败',
-    settingsLanAccess: '允许局域网连接',
-    settingsLanAccessHint: '关闭后将断开局域网直连会话；已配对设备仍会保留，中继连接不受影响。',
-    settingsDiscoverable: '在局域网中广播此电脑',
-    settingsLanDiscoveryHint: '仅控制 mDNS 发现。局域网访问开启时，已配对设备仍可通过已知地址连接。',
-    settingsLanPairingDisabled: '请先开启局域网连接，再显示或复制配对数据。',
-    settingsLanAccessDisableConfirm: '确定关闭局域网连接并断开当前局域网直连会话吗？中继会话和已配对设备记录会保留。',
-    settingsLanAccessDisableAction: '关闭局域网连接',
-    settingsLanAccessError: '局域网设置未改变，桌面端已保留最后一次确认的安全状态。',
-    connectedDevices: '已连接设备',
-    kickClient: '踢出',
-    kickAndBan: '踢出并封禁',
-    ipBanList: 'IP 封禁列表',
-    unbanIp: '解封',
-    noConnectedDevices: '暂无连接设备',
-    pairedDeviceCredentials: '已配对设备权限',
-    noPairedDeviceCredentials: '暂无已配对设备凭据',
-    revokePairedDevice: '撤销权限',
-    confirmRevokePairedDevice: '撤销该设备凭据并立即断开它的所有连接？',
-    pairedDeviceCreated: '配对时间',
-    noBannedIps: '暂无封禁 IP',
-    tokenManagement: 'Token 管理',
-    currentToken: '当前 Token',
-    refreshToken: '刷新 Token',
-    tokenRefreshed: 'Token 已刷新',
     customToken: '自定义 Token',
-    customTokenPlaceholder: '输入 32-128 个可见 ASCII 字符',
-    customTokenTooShort: '请使用 32-128 个不含空格的可见 ASCII 字符',
-    setToken: '设置',
-    revokeAllClients: '撤销所有已配对设备',
-    confirmRevokeAll: '这将撤销全部设备凭据、断开远程设备、清除推送注册并刷新本机 owner token。所有设备均需重新配对。',
-    tokenSetSuccess: 'Token 已更新',
-    revokeSuccess: '设备权限已撤销',
-    revokePartialFailure: 'Owner Token 已刷新，但设备权限撤销失败，请重试',
     kickSuccess: '已踢出',
-    deviceCardSessions: '连接会话',
-    devicePairedIdle: '已配对（空闲）',
     deviceCardKickDevice: '踢出设备',
     kickDeviceConfirm: '确定踢出该设备的所有连接？',
     kickDeviceSuccess: '设备已踢出',
-    tabMenuLockSession: '锁定（私有）',
-    tabMenuUnlockSession: '解锁',
-    lockSessionConfirm: '锁定此会话？远程观察者将被断开。',
-    sessionPrivate: '私有',
-    newPrivateTerminal: '新建私有终端',
     kickedByHost: '已被踢出',
     kickedOverlayMsg: '你已被主机断开连接。',
     closeTab: '关闭标签',
     confirmBanIp: '是否同时封禁该设备的 IP 地址？',
     banIpYes: '封禁 IP',
-    banIpSkip: '跳过',
-    confirmKickClient: '确定踢出此客户端？',
-    confirmLockAfterKick: '是否锁定此会话以阻止重新连接？',
-    sessionPrivateCannotConnect: '该会话为私有模式，无法连接。',
-    remoteSessionClosed: '远程会话已被主机关闭。',
     enableTerminalNotifications: '终端通知',
     jsBypassProxy: '绕过系统代理（内网 JumpServer）',
-    banDevice: '封禁设备',
-    banDeviceConfirm: '封禁该设备并断开所有连接？',
     remoteTypeBadge: '远程',
-    remoteScanLan: '扫描局域网',
-    remoteRescan: '重新扫描',
     aiChatHistory: '对话历史',
     aiChatHistoryEmpty: '暂无对话历史',
     aiChatHistoryTitle: '对话历史',
@@ -2296,8 +1927,6 @@ const translations: Record<Language, Translations> = {
     autoNewSession: '启动时自动创建本地会话',
     deviceName: '设备名称',
     deviceNamePlaceholder: '使用系统主机名',
-    deviceAlias: '别名',
-    deviceAliasPlaceholder: '设置昵称',
     // JumpServer
     jsEditServer: '编辑 JumpServer',
     jsAddServer: '添加 JumpServer',
@@ -2359,7 +1988,6 @@ const translations: Record<Language, Translations> = {
     jsCredentialAuthorityChanged: '服务器、账户或代理已变更，请重新输入主凭据后再保存。',
     jsReturnToMainWindow: '返回主窗口',
     homeNewJumpServer: 'JumpServer',
-    homeNewPhonePairing: '手机配对',
     jsSaveAndConnect: '保存并连接',
     homeSearchPlaceholder: '搜索连接、指令或文档',
     homeGroupDefault: '默认',

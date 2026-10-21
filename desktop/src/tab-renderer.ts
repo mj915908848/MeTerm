@@ -28,7 +28,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { activateTab, showHomeView, statusLabel } from './view-manager';
 import {
   pendingMasterRequests,
-  viewerModeSessionIds, privateSessionIds,
   reclaimSessionIds,
   removeKickedOverlay, removeReconnectOverlay,
 } from './overlays';
@@ -198,9 +197,7 @@ export function renderTabs(): void {
         AICapsuleManager.destroy(leaf.sessionId);
         sshConfigMap.delete(leaf.sessionId);
         jumpServerConfigMap.delete(leaf.sessionId);
-        viewerModeSessionIds.delete(leaf.sessionId);
         reclaimSessionIds.delete(leaf.sessionId);
-        privateSessionIds.delete(leaf.sessionId);
         sessionProgressMap.delete(leaf.sessionId);
         removeKickedOverlay(leaf.sessionId);
         removeReconnectOverlay(leaf.sessionId);

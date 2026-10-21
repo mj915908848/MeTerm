@@ -4,7 +4,7 @@
 
 # MeTerm
 
-**多端共享终端会话系统 — 让多人实时协作同一个终端**
+**支持本地、SSH 与 JumpServer 会话的跨平台终端**
 
 [![Build macOS](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-macos.yml?style=flat-square&logo=apple&label=macOS)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-macos.yml)
 [![Build Windows](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-windows.yml?style=flat-square&logo=windows&label=Windows)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-windows.yml)
@@ -45,12 +45,11 @@
 
 ## 核心特性
 
-**四种会话类型：**
+**三种会话类型：**
 
 - **本地终端** — 开箱即用的本地 Shell 会话
 - **SSH 远程连接** — 密码/密钥认证，连接远程服务器
 - **JumpServer 堡垒机** — 浏览并连接堡垒机资产（已测试 v2 与 v4，支持 MFA 认证）
-- **远程共享** — 连接局域网内其他 MeTerm 设备，加入共享会话
 
 **标签页管理：**
 
@@ -70,11 +69,8 @@
 - 终端字体增强 — 字重控制、文字锐化、字体大小快捷键（Ctrl/Cmd +/-）
 - 会话录制回放
 
-**协作与网络：**
+**网络：**
 
-- 多客户端共享 — 多人实时连接同一终端
-- 角色权限控制 — Master / Viewer / ReadOnly，支持权限转移
-- mDNS/Bonjour 服务发现 — macOS 使用系统 Bonjour 发布，Windows/Linux 使用跨平台实现
 - 断线自动重连 — 环形缓冲区补发丢失数据
 
 **其他：**
@@ -295,9 +291,7 @@ MeTerm/
 │               ├── dispatch    # 二进制协议消息路由
 │               ├── file_handler# 文件传输（SFTP 自适应流水线）
 │               ├── auth        # Bearer token 认证
-│               ├── discover    # mDNS 服务发现
 │               └── ...
-├── frontend/             # 独立 Web 前端（xterm.js + Vite）
 ├── control-broker/       # 独立、失败关闭的控制面协议核心（正式 scope 仍阻断）
 ├── cloudflare-worker/    # CF Worker 自动更新服务
 └── scripts/              # 构建辅助脚本
@@ -307,7 +301,7 @@ MeTerm/
 
 | 层级 | 技术 |
 |------|------|
-| **后端** | Rust, Axum, Tokio, xpty（跨平台 PTY）, russh（SSH/SFTP 终端链路）, ssh2/libssh2（桌面端 SSH 文件传输）, mdns-sd |
+| **后端** | Rust, Axum, Tokio, xpty（跨平台 PTY）, russh（SSH/SFTP 终端链路）, ssh2/libssh2（桌面端 SSH 文件传输） |
 | **前端** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
 | **桌面** | Tauri v2 (Rust + TypeScript), reqwest, keyring, rusqlite |
 | **控制 Broker** | 独立 Rust 进程/协议核心；三平台系统服务适配尚未达到分发条件 |

@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend build clean desktop-sidecar desktop-dev desktop-build-dev desktop-run-dev desktop-build build-frontend desktop-dev-win desktop-dev-win-rebuild desktop-build-win release-macos release-macos-arm64 release-macos-x86_64 release-macos-all
+.PHONY: backend clean desktop-sidecar desktop-dev desktop-build-dev desktop-run-dev desktop-build desktop-dev-win desktop-dev-win-rebuild desktop-build-win release-macos release-macos-arm64 release-macos-x86_64 release-macos-all
 
 # The development signing identity is derived from the local keychain at build
 # time rather than committed: the certificate CN embeds a personal Apple ID and
@@ -6,25 +6,8 @@
 # `desktop-build-dev`; see scripts/dev-relay-provenance.sh.
 METERM_DEV_PROVENANCE_SH = $(CURDIR)/scripts/dev-relay-provenance.sh
 
-dev:
-	@echo "Building backend..."
-	@cd backend && go build -o /tmp/meterm-server .
-	@echo "Starting meterm..."
-	@trap 'kill 0' EXIT; \
-		/tmp/meterm-server & \
-		sleep 1; \
-		cd frontend && npm run dev
-
 backend:
 	cd backend && go run .
-
-frontend:
-	cd frontend && npm run dev
-
-build:
-	cd backend && go build -o ../bin/meterm-server .
-	cd backend && go build -o ../bin/meterm ./cmd/meterm
-	cd frontend && npm run build
 
 desktop-sidecar:
 	cd backend && go build -o ../desktop/src-tauri/binaries/meterm-server-$$(rustc --print host-tuple) .
@@ -76,11 +59,8 @@ desktop-dev-go: desktop-sidecar
 desktop-build:
 	cd desktop && npm run tauri build
 
-build-frontend:
-	cd frontend && npm run build
-
 # ── Windows dev (run from WSL terminal) ─────────────────────────────────────
-# Uses PowerShell to mirror desktop/ and frontend/ into a Windows-local worktree,
+# Uses PowerShell to mirror desktop/ into a Windows-local worktree,
 # then runs the native Tauri build there. The HTTP/WebSocket server and terminal
 # backends are Rust modules inside the Tauri process; there is no Go sidecar.
 # Requires Windows-side Node.js, Rust/Cargo, MSVC Build Tools and WebView2.
@@ -119,4 +99,4 @@ release-macos-all:
 	./build-macos.sh --arch both
 
 clean:
-	rm -rf bin/ frontend/dist/ backend/web/dist/ desktop/dist/ dist/
+	rm -rf bin/ desktop/dist/ dist/

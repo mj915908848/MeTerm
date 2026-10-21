@@ -12,7 +12,6 @@ use serde::Deserialize;
 use tokio::sync::{broadcast, oneshot};
 
 use super::auth::{AuthPrincipal, TrustedIngress};
-use super::events::PresenceRegistry;
 use super::protocol;
 use super::session::client::{Client, ClientSecurityContext, WsReceivers};
 use super::session::state::ClientRole;
@@ -21,7 +20,6 @@ use super::ServerState;
 /// Session messages include 1 MiB transfer chunks and, for the editor protocol, an
 /// in-memory file plus a short path header. Full downloads remain chunked (0x0F).
 const SESSION_WS_MAX_MESSAGE_SIZE: usize = 17 * 1024 * 1024;
-const PRESENCE_WS_MAX_MESSAGE_SIZE: usize = 64 * 1024;
 
 #[derive(Deserialize)]
 pub struct WsQuery {
@@ -293,167 +291,6 @@ async fn handle_ws(
     writer.abort();
 }
 
-/// `/ws-events` 的查询参数。`device_id` 为终端通知 Phase 3 新增:手机携带自己的
-/// `device_id` 上线,使 presence 登记带上设备身份,供离线推送判定
-/// (`PresenceRegistry::online_devices`)区分"这台手机当前是否在线"。
-///
-/// 兼容旧行为:不带 `device_id`(如旧版手机 / 未升级客户端)时为 `None`,
-/// 仍按 P1 阶段的匿名 presence 处理,不影响 `has_any` 语义。
-#[derive(Deserialize)]
-pub struct EventsQuery {
-    #[serde(default)]
-    pub device_id: Option<String>,
-}
-
-/// presence 事件 WS 升级 handler(终端通知 Phase 1)——`/ws-events`。
-///
-/// 与会话级 `/ws/{session_id}` 不同,这条连接不绑定任何会话:客户端(手机端)
-/// 连上后即订阅桌面事件总线(`EventBus`),桌面侧任意会话产生的通知性事件 /
-/// 会话增删事件都会经这条连接转发过去。
-pub async fn events_upgrade(
-    ws: WebSocketUpgrade,
-    Extension(state): Extension<Arc<ServerState>>,
-    Extension(principal): Extension<AuthPrincipal>,
-    Extension(ingress): Extension<TrustedIngress>,
-    Query(query): Query<EventsQuery>,
-) -> impl IntoResponse {
-    let device_id = match &principal {
-        AuthPrincipal::Device { device_id, .. }
-            if query.device_id.as_deref() == Some(device_id.as_str()) =>
-        {
-            Some(device_id.clone())
-        }
-        AuthPrincipal::Device { .. } => return axum::http::StatusCode::FORBIDDEN.into_response(),
-        AuthPrincipal::Owner { .. } => query
-            .device_id
-            .filter(|id| !id.is_empty() && id.len() <= 128),
-    };
-    let revocable_device =
-        matches!(&principal, AuthPrincipal::Device { .. }) || ingress == TrustedIngress::Relay;
-    let credential_generation = match &principal {
-        AuthPrincipal::Device { generation, .. } => Some(*generation),
-        AuthPrincipal::Owner { generation } => Some(*generation),
-    };
-    // echo 子协议,与 `ws_upgrade` 对齐(客户端以 `meterm.v1` 子协议连接,握手需回显)。
-    ws.max_message_size(PRESENCE_WS_MAX_MESSAGE_SIZE)
-        .max_frame_size(PRESENCE_WS_MAX_MESSAGE_SIZE)
-        .protocols(["meterm.v1"])
-        .on_upgrade(move |socket| {
-            handle_events_ws(
-                socket,
-                state,
-                device_id,
-                credential_generation,
-                revocable_device,
-                principal,
-                ingress,
-            )
-        })
-        .into_response()
-}
-
-/// RAII guard——离开作用域(任何退出路径:正常收尾、错误、提前 return)时
-/// 自动从 `PresenceRegistry` 注销该 client_id,避免遗漏 remove 导致的“幽灵在线”。
-struct PresenceGuard {
-    registry: PresenceRegistry,
-    client_id: String,
-}
-
-impl Drop for PresenceGuard {
-    fn drop(&mut self) {
-        self.registry.remove(&self.client_id);
-    }
-}
-
-/// presence 事件 WS 主循环——订阅 `EventBus`,把事件编码为二进制帧转发给对端,
-/// 同时监听对端的关闭/错误以便及时退出并注销 presence。
-///
-/// `device_id`:见 `EventsQuery` 注释,`None` 时按旧行为登记(不带设备身份)。
-async fn handle_events_ws(
-    socket: WebSocket,
-    state: Arc<ServerState>,
-    device_id: Option<String>,
-    credential_generation: Option<uuid::Uuid>,
-    revocable_device: bool,
-    principal: AuthPrincipal,
-    ingress: TrustedIngress,
-) {
-    let client_id = uuid::Uuid::new_v4().to_string();
-    eprintln!("[ws-events] new presence connection client_id={client_id}");
-
-    // 登记上线;guard 确保无论下面循环怎么退出,都会在 drop 时 remove。
-    let revoked = state.presence.insert_with_ingress(
-        client_id.clone(),
-        device_id,
-        credential_generation,
-        revocable_device,
-        ingress,
-    );
-    let _presence_guard = PresenceGuard {
-        registry: state.presence.clone(),
-        client_id: client_id.clone(),
-    };
-
-    // Close both pre-upgrade races. If LAN shutdown scanned before this entry
-    // appeared, the transition-serialized check rejects it; if credential
-    // revocation scanned first, the generation check rejects it. The guard
-    // immediately unregisters either rejected entry.
-    if !keep_presence_registration(&state, &client_id, ingress) {
-        return;
-    }
-    if !state.authenticator.is_principal_current(&principal) {
-        return;
-    }
-
-    let (mut sender, mut receiver) = socket.split();
-    let mut rx = state.event_bus.subscribe();
-
-    loop {
-        tokio::select! {
-            _ = revoked.cancelled() => break,
-            // 桌面事件总线 → 编码为 `[MSG_NOTIFY_EVENT][JSON]` 二进制帧发给对端。
-            ev = rx.recv() => {
-                match ev {
-                    Ok(event) => {
-                        if !super::device_access::can_receive_event(&state, &principal, &event) {
-                            continue;
-                        }
-                        let json = match serde_json::to_vec(&event) {
-                            Ok(j) => j,
-                            Err(err) => {
-                                eprintln!("[ws-events] failed to serialize event: {}", err);
-                                continue;
-                            }
-                        };
-                        let frame = protocol::encode_message(protocol::MSG_NOTIFY_EVENT, &json);
-                        if sender.send(Message::Binary(frame.into())).await.is_err() {
-                            break;
-                        }
-                    }
-                    // 订阅者太慢被 broadcast 丢弃了一部分历史事件——跳过,继续订阅后续事件。
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
-                    // 所有 Sender 都已 drop(理论上不会发生,EventBus 由 ServerState 常驻持有)。
-                    Err(broadcast::error::RecvError::Closed) => break,
-                }
-            }
-            // 感知对端断开:收到 Close 帧、流结束或读错误都视为断开。
-            msg = receiver.next() => {
-                match msg {
-                    Some(Ok(Message::Close(_))) | None => break,
-                    Some(Err(_)) => break,
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    eprintln!(
-        "[ws-events] presence connection closed client_id={}",
-        client_id
-    );
-    // presence 注销由 `_presence_guard` 的 Drop 负责,这里无需手动调用。
-}
-
 fn create_new_client(
     session: &super::session::Session,
     query: &WsQuery,
@@ -485,18 +322,6 @@ fn keep_session_registration(
     false
 }
 
-fn keep_presence_registration(
-    state: &ServerState,
-    client_id: &str,
-    ingress: TrustedIngress,
-) -> bool {
-    if state.registered_ingress_allowed(ingress) {
-        return true;
-    }
-    state.presence.remove(client_id);
-    false
-}
-
 #[cfg(test)]
 mod lan_registration_tests {
     use super::*;
@@ -504,8 +329,6 @@ mod lan_registration_tests {
     #[tokio::test]
     async fn late_direct_registrations_are_removed_but_relay_registrations_survive() {
         let state = Arc::new(crate::server::create_dummy_state());
-        state.set_lan_access(true).unwrap();
-        state.set_lan_access(false).unwrap();
 
         let session = state.session_manager.create();
         let (direct, _direct_receivers) = Client::new(
@@ -540,37 +363,6 @@ mod lan_registration_tests {
             relay.conn_gen()
         ));
         assert!(relay.is_connected());
-
-        let direct_presence = "presence-direct".to_string();
-        state.presence.insert_with_ingress(
-            direct_presence.clone(),
-            Some("phone-direct".to_string()),
-            Some(uuid::Uuid::new_v4()),
-            true,
-            TrustedIngress::DirectRemote,
-        );
-        assert!(!keep_presence_registration(
-            &state,
-            &direct_presence,
-            TrustedIngress::DirectRemote
-        ));
-        assert!(!state.presence.has_any());
-
-        let relay_presence = "presence-relay".to_string();
-        state.presence.insert_with_ingress(
-            relay_presence.clone(),
-            Some("phone-relay".to_string()),
-            Some(uuid::Uuid::new_v4()),
-            true,
-            TrustedIngress::Relay,
-        );
-        assert!(keep_presence_registration(
-            &state,
-            &relay_presence,
-            TrustedIngress::Relay
-        ));
-        assert!(state.presence.has_any());
-        state.presence.remove(&relay_presence);
     }
 }
 

@@ -340,17 +340,6 @@ impl SessionManager {
             .sum()
     }
 
-    /// Disconnect only clients accepted through one trusted transport class.
-    /// LAN shutdown uses this to preserve relay and local IPC sessions.
-    pub(crate) fn disconnect_ingress(&self, ingress: TrustedIngress) -> usize {
-        self.sessions
-            .lock()
-            .unwrap()
-            .values()
-            .map(|session| session.disconnect_ingress(ingress))
-            .sum()
-    }
-
     /// Stop the manager and close all sessions.
     pub fn stop(&self) {
         self.cancel.cancel();

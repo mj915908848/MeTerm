@@ -27,9 +27,6 @@ export interface TabTransferSessionInfo {
   isSSH: boolean;
   sshInfo?: { host: string; username: string; port: number };
   bufferContent?: string;
-  isRemote?: boolean;
-  remoteHost?: string;
-  remotePort?: number;
   isJumpServer?: boolean;
   jumpServerInfo?: {
     config: import('./jumpserver-api').JumpServerConfig;
@@ -69,7 +66,6 @@ function summarizeTabTransfer(payload: TabTransferPayload): Record<string, strin
     targetWindow: payload.targetWindow,
     tabId: payload.tabId,
     sessionCount: sessions.length,
-    hasRemoteSessions: sessions.some((session) => session.isRemote === true),
     hasJumpServerSessions: sessions.some((session) => session.isJumpServer === true),
   };
 }
@@ -391,9 +387,6 @@ function buildTransferPayload(tabId: string, targetLabel: string): TabTransferPa
       isSSH,
       sshInfo: sshInfo || undefined,
       bufferContent: TerminalRegistry.serializeBuffer(leaf.sessionId) || undefined,
-      isRemote: mt?.isRemote || false,
-      remoteHost: mt?.remoteHost,
-      remotePort: mt?.remotePort,
       isJumpServer: !!jsInfo,
       jumpServerInfo: jsInfo || undefined,
     };
@@ -949,16 +942,6 @@ export function setupTabTransferListener(
         jumpServerConfigMap.set(sess.sessionId, sess.jumpServerInfo);
       }
 
-      // Restore remote session state
-      if (sess.isRemote) {
-        const mt = TerminalRegistry.get(sess.sessionId);
-        if (mt) {
-          mt.isRemote = true;
-          mt.remoteHost = sess.remoteHost;
-          mt.remotePort = sess.remotePort;
-        }
-      }
-
       // Recreate drawer for SSH sessions
       if (sess.isSSH) {
         DrawerManager.create(sess.sessionId, 'ssh');
@@ -967,7 +950,7 @@ export function setupTabTransferListener(
         }
       }
 
-      // Notify main.ts to restore sshConfigMap / remoteInfoMap / etc.
+      // Notify main.ts to restore sshConfigMap / etc.
       onSessionTransferred?.(sess);
 
       // Create AI capsule

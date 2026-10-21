@@ -127,10 +127,6 @@ export function sshKey(name: string): string {
   return `ssh:${name}`;
 }
 
-export function remoteKey(host: string, port: number): string {
-  return `remote:${host}:${port}`;
-}
-
 export function jumpserverKey(name: string): string {
   return `jumpserver:${name}`;
 }

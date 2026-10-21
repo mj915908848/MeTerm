@@ -4,7 +4,7 @@
 
 # MeTerm
 
-**Multi-client shared terminal session system — Real-time terminal collaboration**
+**Cross-platform terminal for local, SSH and JumpServer sessions**
 
 [![Build macOS](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-macos.yml?style=flat-square&logo=apple&label=macOS)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-macos.yml)
 [![Build Windows](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-windows.yml?style=flat-square&logo=windows&label=Windows)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-windows.yml)
@@ -45,12 +45,11 @@
 
 ## Key Features
 
-**Four session types:**
+**Three session types:**
 
 - **Local Terminal** — Out-of-the-box local shell sessions
 - **SSH Remote** — Password/key authentication to remote servers
 - **JumpServer** — Browse and connect bastion host assets (tested v2 & v4, supports MFA authentication)
-- **Remote Sharing** — Join shared sessions on other MeTerm devices in the LAN
 
 **Tab management:**
 
@@ -70,11 +69,8 @@
 - Terminal font enhancements — Font weight control, text sharpening, font size shortcuts (Ctrl/Cmd +/-)
 - Session recording & replay
 
-**Collaboration & networking:**
+**Networking:**
 
-- Multi-client sharing — Multiple users on the same terminal in real-time
-- Role-based access control — Master / Viewer / ReadOnly with role transfer
-- mDNS/Bonjour service discovery — System Bonjour publication on macOS, portable discovery on Windows/Linux
 - Auto-reconnection — Ring buffer for missed data
 
 **Other:**
@@ -313,9 +309,7 @@ MeTerm/
 │               ├── dispatch    # Binary protocol message routing
 │               ├── file_handler# File transfer (SFTP adaptive pipeline)
 │               ├── auth        # Bearer token authentication
-│               ├── discover    # mDNS service discovery
 │               └── ...
-├── frontend/             # Standalone web frontend (xterm.js + Vite)
 ├── control-broker/       # Standalone fail-closed control-plane protocol core (Release scopes blocked)
 ├── cloudflare-worker/    # CF Worker auto-update service
 └── scripts/              # Build helper scripts
@@ -325,7 +319,7 @@ MeTerm/
 
 | Layer | Technologies |
 |-------|-------------|
-| **Backend** | Rust, Axum, Tokio, xpty (cross-platform PTY), russh (SSH/SFTP terminal path), ssh2/libssh2 (desktop SSH file transfer), mdns-sd |
+| **Backend** | Rust, Axum, Tokio, xpty (cross-platform PTY), russh (SSH/SFTP terminal path), ssh2/libssh2 (desktop SSH file transfer) |
 | **Frontend** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
 | **Desktop** | Tauri v2 (Rust + TypeScript), reqwest, keyring, rusqlite |
 | **Control Broker** | Standalone Rust process/protocol core; platform service adapters are not release-ready |

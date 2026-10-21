@@ -92,7 +92,6 @@ pub(crate) async fn update_credential_scopes(
                     "scopes": updated.scopes,
                     "disconnected": cleanup.disconnected,
                     "presence_disconnected": cleanup.presence_disconnected,
-                    "push_removed": cleanup.push_removed != 0,
                 }),
             )
         }
@@ -133,7 +132,6 @@ pub(crate) async fn revoke_credential(
                     "ok": true,
                     "disconnected": cleanup.disconnected,
                     "presence_disconnected": cleanup.presence_disconnected,
-                    "push_removed": cleanup.push_removed != 0,
                 }),
             )
         }
@@ -183,7 +181,6 @@ pub(crate) async fn revoke_self(
                     "revoked": revoked,
                     "disconnected": cleanup.disconnected,
                     "presence_disconnected": cleanup.presence_disconnected,
-                    "push_removed": cleanup.push_removed != 0,
                 }),
             )
         }
@@ -255,7 +252,6 @@ pub(crate) async fn revoke_all(
                 "new_token": new_token,
                 "disconnected": cleanup.disconnected,
                 "presence_disconnected": cleanup.presence_disconnected,
-                "push_removed": cleanup.push_removed,
             }),
         ),
         Some(error) => no_store(
@@ -267,7 +263,6 @@ pub(crate) async fn revoke_all(
                 "devices_revoked": false,
                 "disconnected": cleanup.disconnected,
                 "presence_disconnected": cleanup.presence_disconnected,
-                "push_removed": cleanup.push_removed,
             }),
         ),
     }

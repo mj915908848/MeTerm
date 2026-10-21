@@ -5,7 +5,6 @@
  * - setViewMode(), showHomeView(), hideHomeView()
  * - showGalleryView(), hideGalleryView()
  * - activateTab() — core tab activation
- * - syncLockIconForActiveTab()
  * - statusLabel()
  * - openSettings()
  * - getActiveSessionProgress()
@@ -28,10 +27,9 @@ import { createUtilityWindow } from './window-utils';
 import { ServerInfoPanel } from './server-info-panel';
 import {
   showSSHConnectingPlaceholder, removeSSHConnectingPlaceholder,
-  hideReclaimButton, hideViewerOverlayDom, hideMasterApprovalOverlay,
-  syncViewerOverlayForActiveTab, syncReclaimOverlayForActiveTab, syncMasterApprovalForActiveTab,
-  privateSessionIds,
-} from './overlays';
+  hideReclaimButton, hideMasterApprovalOverlay,
+  syncReclaimOverlayForActiveTab, syncMasterApprovalForActiveTab,
+  } from './overlays';
 import {
   isHomeView, isGalleryView, setIsHomeView, setIsGalleryView,
   type ViewMode,
@@ -94,7 +92,6 @@ export async function activateTab(tabId: string): Promise<void> {
   AICapsuleManager.hideAll();
   removeSSHConnectingPlaceholder();
   hideReclaimButton();
-  hideViewerOverlayDom();
   hideMasterApprovalOverlay();
 
   const tab = TabManager.tabs.find((t) => t.id === tabId);
@@ -192,20 +189,13 @@ export async function activateTab(tabId: string): Promise<void> {
     // accurate rows/cols instead of measuring a pre-layout (stale) size.
     requestAnimationFrame(() => TerminalRegistry.resizeAll());
   }
-  syncViewerOverlayForActiveTab();
   syncReclaimOverlayForActiveTab();
   syncMasterApprovalForActiveTab();
-  syncLockIconForActiveTab();
   syncPaneStatusBar();
   // Keep the left-docked server info panel pointed at the tab being activated.
   ServerInfoPanel.syncToActiveSession();
   _renderToolbarActions();
   StatusBar.setProgress(getActiveSessionProgress());
-}
-
-export function syncLockIconForActiveTab(): void {
-  const activeSessionId = TabManager.getActiveSessionId();
-  StatusBar.setLocked(activeSessionId ? privateSessionIds.has(activeSessionId) : false);
 }
 
 /**
@@ -245,7 +235,6 @@ export function showHomeView(): void {
   hideGalleryView();
   removeSSHConnectingPlaceholder();
   hideReclaimButton();
-  hideViewerOverlayDom();
   const existingHome = document.getElementById('home-view');
   if (!existingHome) {
     const homeView = createSSHHomeView();
@@ -259,7 +248,6 @@ export function showHomeView(): void {
 
   // Reset status bar when no active connection is displayed
   StatusBar.setConnection('disconnected');
-  StatusBar.setLocked(false);
   StatusBar.setLatency(null);
   StatusBar.setProgress(null);
 }

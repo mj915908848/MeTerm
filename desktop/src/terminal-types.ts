@@ -66,11 +66,6 @@ export interface ManagedTerminal {
   _hasUserInput: boolean;
   /** Suppress MsgRoleChange during cross-window tab transfer grace period */
   _transferGrace: boolean;
-  /** Canonical remote authority metadata. Authentication stays in Rust. */
-  remoteHost?: string;
-  remotePort?: number;
-  /** Whether this is a remote viewer session */
-  isRemote?: boolean;
   /** Whether this session was kicked by the host */
   kicked?: boolean;
   /** Last reported OSC background color — used to detect actual theme change */

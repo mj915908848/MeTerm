@@ -15,11 +15,10 @@ pub mod connections;
     feature = "development-mobile-control",
     target_os = "macos"
 ))]
-pub(crate) mod dev_relay_config;
+pub(crate) mod dev_app_identity;
 mod device_access;
 pub mod device_admin;
 pub mod device_auth;
-pub mod discover;
 pub mod dispatch;
 pub mod encoding;
 pub mod events;
@@ -31,38 +30,23 @@ pub mod git_handlers;
 pub mod handlers;
 pub mod hook_secret;
 pub mod jumpserver;
-pub mod lan_access;
 pub mod osc_filter;
 pub mod pairing;
-pub mod pairing_http;
 pub mod pop;
 pub(crate) mod private_file;
 pub mod protocol;
-pub mod proxy;
-pub mod push_crypto;
-pub mod push_dispatch;
-pub mod push_registry;
 pub mod recording;
-pub mod relay_capability;
-pub mod relay_client;
-mod relay_credentials;
-mod relay_http;
-pub mod relay_renewal;
-mod relay_renewal_preface;
 pub mod secret_vault;
 pub mod server_info;
 pub mod session;
 pub mod ssh_connections_http;
 pub mod ssh_saved_session;
 pub mod terminal;
-pub mod tls;
-mod tls_key_vault;
 mod transport;
-pub mod web_embed;
 pub mod ws;
 
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use axum::routing::{any, delete, get, post, put};
@@ -73,11 +57,9 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use auth::Authenticator;
 use ban::BanManager;
 use connections::ConnectionRegistry;
-use discover::DiscoveryManager;
 use events::{EventBus, PresenceRegistry};
 use hook_secret::HookSecretRegistry;
 use pairing::PairingManager;
-use push_registry::PushRegistry;
 use session::manager::SessionManager;
 use session::SessionConfig;
 
@@ -110,16 +92,12 @@ impl Default for ServerConfig {
 pub(crate) struct DeviceGenerationCleanup {
     pub disconnected: usize,
     pub presence_disconnected: usize,
-    pub push_removed: usize,
 }
 
 /// Core shared state — replaces the old `MeTermProcess` (sidecar manager).
 pub struct ServerState {
     pub port: u16,
-    pub lan_port: AtomicU16,
     pub ready: AtomicBool,
-    pub proxy_handle: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    pub proxy_cancel: std::sync::Mutex<Option<CancellationToken>>,
     pub config: ServerConfig,
     pub session_manager: Arc<SessionManager>,
     pub authenticator: Arc<Authenticator>,
@@ -130,36 +108,17 @@ pub struct ServerState {
     pub(crate) jumpserver_sessions: jumpserver::ssh_session::JumpServerSessionRegistry,
     /// SSH 连接同步的元数据注册表(密钥另存钥匙串,见 `secret_vault`)。
     pub connections: Arc<ConnectionRegistry>,
-    pub discovery_manager: Option<DiscoveryManager>,
     /// When true, all outgoing HTTP requests bypass system proxy (direct connection).
     pub bypass_proxy: AtomicBool,
-    /// Backend-authoritative direct-LAN gate, discovery state, persistence and
-    /// per-generation cancellation for accepted remote sockets.
-    pub(crate) lan_access: lan_access::LanAccessControl,
     /// Custom device name for LAN sharing (empty = OS hostname).
     pub device_name: std::sync::Mutex<String>,
     /// 稳定设备 ID(UUID),跨重启/换端口/换 IP 不变——LAN 重发现与未来中继按此路由。
     pub device_id: String,
-    /// 自签 TLS 证书指纹(SHA256 小写 hex);随 mDNS TXT(`fp`)/ 配对负载 /`/api/info` 下发,
-    /// 供手机钉死信任(设计稿 §4)。无 TLS(如 dummy / 无 state_dir 且生成失败)时为空串。
-    pub cert_fp: String,
-    /// 中继基址(如 `wss://relay.example.com:8443`),随 `/api/info` 下发给已认证手机,
-    /// 使手机零配置自动接入远程中继;手机只获得绑定设备身份的 scoped capability。
-    /// 仅当中继已启用(`RelayConfig.enabled`)时非空;未启用/未配置时为空串。
-    pub relay_url: String,
-    /// 中继自签证书叶子指纹(SHA256 小写 hex),供手机钉死信任中继连接。逻辑同 `relay_url`。
-    pub relay_cert_fp: String,
-    /// 中继登记/HMAC 密钥。只保存于 OS 凭据库与桌面进程内存,
-    /// 绝不经 API/IPC/二维码返回;手机拿到的是其派生 capability。
-    pub(crate) relay_register_token: String,
     /// 桌面级事件总线(终端通知 Phase 1):各会话把通知性事件 / 会话增删事件投递到此,
     /// presence WS(`/ws-events`,后续任务接入)订阅后转发给手机。
     pub event_bus: EventBus,
     /// presence 客户端注册表:记录当前在线的 presence 连接,供后续 P3 推送判定用。
     pub presence: PresenceRegistry,
-    /// 手机推送注册表(终端通知 Phase 3):`device_id -> APNs token + 通知加密公钥`,
-    /// 经 `/api/push/register` 写入,供后续后台加密推送任务读取。
-    pub push: PushRegistry,
     /// agent 会话注册表(agent 聊天 P1-T2):`session_id -> AgentEntry`(托管的
     /// AcpClient + 下行帧历史 + fan-out 任务)。也是「某会话是不是 agent 会话」的唯一真相。
     pub agents: agent::AcpAgentManager,
@@ -182,29 +141,6 @@ impl ServerState {
     /// 稳定设备 ID,见 `device_id` 字段注释。
     pub fn device_id(&self) -> &str {
         &self.device_id
-    }
-
-    /// 自签 TLS 证书指纹(SHA256 小写 hex),见 `cert_fp` 字段注释。空串表示未启用 TLS。
-    pub fn cert_fp(&self) -> &str {
-        &self.cert_fp
-    }
-
-    /// 中继基址,见 `relay_url` 字段注释。空串表示中继未启用。
-    pub fn relay_url(&self) -> &str {
-        &self.relay_url
-    }
-
-    /// 中继自签证书指纹,见 `relay_cert_fp` 字段注释。空串表示中继未启用。
-    pub fn relay_cert_fp(&self) -> &str {
-        &self.relay_cert_fp
-    }
-
-    pub fn lan_port(&self) -> u16 {
-        self.lan_port.load(Ordering::Relaxed)
-    }
-
-    pub fn set_lan_port(&self, port: u16) {
-        self.lan_port.store(port, Ordering::Relaxed);
     }
 
     pub fn is_running(&self) -> bool {
@@ -273,12 +209,10 @@ impl ServerState {
         let presence_disconnected = self
             .presence
             .disconnect_device_generation(device_id, retired_generation);
-        let push_removed = usize::from(self.push.remove_generation(device_id, retired_generation));
         jumpserver::remove_device_generation(device_id, retired_generation);
         DeviceGenerationCleanup {
             disconnected,
             presence_disconnected,
-            push_removed,
         }
     }
 
@@ -293,9 +227,18 @@ impl ServerState {
                     self.disconnect_device_generation(&credential.device_id, credential.generation);
                 total.disconnected += cleanup.disconnected;
                 total.presence_disconnected += cleanup.presence_disconnected;
-                total.push_removed += cleanup.push_removed;
                 total
             },
+        )
+    }
+
+    /// Revalidate one HTTP-upgraded connection after it has entered its runtime
+    /// registry. Sharing was removed, so a direct remote socket is never kept;
+    /// relay ingress is kept only by the session framework's ingress model.
+    pub(crate) fn registered_ingress_allowed(&self, ingress: auth::TrustedIngress) -> bool {
+        matches!(
+            ingress,
+            auth::TrustedIngress::DirectLoopback | auth::TrustedIngress::Relay
         )
     }
 
@@ -369,31 +312,19 @@ fn log_serve_exit(result: Result<Result<(), std::io::Error>, tokio::task::JoinEr
     }
 }
 
-/// accept 循环:每条连接 spawn 一个 `serve_connection`(peek 后走 TLS 或明文,都喂同一 Router)。
+/// accept 循环:每条本机连接 spawn 一个 `serve_connection`(明文 HTTP,喂同一 Router)。
 /// 瞬时错误退避重试;致命错误返回 `Err`,交由上层监督者重建监听(保留原自动重启语义)。
-async fn run_accept_loop(
-    listener: tokio::net::TcpListener,
-    app: Router,
-    tls: Option<tokio_rustls::TlsAcceptor>,
-    state: Arc<ServerState>,
-) -> std::io::Result<()> {
+async fn run_accept_loop(listener: tokio::net::TcpListener, app: Router) -> std::io::Result<()> {
     let connection_slots = transport::connection_slots();
     loop {
         match listener.accept().await {
             Ok((stream, peer)) => {
-                // Reject disabled direct-LAN ingress before it can consume the
-                // shared pre-auth permit, peek timeout, or TLS handshake work.
-                let remote_lease = if peer.ip().is_loopback() {
-                    None
-                } else {
-                    match state.direct_remote_lease() {
-                        Some(lease) => Some(lease),
-                        None => {
-                            drop(stream);
-                            continue;
-                        }
-                    }
-                };
+                // Sharing was removed: only this machine may connect. Reject
+                // anything else before it consumes a pre-auth permit.
+                if !peer.ip().is_loopback() {
+                    drop(stream);
+                    continue;
+                }
                 let permit = match connection_slots.clone().try_acquire_owned() {
                     Ok(permit) => permit,
                     Err(_) => {
@@ -402,17 +333,9 @@ async fn run_accept_loop(
                     }
                 };
                 let app = app.clone();
-                let tls = tls.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
-                    if let Some(cancel) = remote_lease {
-                        tokio::select! {
-                            _ = cancel.cancelled() => {}
-                            _ = transport::serve_connection(stream, peer, app, tls) => {}
-                        }
-                    } else {
-                        transport::serve_connection(stream, peer, app, tls).await;
-                    }
+                    transport::serve_connection(stream, peer, app).await;
                 });
             }
             Err(e) => {
@@ -510,14 +433,6 @@ fn build_router(state: Arc<ServerState>) -> Router {
         }
     });
 
-    // Pairing exchanges a short-lived secret and may return the long-lived
-    // bearer, so remote callers must enter through the connection-proven TLS path.
-    let pairing_routes = Router::new()
-        .route("/api/pair/bootstrap", post(pairing_http::bootstrap_pair))
-        .route("/api/pair", post(pairing_http::create_pair))
-        .route("/api/pair/{id}", post(pairing_http::poll_pair_post))
-        .layer(middleware::from_fn(auth::secure_remote_middleware));
-
     // Routes that DON'T require authentication
     let public_routes = Router::new()
         .route("/api/ping", get(handlers::ping))
@@ -530,8 +445,7 @@ fn build_router(state: Arc<ServerState>) -> Router {
                     agent::hook::AGENT_HOOK_BODY_LIMIT,
                 ))
                 .layer(hook_guard),
-        )
-        .merge(pairing_routes);
+        );
 
     // Resource-specific routes are split before the common authentication
     // layer so every device capability has one auditable boundary.
@@ -544,8 +458,6 @@ fn build_router(state: Arc<ServerState>) -> Router {
         )
         .route("/api/sessions/{id}/master", post(handlers::request_master))
         .route("/ws/{session_id}", get(ws::ws_upgrade))
-        .route("/api/pair/claim", post(pairing_http::claim_pair))
-        .route("/api/info", get(relay_http::server_info))
         .route(
             "/api/device-credential/self",
             delete(device_admin::revoke_self),
@@ -654,16 +566,10 @@ fn build_router(state: Arc<ServerState>) -> Router {
             device_auth::DeviceScope::SshConnectionsWrite,
         ));
 
-    let push_routes = Router::new()
-        .route("/api/push/register", post(handlers::register_push))
-        .route("/ws-events", get(ws::events_upgrade))
-        .layer(device_scope_layer(device_auth::DeviceScope::PushSelf));
-
     let device_routes = device_base_routes
         .merge(desktop_control_routes)
         .merge(ssh_connect_routes)
         .merge(ssh_write_routes)
-        .merge(push_routes)
         .layer(auth_layer.clone());
 
     // Desktop administration is owner-only. The auth layer runs first and
@@ -696,11 +602,6 @@ fn build_router(state: Arc<ServerState>) -> Router {
             put(device_admin::update_credential_scopes).delete(device_admin::revoke_credential),
         )
         .route("/api/sessions/{id}/private", post(handlers::set_private))
-        .route("/api/pair/pending", get(pairing_http::list_pending_pairs))
-        .route("/api/pair/{id}/respond", post(pairing_http::respond_pair))
-        .route("/api/pair/claim-status", get(pairing_http::claim_status))
-        .route("/api/discoverable", post(pairing_http::toggle_discoverable))
-        .route("/api/discover", get(pairing_http::discover))
         .route("/api/token", post(device_admin::set_owner_token))
         .route(
             "/api/token/refresh",
@@ -753,66 +654,27 @@ fn build_router(state: Arc<ServerState>) -> Router {
         ])
         .max_age(std::time::Duration::from_secs(600));
 
-    let mut router = Router::new().merge(public_routes).merge(authed_routes);
+    let router = Router::new().merge(public_routes).merge(authed_routes);
 
-    // Serve embedded web frontend if dist/ has content
-    if web_embed::has_content() {
-        router = router.fallback(web_embed::serve_static);
-    }
-
-    // LAN access guard: direct remote sockets require LAN sharing. Relay is a
-    // separately configured authenticated ingress and must never inherit its
-    // synthetic loopback peer's privileges.
-    let lan_guard = middleware::from_fn({
-        let state = state.clone();
-        move |req: axum::extract::Request, next: middleware::Next| {
-            let state = state.clone();
-            async move {
-                if !state.lan_access_enabled() {
-                    let allowed = matches!(
-                        req.extensions().get::<auth::TrustedIngress>(),
-                        Some(auth::TrustedIngress::DirectLoopback | auth::TrustedIngress::Relay)
-                    );
-                    if !allowed {
-                        return Err(axum::http::StatusCode::FORBIDDEN);
-                    }
-                }
-                Ok(next.run(req).await)
+    // Ingress guard: sharing was removed, so direct remote sockets are never
+    // served. Relay is a separately configured authenticated ingress and must
+    // never inherit its synthetic loopback peer's privileges.
+    let ingress_guard = middleware::from_fn(
+        |req: axum::extract::Request, next: middleware::Next| async move {
+            let allowed = matches!(
+                req.extensions().get::<auth::TrustedIngress>(),
+                Some(auth::TrustedIngress::DirectLoopback | auth::TrustedIngress::Relay)
+            );
+            if !allowed {
+                return Err(axum::http::StatusCode::FORBIDDEN);
             }
-        }
-    });
+            Ok(next.run(req).await)
+        },
+    );
 
     router
         .layer(cors)
-        .layer(lan_guard)
-        .layer(axum::Extension(state))
-        .layer(middleware::from_fn(auth_body::idle_timeout_middleware))
-}
-
-/// Minimal router exposed only after a relay substream carries a verified,
-/// route-bound Relay renewal preface. It intentionally has no pairing, owner,
-/// session, WebSocket, static frontend, CORS or fallback routes.
-fn build_relay_renewal_router(state: Arc<ServerState>) -> Router {
-    let auth_layer = middleware::from_fn({
-        let auth = state.authenticator.clone();
-        move |request, next| {
-            let auth = auth.clone();
-            async move { auth::auth_middleware(axum::extract::Extension(auth), request, next).await }
-        }
-    });
-
-    Router::new()
-        .route("/api/auth/challenge", post(pop::issue_challenge))
-        .route(
-            "/api/relay/capability/renew",
-            post(relay_http::renew_relay_capability),
-        )
-        .route_layer(middleware::from_fn(
-            relay_renewal_preface::renewal_principal_binding_middleware,
-        ))
-        .route_layer(auth_layer)
-        .layer(middleware::from_fn(auth::renewal_ingress_middleware))
-        .layer(axum::extract::DefaultBodyLimit::max(8 * 1024))
+        .layer(ingress_guard)
         .layer(axum::Extension(state))
         .layer(middleware::from_fn(auth_body::idle_timeout_middleware))
 }
@@ -838,10 +700,7 @@ pub fn create_dummy_state() -> ServerState {
     let pm = PairingManager::new(auth.clone(), sm.clone(), bm.clone());
     ServerState {
         port: 0,
-        lan_port: AtomicU16::new(0),
         ready: AtomicBool::new(false),
-        proxy_handle: std::sync::Mutex::new(None),
-        proxy_cancel: std::sync::Mutex::new(None),
         config: ServerConfig::default(),
         session_manager: sm,
         authenticator: auth,
@@ -853,22 +712,13 @@ pub fn create_dummy_state() -> ServerState {
             ConnectionRegistry::new(std::path::PathBuf::new())
                 .expect("empty in-memory connection registry"),
         ),
-        discovery_manager: None,
         bypass_proxy: AtomicBool::new(true),
-        lan_access: lan_access::LanAccessControl::new(""),
         device_name: std::sync::Mutex::new(String::new()),
         // dummy state 无 app_data_dir,生成一个临时性 UUID(不落盘,进程重启即变),
         // 与其他字段的降级行为一致。
         device_id: uuid::Uuid::new_v4().to_string(),
-        // dummy state 不起真实服务,无 TLS,指纹留空。
-        cert_fp: String::new(),
-        // dummy state 无中继连接,留空。
-        relay_url: String::new(),
-        relay_cert_fp: String::new(),
-        relay_register_token: String::new(),
         event_bus,
         presence: PresenceRegistry::new(),
-        push: PushRegistry::new(),
         agents: agent::AcpAgentManager::new(),
         hook_secrets,
         mirrors: agent::MirrorRegistry::new(),
@@ -886,11 +736,3 @@ mod revoke_cleanup_tests;
 #[cfg(test)]
 #[path = "device_id_tests.rs"]
 mod device_id_tests;
-
-#[cfg(test)]
-#[path = "lan_access_route_tests.rs"]
-mod lan_access_route_tests;
-
-#[cfg(test)]
-#[path = "relay_renewal_tests.rs"]
-mod relay_renewal_tests;

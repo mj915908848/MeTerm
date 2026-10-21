@@ -57,8 +57,7 @@ import {
   showKickedOverlay,
   showMasterApprovalDialog,
   reclaimSessionIds, hideReclaimButton, syncReclaimOverlayForActiveTab,
-  enterViewerMode, exitViewerMode, showViewerRequestDenied,
-} from './overlays';
+  } from './overlays';
 import {
   port, authToken, metermReady, setPort, setAuthToken, setMetermReady,
   settings, setSettings,
@@ -396,29 +395,18 @@ export function setupDomEventListeners(): void {
     const { sessionId } = e.detail;
     // 进入镜像渲染:随后服务端会下行主控的 PTY 尺寸(0x03),按其等比缩放居中
     enterMirror(sessionId);
-    const mt = TerminalRegistry.get(sessionId);
-    if (mt?.isRemote) {
-      enterViewerMode(sessionId);
-    } else {
-      reclaimSessionIds.add(sessionId);
-      syncReclaimOverlayForActiveTab();
-    }
+    reclaimSessionIds.add(sessionId);
+    syncReclaimOverlayForActiveTab();
   }) as EventListener);
 
   // Master gained — exit viewer mode and hide all overlays
   document.addEventListener('master-gained', ((e: CustomEvent) => {
     const { sessionId } = e.detail;
     reclaimSessionIds.delete(sessionId);
-    exitViewerMode(sessionId);
     hideReclaimButton();
     // 拿回主控:退出镜像,fit 回自身尺寸 + resize + nudge(TUI 强制重绘)
     const mt = TerminalRegistry.get(sessionId);
     if (mt) exitMirror(mt);
-  }) as EventListener);
-
-  // Master request denied — update viewer overlay
-  document.addEventListener('master-request-denied', (() => {
-    showViewerRequestDenied();
   }) as EventListener);
 
   // 会话被远端(手机)显式删除:自动关闭对应标签。
@@ -434,7 +422,6 @@ export function setupDomEventListeners(): void {
 
   document.addEventListener('client-kicked', ((e: CustomEvent<{ sessionId: string }>) => {
     const { sessionId } = e.detail;
-    exitViewerMode(sessionId);
     showKickedOverlay(sessionId);
     renderTabs();
   }) as EventListener);

@@ -360,34 +360,6 @@ fn owner_generation_cleanup_spares_new_owner_device_and_local_ipc() {
 }
 
 #[test]
-fn lan_shutdown_disconnects_only_direct_remote_clients() {
-    let session = test_session("lan-ingress-cleanup");
-    let (direct, _direct_receivers) = device_client(
-        "direct",
-        ingress_security("device-direct", TrustedIngress::DirectRemote),
-    );
-    let (relay, _relay_receivers) = device_client(
-        "relay",
-        ingress_security("device-relay", TrustedIngress::Relay),
-    );
-    let (local, _local_receivers) =
-        device_client("local", ClientSecurityContext::direct_loopback_owner());
-    for client in [&direct, &relay, &local] {
-        session.add_client(client.clone()).unwrap();
-    }
-
-    assert_eq!(session.disconnect_ingress(TrustedIngress::DirectRemote), 1);
-    assert!(!direct.is_connected());
-    assert!(relay.is_connected());
-    assert!(local.is_connected());
-    assert_eq!(
-        session.master(),
-        "local",
-        "forced teardown must atomically promote the trusted local owner"
-    );
-}
-
-#[test]
 fn later_client_promotion_does_not_rewrite_immutable_owner() {
     let session = test_session("immutable-owner");
     let (first, _) = device_client(
