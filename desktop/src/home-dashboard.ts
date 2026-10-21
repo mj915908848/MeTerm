@@ -9,12 +9,12 @@
  *
  * Two things changed since. Startup now honours the "create a local session on
  * launch" setting (off by default), so the page IS the starting point again; and
- * the connection list moved out to its own window, which frees the page to be
+ * the connection list moved off this page (now the connections drawer), freeing it to be
  * what it used to be. So the page is back: search bar, the 2×2 session grid,
  * recent connections, saved connections and the footer.
  *
  * Division of labour, unchanged from v0.2.17: this page is the *no-session*
- * starting point, the connections window (connections-window.ts) is for looking
+ * starting point, the connections drawer (connections-drawer.ts) is for looking
  * connections up while a terminal is open. Both read the same stores, so an edit
  * in one shows up in the other.
  */

@@ -12,8 +12,7 @@
  *
  * So the check is per route, not per file: the list below has to name every
  * `?window=` label `main.ts` can take, and the route test fails when a new one
- * appears without being covered. The connection window's own guard lives in
- * connections-window-chrome.test.mts; the field menu's behaviour lives in
+ * appears without being covered. The field menu's behaviour lives in
  * editable-context-menu.test.mts.
  */
 import assert from 'node:assert/strict';
@@ -36,7 +35,6 @@ function bodyAfter(source: string, marker: string): string {
 /** Every `?window=` label main.ts routes on. A new one has to be added here. */
 const WINDOW_ROUTES = [
   'about',
-  'connections',
   'editor',
   'jumpserver-browser',
   'settings',

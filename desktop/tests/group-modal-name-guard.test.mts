@@ -113,6 +113,8 @@ function openModal(currentName: string, currentColor = ''): {
     './home-card-width': { clearCardWidth: noop, dragCardWidth: noop, loadCardWidths: () => ({}), setCardWidth: noop },
     './connection-sort': connectionSort,
     './connection-groups': groupExports,
+    './connection-drag': { attachConnectionDrag: () => noop, UNGROUPED_DROP_GROUP: '__ungrouped__' },
+    './connection-selection': { pruneSelection: (s: string[]) => s, resolveRowClick: noop },
     './ssh': {
       loadSavedConnections: () => [], loadRecentConnections: () => [], removeRecentConnection: noop,
       showSSHModal: noop, removeConnection: noop, getSSHConnectHandler: () => null,

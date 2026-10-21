@@ -2,11 +2,10 @@
  * connection-sidebar.ts — "New connection" actions.
  *
  * The docked connection sidebar that used to live here is gone: clicking the
- * toolbar's connection button now opens a dedicated window (see
- * connections-window.ts), leaving the left dock to the server-info panel. What
+ * toolbar's connection button now slides in a drawer over the terminal (see
+ * connections-drawer.ts), leaving the left dock to the server-info panel. What
  * remains here is the shared "new connection" button grid, used by the home view
- * and — through runNewConnectionAction() — by the connections window, which
- * delegates the actual work back to the main window over a Tauri event.
+ * and by the drawer.
  */
 import { t } from './i18n';
 import { icon } from './icons';
@@ -44,10 +43,7 @@ export const NEW_ACTIONS: NewAction[] = [
   },
 ];
 
-/**
- * Run a "new connection" action in this window. The connections window has no
- * terminal of its own, so it forwards the kind here and the main window runs it.
- */
+/** Run a "new connection" action in this window. */
 export function runNewConnectionAction(kind: NewConnectionKind): void {
   NEW_ACTIONS.find((a) => a.kind === kind)?.action();
 }
@@ -55,8 +51,8 @@ export function runNewConnectionAction(kind: NewConnectionKind): void {
 /**
  * Build the "new connection" button grid — 5 buttons, 2 per row.
  *
- * `onPick` diverts clicks to the caller (the connections window forwards them to
- * the main window); without it each button runs its own action locally.
+ * `onPick` diverts clicks to the caller (the drawer closes itself first);
+ * without it each button runs its own action directly.
  */
 export function makeNewButtons(onPick?: (kind: NewConnectionKind) => void): HTMLElement {
   const row = document.createElement('div');

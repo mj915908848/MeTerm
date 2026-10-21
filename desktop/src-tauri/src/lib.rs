@@ -73,7 +73,6 @@ pub(crate) const LIFECYCLE_UTILITY_WINDOW_LABELS: &[&str] = &[
     "about",
     "jumpserver-browser",
     "editor",
-    "connections",
 ];
 
 pub(crate) fn is_lifecycle_utility_window_label(label: &str) -> bool {
@@ -1020,7 +1019,6 @@ pub fn run() {
             commands::window::reveal_window,
             // Identity-confirmed native export; credential bytes never cross WebView IPC.
             commands::connection_export::export_ssh_connections,
-            commands::connections_dispatch::connections_dispatch,
             // connection sync(桌面前端进程内桥接 ConnectionRegistry/secret_vault)
             commands::connection_sync::sync_get_connections,
             commands::connection_sync::sync_import_named_connection,
