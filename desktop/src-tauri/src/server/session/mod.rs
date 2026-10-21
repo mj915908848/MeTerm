@@ -1495,30 +1495,38 @@ impl RingBuffer {
         }
     }
 
-    fn write(&mut self, data: &[u8]) {
+    fn write(&mut self, mut data: &[u8]) {
         if self.cap == 0 {
             return;
         }
-        for &byte in data {
-            let pos = (self.start + self.len) % self.cap;
-            self.buf[pos] = byte;
-            if self.len == self.cap {
-                // Buffer full — advance start (overwrite oldest)
-                self.start = (self.start + 1) % self.cap;
-            } else {
-                self.len += 1;
-            }
+        // Only the newest `cap` bytes can survive.
+        if data.len() >= self.cap {
+            data = &data[data.len() - self.cap..];
+            self.buf.copy_from_slice(data);
+            self.start = 0;
+            self.len = self.cap;
+            return;
+        }
+        // Copy in at most two slices (wrapping at the end of `buf`).
+        let mut pos = (self.start + self.len) % self.cap;
+        let first = data.len().min(self.cap - pos);
+        self.buf[pos..pos + first].copy_from_slice(&data[..first]);
+        let rest = data.len() - first;
+        self.buf[..rest].copy_from_slice(&data[first..]);
+        pos = (pos + data.len()) % self.cap;
+        // Overwrite the oldest bytes when full.
+        let overflow = (self.len + data.len()).saturating_sub(self.cap);
+        self.len = (self.len + data.len()).min(self.cap);
+        if overflow > 0 {
+            self.start = pos;
         }
     }
 
     fn read_all(&self) -> Vec<u8> {
-        if self.len == 0 {
-            return Vec::new();
-        }
         let mut result = Vec::with_capacity(self.len);
-        for i in 0..self.len {
-            result.push(self.buf[(self.start + i) % self.cap]);
-        }
+        let first = self.len.min(self.cap - self.start);
+        result.extend_from_slice(&self.buf[self.start..self.start + first]);
+        result.extend_from_slice(&self.buf[..self.len - first]);
         result
     }
 }
@@ -1590,6 +1598,34 @@ mod tests {
         assert_eq!(rb.read_all(), b"ab");
         rb.write(b"cde");
         assert_eq!(rb.read_all(), b"bcde"); // 'a' overwritten
+    }
+
+    /// The slice-copy ring buffer must keep exactly the newest `cap` bytes,
+    /// for writes smaller than, equal to and larger than the capacity.
+    #[test]
+    fn ring_buffer_matches_naive_model() {
+        let mut seed: u32 = 12345;
+        let mut next = || {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            seed >> 16
+        };
+        for cap in [1usize, 2, 7, 64] {
+            let mut rb = RingBuffer::new(cap);
+            let mut model: Vec<u8> = Vec::new();
+            for _ in 0..500 {
+                let len = (next() as usize) % (cap * 2 + 2);
+                let chunk: Vec<u8> = (0..len).map(|_| next() as u8).collect();
+                rb.write(&chunk);
+                model.extend_from_slice(&chunk);
+                if model.len() > cap {
+                    model.drain(..model.len() - cap);
+                }
+                assert_eq!(rb.read_all(), model, "cap={cap}");
+            }
+        }
+        let mut empty = RingBuffer::new(0);
+        empty.write(b"abc");
+        assert!(empty.read_all().is_empty());
     }
 
     /// `notify_events_to_publish` 只挑出 Notify,忽略其它 OscEvent 变体,

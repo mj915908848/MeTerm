@@ -28,6 +28,9 @@ import { feedThumbnail } from './terminal-thumbnail-feed';
 import type { AppSettings } from './themes';
 import type { ManagedTerminal } from './terminal-types';
 
+/** Streaming decoders for AI output listeners, one per terminal. */
+const outputDecoders = new WeakMap<ManagedTerminal, TextDecoder>();
+
 export interface WsCallbacks {
   scheduleSettleResize: (mt: ManagedTerminal) => void;
   getSettings: () => AppSettings | null;
@@ -78,7 +81,14 @@ export function handleIncomingMessage(
 
     const outListeners = callbacks.getOutputListeners(mt.id);
     if (outListeners && outListeners.size > 0) {
-      const text = new TextDecoder().decode(outData);
+      // One streaming decoder per terminal: a multi-byte UTF-8 character
+      // split across frames would otherwise decode to U+FFFD.
+      let decoder = outputDecoders.get(mt);
+      if (!decoder) {
+        decoder = new TextDecoder();
+        outputDecoders.set(mt, decoder);
+      }
+      const text = decoder.decode(outData, { stream: true });
       outListeners.forEach(cb => cb(text));
     }
 
