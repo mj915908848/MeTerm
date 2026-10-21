@@ -1047,9 +1047,18 @@ mod hook_tests {
     /// *before* it runs, so both supported shells need a preexec-style hook.
     #[test]
     fn ssh_hook_installs_preexec_timing_for_both_shells() {
-        assert!(HOOK.contains("add-zsh-hook preexec __meterm_preexec"), "zsh needs preexec");
-        assert!(HOOK.contains("trap '__meterm_preexec' DEBUG"), "bash needs the DEBUG-trap preexec");
-        assert!(HOOK.contains("zmodload zsh/datetime"), "zsh EPOCHREALTIME needs zsh/datetime");
+        assert!(
+            HOOK.contains("add-zsh-hook preexec __meterm_preexec"),
+            "zsh needs preexec"
+        );
+        assert!(
+            HOOK.contains("trap '__meterm_preexec' DEBUG"),
+            "bash needs the DEBUG-trap preexec"
+        );
+        assert!(
+            HOOK.contains("zmodload zsh/datetime"),
+            "zsh EPOCHREALTIME needs zsh/datetime"
+        );
     }
 
     /// bash has exactly one `DEBUG` trap and no "append" form, so installing
@@ -1060,7 +1069,9 @@ mod hook_tests {
     #[test]
     fn ssh_hook_never_displaces_the_users_debug_trap() {
         assert!(
-            HOOK.contains("if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi;"),
+            HOOK.contains(
+                "if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi;"
+            ),
             "the bash DEBUG trap must be installed only when the shell has none"
         );
     }
@@ -1089,7 +1100,10 @@ mod hook_tests {
     /// or the session stays mute.
     #[test]
     fn ssh_hook_restores_echo() {
-        assert!(HOOK.trim_end().ends_with("stty echo"), "hook must end with `stty echo`");
+        assert!(
+            HOOK.trim_end().ends_with("stty echo"),
+            "hook must end with `stty echo`"
+        );
     }
 
     /// The history-hygiene policy has to match the local hook (`pty_unix.rs`)
@@ -1135,7 +1149,6 @@ mod hook_tests {
         }
     }
 }
-
 
 #[cfg(test)]
 mod drop_tests {

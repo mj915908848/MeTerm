@@ -470,7 +470,6 @@ fn control_broker_contract_keeps_all_mobile_network_scopes_fail_closed() {
         assert_eq!(secret["exportable"], false);
         assert_eq!(secret["app_visible"], false);
     }
-
 }
 
 /// The half of the Control Broker guard that needs no contract artifact: a

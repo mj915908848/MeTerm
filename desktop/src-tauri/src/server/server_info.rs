@@ -159,7 +159,8 @@ pub async fn probe_host_identity(session: &Session) -> Option<String> {
     let handle_guard = session.ssh_exec_handle.lock().await;
     let handle = handle_guard.as_ref()?;
     let ssh_handle = handle
-        .downcast_ref::<Arc<tokio::sync::Mutex<Option<russh::client::Handle<ssh::SshHandler>>>>>()?;
+        .downcast_ref::<Arc<tokio::sync::Mutex<Option<russh::client::Handle<ssh::SshHandler>>>>>(
+        )?;
 
     let output = ssh::ssh_exec(ssh_handle, HOST_IDENTITY_CMD, 5).await.ok()?;
     let identity = output.trim();
@@ -717,7 +718,10 @@ mod tests {
             "坏一个中间字段不得靠「过滤后仍剩 7 个」蒙混过关"
         );
         // 直接对着解析器再钉一遍这条规则（含长度不足与空串）。
-        assert_eq!(parse_cpu_ticks("100 20 30 400 50 6 7"), Some(vec![100, 20, 30, 400, 50, 6, 7]));
+        assert_eq!(
+            parse_cpu_ticks("100 20 30 400 50 6 7"),
+            Some(vec![100, 20, 30, 400, 50, 6, 7])
+        );
         assert_eq!(parse_cpu_ticks("100 bad 20 30 400 50 6 7"), None);
         assert_eq!(parse_cpu_ticks("100 20 30 400 50 6"), None);
         assert_eq!(parse_cpu_ticks(""), None);

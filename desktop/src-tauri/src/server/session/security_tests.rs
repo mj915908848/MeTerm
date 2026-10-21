@@ -215,7 +215,8 @@ fn native_ipc_reconnect_keeps_owner_id_and_rejects_stale_generation() {
     session.add_client(owner.clone()).unwrap();
     let old_gen = owner.conn_gen();
 
-    let replacement_channel = tauri::ipc::Channel::<tauri::ipc::InvokeResponseBody>::new(|_| Ok(()));
+    let replacement_channel =
+        tauri::ipc::Channel::<tauri::ipc::InvokeResponseBody>::new(|_| Ok(()));
     let (replacement, new_gen) = session
         .reconnect_ipc_client("desktop-owner", replacement_channel)
         .unwrap();
@@ -888,5 +889,8 @@ fn ipc_downstream_sends_raw_bytes() {
         channel,
     );
     assert!(client.send(vec![0x01, 0x1b, b'[', b'A']));
-    assert_eq!(*received.lock().unwrap(), vec![vec![0x01, 0x1b, b'[', b'A']]);
+    assert_eq!(
+        *received.lock().unwrap(),
+        vec![vec![0x01, 0x1b, b'[', b'A']]
+    );
 }
