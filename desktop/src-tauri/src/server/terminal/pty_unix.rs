@@ -561,7 +561,8 @@ mod tests {
         // 非破坏性:用户 .bashrc 先被 source,bash 只有一个 DEBUG trap,
         // 所以只能在没有时安装;PROMPT_COMMAND 按原有形态(标量/数组)扩写。
         assert!(
-            bashrc.contains("if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi"),
+            bashrc
+                .contains("if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi"),
             "本地 bashrc 不得覆盖用户已有的 DEBUG trap"
         );
         assert!(

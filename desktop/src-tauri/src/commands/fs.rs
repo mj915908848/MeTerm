@@ -866,7 +866,12 @@ fn is_sensitive_agent_grep_path(path: &std::path::Path, is_dir: bool) -> bool {
         &["library", "application support", "google", "chrome"],
         &["library", "application support", "chromium"],
         &["library", "application support", "microsoft", "edge"],
-        &["library", "application support", "bravesoftware", "brave-browser"],
+        &[
+            "library",
+            "application support",
+            "bravesoftware",
+            "brave-browser",
+        ],
         &["library", "application support", "firefox", "profiles"],
         &["library", "safari"],
         &["library", "containers", "com.apple.safari"],
@@ -929,9 +934,16 @@ fn is_sensitive_agent_grep_path(path: &std::path::Path, is_dir: bool) -> bool {
                 | "id_dsa"
                 | "terraform.tfstate"
         )
-        || ["credentials.", "credential.", "secrets.", "token.", "secret", "password"]
-            .iter()
-            .any(|prefix| file_name.starts_with(*prefix))
+        || [
+            "credentials.",
+            "credential.",
+            "secrets.",
+            "token.",
+            "secret",
+            "password",
+        ]
+        .iter()
+        .any(|prefix| file_name.starts_with(*prefix))
         || ["id_rsa.", "id_ed25519.", "id_ecdsa.", "id_dsa."]
             .iter()
             .any(|prefix| file_name.starts_with(*prefix))

@@ -910,19 +910,17 @@ fn ensure_local_source_path(local_path: &str) -> Result<(), String> {
 }
 
 async fn wait_upload_ctrl(ctrl: &mut tokio::sync::mpsc::Receiver<UploadSignal>) -> bool {
-    loop {
-        match ctrl.try_recv() {
-            Ok(UploadSignal::Cancel) => return true,
-            Ok(UploadSignal::Pause) => loop {
-                match ctrl.recv().await {
-                    Some(UploadSignal::Continue) => return false,
-                    Some(UploadSignal::Cancel) => return true,
-                    None => return true,
-                    _ => {}
-                }
-            },
-            _ => return false,
-        }
+    match ctrl.try_recv() {
+        Ok(UploadSignal::Cancel) => true,
+        Ok(UploadSignal::Pause) => loop {
+            match ctrl.recv().await {
+                Some(UploadSignal::Continue) => return false,
+                Some(UploadSignal::Cancel) => return true,
+                None => return true,
+                _ => {}
+            }
+        },
+        _ => false,
     }
 }
 
