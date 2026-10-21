@@ -1,24 +1,14 @@
 /**
- * Home Dashboard — Left panel: connection buttons, recent activity,
- * connection groups, context menus, group modals, drag reorder.
- * Extracted from home-dashboard.ts for code size control.
+ * Home Dashboard — shared connection pieces: collecting and filtering saved
+ * connections, the recent-connections track, connecting, the row and group
+ * menus, deleting, and the group modal. The saved-connection manager itself
+ * (list + detail panel) is home-connection-manager.ts.
  */
 import { settings } from './app-state';
 import { t } from './i18n';
 import { icon } from './icons';
 import { showToast } from './notify';
-import { createOverlayScrollbar } from './overlay-scrollbar';
 import { appendSshConnectionMenuItems } from './development-credential-recovery-ui';
-import { loadCardOrder, saveCardOrder } from './home-dashboard-card-order';
-import {
-  clearCardWidth,
-  dragCardWidth,
-  loadCardWidths,
-  setCardWidth,
-} from './home-card-width';
-import { sortGroupConnections } from './connection-sort';
-import { attachConnectionDrag, UNGROUPED_DROP_GROUP } from './connection-drag';
-import { pruneSelection, resolveRowClick } from './connection-selection';
 import {
   type SSHConnectionConfig,
   loadSavedConnections,
@@ -34,13 +24,10 @@ import {
   removeJumpServerConfig,
 } from './jumpserver-api';
 import {
-  loadGroupMap,
   loadGroupOrder,
-  visibleGroupName,
   getConnectionGroup,
   sshKey,
   jumpserverKey,
-  createGroup,
   renameGroup,
   isReservedGroupName,
   deleteGroup,
@@ -52,8 +39,6 @@ import {
   loadGroupCollapsed,
   toggleGroupCollapsed,
   duplicateGroup,
-  type ConnectionGroupMap,
-  getJSAssetHistoryByFrequency,
   type JSAssetHistoryEntry,
 } from './connection-groups';
 
@@ -179,106 +164,14 @@ function setupScrollFade(el: HTMLElement): void {
   requestAnimationFrame(update);
 }
 
-// ─── Multi-select (saved connections) ───
-//
-// ⌘/Ctrl-click adds a row to the selection, Shift-click takes a range, a plain
-// click still connects (rules in connection-selection.ts). The selection can be
-// moved to a group (selection bar, row menu, or dragging onto a card) or deleted
-// in one go. It survives re-renders, so it lives here rather than in the DOM.
 
-const homePicked = new Set<string>();
-let homeAnchor: string | null = null;
-let homeDragDispose: (() => void) | null = null;
-
-/** Bilingual text for strings that carry a live count (t() takes no args). */
-const L = (zh: string, en: string): string => (settings?.language === 'zh' ? zh : en);
-
-function setHomeSelection(keys: readonly string[], anchor: string | null): void {
-  homePicked.clear();
-  for (const key of keys) homePicked.add(key);
-  homeAnchor = anchor;
-}
-
-export function clearHomeSelection(): void {
-  setHomeSelection([], null);
-  syncHomeSelection();
-}
-
-/** Rows on screen, in reading order; a shift-click ranges over these only. */
-function visibleHomeKeys(): string[] {
-  return Array.from(document.querySelectorAll<HTMLElement>(
-    '#home-groups-section .home-dash-group-card:not(.collapsed) .home-dash-conn-row[data-key]',
-  )).map((row) => row.dataset.key!);
-}
-
-/** Repaint the picked rows and the selection bar in place (no re-render). */
-function syncHomeSelection(): void {
-  for (const row of Array.from(document.querySelectorAll<HTMLElement>('#home-groups-section .home-dash-conn-row[data-key]'))) {
-    row.classList.toggle('picked', homePicked.has(row.dataset.key!));
-  }
-  const bar = document.querySelector<HTMLElement>('#home-groups-section .home-dash-selbar');
-  if (!bar) return;
-  bar.hidden = homePicked.size === 0;
-  const count = bar.querySelector<HTMLElement>('.home-dash-selbar-count');
-  if (count) count.textContent = L(`已选 ${homePicked.size} 项`, `${homePicked.size} selected`);
-}
-
-/** Move connections to a group; a move that changes nothing writes nothing. */
-function moveHomeKeys(keys: readonly string[], group: string | null, refreshView: () => void): void {
-  if (keys.length === 0) return;
-  const map = loadGroupMap();
-  if (!keys.some((key) => visibleGroupName(map[key]) !== group)) return;
-  assignConnectionsToGroup(keys, group);
-  setHomeSelection([], null);
-  refreshView();
-}
-
-function createSelectionBar(refreshView: () => void): HTMLElement {
-  const bar = document.createElement('div');
-  bar.className = 'home-dash-selbar';
-  bar.hidden = true;
-
-  const count = document.createElement('span');
-  count.className = 'home-dash-selbar-count';
-  bar.appendChild(count);
-
-  const moveBtn = document.createElement('button');
-  moveBtn.type = 'button';
-  moveBtn.className = 'home-dash-selbar-btn';
-  moveBtn.textContent = t('connectionMoveToGroup');
-  moveBtn.onclick = (event) => {
-    event.stopPropagation();
-    showMoveMenu(moveBtn, loadGroupOrder(), (group) => moveHomeKeys([...homePicked], group, refreshView));
-  };
-  bar.appendChild(moveBtn);
-
-  const deleteBtn = document.createElement('button');
-  deleteBtn.type = 'button';
-  deleteBtn.className = 'home-dash-selbar-btn danger';
-  deleteBtn.textContent = t('sshDeleteConnection');
-  deleteBtn.onclick = () => {
-    void handleDeleteConnections([...homePicked], () => {
-      setHomeSelection([], null);
-      refreshView();
-    });
-  };
-  bar.appendChild(deleteBtn);
-
-  const clearBtn = document.createElement('button');
-  clearBtn.type = 'button';
-  clearBtn.className = 'home-dash-selbar-btn';
-  clearBtn.textContent = t('connectionClearSelection');
-  clearBtn.onclick = () => clearHomeSelection();
-  bar.appendChild(clearBtn);
-
-  return bar;
-}
+// ─── Move menu ───
 
 /**
  * Popup listing every group, for moving a selection without dragging. Closes on
  * the first pointer press outside — including the press that opens it again.
  */
-function showMoveMenu(anchorEl: HTMLElement, groups: string[], onPick: (group: string | null) => void): void {
+export function showMoveMenu(anchorEl: HTMLElement, groups: string[], onPick: (group: string | null) => void): void {
   removeContextMenu();
   const menu = document.createElement('div');
   menu.className = 'home-card-menu';
@@ -303,358 +196,9 @@ function showMoveMenu(anchorEl: HTMLElement, groups: string[], onPick: (group: s
   autoCloseMenu(menu);
 }
 
-// ─── Connection Groups Section ───
-
-/** refreshView callback is injected to avoid circular imports */
-export function renderGroupsSection(query: string, refreshView: () => void): void {
-  const section = document.getElementById('home-groups-section');
-  if (!section) return;
-  section.innerHTML = '';
-
-  const allItems = collectAllConnections();
-  const filteredItems = filterConnections(allItems, query);
-  // A picked row that was deleted or is hidden by the search must not be acted on.
-  setHomeSelection(pruneSelection([...homePicked], filteredItems.map((i) => i.key)), homeAnchor);
-  const groupMap = loadGroupMap();
-  const groupOrder = loadGroupOrder();
-  const groupColors = loadGroupColors();
-  const collapsedSet = loadGroupCollapsed();
-
-  const grouped = new Map<string, ConnectionItem[]>();
-  const ungrouped: ConnectionItem[] = [];
-
-  for (const item of filteredItems) {
-    // `visibleGroupName`, not the raw entry: a connection filed under a name the
-    // app owns (`__type:ssh` from a version that accepted one) has no card here
-    // — `groupOrder` filters those names out — so reading it raw would drop the
-    // row off the dashboard with no way to get it back. Read as ungrouped it
-    // lands in the per-type card below, which is a bucket the row menu can move
-    // it out of.
-    const groupName = visibleGroupName(groupMap[item.key]);
-    if (groupName) {
-      if (!grouped.has(groupName)) grouped.set(groupName, []);
-      grouped.get(groupName)!.push(item);
-    } else {
-      ungrouped.push(item);
-    }
-  }
-
-  // Title row with "New Group" button
-  const titleRow = document.createElement('div');
-  titleRow.className = 'home-dash-section-title-row';
-
-  const titleText = document.createElement('div');
-  titleText.className = 'home-dash-section-title';
-  titleText.textContent = t('homeSavedConnections');
-  titleRow.appendChild(titleText);
-
-  const newGroupBtn = document.createElement('button');
-  newGroupBtn.className = 'home-dash-new-group-btn';
-  newGroupBtn.textContent = '+ ' + t('homeGroupNew');
-  newGroupBtn.onclick = () => {
-    showGroupModal('', '', (name, color) => {
-      createGroup(name);
-      if (color) setGroupColor(name, color);
-      refreshView();
-    });
-  };
-  titleRow.appendChild(newGroupBtn);
-  section.appendChild(titleRow);
-  section.appendChild(createSelectionBar(refreshView));
-
-  if (filteredItems.length === 0 && !query) {
-    const empty = document.createElement('div');
-    empty.className = 'home-dash-empty';
-    empty.textContent = t('homeNoConnections');
-    section.appendChild(empty);
-    return;
-  }
-
-  const groupsGrid = document.createElement('div');
-  groupsGrid.className = 'home-dash-groups-grid';
-
-  let dragSrc: HTMLElement | null = null;
-
-  // Build all cards: named groups + type groups
-  const namedCards = new Map<string, HTMLDivElement>();
-  // Rows inside a card are sorted exactly the way the connections drawer sorts
-  // them (same per-group mode, same store). Without this the card keeps the
-  // stored insertion order, so a sort picked in the drawer looks like
-  // it was ignored here.
-  for (const groupName of groupOrder) {
-    const items = sortGroupConnections(grouped.get(groupName) || [], groupName, settings.language);
-    if (items.length === 0 && query) continue;
-    namedCards.set(groupName, createGroupCard(groupName, items, groupMap, refreshView, groupColors[groupName], collapsedSet.has(groupName)));
-  }
-
-  // The per-type cards are the ungrouped bucket, split by kind, so they follow
-  // the sort mode saved for that bucket (`null` = ungrouped).
-  const ungroupedSSH = sortGroupConnections(ungrouped.filter((i) => i.type === 'ssh'), null, settings.language);
-  const ungroupedJumpserver = sortGroupConnections(ungrouped.filter((i) => i.type === 'jumpserver'), null, settings.language);
-  const typeCardMap = new Map<string, HTMLDivElement>();
-  if (ungroupedSSH.length > 0) typeCardMap.set('__type:ssh', createTypeGroupCard('ssh', ungroupedSSH, groupMap, refreshView));
-  if (ungroupedJumpserver.length > 0) typeCardMap.set('__type:jumpserver', createTypeGroupCard('jumpserver', ungroupedJumpserver, groupMap, refreshView));
-
-  // Determine render order using saved card order
-  const savedCardOrder = loadCardOrder();
-  const allCardKeys = new Set([...namedCards.keys(), ...typeCardMap.keys()]);
-  const orderedKeys: string[] = [];
-
-  // First: keys in saved order that still exist
-  for (const key of savedCardOrder) {
-    if (allCardKeys.has(key)) {
-      orderedKeys.push(key);
-      allCardKeys.delete(key);
-    }
-  }
-  // Then: remaining keys not in saved order (named groups first, then type groups)
-  for (const key of namedCards.keys()) {
-    if (allCardKeys.has(key)) { orderedKeys.push(key); allCardKeys.delete(key); }
-  }
-  for (const key of typeCardMap.keys()) {
-    if (allCardKeys.has(key)) { orderedKeys.push(key); }
-  }
-
-  // Render in order and bind drag reorder
-  for (const key of orderedKeys) {
-    const card = namedCards.get(key) || typeCardMap.get(key);
-    if (!card) continue;
-    setupDragReorder(card, key, groupsGrid, () => dragSrc, (v) => { dragSrc = v; }, refreshView);
-    groupsGrid.appendChild(card);
-  }
-
-  section.appendChild(groupsGrid);
-  setupScrollFade(groupsGrid);
-
-  // Rows drag onto a group card; a drag from a picked row carries the selection.
-  homeDragDispose?.();
-  homeDragDispose = attachConnectionDrag(groupsGrid, {
-    getSelection: () => [...homePicked],
-    dragLabel: (count) => L(`${count} 个连接`, `${count} connection${count === 1 ? '' : 's'}`),
-    onDrop: (group, keys) => moveHomeKeys(keys, group, refreshView),
-    rowSelector: '.home-dash-conn-row[data-key]',
-    targetSelector: '.home-dash-group-card',
-    ignoreSelector: '.home-dash-asset-row',
-  });
-  syncHomeSelection();
-}
-
-// ─── Card width (right-edge drag) ───
-
-/** Turn a pinned width into an inline style + the flag the CSS keys off. */
-function applyPinnedWidth(card: HTMLDivElement, width: number): void {
-  card.style.width = `${width}px`;
-  card.dataset.fixedWidth = '1';
-}
-
-/**
- * Let a card's right edge be dragged to widen it, and apply whatever width was
- * pinned for it last time.
- *
- * Unpinned cards are a flat `flex: 0 0 260px`, so a long `user@host` is
- * ellipsised. Pinning is for the case where 260px is not enough — or is too
- * much — and `data-fixed-width` switches the card to `flex: 0 0 auto` in the
- * stylesheet so the dragged width wins. Double-clicking the handle drops the
- * pin and hands the card back to the default width.
- */
-function makeCardResizable(card: HTMLDivElement, cardKey: string): void {
-  const pinned = loadCardWidths()[cardKey];
-  if (pinned) applyPinnedWidth(card, pinned);
-
-  const handle = document.createElement('div');
-  handle.className = 'home-dash-card-resizer';
-  handle.title = t('homeGroupResizeHint');
-  handle.setAttribute('role', 'separator');
-  handle.setAttribute('aria-label', t('homeGroupResizeHint'));
-  handle.draggable = false;
-
-  handle.addEventListener('pointerdown', (event: PointerEvent) => {
-    if (event.button !== 0) return;
-    event.preventDefault();
-    // The width handle sits over the header, which starts a card reorder on
-    // mousedown — neither that nor a card click may fire from a resize.
-    event.stopPropagation();
-
-    const startX = event.clientX;
-    const startWidth = card.getBoundingClientRect().width;
-    handle.setPointerCapture(event.pointerId);
-    card.classList.add('resizing');
-
-    const onMove = (move: PointerEvent) => {
-      applyPinnedWidth(card, dragCardWidth(startWidth, move.clientX - startX));
-    };
-    const finish = (persist: boolean) => {
-      handle.removeEventListener('pointermove', onMove);
-      handle.removeEventListener('pointerup', onUp);
-      handle.removeEventListener('pointercancel', onCancel);
-      card.classList.remove('resizing');
-      if (!persist) return;
-      // A click with no movement would otherwise pin the card at whatever width
-      // the row happened to hand it.
-      const width = card.getBoundingClientRect().width;
-      if (Math.abs(width - startWidth) < 1) return;
-      setCardWidth(cardKey, width);
-    };
-    const onUp = () => finish(true);
-    const onCancel = () => finish(false);
-
-    handle.addEventListener('pointermove', onMove);
-    handle.addEventListener('pointerup', onUp);
-    handle.addEventListener('pointercancel', onCancel);
-  });
-
-  handle.addEventListener('dblclick', (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    clearCardWidth(cardKey);
-    card.style.width = '';
-    card.removeAttribute('data-fixed-width');
-  });
-
-  card.appendChild(handle);
-}
-
-// ─── Group card ───
-
-function createGroupCard(
-  groupName: string | null, items: ConnectionItem[],
-  groupMap: ConnectionGroupMap, refreshView: () => void,
-  color?: string, collapsed?: boolean,
-): HTMLDivElement {
-  const card = document.createElement('div');
-  card.className = 'home-dash-group-card';
-  card.dataset.groupName = groupName || '';
-  card.dataset.group = groupName ?? UNGROUPED_DROP_GROUP;
-
-  if (color) {
-    card.setAttribute('data-color', color);
-    card.style.setProperty('--group-color', color);
-  }
-  if (collapsed) card.classList.add('collapsed');
-
-  const header = document.createElement('div');
-  header.className = 'home-dash-group-header';
-
-  const chevron = document.createElement('span');
-  chevron.className = 'home-dash-group-chevron';
-  chevron.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-  chevron.onclick = (e) => {
-    e.stopPropagation();
-    if (groupName) {
-      toggleGroupCollapsed(groupName);
-      card.classList.toggle('collapsed');
-    }
-  };
-  header.appendChild(chevron);
-
-  const iconSpan = document.createElement('span');
-  iconSpan.className = 'home-dash-group-icon';
-  if (color) iconSpan.style.color = color;
-  iconSpan.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4h4.5l1 1.5H14v8H2z"/></svg>';
-  header.appendChild(iconSpan);
-
-  const nameSpan = document.createElement('span');
-  nameSpan.className = 'home-dash-group-name';
-  nameSpan.textContent = groupName ?? t('homeGroupUngrouped');
-
-  if (groupName) {
-    nameSpan.ondblclick = (e) => {
-      e.stopPropagation();
-      startInlineRename(nameSpan, groupName, refreshView);
-    };
-  }
-  header.appendChild(nameSpan);
-
-  const countSpan = document.createElement('span');
-  countSpan.className = 'home-dash-group-count';
-  countSpan.textContent = t('homeGroupNodeCount').replace('{count}', String(items.length));
-  header.appendChild(countSpan);
-
-  if (groupName) {
-    header.oncontextmenu = (e) => {
-      e.preventDefault();
-      showGroupContextMenu(e, groupName, refreshView);
-    };
-  }
-
-  card.appendChild(header);
-
-  const list = document.createElement('div');
-  list.className = 'home-dash-group-list';
-  createOverlayScrollbar({ viewport: list, container: list });
-
-  if (items.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'home-dash-group-empty';
-    empty.textContent = '—';
-    list.appendChild(empty);
-  } else {
-    for (const item of items) {
-      list.appendChild(createConnectionRow(item, groupName, groupMap, refreshView));
-    }
-  }
-
-  card.appendChild(list);
-  // Key shared with the reorder order, so a card keeps one identity.
-  makeCardResizable(card, groupName ?? '@ungrouped');
-  return card;
-}
-
-// ─── Type group card (ungrouped connections by type) ───
-
-const TYPE_GROUP_ICONS: Record<string, string> = {
-  ssh: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M12.9 6.69A5 5 0 0 0 8 2.67 4.99 4.99 0 0 0 3.57 5.36 4 4 0 0 0 0 9.33c0 2.21 1.79 4 4 4h8.67a3.33 3.33 0 0 0 .23-6.64z"/><path d="M5.5 7.5l1.5 1.5-1.5 1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 10.5h2" stroke-linecap="round"/></svg>',
-  jumpserver: '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1.5" width="12" height="13" rx="1.5"/><path d="M5 5h6M5 8h6M5 11h3"/></svg>',
-};
-
-const TYPE_GROUP_LABELS: Record<string, string> = {
-  ssh: 'SSH',
-  jumpserver: 'JumpServer',
-};
-
-function createTypeGroupCard(type: 'ssh' | 'jumpserver', items: ConnectionItem[], groupMap: ConnectionGroupMap, refreshView: () => void): HTMLDivElement {
-  const card = document.createElement('div');
-  card.className = `home-dash-group-card home-dash-group-type-${type}`;
-  card.dataset.groupName = `__type:${type}`;
-  // The per-type cards are the ungrouped bucket, so a drop there ungroups.
-  card.dataset.group = UNGROUPED_DROP_GROUP;
-
-  const header = document.createElement('div');
-  header.className = 'home-dash-group-header';
-
-  const typeIcon = TYPE_GROUP_ICONS[type] || '';
-  const displayName = TYPE_GROUP_LABELS[type] || t('homeGroupUngrouped');
-  header.innerHTML = `<span class="home-dash-group-icon">${typeIcon}</span><span class="home-dash-group-name">${escapeHtml(displayName)}</span><span class="home-dash-group-count">${t('homeGroupNodeCount').replace('{count}', String(items.length))}</span>`;
-
-  card.appendChild(header);
-
-  const list = document.createElement('div');
-  list.className = 'home-dash-group-list';
-  createOverlayScrollbar({ viewport: list, container: list });
-
-  for (const item of items) {
-    const row = createConnectionRow(item, null, groupMap, refreshView);
-    list.appendChild(row);
-
-    if (type === 'jumpserver') {
-      const config = item.raw as JumpServerConfig;
-      const history = getJSAssetHistoryByFrequency(config.name).slice(0, 5);
-      for (const entry of history) {
-        const assetRow = createAssetHistoryRow(entry, config);
-        list.appendChild(assetRow);
-      }
-    }
-  }
-
-  card.appendChild(list);
-  // Key shared with the reorder order, so a card keeps one identity.
-  makeCardResizable(card, `__type:${type}`);
-  return card;
-}
-
 // ─── Asset history row (JumpServer) ───
 
-function createAssetHistoryRow(entry: JSAssetHistoryEntry, config: JumpServerConfig): HTMLDivElement {
+export function createAssetHistoryRow(entry: JSAssetHistoryEntry, config: JumpServerConfig): HTMLDivElement {
   const row = document.createElement('div');
   row.className = 'home-dash-conn-row home-dash-conn-jumpserver home-dash-asset-row';
   row.innerHTML = `<span class="home-dash-asset-indent">↳</span><span class="home-dash-conn-name">${escapeHtml(entry.assetName)}</span><span class="home-dash-conn-detail">${escapeHtml(entry.accountUsername)}@${escapeHtml(entry.assetAddress)}</span><span class="home-dash-asset-count">${entry.count}×</span>`;
@@ -667,43 +211,6 @@ function createAssetHistoryRow(entry: JSAssetHistoryEntry, config: JumpServerCon
       connectToAsset(config, asset, account);
     })();
   };
-  return row;
-}
-
-// ─── Connection row ───
-
-function createConnectionRow(item: ConnectionItem, currentGroup: string | null, _groupMap: ConnectionGroupMap, refreshView: () => void): HTMLDivElement {
-  const row = document.createElement('div');
-  row.className = `home-dash-conn-row home-dash-conn-${item.type}`;
-  row.innerHTML = `<span class="home-dash-conn-name">${escapeHtml(item.name)}</span><span class="home-dash-conn-detail">${escapeHtml(item.detail)}</span>`;
-
-  row.dataset.key = item.key;
-  row.dataset.group = currentGroup ?? UNGROUPED_DROP_GROUP;
-  if (homePicked.has(item.key)) row.classList.add('picked');
-
-  row.onclick = (event) => {
-    const outcome = resolveRowClick(
-      visibleHomeKeys(),
-      { selection: [...homePicked], anchor: homeAnchor },
-      item.key,
-      { toggle: event.metaKey || event.ctrlKey, range: event.shiftKey },
-    );
-    setHomeSelection(outcome.selection, outcome.anchor);
-    syncHomeSelection();
-    if (outcome.connect) handleConnectionClick(item, row);
-  };
-  row.oncontextmenu = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // Only a selection that contains this row acts for it; right-clicking a row
-    // outside the selection means "just this row".
-    const selection = homePicked.has(item.key) ? [...homePicked] : undefined;
-    showConnectionContextMenu(e, item, currentGroup, () => {
-      if (selection) setHomeSelection([], null);
-      refreshView();
-    }, undefined, selection);
-  };
-
   return row;
 }
 
@@ -1084,13 +591,16 @@ async function handleDeleteConnection(item: ConnectionItem, refreshView: () => v
  * its own: one that fails (its credential could not be deleted) stays, the rest
  * go, and the user hears about the failures once rather than once per row.
  */
-async function handleDeleteConnections(keys: readonly string[], refreshView: () => void): Promise<void> {
+export async function handleDeleteConnections(keys: readonly string[], refreshView: () => void): Promise<void> {
   const items = collectAllConnections().filter((i) => keys.includes(i.key));
   if (items.length === 0) return;
   const zh = settings?.language === 'zh';
   const { confirm: tauriConfirm } = await import('@tauri-apps/plugin-dialog');
+  const message = items.length === 1
+    ? (zh ? `删除连接“${items[0].name}”？此操作无法撤销。` : `Delete "${items[0].name}"? This cannot be undone.`)
+    : (zh ? `删除选中的 ${items.length} 个连接？此操作无法撤销。` : `Delete ${items.length} selected connections? This cannot be undone.`);
   const confirmed = await tauriConfirm(
-    zh ? `删除选中的 ${items.length} 个连接？此操作无法撤销。` : `Delete ${items.length} selected connections? This cannot be undone.`,
+    message,
     { title: t('sshDeleteConnection'), kind: 'warning' },
   );
   if (!confirmed) return;
@@ -1246,240 +756,4 @@ export function showGroupModal(
 
   document.body.appendChild(overlay);
   setTimeout(() => { nameInput.focus(); nameInput.select(); }, 50);
-}
-
-// ─── Inline rename ───
-
-function startInlineRename(nameSpan: HTMLElement, groupName: string, refreshView: () => void): void {
-  const input = document.createElement('input');
-  input.className = 'home-dash-group-name-input';
-  input.value = groupName;
-  nameSpan.replaceWith(input);
-  input.focus();
-  input.select();
-
-  const commit = () => {
-    const newName = input.value.trim();
-    if (newName && newName !== groupName) {
-      // Inline rename bypasses the modal, so it has to carry the check itself.
-      // And it has to *say* so: the input is about to be replaced by the
-      // re-render, so a refusal with no message reads as "my typing was ignored".
-      // See `isReservedGroupName`.
-      if (isReservedGroupName(newName)) {
-        showToast({ title: t('homeGroupRename'), body: t('homeGroupNameReserved') });
-      } else {
-        renameGroup(groupName, newName);
-      }
-    }
-    refreshView();
-  };
-
-  input.onblur = commit;
-  input.onkeydown = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
-    if (e.key === 'Escape') { input.value = groupName; input.blur(); }
-  };
-}
-
-// ─── Drag reorder (mouse-based for horizontal scroll) ───
-
-/**
- * How far outside a card's own row a drag still counts as aiming at that card.
- * Half of the grid's 12px gutter, so the rows' hit areas meet exactly once and
- * the gap between two rows never leaves the placeholder undecided.
- */
-const ROW_HIT_SLOP = 6;
-
-function setupDragReorder(
-  card: HTMLDivElement,
-  _groupName: string,
-  grid: HTMLElement,
-  _getDragSrc: () => HTMLElement | null,
-  _setDragSrc: (v: HTMLElement | null) => void,
-  refreshView: () => void,
-): void {
-  const header = card.querySelector('.home-dash-group-header') as HTMLElement | null;
-  if (!header) return;
-
-  let dragging = false;
-  let armed = false;  // mousedown happened, waiting for drag threshold
-  let startX = 0;
-  let startY = 0;
-  let cardRect: DOMRect;
-  let placeholder: HTMLElement | null = null;
-  let clone: HTMLElement | null = null;
-  let scrollRAF = 0;
-
-  header.addEventListener('mousedown', (e: MouseEvent) => {
-    if (e.button !== 0) return;
-    const target = e.target as HTMLElement;
-    if (target.closest('button, input, a, .home-dash-group-chevron')) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    console.log('[DRAG] mousedown armed, startX:', e.clientX);
-    armed = true;
-    dragging = false;
-    startX = e.clientX;
-    startY = e.clientY;
-    cardRect = card.getBoundingClientRect();
-
-    document.addEventListener('mousemove', onMove, true);
-    document.addEventListener('mouseup', onUp, true);
-  });
-
-  function startEdgeScroll(mouseX: number) {
-    cancelAnimationFrame(scrollRAF);
-    const gridRect = grid.getBoundingClientRect();
-    const edgeZone = 60; // px from edge to start scrolling
-    const maxSpeed = 12; // px per frame
-
-    const distLeft = mouseX - gridRect.left;
-    const distRight = gridRect.right - mouseX;
-
-    let speed = 0;
-    if (distLeft < edgeZone && grid.scrollLeft > 0) {
-      speed = -maxSpeed * (1 - distLeft / edgeZone);
-    } else if (distRight < edgeZone && grid.scrollLeft < grid.scrollWidth - grid.clientWidth) {
-      speed = maxSpeed * (1 - distRight / edgeZone);
-    }
-
-    if (Math.abs(speed) < 0.5) return;
-
-    function tick() {
-      if (!dragging) return;
-      grid.scrollLeft += speed;
-      scrollRAF = requestAnimationFrame(tick);
-    }
-    scrollRAF = requestAnimationFrame(tick);
-  }
-
-  function onMove(e: MouseEvent) {
-    if (!armed) return;
-    e.preventDefault();
-
-    const dx = e.clientX - startX;
-
-    if (!dragging) {
-      if (Math.abs(dx) < 5 && Math.abs(e.clientY - startY) < 5) return;
-      dragging = true;
-
-      // Create a visual clone that floats with cursor
-      clone = card.cloneNode(true) as HTMLElement;
-      clone.classList.add('dragging');
-      clone.style.cssText = `
-        position: fixed;
-        top: ${cardRect.top}px;
-        left: ${cardRect.left}px;
-        width: ${cardRect.width}px;
-        height: ${cardRect.height}px;
-        z-index: 9999;
-        pointer-events: none;
-        margin: 0;
-        opacity: 0.85;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-        transition: none;
-      `;
-      document.body.appendChild(clone);
-
-      // Replace original card with placeholder in the grid
-      placeholder = document.createElement('div');
-      placeholder.className = 'home-dash-group-card-placeholder';
-      placeholder.style.flex = `0 0 ${cardRect.width}px`;
-      placeholder.style.height = `${cardRect.height}px`;
-      card.style.display = 'none';
-      card.parentElement!.insertBefore(placeholder, card);
-
-      document.body.classList.add('home-dragging');
-    }
-
-    // Move clone
-    clone!.style.left = `${cardRect.left + dx}px`;
-
-    // Edge auto-scroll when near container boundaries
-    startEdgeScroll(e.clientX);
-
-    // Find drop target. The row counts as well as the column: cards wrap onto
-    // several rows now, so an X-only test would happily drop onto a card on a
-    // different row that happens to share the same horizontal range.
-    const siblings = Array.from(grid.querySelectorAll('.home-dash-group-card:not([style*="display: none"])'));
-    grid.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-
-    let fallback: HTMLElement | null = null;
-    let target: HTMLElement | null = null;
-    for (const other of siblings) {
-      const r = other.getBoundingClientRect();
-      if (e.clientX < r.left || e.clientX > r.right) continue;
-      if (!fallback) fallback = other as HTMLElement;
-      if (e.clientY >= r.top - ROW_HIT_SLOP && e.clientY <= r.bottom + ROW_HIT_SLOP) {
-        target = other as HTMLElement;
-        break;
-      }
-    }
-
-    // Outside every card's row (above the grid, or mid-gutter) fall back to the
-    // first card sharing the cursor's column, which is what this did before the
-    // grid wrapped.
-    const dropTarget = target ?? fallback;
-    if (dropTarget) {
-      const r = dropTarget.getBoundingClientRect();
-      dropTarget.classList.add('drag-over');
-      const mid = r.left + r.width / 2;
-      if (placeholder) {
-        if (e.clientX < mid) {
-          grid.insertBefore(placeholder, dropTarget);
-        } else if (dropTarget.nextSibling !== placeholder) {
-          grid.insertBefore(placeholder, dropTarget.nextSibling);
-        }
-      }
-    }
-  }
-
-  function onUp() {
-    document.removeEventListener('mousemove', onMove, true);
-    document.removeEventListener('mouseup', onUp, true);
-    cancelAnimationFrame(scrollRAF);
-
-    const wasDragging = dragging;
-    armed = false;
-    dragging = false;
-
-    // Remove clone
-    if (clone) {
-      clone.remove();
-      clone = null;
-    }
-
-    // Show original card at placeholder position
-    card.style.display = '';
-    if (placeholder && placeholder.parentElement) {
-      placeholder.parentElement.insertBefore(card, placeholder);
-      placeholder.remove();
-    }
-    placeholder = null;
-
-    document.body.classList.remove('home-dragging');
-    grid.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-
-    if (!wasDragging) return;
-
-    // Persist card display order from DOM
-    const allCards = grid.querySelectorAll('.home-dash-group-card');
-    const newOrder: string[] = [];
-    allCards.forEach(c => {
-      const name = c.getAttribute('data-group-name');
-      if (name) newOrder.push(name);
-    });
-    if (newOrder.length > 0) {
-      const savedScroll = grid.scrollLeft;
-      saveCardOrder(newOrder);
-      refreshView();
-      // Restore scroll position after re-render
-      requestAnimationFrame(() => {
-        const newGrid = document.querySelector('.home-dash-groups-grid') as HTMLElement | null;
-        if (newGrid) newGrid.scrollLeft = savedScroll;
-      });
-    }
-  }
 }

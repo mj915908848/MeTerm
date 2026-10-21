@@ -1,0 +1,207 @@
+/* ============================================================================
+   Home page connection manager (home-connection-manager.ts)
+   List on the left, the selected connection on the right. The list reuses the
+   shared .home-side-* row/group styles from home.css; the right pane hosts the
+   page's start content (.home-dash-scroll) while nothing is selected.
+   ============================================================================ */
+
+.hcm {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* ── Left: the list ── */
+
+.hcm-list-pane {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border-subtle);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.hcm-toolbar {
+  flex-shrink: 0;
+  padding: 8px 8px 0;
+}
+.hcm-toolbar .hcm-search { margin: 0; }
+
+.hcm-list-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+}
+
+.hcm-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 10px;
+  outline: none;
+}
+.hcm-list:focus-visible { box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb, 106, 164, 255), 0.5); }
+
+/* Several picked rows read as one block. */
+.hcm-list .home-side-row.hsr-picked {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.22);
+  box-shadow: inset 2px 0 0 rgba(var(--accent-rgb, 106, 164, 255), 0.9);
+}
+.hcm-list .home-side-row.selected {
+  box-shadow: inset 2px 0 0 rgba(var(--accent-rgb, 106, 164, 255), 0.9);
+}
+
+.hcm-list .home-side-group-empty {
+  padding: 5px 10px 5px 22px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-dim, var(--text-muted));
+}
+
+.hcm-list.is-dragging .home-side-group {
+  outline: 1px dashed rgba(var(--accent-rgb, 106, 164, 255), 0.5);
+  outline-offset: -2px;
+  border-radius: 5px;
+}
+/* Out-specifies the dashed outline above. */
+.hcm-list.is-dragging .home-side-group.drop-target,
+.home-side-grouphdr .home-side-group.drop-target {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.22);
+  outline: 1px solid rgba(var(--accent-rgb, 106, 164, 255), 0.9);
+  color: var(--text-primary);
+}
+
+.hcm-hint {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 10.5px;
+  color: var(--text-dim, var(--text-muted));
+}
+.hcm-list-pane > .hcm-hint { border-top: 1px solid var(--border-subtle); }
+
+/* ── Buttons ── */
+
+.hcm-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: rgba(var(--bg-button, 50, 50, 52), 0.5);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hcm-btn:hover { background: rgba(var(--bg-button-hover, 60, 60, 63), var(--app-window-opacity, 1)); }
+.hcm-btn:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: 1px; }
+.hcm-btn-primary {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.9);
+  border-color: transparent;
+  color: #fff;
+}
+.hcm-btn-primary:hover { background: rgba(var(--accent-rgb, 106, 164, 255), 1); }
+.hcm-btn-danger { color: var(--error-text); }
+
+/* ── Right: the selection ── */
+
+.hcm-detail-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* The start content brings its own padding and scroll. */
+.hcm-detail-pane > .home-dash-scroll { min-width: 0; }
+
+.hcm-detail-pane > :not(.home-dash-scroll) {
+  margin-left: 28px;
+  margin-right: 28px;
+  max-width: 620px;
+}
+
+.hcm-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 22px 0 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.hcm-detail-title { min-width: 0; }
+.hcm-detail-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-heading);
+  overflow-wrap: anywhere;
+}
+.hcm-detail-sub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.hcm-detail-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* The SSH form outside its modal. */
+.hcm-detail-pane .ssh-form-embedded { padding-bottom: 24px; }
+
+.hcm-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 16px;
+  margin: 0 0 18px;
+  font-size: 12.5px;
+}
+.hcm-facts dt { color: var(--text-muted); }
+.hcm-facts dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
+
+.hcm-section-title {
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hcm-assets {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.hcm-batch-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  font-size: 12.5px;
+}
+.hcm-batch-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.hcm-batch-detail {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hcm-detail-pane > .hcm-hint { padding: 0; }
+
+@media (max-width: 760px) {
+  .hcm-list-pane { width: 220px; }
+  .hcm-detail-pane > :not(.home-dash-scroll) { margin-left: 16px; margin-right: 16px; }
+}

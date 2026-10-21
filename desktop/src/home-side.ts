@@ -88,6 +88,12 @@ export interface SidebarListDeps {
    * picking a connection, and managing them happens on the home page.
    */
   rowMenu?: boolean;
+  /**
+   * Double-click on a row. The home page uses it to connect, because there a
+   * single click only selects (a click that connects is too easy to trigger by
+   * accident while managing connections).
+   */
+  onRowActivate?: (item: ConnectionItem) => void;
   /** Group header right-click. `null` addresses the ungrouped bucket. */
   onGroupContextMenu?: (event: MouseEvent, group: string | null) => void;
 }
@@ -221,6 +227,13 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
         }, visibleKeys);
         if (connect) deps.onSelect(item);
       };
+      if (deps.onRowActivate) {
+        const activate = deps.onRowActivate;
+        row.ondblclick = (event) => {
+          if ((event.target as HTMLElement).closest('.hsr-pin')) return;
+          activate(item);
+        };
+      }
       row.oncontextmenu = (e) => {
         e.preventDefault();
         if (deps.rowMenu === false) return;

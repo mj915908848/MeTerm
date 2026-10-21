@@ -1,107 +1,221 @@
 /**
- * Managing several saved connections at once, on the home page.
+ * The home page's connection manager: list on the left, selection on the right.
  *
- * Multi-select, dragging into a group and batch delete used to live in the
- * standalone connections window. Management now belongs to the home page (the
- * connections drawer only picks), so these pin the home page's half.
- *
- * The drag controller is delegated and works only through DOM contracts agreed
- * with the renderer: a row carries `data-key` and `data-group`, a group card
- * carries `data-group`. The two files never import each other, so nothing but a
- * test keeps the names in step.
+ * What is pinned here is the interaction Jie asked for: on this page a single
+ * click only *selects* (connecting on click was too easy to trigger by accident),
+ * double-click or Enter connects, ⌘/Ctrl/Shift-click select several and the
+ * right pane turns into the batch actions, and an unsaved form is not thrown
+ * away without asking.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import fs from 'node:fs';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import ts from 'typescript';
+import * as selection from '../src/connection-selection.ts';
 
-const read = (name: string): string =>
-  fs.readFileSync(new URL(`../src/${name}`, import.meta.url), 'utf8');
+type Listener = (event: any) => void;
 
-const home = read('home-dashboard-left.ts');
-
-/** Slice from `marker` up to the first top-level closing brace line. */
-function bodyAfter(source: string, marker: string): string {
-  const start = source.indexOf(marker);
-  assert.ok(start >= 0, `${marker} was not found`);
-  return source.slice(start, source.indexOf('\n}\n', start));
+class El {
+  children: El[] = [];
+  parent: El | null = null;
+  innerHTML = '';
+  textContent = '';
+  title = '';
+  placeholder = '';
+  type = '';
+  value = '';
+  id = '';
+  tabIndex = -1;
+  scrollTop = 0;
+  hidden = false;
+  dataset: Record<string, string> = {};
+  attrs: Record<string, string> = {};
+  style: Record<string, string> = {};
+  onclick?: (event?: any) => void;
+  listeners: Record<string, Listener[]> = {};
+  #classes = new Set<string>();
+  classList = {
+    add: (c: string) => { this.#classes.add(c); },
+    remove: (c: string) => { this.#classes.delete(c); },
+    toggle: (c: string, force?: boolean) => {
+      const on = force === undefined ? !this.#classes.has(c) : force;
+      if (on) this.#classes.add(c); else this.#classes.delete(c);
+      return on;
+    },
+    contains: (c: string) => this.#classes.has(c),
+  };
+  get className(): string { return [...this.#classes].join(' '); }
+  set className(value: string) { this.#classes = new Set(value.split(/\s+/).filter(Boolean)); }
+  get isConnected(): boolean { return true; }
+  appendChild(el: El): El { el.parent?.removeChild(el); this.children.push(el); el.parent = this; return el; }
+  append(...els: El[]): void { for (const el of els) this.appendChild(el); }
+  removeChild(el: El): void { this.children = this.children.filter((c) => c !== el); el.parent = null; }
+  replaceChildren(...els: El[]): void { for (const c of [...this.children]) this.removeChild(c); this.append(...els); }
+  setAttribute(key: string, value: string): void { this.attrs[key] = value; }
+  querySelector(): El | null { return null; }
+  querySelectorAll(): El[] { return []; }
+  addEventListener(type: string, fn: Listener): void { (this.listeners[type] ??= []).push(fn); }
+  removeEventListener(): void {}
+  focus(): void {}
 }
 
-test('a home row click goes through the shared selection rules', () => {
-  const row = bodyAfter(home, 'function createConnectionRow(');
-  assert.ok(row.includes('resolveRowClick('), 'the click rules live in the pure module, not inline here');
-  assert.ok(
-    /if \(outcome\.connect\) handleConnectionClick\(item, row\)/.test(row),
-    'a plain click must still connect, and a modified one must only select',
-  );
-  assert.ok(row.includes('row.dataset.key = item.key'), 'the drag controller reads the row key');
-  assert.ok(row.includes('row.dataset.group ='), 'a row names its group, so a no-op drop can be spotted');
+function findAll(root: El, name: string): El[] {
+  const out: El[] = [];
+  for (const child of root.children) {
+    if (child.className.split(' ').includes(name)) out.push(child);
+    out.push(...findAll(child, name));
+  }
+  return out;
+}
+
+const SSH_A = { name: 'web-01', host: '10.0.3.17', port: 22, username: 'root', authMethod: 'key' };
+const ITEMS = [
+  { type: 'ssh', key: 'ssh:web-01', name: 'web-01', detail: 'root@10.0.3.17:22', raw: SSH_A },
+  { type: 'ssh', key: 'ssh:db-01', name: 'db-01', detail: 'dba@10.0.3.30:22', raw: { ...SSH_A, name: 'db-01' } },
+];
+
+function boot(options: { confirm?: boolean } = {}) {
+  const h = {
+    renderCalls: [] as any[],
+    connected: [] as string[],
+    forms: [] as { prefill: any; dirty: boolean; onSaved: (c: any) => void }[],
+    deleted: [] as string[][],
+    moved: [] as { keys: string[]; group: string | null }[],
+    confirms: 0,
+    start: new El(),
+    root: null as unknown as El,
+  };
+  const mocks: Record<string, any> = {
+    './i18n': { t: (key: string) => key },
+    './app-state': { settings: { language: 'zh' } },
+    './overlay-scrollbar': { createOverlayScrollbar: () => {} },
+    './home-side': { renderSidebarList: (_l: El, _h: El, query: string, deps: any) => { h.renderCalls.push({ query, deps }); } },
+    './home-dashboard-left': {
+      collectAllConnections: () => ITEMS,
+      createAssetHistoryRow: () => new El(),
+      renderRecentActivity: () => {},
+      editConnection: () => {},
+      escapeHtml: (s: string) => s,
+      handleConnectionClick: (item: any) => { h.connected.push(item.key); },
+      handleDeleteConnections: async (keys: string[]) => { h.deleted.push([...keys]); },
+      showGroupContextMenu: () => {},
+      showGroupModal: () => {},
+      showMoveMenu: (_a: El, _g: string[], onPick: (g: string | null) => void) => { onPick('prod'); },
+    },
+    './connection-groups': {
+      assignConnectionsToGroup: (keys: string[], group: string | null) => { h.moved.push({ keys: [...keys], group }); },
+      createGroup: () => {},
+      getJSAssetHistoryByFrequency: () => [],
+      loadGroupMap: () => ({}),
+      loadGroupOrder: () => ['prod'],
+      setGroupColor: () => {},
+      sshKey: (name: string) => `ssh:${name}`,
+      visibleGroupName: (s: string | undefined) => s ?? null,
+    },
+    './connection-drag': { attachConnectionDrag: () => () => {} },
+    './connection-selection': selection,
+    './ssh': {
+      createEmbeddedSSHForm: (prefill: any, onSaved: (c: any) => void) => {
+        const entry = { prefill, dirty: false, onSaved };
+        h.forms.push(entry);
+        const el = new El();
+        el.className = 'ssh-form-embedded';
+        return { el, isDirty: () => entry.dirty };
+      },
+      loadRecentConnections: () => [],
+    },
+    '@tauri-apps/plugin-dialog': { confirm: async () => { h.confirms++; return options.confirm ?? false; } },
+  };
+  const code = ts.transpileModule(
+    readFileSync(new URL('../src/home-connection-manager.ts', import.meta.url), 'utf8'),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 } },
+  ).outputText;
+  const exports: any = {};
+  vm.runInNewContext(code, {
+    exports,
+    Promise,
+    CustomEvent: class { type: string; constructor(type: string) { this.type = type; } },
+    CSS: { escape: (s: string) => s },
+    document: { createElement: () => new El(), dispatchEvent: () => {} },
+    requestAnimationFrame: () => 0,
+    require: (s: string) => {
+      if (!mocks[s]) throw new Error(`unexpected import ${s}`);
+      return mocks[s];
+    },
+  });
+  h.root = exports.createConnectionManager(h.start);
+  return { h, mod: exports };
+}
+
+const deps = (h: any) => h.renderCalls[h.renderCalls.length - 1].deps;
+const detail = (h: any): El => findAll(h.root, 'hcm-detail-pane')[0];
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+const plain = { toggle: false, range: false };
+const visible = ITEMS.map((i) => i.key);
+
+test('with nothing selected the right pane shows the start content', () => {
+  const { h } = boot();
+  assert.equal(detail(h).children[0], h.start);
 });
 
-test('the row menu acts on the selection only when the row is part of it', () => {
-  const row = bodyAfter(home, 'function createConnectionRow(');
-  assert.ok(
-    row.includes('homePicked.has(item.key) ? [...homePicked] : undefined'),
-    'right-clicking a row outside the selection means "just this row"',
-  );
+test('a plain click selects and opens the editor; it does not connect', async () => {
+  const { h } = boot();
+  assert.equal(deps(h).onRowClick(ITEMS[0], plain, visible), false, 'the list must not run its own connect');
+  await flush();
+  assert.deepEqual(h.connected, [], 'a click on this page never opens a session');
+  assert.equal(deps(h).getSelectedKey(), 'ssh:web-01');
+  assert.equal(h.forms.length, 1, 'the SSH form is embedded in the right pane');
+  assert.equal(h.forms[0].prefill, SSH_A);
 });
 
-test('with several rows picked the menu has no edit entry and deletes them all', () => {
-  const menu = bodyAfter(home, 'export function showConnectionContextMenu(');
-  assert.match(menu, /if \(batch\) \{[\s\S]{0,80}\} else if \(onEdit\)/, 'edit is a one-connection action');
-  assert.ok(menu.includes('handleDeleteConnections(moving, refreshView)'), 'delete must cover the whole selection');
-
-  const batch = bodyAfter(home, 'async function handleDeleteConnections(');
-  assert.ok(batch.includes('tauriConfirm('), 'deleting several at once asks first');
-  assert.ok(batch.includes('for (const target of items)'), 'every picked connection is removed, not just one');
-  assert.ok(batch.includes('removeConnectionGroup(target.key)'), 'their group entries go with them');
-  assert.equal((batch.match(/refreshView\(\)/g) ?? []).length, 1, 'one re-render at the end, not one per row');
+test('double-click connects', () => {
+  const { h } = boot();
+  deps(h).onRowActivate(ITEMS[1]);
+  assert.deepEqual(h.connected, ['ssh:db-01']);
 });
 
-test('group cards are drop targets and the per-type cards ungroup', () => {
-  assert.ok(home.includes('card.dataset.group = groupName ?? UNGROUPED_DROP_GROUP'));
-  assert.ok(
-    /card\.dataset\.groupName = `__type:\$\{type\}`;[\s\S]{0,160}card\.dataset\.group = UNGROUPED_DROP_GROUP/.test(home),
-    'a drop on the SSH / JumpServer card means "no group"',
-  );
-  const render = bodyAfter(home, 'export function renderGroupsSection(');
-  assert.match(render, /attachConnectionDrag\(groupsGrid,\s*\{[\s\S]*?targetSelector: '\.home-dash-group-card'/);
-  assert.ok(render.includes('homeDragDispose?.()'), 'a re-render must not stack a second drag controller');
+test('several picked rows turn the right pane into the batch actions', async () => {
+  const { h } = boot();
+  deps(h).onRowClick(ITEMS[0], plain, visible);
+  await flush();
+  deps(h).onRowClick(ITEMS[1], { toggle: true, range: false }, visible);
+  await flush();
+  assert.deepEqual([...deps(h).getSelection()], ['ssh:web-01', 'ssh:db-01']);
+  assert.ok(findAll(detail(h), 'hcm-batch-list').length === 1, 'the batch panel lists what is picked');
+
+  const buttons = findAll(detail(h), 'hcm-btn');
+  buttons.find((b) => b.textContent === 'connectionMoveToGroup')!.onclick!();
+  assert.deepEqual(h.moved, [{ keys: ['ssh:web-01', 'ssh:db-01'], group: 'prod' }], 'one write for the whole batch');
+
+  buttons.find((b) => b.textContent === 'sshDeleteConnection')!.onclick!();
+  assert.deepEqual(h.deleted, [['ssh:web-01', 'ssh:db-01']], 'delete covers the whole batch');
 });
 
-test('a move that changes nothing writes nothing, and a real one is one write', () => {
-  const move = bodyAfter(home, 'function moveHomeKeys(');
-  assert.ok(move.includes('visibleGroupName(map[key]) !== group'));
-  assert.equal((move.match(/assignConnectionsToGroup\(/g) ?? []).length, 1);
+test('unsaved edits are not thrown away without asking', async () => {
+  const { h } = boot({ confirm: false });
+  deps(h).onRowClick(ITEMS[0], plain, visible);
+  await flush();
+  h.forms[0].dirty = true;
+  deps(h).onRowClick(ITEMS[1], plain, visible);
+  await flush();
+  assert.equal(h.confirms, 1, 'switching away from a dirty form asks first');
+  assert.equal(deps(h).getSelectedKey(), 'ssh:web-01', 'declining keeps the form and its selection');
+  assert.equal(h.forms.length, 1);
 });
 
-test('a picked row hidden by the search is dropped from the selection', () => {
-  const render = bodyAfter(home, 'export function renderGroupsSection(');
-  assert.ok(render.includes('pruneSelection([...homePicked], filteredItems.map((i) => i.key))'));
+test('"+ SSH" opens an empty form in the right pane, and saving selects the new connection', async () => {
+  const { h } = boot();
+  findAll(h.root, 'hcm-btn').find((b) => b.textContent === '+ SSH')!.onclick!();
+  await flush();
+  assert.equal(h.forms.length, 1);
+  assert.equal(h.forms[0].prefill, undefined);
+  h.forms[0].onSaved({ name: 'web-01' });
+  assert.equal(deps(h).getSelectedKey(), 'ssh:web-01');
 });
 
-test('the drag controller and the renderers agree on the DOM contract', () => {
-  const drag = read('connection-drag.ts');
-  const side = read('home-side.ts');
-  assert.ok(drag.includes('row.dataset.key'), 'the drag controller reads the row key');
-  assert.ok(drag.includes("opts.rowSelector ?? '.home-side-row'"), 'the list rows stay the default');
-  assert.ok(drag.includes("opts.targetSelector ?? '.home-side-group'"));
-  assert.ok(side.includes('row.dataset.key = item.key') && side.includes('header.dataset.group = g'));
-});
-
-test('a drag never becomes a session click, and does not outlive the gesture', () => {
-  const drag = read('connection-drag.ts');
-  assert.ok(drag.includes('stopPropagation()'), 'the click left over from a drag must be swallowed');
-  assert.ok(
-    /setTimeout\(\(\)\s*=>\s*document\.removeEventListener\('click'/.test(drag),
-    'a drop outside any row produces no click, so the swallow must disarm itself',
-  );
-  assert.ok(drag.includes("'Escape'"), 'Escape has to cancel the drag');
-});
-
-test('the drop ghost cannot become the drop target', () => {
-  const css = read('styles/home.css');
-  const ghost = css.slice(css.indexOf('.cn-drag-ghost'));
-  assert.ok(ghost.includes('position: fixed'), 'the ghost follows the pointer');
-  assert.ok(ghost.includes('pointer-events: none'), 'or it shadows the card it is hovering');
-  assert.ok(css.includes('.home-dash-group-card.drop-target'), 'the hovered card has to be shown as the target');
+test('the drawer still connects on a single click', () => {
+  const drawer = readFileSync(new URL('../src/connections-drawer.ts', import.meta.url), 'utf8');
+  assert.ok(drawer.includes('onSelect: connect'));
+  assert.ok(!drawer.includes('onRowClick'), 'no selection rules in the picker');
 });

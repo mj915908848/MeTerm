@@ -694,35 +694,6 @@
   background: var(--nb-highlight, #FFD93D) !important;
 }
 
-/* Group cards */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .home-dash-group-card {
-  border: 2px solid var(--nb-border, #000) !important;
-  box-shadow: 3px 3px 0 var(--nb-shadow, #000) !important;
-  background: var(--nb-card-bg, #fff) !important;
-  color: var(--nb-text, #1A1A2E) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .home-dash-group-card:hover {
-  background: var(--nb-bg, #FFFEF0) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .home-dash-group-card-placeholder {
-  border: 2px dashed #000 !important;
-  background: transparent !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .home-dash-group-name-input {
-  border: none !important;
-  border-bottom: 2px solid var(--nb-border, #000) !important;
-  background: transparent !important;
-  color: var(--nb-text, #1A1A2E) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .home-dash-new-group-btn {
-  border: 1.5px solid var(--nb-border, #000) !important;
-  box-shadow: 1px 1px 0 var(--nb-shadow, #000) !important;
-  background: var(--nb-card-bg, #fff) !important;
-}
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .home-dash-new-group-btn:hover {
-  background: var(--nb-highlight, #FFD93D) !important;
-}
-
 /* Connection rows */
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .home-dash-conn-row:hover {
   background: var(--nb-highlight, #FFD93D) !important;

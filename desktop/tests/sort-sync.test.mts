@@ -8,9 +8,10 @@ import {
 } from '../src/connection-sort.ts';
 
 /**
- * The connection window and the home page both list a group's rows, and the two
+ * The connections drawer and the home page both list a group's rows, and the two
  * lists have to agree on the order: switching a group to "IP ascending" in one
- * has to reorder the other.
+ * has to reorder the other. Both render through home-side.ts, so the wiring
+ * checks below are that both use that renderer and that it sorts.
  *
  * That only holds while both go through `sortGroupConnections()`. A surface that
  * sorts on its own — or not at all — silently falls back to insertion order,
@@ -27,7 +28,8 @@ Object.defineProperty(globalThis, 'localStorage', { value: {
 const read = (path: string): string =>
   readFileSync(new URL(path, import.meta.url), 'utf8');
 
-const homeCards = read('../src/home-dashboard-left.ts');
+const homeManager = read('../src/home-connection-manager.ts');
+const drawer = read('../src/connections-drawer.ts');
 const sideList = read('../src/home-side.ts');
 const sortSource = read('../src/connection-sort.ts');
 
@@ -81,21 +83,10 @@ test('JumpServer configs are addressed by sshHost/sshPort', () => {
 });
 
 test('both surfaces order group rows through the shared sorter', () => {
-  const surfaces = [['home page', homeCards], ['connection window', sideList]] as const;
-
-  for (const [label, source] of surfaces) {
-    assert.match(source, /sortGroupConnections\(/, `${label} does not order its rows`);
+  assert.match(sideList, /sortGroupConnections\(/, 'the shared list renderer does not order its rows');
+  for (const [label, source] of [['home page', homeManager], ['connections drawer', drawer]] as const) {
+    assert.match(source, /renderSidebarList\(/, `${label} must render through the shared list`);
   }
-});
-
-test('the home page sends its per-type cards to the ungrouped bucket', () => {
-  const ungroupedCalls = homeCards.match(/sortGroupConnections\([^\n]*null, settings\.language\)/g) ?? [];
-
-  assert.equal(
-    ungroupedCalls.length,
-    2,
-    'the ssh / jumpserver cards each need the ungrouped mode',
-  );
 });
 
 test('the ungrouped bucket is spelled the same in both modules', () => {
