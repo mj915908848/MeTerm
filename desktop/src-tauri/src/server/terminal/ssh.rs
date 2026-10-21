@@ -211,7 +211,9 @@ pub struct SshTerminal {
     /// Sender for SSH input (to dedicated writer task).
     input_tx: mpsc::Sender<Vec<u8>>,
     /// Sender for resize commands.
-    resize_tx: mpsc::Sender<(u16, u16)>,
+    /// Latest requested size; the writer applies only the newest value, so
+    /// a burst of resizes can neither be dropped nor reordered.
+    resize_tx: tokio::sync::watch::Sender<(u16, u16)>,
     /// Session handle — shared Arc so Session can open exec channels for ServerInfo.
     pub session_handle: Arc<Mutex<Option<client::Handle<SshHandler>>>>,
     done_token: CancellationToken,
@@ -688,7 +690,7 @@ impl SshTerminal {
         // Split channel into reader task and writer task via channels.
         let (output_tx, output_rx) = mpsc::channel::<io::Result<Vec<u8>>>(64);
         let (input_tx, mut input_rx) = mpsc::channel::<Vec<u8>>(256);
-        let (resize_tx, mut resize_rx) = mpsc::channel::<(u16, u16)>(16);
+        let (resize_tx, mut resize_rx) = tokio::sync::watch::channel::<(u16, u16)>((cols, rows));
 
         // Split the channel so reading and writing never wait on each other.
         // A single task doing both deadlocked under load: while it awaited
@@ -748,7 +750,8 @@ impl SshTerminal {
                         }
                     }
 
-                    Some((cols, rows)) = resize_rx.recv() => {
+                    Ok(()) = resize_rx.changed() => {
+                        let (cols, rows) = *resize_rx.borrow_and_update();
                         if tokio::time::timeout(
                             SSH_CHANNEL_TIMEOUT,
                             write_half.window_change(cols as u32, rows as u32, 0, 0),
@@ -893,7 +896,7 @@ impl Terminal for SshTerminal {
     }
 
     fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
-        let _ = self.resize_tx.try_send((cols, rows));
+        self.resize_tx.send_replace((cols, rows));
         Ok(())
     }
 
@@ -1142,7 +1145,7 @@ mod drop_tests {
     fn disconnected_terminal(done_token: CancellationToken) -> SshTerminal {
         let (_output_tx, output_rx) = mpsc::channel(1);
         let (input_tx, _input_rx) = mpsc::channel(1);
-        let (resize_tx, _resize_rx) = mpsc::channel(1);
+        let (resize_tx, _resize_rx) = tokio::sync::watch::channel((0, 0));
         SshTerminal {
             output_rx: Mutex::new(output_rx),
             pending_output: Mutex::new(VecDeque::new()),
