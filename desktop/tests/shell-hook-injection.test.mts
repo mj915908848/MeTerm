@@ -54,6 +54,8 @@ interface HarnessOptions {
    */
   hostIdentity?: string | null;
   probeThrows?: boolean;
+  /** What `session_osc_token` answers (null = the session enforces none). */
+  oscToken?: string | null;
 }
 
 function harness(opts: HarnessOptions = {}) {
@@ -115,6 +117,7 @@ function harness(opts: HarnessOptions = {}) {
     },
     (id: number) => { timers.delete(id); },
     (command: string, args: { sessionId: string }) => {
+      if (command === 'session_osc_token') return Promise.resolve(opts.oscToken ?? null);
       probeCalls.push(`${command}:${args.sessionId}`);
       if (opts.probeThrows) return Promise.reject(new Error('SSH exec not available'));
       return Promise.resolve(opts.hostIdentity ?? null);
@@ -443,6 +446,23 @@ test('nothing is typed before the connected host has been identified', async () 
 
   await h.settle();
   assert.equal(h.inputs.length, 1, 'the probe continuation performs the injection');
+});
+
+test('the injected hook carries the session OSC 7768 token', async () => {
+  const h = harness({ oscToken: 'Tok-_123' });
+  h.mod.injectShellHook('s1');
+  await h.settle();
+  assert.equal(h.inputs.length, 1);
+  const line = h.inputs[0];
+  // Inside `eval '...'`, so the hook's own quotes come out as '\''.
+  assert.equal(line.split("__meterm_tok='\\''Tok-_123'\\''").length - 1, 2, 'zsh and bash branches');
+  assert.ok(line.includes("set -g __meterm_tok '\\''Tok-_123'\\''"), 'fish branch');
+  assert.ok(!line.includes('7768;%d'), 'no 7768 payload without the token field');
+
+  const bare = harness();
+  bare.mod.injectShellHook('s1');
+  await bare.settle();
+  assert.ok(bare.inputs[0].includes("__meterm_tok='\\'''\\''"), 'no token → empty, still parseable');
 });
 
 test('a second call while the probe is in flight neither re-asks nor types', async () => {

@@ -48,6 +48,13 @@ pub trait Terminal: Send + Sync {
     /// (dtach/abduco 的标准做法);SSH/Windows 无等价信号能力,默认 no-op。
     fn nudge(&self) {}
 
+    /// Per-session secret this terminal's shell hook prefixes to OSC 7768
+    /// (`k=<token>;`). The session's OSC filter then drops any 7768 without
+    /// it. `None` (the default) means the terminal installs no tokened hook.
+    fn osc_token(&self) -> Option<String> {
+        None
+    }
+
     /// Returns a token that is cancelled when the terminal process exits.
     fn done(&self) -> CancellationToken;
 

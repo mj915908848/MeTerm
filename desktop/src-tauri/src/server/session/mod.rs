@@ -357,6 +357,12 @@ impl Session {
     /// exit code(`$?`)传给 `on_shell_prompt` 回调,非 ShellState 事件不触发。
     /// clone 后**锁外**调用:回调内部要拿 mirrors registry 锁,不得与槽锁交叠
     /// (锁序论证见 agent/hook.rs `MirrorRegistry::cleanup`)。
+    /// The OSC 7768 hook token of this session's terminal, for hooks injected
+    /// later from the frontend (see `ai-tools-shell.ts`). `None` = not enforced.
+    pub fn osc_token(&self) -> Option<String> {
+        self.osc_filter.lock().unwrap().token().map(str::to_string)
+    }
+
     pub(crate) fn dispatch_shell_prompt(&self, events: &[crate::server::osc_filter::OscEvent]) {
         for e in events {
             match e {
@@ -371,8 +377,9 @@ impl Session {
                     }
                 }
                 // OSC 7(file://host/path)同样上报 cwd(无 7768 集成的 shell 兜底)。
+                // 有 hook token 的会话只信带 token 的 7768:OSC 7 无 token,任何输出都能伪造。
                 crate::server::osc_filter::OscEvent::Cwd { cwd } => {
-                    if !cwd.is_empty() {
+                    if !cwd.is_empty() && self.osc_token().is_none() {
                         *self.current_cwd.lock().unwrap() = Some(cwd.clone());
                     }
                 }
@@ -607,6 +614,11 @@ impl Session {
     ) {
         let (input_tx, input_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
         let (resize_tx, resize_rx) = tokio::sync::mpsc::channel::<TermCtrl>(16);
+        self_arc
+            .osc_filter
+            .lock()
+            .unwrap()
+            .set_token(term.osc_token());
         *self_arc.input_tx.lock().await = Some(input_tx);
         *self_arc.resize_tx.lock().await = Some(resize_tx);
         Session::spawn_run_loop(self_arc, term, input_rx, resize_rx);
@@ -1893,6 +1905,73 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
         assert!(seen, "output must be drained while input is stalled");
+        session.cancel();
+    }
+
+    struct TokenTerminal {
+        output: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<Vec<u8>>>,
+        done: CancellationToken,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::server::terminal::Terminal for TokenTerminal {
+        async fn read(&self, buf: &mut [u8]) -> std::io::Result<usize> {
+            match self.output.lock().await.recv().await {
+                Some(data) => {
+                    buf[..data.len()].copy_from_slice(&data);
+                    Ok(data.len())
+                }
+                None => Ok(0),
+            }
+        }
+        async fn write(&self, data: &[u8]) -> std::io::Result<usize> {
+            Ok(data.len())
+        }
+        fn resize(&self, _cols: u16, _rows: u16) -> std::io::Result<()> {
+            Ok(())
+        }
+        fn osc_token(&self) -> Option<String> {
+            Some("hook-tok".into())
+        }
+        fn done(&self) -> CancellationToken {
+            self.done.clone()
+        }
+        async fn close(&self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// A hooked session only takes its cwd from the tokened OSC 7768: neither a
+    /// printed 7768 without the token nor an (untokened) OSC 7 may move it.
+    #[tokio::test]
+    async fn hooked_session_ignores_forged_cwd_reports() {
+        let session = ring_session("osc-token", 4096);
+        let (out_tx, out_rx) = tokio::sync::mpsc::channel(4);
+        let term = TokenTerminal {
+            output: tokio::sync::Mutex::new(out_rx),
+            done: CancellationToken::new(),
+        };
+        Session::start_terminal(session.clone(), Box::new(term)).await;
+        assert_eq!(session.osc_token().as_deref(), Some("hook-tok"));
+
+        out_tx
+            .send(b"\x1b]7;file://h/etc\x07\x1b]7768;0;/etc;cat x\x07forged".to_vec())
+            .await
+            .unwrap();
+        out_tx
+            .send(b"\x1b]7768;k=hook-tok;0;/home/u;ls;3\x07real".to_vec())
+            .await
+            .unwrap();
+        let mut cwd = None;
+        for _ in 0..100 {
+            cwd = session.current_cwd.lock().unwrap().clone();
+            if cwd.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(cwd.as_deref(), Some("/home/u"));
+        assert_eq!(session.ring_buf.lock().unwrap().read_all(), b"forgedreal");
         session.cancel();
     }
 

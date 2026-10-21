@@ -30,6 +30,8 @@ pub struct PtyTerminal {
     done_token: CancellationToken,
     /// Temp directory for shell hook files. Cleaned up on close/drop.
     hook_dir: Option<String>,
+    /// OSC 7768 hook token (see `Terminal::osc_token`); set only when a hook is installed.
+    osc_token: Option<String>,
 }
 
 impl PtyTerminal {
@@ -96,6 +98,13 @@ impl PtyTerminal {
         // 改用 env 传递(与 METERM_SESSION_ID 等既有注入同一模式):env 值不经 shell 解析,
         // rc 里的 claude 包装函数只引用 `$METERM_CLAUDE_HOOKS`,不含任何插值路径。
         apply_claude_hooks_env(&mut cmd, &hook_dir);
+
+        // Hook token: the rc copies it into a shell variable and unsets the env
+        // var, so commands run in the shell never see it.
+        let osc_token = hook_dir.as_ref().map(|_| crate::server::generate_token());
+        if let Some(ref tok) = osc_token {
+            cmd.env(OSC_TOKEN_ENV, tok);
+        }
 
         // ── macOS: /usr/bin/login + two-stage shell ─────────────────────────
         // Uses `login -fp <user> <shell> -c <inner_cmd>` which:
@@ -230,6 +239,7 @@ impl PtyTerminal {
             master: Mutex::new(pair.master),
             done_token,
             hook_dir,
+            osc_token,
         })
     }
 }
@@ -254,6 +264,10 @@ impl Terminal for PtyTerminal {
 
     async fn write(&self, data: &[u8]) -> io::Result<usize> {
         self.input.write(data).await
+    }
+
+    fn osc_token(&self) -> Option<String> {
+        self.osc_token.clone()
     }
 
     fn resize(&self, cols: u16, rows: u16) -> io::Result<()> {
@@ -315,6 +329,9 @@ impl Drop for PtyTerminal {
 
 /// 把调用方指定的环境变量逐条应用到 `CommandBuilder`。
 /// 抽成独立函数,便于单测断言透传(不必 spawn 真实 shell)。
+/// Env var carrying the OSC 7768 hook token into the shell's rc (see `create_zsh_hooks`).
+const OSC_TOKEN_ENV: &str = "METERM_OSC_TOKEN";
+
 fn apply_envs(cmd: &mut CommandBuilder, envs: &[(String, String)]) {
     for (k, v) in envs {
         cmd.env(k, v);
@@ -379,6 +396,8 @@ fn create_zsh_hooks(dir: &std::path::Path) {
          [[ -f \"$HOME/.zshrc\" ]] && source \"$HOME/.zshrc\"\n\
          \n\
          # ── MeTerm shell hook (preexec/precmd, 记录命令耗时) ──\n\
+         __meterm_tok=\"${METERM_OSC_TOKEN:-}\"\n\
+         unset METERM_OSC_TOKEN\n\
          zmodload zsh/datetime 2>/dev/null\n\
          __meterm_cmd_start=''\n\
          __meterm_cmd_running=0\n\
@@ -413,7 +432,7 @@ fn create_zsh_hooks(dir: &std::path::Path) {
              fi\n\
            fi\n\
            __meterm_cmd_running=0\n\
-           printf '\\033]7768;%d;%s;%s;%d\\007' \"$e\" \"$PWD\" \"$c\" \"$dur\"\n\
+           printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' \"$__meterm_tok\" \"$e\" \"$PWD\" \"$c\" \"$dur\"\n\
          }\n\
          autoload -Uz add-zsh-hook 2>/dev/null && { add-zsh-hook preexec __meterm_preexec; add-zsh-hook precmd __meterm_precmd; }\n\
          setopt HIST_IGNORE_SPACE 2>/dev/null\n",
@@ -439,6 +458,8 @@ fn create_bash_hooks(dir: &std::path::Path) {
          [[ -f \"$HOME/.bashrc\" ]] && source \"$HOME/.bashrc\"\n\
          \n\
          # ── MeTerm shell hook (DEBUG trap 近似 preexec + PROMPT_COMMAND 近似 precmd,记录命令耗时) ──\n\
+         __meterm_tok=\"${METERM_OSC_TOKEN:-}\"\n\
+         unset METERM_OSC_TOKEN\n\
          __meterm_cmd_start=''\n\
          __meterm_cmd_running=0\n\
          __meterm_in_prompt=0\n\
@@ -490,7 +511,7 @@ fn create_bash_hooks(dir: &std::path::Path) {
              fi\n\
            fi\n\
            __meterm_cmd_running=0\n\
-           printf '\\033]7768;%d;%s;%s;%d\\007' \"$e\" \"$PWD\" \"$c\" \"$dur\"\n\
+           printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' \"$__meterm_tok\" \"$e\" \"$PWD\" \"$c\" \"$dur\"\n\
            __meterm_in_prompt=0\n\
          }\n\
          # PROMPT_COMMAND 可以就地扩写,但 bash 5.1+ 允许它是数组,而标量赋值会把整个\n\
@@ -546,6 +567,46 @@ mod tests {
             .exists());
         assert!(zshrc.contains("claude() {"), "zsh rc 须含 claude 包装函数");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The local rc must read the token from the env, keep it out of the env of
+    /// commands it runs, and emit a 7768 the session's filter accepts.
+    #[test]
+    fn bash_rc_emits_a_tokened_osc7768_the_filter_accepts() {
+        let Some(dir) = create_hook_dir("bash") else {
+            return;
+        };
+        // An empty HOME keeps the user's own ~/.bashrc out of the run.
+        let home = std::env::temp_dir().join(format!("meterm-home-{}", uuid::Uuid::new_v4()));
+        let _ = std::fs::create_dir_all(&home);
+        let out = std::process::Command::new("bash")
+            .args(["--rcfile", &format!("{dir}/.bashrc"), "-i", "-c"])
+            .arg("__meterm_precmd; __meterm_precmd; printf '[%s]' \"${METERM_OSC_TOKEN-unset}\"")
+            .env(OSC_TOKEN_ENV, "tok-Z_9")
+            .env("HOME", &home)
+            .output();
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&home);
+        let Ok(out) = out else {
+            return; // no bash on this machine
+        };
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            stdout.ends_with("[unset]"),
+            "token must not stay in the env: {stdout:?}"
+        );
+
+        let mut filter = crate::server::osc_filter::OscFilter::new();
+        filter.set_token(Some("tok-Z_9".into()));
+        let (_, events) = filter.feed(&out.stdout);
+        let shell_states = events
+            .iter()
+            .filter(|e| matches!(e, crate::server::osc_filter::OscEvent::ShellState { .. }))
+            .count();
+        assert_eq!(
+            shell_states, 2,
+            "both prompts must pass the token check: {stdout:?}"
+        );
     }
 
     #[test]

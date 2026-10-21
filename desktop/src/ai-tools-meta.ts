@@ -94,7 +94,10 @@ export function createWebSearchTool(): ToolHandler {
     },
     // web_search is a network read → safe to parallelize.
     isConcurrencySafe: true,
-    requiresConfirm: () => false,
+    // The query leaves the machine, so text the model was steered into
+    // (terminal output, file contents) could be sent to the search server.
+    // Ask in plan and semi-auto modes; full-auto still runs it.
+    requiresConfirm: () => true,
     isDestructive: () => false,
   };
 }

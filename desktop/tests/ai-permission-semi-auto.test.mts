@@ -35,6 +35,18 @@ test('explicit permission rules still take precedence over semi-auto defaults', 
   assert.deepEqual(decidePermission('run_command', { command: 'pwd' }, commandHandler, 'ask', []), { kind: 'ask' });
 });
 
+test('web_search asks in plan and semi-auto modes, runs in full-auto', () => {
+  // Mirrors createWebSearchTool: a concurrency-safe read whose query leaves the machine.
+  const webSearch = { isConcurrencySafe: true, requiresConfirm: () => true, isDestructive: () => false } as any;
+  const commandHelp = { isConcurrencySafe: true, requiresConfirm: () => false, isDestructive: () => false } as any;
+  const args = { query: 'meterm' };
+  assert.deepEqual(decidePermission('web_search', args, webSearch, 'plan', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
+  assert.deepEqual(decidePermission('web_search', args, webSearch, 'acceptSafe', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
+  assert.deepEqual(decidePermission('web_search', args, webSearch, 'acceptAll', DEFAULT_PERMISSION_RULES), { kind: 'allow' });
+  // Other read-only tools are unaffected in plan mode.
+  assert.deepEqual(decidePermission('command_help', { command: 'tar' }, commandHelp, 'plan', DEFAULT_PERMISSION_RULES), { kind: 'allow' });
+});
+
 test('custom permission rules keep defaults active without displaying them as custom rows', () => {
   const rules = mergePermissionRules([{ tool: 'run_command', match: { command: '^pwd$' }, action: 'ask' }]);
   assert.deepEqual(decidePermission('run_command', { command: 'pwd' }, commandHandler, 'acceptSafe', rules), { kind: 'ask' });

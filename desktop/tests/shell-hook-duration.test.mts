@@ -97,7 +97,7 @@ test('zsh and bash hooks carry duration_ms as the 4th OSC 7768 field', () => {
     const hook = buildShellHook(shellType);
     assert.match(
       hook,
-      /7768;%d;%s;%s;%d\\007/,
+      /7768;k=%s;%d;%s;%s;%d\\007/,
       `${shellType} hook must emit exit;cwd;cmd;duration_ms`,
     );
     assert.equal(
@@ -159,7 +159,7 @@ test('hooks report the real command duration', () => {
     if (!shell) continue;
 
     const payload = lastShellStatePayload(shell, buildShellHook(shellType), sleepSeconds);
-    const match = /\]7768;(-?\d+);([^;]*);([^;]*);(\d+)$/.exec(payload);
+    const match = /\]7768;k=[^;]*;(-?\d+);([^;]*);([^;]*);(\d+)$/.exec(payload);
     assert.ok(match, `${shellType}: expected a 4-field payload, got ${JSON.stringify(payload)}`);
 
     const durationMs = Number(match![4]);
@@ -190,5 +190,5 @@ test('hooks still report the real exit code', () => {
   const out = execFileSync(shell, ['-c', drive], { encoding: 'utf8' });
   const payloads = out.split('\x1b').filter((c) => c.includes(']7768;')).map((c) => c.split('\x07')[0]);
   const payload = payloads[payloads.length - 1] ?? '';
-  assert.match(payload, /\]7768;7;/, `expected exit 7 in ${JSON.stringify(payload)}`);
+  assert.match(payload, /\]7768;k=[^;]*;7;/, `expected exit 7 in ${JSON.stringify(payload)}`);
 });

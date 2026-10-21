@@ -74,11 +74,11 @@ const TERMINAL_OSC = stripComments(SRC('src/terminal-osc.ts'));
 
 // Payloads exactly as they appear in the source text, escaping included
 // (`\\033` in a Rust/TS source file is the same characters in both).
-const OSC7768_4FIELD = '\\\\033]7768;%d;%s;%s;%d\\\\007'; // printf form, exit;cwd;cmd;duration_ms
-const OSC7768_3FIELD = '\\\\033]7768;%d;%s;%s\\\\007'; // printf form WITHOUT duration_ms
-const OSC7768_FISH_TAIL = '\\\\033]7768;%d;%s;\\\\007'; // fish's first-prompt form (2 fields)
-const OSC7768_PWSH_TS = ']7768;$e;$(Get-Location);$c';
-const OSC7768_PWSH_RS = "']7768;' + $e + ';' + (Get-Location) + ';' + $c";
+const OSC7768_4FIELD = '\\\\033]7768;k=%s;%d;%s;%s;%d\\\\007'; // printf form, token;exit;cwd;cmd;duration_ms
+const OSC7768_3FIELD = '\\\\033]7768;k=%s;%d;%s;%s\\\\007'; // printf form WITHOUT duration_ms
+const OSC7768_FISH_TAIL = '\\\\033]7768;k=%s;%d;%s;\\\\007'; // fish's first-prompt form (2 fields)
+const OSC7768_PWSH_TS = ']7768;k=$($global:__mtTok);$e;$(Get-Location);$c';
+const OSC7768_PWSH_RS = "']7768;k=' + $global:__mtTok + ';' + $e + ';' + (Get-Location) + ';' + $c";
 
 /** Count non-overlapping occurrences of a literal. */
 function count(haystack: string, needle: string): number {

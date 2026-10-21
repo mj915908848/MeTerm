@@ -74,6 +74,22 @@ pub async fn create_session(
     .to_string())
 }
 
+/// The OSC 7768 token this session's shell hook must carry, or `null` when the
+/// session does not enforce one. The desktop needs it to inject the fallback
+/// hook (`ai-tools-shell.ts`); without it that hook's 7768 would be dropped.
+#[tauri::command]
+pub async fn session_osc_token(
+    state: State<'_, Arc<ServerState>>,
+    session_id: String,
+) -> Result<Option<String>, String> {
+    super::validate_id(&session_id)?;
+    let session = state
+        .session_manager
+        .get(&session_id)
+        .ok_or("session not found")?;
+    Ok(session.osc_token())
+}
+
 #[tauri::command]
 pub async fn list_sessions(state: State<'_, Arc<ServerState>>) -> Result<String, String> {
     let sessions = state.session_manager.list();

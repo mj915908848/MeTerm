@@ -242,17 +242,19 @@ function loadAiShellDisposer() {
   const registered: Array<(sessionId: string) => void> = [];
   const sessionPtyTails = new Map<string, unknown>([['s1', Promise.resolve()]]);
   const hostIdentity = new Map<string, unknown>([['s1', { status: 'known', value: 'abc' }]]);
+  const oscToken = new Map<string, string>([['s1', 'tok']]);
   const cleared: string[] = [];
 
-  new Function('onTerminalSessionDisposed', 'sessionPtyTails', 'clearHookRetry', '_hostIdentity', block)(
+  new Function('onTerminalSessionDisposed', 'sessionPtyTails', 'clearHookRetry', '_hostIdentity', '_oscToken', block)(
     (cb: (sessionId: string) => void) => { registered.push(cb); },
     sessionPtyTails,
     (sessionId: string) => { cleared.push(sessionId); },
     hostIdentity,
+    oscToken,
   );
 
   assert.equal(registered.length, 1, 'exactly one disposer is expected');
-  return { disposer: registered[0], sessionPtyTails, hostIdentity, cleared };
+  return { disposer: registered[0], sessionPtyTails, hostIdentity, oscToken, cleared };
 }
 
 test('session teardown clears the PTY serialization tail', () => {
@@ -269,7 +271,7 @@ test('session teardown clears the PTY serialization tail', () => {
 });
 
 test('session teardown also cancels the pending hook-retry timer', () => {
-  const { disposer, cleared, hostIdentity } = loadAiShellDisposer();
+  const { disposer, cleared, hostIdentity, oscToken } = loadAiShellDisposer();
   disposer('s1');
   assert.deepEqual(
     cleared,
@@ -282,6 +284,7 @@ test('session teardown also cancels the pending hook-retry timer', () => {
     'the host identity belongs to the connection, so a dead session must not keep its answer — '
     + 'and a surviving entry would be a stale guard for whatever session id gets reused next',
   );
+  assert.equal(oscToken.has('s1'), false, 'the OSC 7768 token dies with its session');
 });
 
 test('the shell-type cache is released with the session', () => {
