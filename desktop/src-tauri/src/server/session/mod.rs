@@ -1106,13 +1106,6 @@ impl Session {
         kicked
     }
 
-    /// 是否为 agent 会话(executor_type=="agent")。reaper 据此豁免 agent 会话的
-    /// 「手机断连 → Draining → client-TTL 回收」——agent 会话随其 AcpClient 子进程存活,
-    /// 回收改由子进程死亡 / idle-guard / 显式 delete 三路兜住(见 agent::manager)。
-    pub fn is_agent(&self) -> bool {
-        *self.executor_type.lock().unwrap() == "agent"
-    }
-
     /// Check if the session should be closed by TTL.
     pub fn should_close_by_ttl(&self, now: Instant) -> bool {
         let state = *self.state.lock().unwrap();
@@ -1806,7 +1799,7 @@ mod tests {
 
     // ── conn_gen 守卫 / 跨代次清理(镜像回放终审 merge-blocker 回归)──
     //
-    // 两处根因同属一个 conn_gen 奇偶性问题:方案 B 已给 agent 历史回放(attach_client)
+    // 两处根因同属一个 conn_gen 奇偶性问题:先前已给 agent 历史回放(attach_client)
     // 补了精确一次守卫(BUG-1/BUG-2),但 M5 背压回放把同款破口放大到镜像**终端页**回放:
     // ①flush_ring_buffer_async 缺 conn_gen 守卫(与 attach_client 的 BUG-2 对偶);
     // ②ws.rs 在长回放**之后**才捕获 conn_gen,cleanup 用到被 bump 的代次误拆重连连接。

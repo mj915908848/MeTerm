@@ -561,7 +561,7 @@ async fn notification_without_message_uses_fallback_text() {
 }
 
 /// 非镜像会话(从未升格)的 Notification:no-op——200、不建 entry、不写 registry
-/// (转发只属于镜像态;方案 B / 普通会话不受影响)。
+/// (转发只属于镜像态;普通会话不受影响)。
 #[tokio::test]
 async fn notification_on_unmirrored_session_is_noop() {
     let state = Arc::new(create_dummy_state());

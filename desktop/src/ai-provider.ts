@@ -4,7 +4,7 @@
 
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { thinkingFieldsFor } from './ai-thinking-budget';
-import { anthropicCacheLayout, sseData, streamPayloadError } from './ai-provider-wire';
+import { anthropicAcceptsTemperature, anthropicCacheLayout, sseData, streamPayloadError } from './ai-provider-wire';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -13,6 +13,12 @@ export interface ToolCall {
   id: string;
   type: 'function';
   function: { name: string; arguments: string };
+  /**
+   * Gemini's signature for the reasoning behind this call. Gemini 3 models
+   * reject a follow-up request whose functionCall part lacks it, so it is
+   * kept on the call and echoed back unchanged.
+   */
+  thoughtSignature?: string;
 }
 
 /** Minimal tool specification passed to the provider for the API request. */
@@ -168,20 +174,24 @@ export interface ProviderPreset {
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: 'openai',    label: 'OpenAI',    type: 'openai',    baseUrl: 'https://api.openai.com',                      model: 'gpt-4o' },
-  { id: 'anthropic', label: 'Anthropic', type: 'anthropic', baseUrl: 'https://api.anthropic.com',                   model: 'claude-sonnet-4-5-20250929' },
-  { id: 'gemini',    label: 'Gemini',    type: 'gemini',    baseUrl: 'https://generativelanguage.googleapis.com',   model: 'gemini-2.0-flash' },
+  { id: 'anthropic', label: 'Anthropic', type: 'anthropic', baseUrl: 'https://api.anthropic.com',                   model: 'claude-sonnet-4-6' },
+  { id: 'gemini',    label: 'Gemini',    type: 'gemini',    baseUrl: 'https://generativelanguage.googleapis.com',   model: 'gemini-3.8-flash' },
   { id: 'zhipu',     label: 'Z.ai',      type: 'openai',    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',       model: 'glm-4.5' },
   { id: 'ollama',    label: 'Ollama',    type: 'openai',    baseUrl: 'http://localhost:11434',                      model: 'llama3.1' },
-  { id: 'groq',      label: 'Groq',      type: 'openai',    baseUrl: 'https://api.groq.com/openai',                model: 'llama-3.1-70b-versatile' },
+  { id: 'groq',      label: 'Groq',      type: 'openai',    baseUrl: 'https://api.groq.com/openai',                model: 'openai/gpt-oss-120b' },
 ];
 
 // ─── Model Fetching ─────────────────────────────────────────────
 
+// Shown when the model list cannot be fetched. The 4.6 / 4.5 models come
+// first: the 5.x models always think, and MeTerm does not pass their
+// thinking blocks back across tool-use turns yet (untested against them).
 const ANTHROPIC_FALLBACK_MODELS = [
-  'claude-sonnet-4-5-20250929',
-  'claude-haiku-4-5-20251001',
-  'claude-3-5-sonnet-20241022',
-  'claude-3-5-haiku-20241022',
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
+  'claude-haiku-4-5',
+  'claude-sonnet-5-5',
+  'claude-opus-5-5',
 ];
 
 
@@ -628,10 +638,13 @@ class AnthropicProvider implements AIProvider {
     const body: Record<string, unknown> = {
       model: this.config.model,
       max_tokens: this.config.maxTokens,
-      temperature: this.config.temperature,
       stream: true,
       messages: mergedMessages,
     };
+    // Claude Opus 4.7 and later reject sampling parameters with a 400.
+    if (anthropicAcceptsTemperature(this.config.model)) {
+      body.temperature = this.config.temperature;
+    }
 
     if (systemMessages.length > 0) {
       // Prompt caching: the system prompt and (when the agent marks where
@@ -779,7 +792,9 @@ class GeminiProvider implements AIProvider {
         for (const tc of m.tool_calls) {
           let args: unknown = {};
           try { args = JSON.parse(tc.function.arguments); } catch { /* empty */ }
-          parts.push({ functionCall: { name: tc.function.name, args } });
+          parts.push(tc.thoughtSignature
+            ? { functionCall: { name: tc.function.name, args }, thoughtSignature: tc.thoughtSignature }
+            : { functionCall: { name: tc.function.name, args } });
         }
         contents.push({ role: 'model', parts });
       } else if (m.role === 'tool') {
@@ -900,6 +915,7 @@ class GeminiProvider implements AIProvider {
                   name: part.functionCall.name,
                   arguments: JSON.stringify(part.functionCall.args ?? {}),
                 },
+                ...(typeof part.thoughtSignature === 'string' ? { thoughtSignature: part.thoughtSignature } : {}),
               };
               toolCalls.push(tc);
               callbacks.onToolCall?.(tc);
@@ -921,8 +937,8 @@ class GeminiProvider implements AIProvider {
 
 const AUTO_MODEL_DEFAULTS: Record<ProviderType, string> = {
   openai: 'gpt-4o',
-  anthropic: 'claude-sonnet-4-5-20250929',
-  gemini: 'gemini-2.0-flash',
+  anthropic: 'claude-sonnet-4-6',
+  gemini: 'gemini-3.8-flash',
 };
 
 /** Resolve 'auto' model to the default model for the given provider type. */

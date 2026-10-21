@@ -73,7 +73,7 @@ const APP_COMMANDS: &[&str] = &[
     "agent_read_path_requires_confirmation",
     "agent_read_file_bytes",
     "agent_write_file",
-    "agent_write_file_bytes",
+    "agent_audit_append",
     "agent_copy_local_file",
     "sftp_stat_remote",
     "agent_save_attachment",

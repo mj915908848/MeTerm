@@ -52,6 +52,16 @@ export interface PostToolUsePayload {
   durationMs: number;
 }
 
+export interface ToolRejectedPayload {
+  sessionId: string;
+  toolName: string;
+  callId: string;
+  /** Raw JSON arguments as the model sent them. */
+  rawArgs: string;
+  /** Why the call did not run (rule, mode, user rejection, hook). */
+  reason: string;
+}
+
 export interface PreCompactPayload {
   sessionId: string;
   reason: 'auto' | 'overflow';
@@ -69,6 +79,7 @@ export type SessionStartHandler = (p: SessionStartPayload) => void | Promise<voi
 export type UserPromptSubmitHandler = (p: UserPromptSubmitPayload) => void | Promise<void>;
 export type PreToolUseHandler = (p: PreToolUsePayload) => PreToolUseResult | void | Promise<PreToolUseResult | void>;
 export type PostToolUseHandler = (p: PostToolUsePayload) => void | Promise<void>;
+export type ToolRejectedHandler = (p: ToolRejectedPayload) => void | Promise<void>;
 export type PreCompactHandler = (p: PreCompactPayload) => void | Promise<void>;
 export type SessionEndHandler = (p: SessionEndPayload) => void | Promise<void>;
 
@@ -79,6 +90,7 @@ class HookRegistry {
   private userPromptSubmitHandlers: UserPromptSubmitHandler[] = [];
   private preToolUseHandlers: PreToolUseHandler[] = [];
   private postToolUseHandlers: PostToolUseHandler[] = [];
+  private toolRejectedHandlers: ToolRejectedHandler[] = [];
   private preCompactHandlers: PreCompactHandler[] = [];
   private sessionEndHandlers: SessionEndHandler[] = [];
 
@@ -100,6 +112,11 @@ class HookRegistry {
   onPostToolUse(h: PostToolUseHandler): () => void {
     this.postToolUseHandlers.push(h);
     return () => { this.postToolUseHandlers = this.postToolUseHandlers.filter(x => x !== h); };
+  }
+
+  onToolRejected(h: ToolRejectedHandler): () => void {
+    this.toolRejectedHandlers.push(h);
+    return () => { this.toolRejectedHandlers = this.toolRejectedHandlers.filter(x => x !== h); };
   }
 
   onPreCompact(h: PreCompactHandler): () => void {
@@ -149,6 +166,12 @@ class HookRegistry {
   async emitPostToolUse(p: PostToolUsePayload): Promise<void> {
     for (const h of this.postToolUseHandlers) {
       try { await h(p); } catch (e) { console.error('[hook] PostToolUse:', e); }
+    }
+  }
+
+  async emitToolRejected(p: ToolRejectedPayload): Promise<void> {
+    for (const h of this.toolRejectedHandlers) {
+      try { await h(p); } catch (e) { console.error('[hook] ToolRejected:', e); }
     }
   }
 

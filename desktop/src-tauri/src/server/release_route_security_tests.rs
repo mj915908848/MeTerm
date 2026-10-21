@@ -26,16 +26,6 @@ const PROTECTED_ROUTES: &[ProtectedRoute] = &[
     },
     ProtectedRoute {
         scope: "desktop.control",
-        method: Method::POST,
-        uri: "/api/agent-sessions",
-    },
-    ProtectedRoute {
-        scope: "desktop.control",
-        method: Method::GET,
-        uri: "/api/agent-options",
-    },
-    ProtectedRoute {
-        scope: "desktop.control",
         method: Method::GET,
         uri: "/api/sessions/not-a-session/git/status",
     },

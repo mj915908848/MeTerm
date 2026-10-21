@@ -1,17 +1,17 @@
 //! Agent 子模块的内部归一化事件(与 `server/events.rs` 的 DesktopEvent 无关)。
 //!
-//! ACP(Agent Client Protocol)的 `session/update` 通知 + 反向请求
-//! `session/request_permission` 会被归一成这里的 `AgentEvent`,由 T2 的
-//! `AcpAgentManager` 通过 `MSG_AGENT_EVENT` 帧广播给手机端。
+//! 镜像事件源(hooks / transcript tailer,方案甲)归一成这里的 `AgentEvent`,由
+//! `AgentManager` 通过 `MSG_AGENT_EVENT` 帧广播给手机端。
 //!
 //! 目标 schema 对齐桌面前端已有的 `desktop/src/ai-agent-events.ts`,
-//! 但字段更贴近 ACP 原语。序列化:外层 `type` 作为 serde tag(snake_case),
-//! 结构体字段用 camelCase(方便手机 Swift `Decodable` / JS 消费)。
+//! 字段命名沿用 ACP(Agent Client Protocol)原语(wire 契约冻结,不随事件源变化)。
+//! 序列化:外层 `type` 作为 serde tag(snake_case),结构体字段用 camelCase
+//! (方便手机 Swift `Decodable` / JS 消费)。
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// 一条审批选项(ACP `session/request_permission` 的 options 元素)。
+/// 一条审批选项(形状沿用 ACP `session/request_permission` 的 options 元素)。
 /// 例:`{optionId:"allow_always", name:"Always Allow", kind:"allow_always"}`。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PermissionOption {
@@ -57,9 +57,9 @@ pub enum AgentEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         diff: Option<Value>,
     },
-    /// 审批请求(ACP 反向请求 `session/request_permission`)。
-    /// `request_id` 原样回显 JSON-RPC id(可能是数字 0),手机决策后经
-    /// `answer_permission` 回传。
+    /// 审批请求(形状沿用 ACP 反向请求 `session/request_permission`)。
+    /// `request_id` 为审批桥自生成的字符串 id("mperm-…"),手机决策后经 0x52
+    /// 控制帧回传(见 `upstream.rs` / `permission_bridge.rs`)。
     #[serde(rename_all = "camelCase")]
     PermissionRequest {
         request_id: Value,
@@ -75,7 +75,7 @@ pub enum AgentEvent {
     /// **冻结契约**:wire `{"type":"ask_question","requestId":…,"questions":[…]}`。
     #[serde(rename_all = "camelCase")]
     AskQuestion { request_id: Value, questions: Value },
-    /// 一轮 prompt 完成(ACP `session/prompt` 结果里的 stopReason)。
+    /// 一轮 prompt 完成(`stop_reason` 取自 transcript / Stop hook)。
     #[serde(rename_all = "camelCase")]
     TurnComplete {
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,329 +133,16 @@ pub enum AgentEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
     },
-    /// 错误(JSON-RPC error / 传输层异常 / 子进程退出)。
+    /// 错误(传输层异常等)。
     Error { message: String },
-    /// 未识别的 `session/update` 透传(保 raw JSON 不丢,手机渐进增强)。
+    /// 未识别事件透传(保 raw JSON 不丢,手机渐进增强)。
     Ext { raw: Value },
-}
-
-/// 从 ACP ContentBlock 里抽纯文本。
-/// content 可能是单个块对象 `{type:"text",text}`,也可能是块数组。
-fn content_text(content: Option<&Value>) -> String {
-    match content {
-        // 单块对象:{type:"text", text:"..."}
-        Some(Value::Object(_)) => content
-            .and_then(|c| c.get("text"))
-            .and_then(|t| t.as_str())
-            .unwrap_or("")
-            .to_string(),
-        // 块数组:拼接所有 text 字段。
-        Some(Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
-            .collect::<Vec<_>>()
-            .join(""),
-        _ => String::new(),
-    }
-}
-
-/// 从 tool_call_update 的 content 数组里抽出 diff 块(type=="diff")。
-/// 没有则返回 None。
-fn extract_diff(content: Option<&Value>) -> Option<Value> {
-    let arr = content?.as_array()?;
-    let diffs: Vec<Value> = arr
-        .iter()
-        .filter(|b| b.get("type").and_then(|t| t.as_str()) == Some("diff"))
-        .cloned()
-        .collect();
-    if diffs.is_empty() {
-        None
-    } else {
-        Some(Value::Array(diffs))
-    }
-}
-
-/// 纯映射:把一条 ACP `session/update` 的 `update` 对象转成 `AgentEvent`。
-/// 未识别的 `sessionUpdate` 类型 → `Ext`(保 raw)。抽成独立函数便于单测。
-pub fn acp_update_to_event(update: &Value) -> Option<AgentEvent> {
-    let kind = update.get("sessionUpdate").and_then(|v| v.as_str())?;
-    let ev = match kind {
-        "agent_message_chunk" => AgentEvent::AssistantDelta {
-            text: content_text(update.get("content")),
-        },
-        "agent_thought_chunk" => AgentEvent::ReasoningDelta {
-            text: content_text(update.get("content")),
-        },
-        "tool_call" => AgentEvent::ToolCallStart {
-            id: update
-                .get("toolCallId")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            title: update
-                .get("title")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            kind: update
-                .get("kind")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            raw_input: update.get("rawInput").cloned().unwrap_or(Value::Null),
-        },
-        "tool_call_update" => AgentEvent::ToolCallUpdate {
-            id: update
-                .get("toolCallId")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string(),
-            status: update
-                .get("status")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            content: update.get("content").cloned(),
-            diff: extract_diff(update.get("content")),
-        },
-        // plan / available_commands_update / 其它 → 透传保 raw。
-        _ => AgentEvent::Ext {
-            raw: update.clone(),
-        },
-    };
-    Some(ev)
-}
-
-/// 纯映射:把反向请求 `session/request_permission` 的 params 转成
-/// `PermissionRequest` 事件。`request_id` 为该反向请求的 JSON-RPC id。
-pub fn permission_request_to_event(request_id: Value, params: &Value) -> AgentEvent {
-    // 标题优先取 params.toolCall.title,退回 params.title。
-    let title = params
-        .get("toolCall")
-        .and_then(|tc| tc.get("title"))
-        .and_then(|t| t.as_str())
-        .or_else(|| params.get("title").and_then(|t| t.as_str()))
-        .unwrap_or("")
-        .to_string();
-    let options: Vec<PermissionOption> = params
-        .get("options")
-        .and_then(|o| o.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|o| serde_json::from_value::<PermissionOption>(o.clone()).ok())
-                .collect()
-        })
-        .unwrap_or_default();
-    AgentEvent::PermissionRequest {
-        request_id,
-        title,
-        options,
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
-
-    #[test]
-    fn assistant_chunk_maps_to_assistant_delta() {
-        let u =
-            json!({"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"你好"}});
-        assert_eq!(
-            acp_update_to_event(&u),
-            Some(AgentEvent::AssistantDelta {
-                text: "你好".into()
-            })
-        );
-    }
-
-    #[test]
-    fn thought_chunk_maps_to_reasoning_delta() {
-        let u = json!({"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"思考中"}});
-        assert_eq!(
-            acp_update_to_event(&u),
-            Some(AgentEvent::ReasoningDelta {
-                text: "思考中".into()
-            })
-        );
-    }
-
-    #[test]
-    fn chunk_content_can_be_array() {
-        let u = json!({"sessionUpdate":"agent_message_chunk","content":[
-            {"type":"text","text":"a"},{"type":"text","text":"b"}]});
-        assert_eq!(
-            acp_update_to_event(&u),
-            Some(AgentEvent::AssistantDelta { text: "ab".into() })
-        );
-    }
-
-    #[test]
-    fn tool_call_maps_to_tool_call_start() {
-        // 取自真实 claude-code-acp trace(mcp__acp__Bash)。
-        let u = json!({
-            "toolCallId":"toolu_01K9tm4mVyQpgg2BJWUcYrNV",
-            "sessionUpdate":"tool_call",
-            "rawInput":{"command":"ls -la","timeout":15000},
-            "status":"pending","title":"`ls -la`","kind":"execute",
-            "content":[{"type":"content","content":{"type":"text","text":"列出当前目录文件"}}]
-        });
-        let ev = acp_update_to_event(&u).unwrap();
-        match ev {
-            AgentEvent::ToolCallStart {
-                id,
-                title,
-                kind,
-                raw_input,
-            } => {
-                assert_eq!(id, "toolu_01K9tm4mVyQpgg2BJWUcYrNV");
-                assert_eq!(title, "`ls -la`");
-                assert_eq!(kind.as_deref(), Some("execute"));
-                assert_eq!(raw_input.get("command").unwrap(), "ls -la");
-            }
-            other => panic!("期望 ToolCallStart,得到 {:?}", other),
-        }
-    }
-
-    #[test]
-    fn tool_call_update_extracts_status_and_diff() {
-        let u = json!({
-            "sessionUpdate":"tool_call_update",
-            "toolCallId":"t1",
-            "status":"completed",
-            "content":[
-                {"type":"text","text":"ok"},
-                {"type":"diff","path":"a.txt","oldText":"x","newText":"y"}
-            ]
-        });
-        let ev = acp_update_to_event(&u).unwrap();
-        match ev {
-            AgentEvent::ToolCallUpdate {
-                id,
-                status,
-                content,
-                diff,
-            } => {
-                assert_eq!(id, "t1");
-                assert_eq!(status.as_deref(), Some("completed"));
-                assert!(content.is_some());
-                let d = diff.expect("应抽出 diff 块");
-                assert_eq!(d.as_array().unwrap().len(), 1);
-                assert_eq!(d[0].get("path").unwrap(), "a.txt");
-            }
-            other => panic!("期望 ToolCallUpdate,得到 {:?}", other),
-        }
-    }
-
-    #[test]
-    fn tool_call_update_without_diff_is_none() {
-        let u = json!({
-            "sessionUpdate":"tool_call_update","toolCallId":"t2","status":"in_progress",
-            "content":[{"type":"text","text":"working"}]
-        });
-        match acp_update_to_event(&u).unwrap() {
-            AgentEvent::ToolCallUpdate { diff, .. } => assert!(diff.is_none()),
-            other => panic!("期望 ToolCallUpdate,得到 {:?}", other),
-        }
-    }
-
-    #[test]
-    fn unknown_update_falls_back_to_ext_keeping_raw() {
-        let u = json!({"sessionUpdate":"available_commands_update","availableCommands":[{"name":"debug"}]});
-        match acp_update_to_event(&u).unwrap() {
-            AgentEvent::Ext { raw } => {
-                // raw 完整保留,不丢字段。
-                assert_eq!(
-                    raw.get("sessionUpdate").unwrap(),
-                    "available_commands_update"
-                );
-                assert!(raw.get("availableCommands").is_some());
-            }
-            other => panic!("期望 Ext,得到 {:?}", other),
-        }
-    }
-
-    #[test]
-    fn plan_update_falls_back_to_ext() {
-        let u = json!({"sessionUpdate":"plan","entries":[{"content":"step1","status":"pending"}]});
-        assert!(matches!(
-            acp_update_to_event(&u),
-            Some(AgentEvent::Ext { .. })
-        ));
-    }
-
-    #[test]
-    fn missing_session_update_returns_none() {
-        assert_eq!(acp_update_to_event(&json!({"foo":"bar"})), None);
-    }
-
-    #[test]
-    fn permission_request_maps_options_and_title() {
-        // 取自真实 trace:注意 id 为数字 0。
-        let params = json!({
-            "options":[
-                {"kind":"allow_always","name":"Always Allow","optionId":"allow_always"},
-                {"kind":"allow_once","name":"Allow","optionId":"allow"},
-                {"kind":"reject_once","name":"Reject","optionId":"reject"}
-            ],
-            "sessionId":"s1",
-            "toolCall":{"toolCallId":"toolu_x","title":"`ls -la`"}
-        });
-        let ev = permission_request_to_event(json!(0), &params);
-        match ev {
-            AgentEvent::PermissionRequest {
-                request_id,
-                title,
-                options,
-            } => {
-                assert_eq!(request_id, json!(0));
-                assert_eq!(title, "`ls -la`");
-                assert_eq!(options.len(), 3);
-                assert_eq!(options[0].option_id, "allow_always");
-                assert_eq!(options[2].kind.as_deref(), Some("reject_once"));
-            }
-            other => panic!("期望 PermissionRequest,得到 {:?}", other),
-        }
-    }
-
-    // FIX-7:补 permission_request_to_event 的未覆盖分支。
-    #[test]
-    fn permission_title_falls_back_to_params_title() {
-        // 无 toolCall.title 时,title 退回 params.title。
-        let params = json!({ "title": "顶层标题", "options": [] });
-        match permission_request_to_event(json!(1), &params) {
-            AgentEvent::PermissionRequest { title, options, .. } => {
-                assert_eq!(title, "顶层标题");
-                assert!(options.is_empty());
-            }
-            other => panic!("期望 PermissionRequest,得到 {:?}", other),
-        }
-    }
-
-    #[test]
-    fn permission_options_missing_and_dirty_elements() {
-        // ① options 字段缺失 → 空 Vec。
-        let p1 = json!({ "toolCall": { "title": "x" } });
-        match permission_request_to_event(json!(2), &p1) {
-            AgentEvent::PermissionRequest { options, .. } => assert!(options.is_empty()),
-            other => panic!("期望 PermissionRequest,得到 {:?}", other),
-        }
-        // ② 脏元素(缺 optionId,反序列化失败)被 filter_map 静默丢弃,合法元素保留。
-        let p2 = json!({
-            "toolCall": { "title": "x" },
-            "options": [
-                { "name": "缺 optionId 的脏元素" },
-                { "optionId": "allow", "name": "Allow", "kind": "allow_once" }
-            ]
-        });
-        match permission_request_to_event(json!(3), &p2) {
-            AgentEvent::PermissionRequest { options, .. } => {
-                assert_eq!(options.len(), 1, "脏元素应被丢弃,只保留合法元素");
-                assert_eq!(options[0].option_id, "allow");
-                assert_eq!(options[0].kind.as_deref(), Some("allow_once"));
-            }
-            other => panic!("期望 PermissionRequest,得到 {:?}", other),
-        }
-    }
 
     /// 冻结契约(与手机端并行消费,不可漂移):
     /// MirrorStarted 的 wire 形态必须精确为 `{"type":"mirror_started"}`(无其它字段)。

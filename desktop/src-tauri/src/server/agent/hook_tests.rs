@@ -1,5 +1,5 @@
 //! `hook.rs` 的单元测试(经 `#[path]` 挂为 `hook` 的子模块,`use super::*` 可访问其私有项:
-//! `MirrorState` 字段 / `MirrorRegistry::inner` / `agent_mirror_flag` 等)。
+//! `MirrorState` 字段 / `MirrorRegistry::inner` 等)。
 //!
 //! 不起 HTTP:直接 `.await` 调 handler 函数并传 extractor 值(项目内无 HTTP 层测试先例,
 //! 与 brief 约定一致)。完整 state 用 `create_dummy_state`;镜像通路断言(attach client /
@@ -390,7 +390,6 @@ async fn first_session_start_registers_mirror_and_streams_transcript() {
         .agents
         .get(&sid)
         .expect("SessionStart 后 agents 表应有 entry");
-    assert_eq!(entry.kind(), AgentKind::Mirror, "entry 应为 Mirror 类型");
 
     // registry:MirrorState 已登记且身份正确。
     {
@@ -723,24 +722,6 @@ async fn malformed_body_tolerated_for_non_session_start_events() {
 }
 
 // ── 决策 4:/api/sessions 的 agent_mirror 字段 ──
-
-/// 纯映射:None(无 entry)/ Some(Acp)(方案 B)→ false;Some(Mirror) → true。
-/// (Acp entry 需真实子进程才能入表,故 Acp=false 在纯函数级锁定,与 handler 共用同一表达式。)
-#[test]
-fn agent_mirror_flag_maps_kind_correctly() {
-    assert!(
-        !agent_mirror_flag(None),
-        "无 agents entry(普通会话)应为 false"
-    );
-    assert!(
-        !agent_mirror_flag(Some(AgentKind::Acp)),
-        "方案 B(Acp)会话应为 false"
-    );
-    assert!(
-        agent_mirror_flag(Some(AgentKind::Mirror)),
-        "镜像会话应为 true"
-    );
-}
 
 /// list_sessions / get_session:镜像会话 agent_mirror==true,普通会话 ==false。
 #[tokio::test]

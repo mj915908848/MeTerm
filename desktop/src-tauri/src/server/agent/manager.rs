@@ -1,18 +1,18 @@
-//! `AcpAgentManager` —— agent 会话生命周期 + WS 帧广播(下行链路,P1-T2)。
+//! `AgentManager` —— 镜像 agent 会话(方案甲)生命周期 + WS 帧广播(下行链路)。
 //!
-//! 把 T1 的 `AcpClient`(外部 agent 子进程)接进既有 WS 下行管线:一个 agent
-//! 会话就是一个**不启动 PTY**的普通 `Session`,只是下行的是 `MSG_AGENT_EVENT`
-//! (0x50)JSON 帧而非终端字节(投递机制见下方「精确一次」说明)。手机端零改动
-//! 即可经现有 `/ws/{id}`(自动穿透 relay)收到帧(解码是 T3)。
+//! 把外部喂入的镜像事件流(M3 hooks / M4 transcript,归一为 `AgentEvent`)接进既有
+//! WS 下行管线:镜像会话的底层是**带 PTY 的 local-shell 会话**,除终端字节外,额外下行
+//! `MSG_AGENT_EVENT`(0x50)JSON 帧(投递机制见下方「精确一次」说明),手机端经现有
+//! `/ws/{id}` 收到。
 //!
 //! agent 会话的身份唯一真相 = 本表:`manager.get(&session_id).is_some()` 即判定
-//! 「这是 agent 会话」。**不改 `Session` 结构体、不加字段**。
+//! 「这是(镜像)agent 会话」。**不改 `Session` 结构体、不加字段**。
 //!
 //! 组成:
 //! - [`AgentHistory`]——已编码帧的字节上限环形缓冲,供晚接入的手机回放。
 //! - [`FanState`]——history + 「已完成回放(attached)的 client id 集合」,**同一把锁**守护。
-//! - [`AgentEntry`]——单个 agent 会话的 client + fan 状态 + fan-out 任务句柄 + 元数据。
-//! - [`AcpAgentManager`]——`session_id -> Arc<AgentEntry>` 注册表(Registry 范式,
+//! - [`AgentEntry`]——单个 agent 会话的 fan 状态 + fan-out 任务句柄。
+//! - [`AgentManager`]——`session_id -> Arc<AgentEntry>` 注册表(Registry 范式,
 //!   仿 `PresenceRegistry`/`PushRegistry`)。
 //!
 //! **精确一次 + 有序**(核心正确性 · attached-set 门控):handle_ws 在步骤2
@@ -37,7 +37,7 @@
 //!
 //! **同 client 双路 attach 的互斥/幂等**(与上述不变式的叠加语义):对同一 client,attach 可能被
 //! 发起多次——不同 conn_gen 的(reconnect)由 BUG-2 conn_gen 守卫裁决(新连接的 attach 接管,旧的
-//! abort);**同 conn_gen** 的(升格补 attach × 连接时 attach,ACP 与 Mirror 同函数、同受保护)由
+//! abort);**同 conn_gen** 的(升格补 attach × 连接时 attach)由
 //! [`attach_client`] 内建的两重守卫裁决:已有一次同代 attach **完整完成** → 幂等守卫使后到者
 //! no-op(同一条通道上历史已送达,重放必重复);两路**并发在飞** → per-client in-flight 代次
 //! 互斥,后登记者独占、先登记者在校验点 abort。合并后的全局不变式:任意时刻,对每个 client
@@ -49,24 +49,17 @@
 //! [`Client::send_async`]: crate::server::session::client::Client::send_async
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
-use super::{AcpClient, AcpCommand, AgentEvent};
+use super::AgentEvent;
 use crate::server::events::{DesktopEvent, EventBus};
 use crate::server::protocol;
 use crate::server::session::client::Client;
-use crate::server::session::manager::SessionManager;
 use crate::server::session::Session;
-
-/// 「创建后无人 attach」的回收期限(idle-guard,FIX-L3)。> 握手超时(60s)留足余量,
-/// 避免握手慢启动(npx 首次拉依赖)期间被误判为「被抛弃」。到点仍从未 attach → 回收。
-const ATTACH_DEADLINE: Duration = Duration::from_secs(120);
 
 // ---------------------------------------------------------------------------
 // AgentHistory —— 下行帧历史(字节上限环形缓冲)
@@ -200,61 +193,19 @@ impl FanState {
 }
 
 // ---------------------------------------------------------------------------
-// AgentKind —— agent 会话的事件源类型
-// ---------------------------------------------------------------------------
-
-/// agent 会话的事件源类型 —— 决定生命周期与 attach 回放策略。
-///
-/// - `Acp`(方案 B):事件来自托管的 [`AcpClient`] 子进程;会话**无 PTY**,结束时随子进程
-///   删除整个会话([`finalize_fan_out`])。
-/// - `Mirror`(方案甲):事件来自**外部喂入**的镜像流(hooks/transcript,M3/M4),`client=None`;
-///   底层是**带 PTY 的 local-shell 会话**,镜像结束(claude 退出)**不删会话**——PTY shell 仍在、
-///   终端页继续可用([`finalize_mirror`])。attach 时终端环形缓冲 + AI 历史两者都回放。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AgentKind {
-    /// 方案 B:托管 AcpClient 子进程,会话无 PTY,结束删会话。
-    Acp,
-    /// 方案甲:外部镜像事件源,底层带 PTY,结束不删会话。
-    Mirror,
-}
-
-// ---------------------------------------------------------------------------
-// AgentMeta —— 只读元数据
-// ---------------------------------------------------------------------------
-
-/// 单个 agent 会话的只读元数据(供 REST 响应 / 未来 list)。
-#[derive(Clone, Debug)]
-pub struct AgentMeta {
-    /// agent 标识(目前只有 `"claude"`)。
-    pub agent: String,
-    /// 工作目录(绝对路径)。
-    pub cwd: String,
-    /// 事件源类型(Acp / Mirror),决定生命周期与 attach 回放(见 [`AgentKind`])。
-    pub kind: AgentKind,
-}
-
-// ---------------------------------------------------------------------------
 // AgentEntry —— 单个 agent 会话
 // ---------------------------------------------------------------------------
 
-/// 单个 agent 会话:托管的 `AcpClient` + fan 状态(history + attached)+ fan-out 任务句柄 + 元数据。
+/// 单个镜像 agent 会话:fan 状态(history + attached)+ fan-out 任务句柄。
+///
+/// 事件源是**外部喂入**的镜像流(hooks/transcript,M3/M4);底层是**带 PTY 的 local-shell
+/// 会话**,镜像结束(claude 退出)**不删会话**——PTY shell 仍在、终端页继续可用
+/// ([`finalize_mirror`])。attach 时终端环形缓冲 + AI 历史两者都回放。
 pub struct AgentEntry {
-    /// 托管的 `AcpClient`。生产路径恒为 `Some`;测试插入口([`AcpAgentManager::insert_for_test`])
-    /// 用 `None` 塞一个不带子进程的表条目,供表增删 / 收尾移除断言(无需构造 `AcpClient`)。
-    client: Option<Arc<AcpClient>>,
     fan: Arc<Mutex<FanState>>,
-    meta: AgentMeta,
-    /// fan-out 任务句柄,供显式 [`AcpAgentManager::remove`] 时 abort
+    /// fan-out 任务句柄,供显式 [`AgentManager::remove`] 时 abort
     /// (常规销毁走会话 cancel token,fan-out 自收尾)。
     task: Mutex<Option<JoinHandle<()>>>,
-    /// 「一次一轮」in-flight 守卫(T4 上行发消息用):某轮 `send_prompt` 进行中置 true。
-    /// ACP 一次只能跑一轮,重叠 `send_prompt` 会向子进程发两次 prompt 污染同一会话,
-    /// 故上行 `MSG_AGENT_INPUT` 先 [`AgentEntry::begin_turn`] 抢占,失败即回 `agent_busy`。
-    busy: AtomicBool,
-    /// idle-guard(FIX-L3):是否曾有 client attach 过。[`AgentEntry::attach`] 首次置 true;
-    /// `run_fan_out` 的 [`ATTACH_DEADLINE`] 到点时若仍为 false → 判定「创建后无人连接」→ 回收。
-    /// 与 `run_fan_out` 共享同一个 `Arc<AtomicBool>`(register 里建、两处各持一克隆)。
-    ever_attached: Arc<AtomicBool>,
 }
 
 impl AgentEntry {
@@ -263,75 +214,12 @@ impl AgentEntry {
     /// **async**:回放用背压发送(通道满则等 writer 排空),故历史帧数远超通道容量也不丢、
     /// 不断连。调用方须已 spawn writer 并发排空 priority 通道(writer-before-attach)。
     pub async fn attach(&self, client: &Client) {
-        // idle-guard(FIX-L3):标记本会话已有 client 连接过。一旦置 true,`run_fan_out`
-        // 的 ATTACH_DEADLINE 便不再回收它(随子进程存活;attached-then-left 不回收,
-        // 既定取舍)。attempt 粒度即足够:能走到 attach 说明该会话绝非「创建后从未连接」——
-        // 即便该 client 随即掉线(回放中途断开),也是「连过又走」而非「从未连接」。
-        self.ever_attached.store(true, Ordering::SeqCst);
         attach_client(&self.fan, client).await;
-    }
-
-    /// 托管的 `AcpClient`(供 T4 上行输入 / 控制帧复用)。测试插入口塞的条目为 `None`。
-    pub fn client(&self) -> Option<&Arc<AcpClient>> {
-        self.client.as_ref()
-    }
-
-    /// 只读元数据(REST 响应 / list)。
-    pub fn meta(&self) -> &AgentMeta {
-        &self.meta
-    }
-
-    /// 事件源类型(Acp / Mirror)。供 ws / ipc attach 分支与上行 dispatch 判定
-    /// (Mirror 底层有 PTY、无 AcpClient,见 [`AgentKind`])。
-    pub fn kind(&self) -> AgentKind {
-        self.meta.kind
-    }
-
-    /// 尝试开启一轮:当前空闲(busy=false)则原子置 true 返回 true;
-    /// 已有轮次进行中返回 false(调用方回 `agent_busy`)。
-    pub fn try_begin_turn(&self) -> bool {
-        self.busy
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
-    }
-
-    /// 结束一轮:清 busy,放行下一轮。务必在 `send_prompt` 返回(无论成败)后调用;
-    /// 常规路径经 [`TurnGuard`] 的 Drop 自动完成,即使任务 panic 也会清。
-    pub fn end_turn(&self) {
-        self.busy.store(false, Ordering::Release);
-    }
-
-    /// 尝试开启一轮并返回 RAII 守卫:成功 `Some(guard)`(drop 时自动 [`end_turn`]),
-    /// 已在进行中则 `None`。上行发消息用它保证 `end_turn` 不遗漏(spawn 任务 panic
-    /// 时守卫仍随栈展开 drop → 清 busy,不会永久卡死会话)。
-    ///
-    /// [`end_turn`]: AgentEntry::end_turn
-    pub fn begin_turn(self: &Arc<Self>) -> Option<TurnGuard> {
-        if self.try_begin_turn() {
-            Some(TurnGuard {
-                entry: self.clone(),
-            })
-        } else {
-            None
-        }
-    }
-}
-
-/// 轮次 RAII 守卫:由 [`AgentEntry::begin_turn`] 构造(此刻已 begin),drop 时自动
-/// `end_turn`。持 `Arc<AgentEntry>` 以便移入 `tokio::spawn` 的任务,任务结束(成功 /
-/// `send_prompt` 返回 Err / panic 展开)后守卫 drop → 清 busy,杜绝忘记 `end_turn`。
-pub struct TurnGuard {
-    entry: Arc<AgentEntry>,
-}
-
-impl Drop for TurnGuard {
-    fn drop(&mut self) {
-        self.entry.end_turn();
     }
 }
 
 /// attach:把已入历史的帧按序、**带背压**地回放给刚接入的 client,回放全部完成后在 fan 锁内
-/// **原子**把 client id 插入 attached 集合。抽成自由函数便于单测(无需构造 `AcpClient`)。
+/// **原子**把 client id 插入 attached 集合。抽成自由函数便于单测(无需构造 entry)。
 ///
 /// 与旧实现(持 fan 锁、非阻塞 `send` 逐帧灌入 1024 槽 priority 通道)的本质区别:
 /// - 回放用 [`Client::send_async`](crate::server::session::client::Client::send_async)
@@ -514,91 +402,14 @@ fn fan_out_one(fan: &Mutex<FanState>, session: &Session, event_bus: &EventBus, e
     }
 }
 
-/// 等待「AcpClient 子进程已关闭」信号:已置 `closed` 立即返回;否则**先注册 waiter
-/// (`enable`)再复查 `closed`**——消除「注册前恰好 notify、注册后错过唤醒」的竞态。
-/// 前提:置信方(reader EOF / `AcpClient::shutdown`)**先 `closed.store(true)` 再
-/// `notify_waiters()`**,故本函数返回时 `closed` 必为 true。抽成自由函数便于单测注入。
-async fn wait_closed(closed: &AtomicBool, notify: &Notify) {
-    if closed.load(Ordering::SeqCst) {
-        return;
-    }
-    let notified = notify.notified();
-    tokio::pin!(notified);
-    // enable:在下一次 `closed` 复查之前就把 waiter 挂上——若此后 notify 触发,必被唤醒;
-    // 若 notify 已在 enable 前触发(则 closed 已 true),下方复查直接返回,不 await(否则永挂)。
-    notified.as_mut().enable();
-    if closed.load(Ordering::SeqCst) {
-        return;
-    }
-    notified.await;
-}
-
-/// fan-out 主循环:归一事件流 → 逐条编码 + 入历史 + 投递给 attached。四条结束路径:
-/// ① `event_rx` 关闭(`None`,生产上 event_tx 常驻 AcpClient,基本只在测试触发);
-/// ② `cancel` 触发(会话被显式 delete / stop);③ **子进程关闭**(`wait_closed`,FIX-L2);
-/// ④ **idle-guard**(FIX-L3):创建后 `attach_deadline` 内从未 attach **且当前无 connected
-/// client** → 视为被抛弃(有 connected client = 正连接中的会话,不误杀,见 idle 分支注释)。
-/// 结束后由 [`AcpAgentManager::register`] 的 spawn 包装层收尾(shutdown 子进程 + 移除
-/// AgentEntry + 移除 Session)。抽成独立函数便于单测(注入 channel / cancel / closed / 极短 deadline)。
-async fn run_fan_out(
-    fan: Arc<Mutex<FanState>>,
-    session: Arc<Session>,
-    event_bus: EventBus,
-    cancel: CancellationToken,
-    mut event_rx: mpsc::UnboundedReceiver<AgentEvent>,
-    closed: Arc<AtomicBool>,
-    closed_notify: Arc<Notify>,
-    ever_attached: Arc<AtomicBool>,
-    attach_deadline: Duration,
-) {
-    let idle = tokio::time::sleep(attach_deadline);
-    tokio::pin!(idle);
-    loop {
-        tokio::select! {
-            ev = event_rx.recv() => {
-                match ev {
-                    Some(e) => fan_out_one(&fan, &session, &event_bus, &e),
-                    None => break, // AcpClient event_rx 关闭(子进程结束/shutdown)
-                }
-            }
-            _ = cancel.cancelled() => break, // 会话被 reap/delete
-            _ = wait_closed(&closed, &closed_notify) => break, // 子进程退出 → 回收(FIX-L2)
-            _ = &mut idle => {
-                // idle-guard(FIX-L3):创建后 attach_deadline 内从未 attach → 判「被抛弃」→ 回收。
-                if !ever_attached.load(Ordering::SeqCst) {
-                    // FIX(lifecycle-race):仅凭 ever_attached 会误杀「正在连接中」的会话——client
-                    // 在 handle_ws 步骤2(add_client)就已登记进 session.clients、connected,但要到
-                    // 步骤6(attach)才置 ever_attached,中间隔着 hello/role 的 await。deadline 恰落在
-                    // 这个 add_client→attach 窗口时,单看 !ever_attached 会把正连接的会话误回收。故再
-                    // 验「当前确无 connected client」:真从头到尾无人连才回收(idle-guard 原语义);
-                    // 有 connected client(正连接中)则重置 deadline 再给一轮——待 attach 完成走下面
-                    // 的 86400 分支,或该连接掉线(connected 归零)后下一轮再回收,不留僵尸。
-                    if session.connected_client_count() == 0 {
-                        break;
-                    }
-                    idle
-                        .as_mut()
-                        .reset(tokio::time::Instant::now() + attach_deadline);
-                } else {
-                    // 已 attach 过:随子进程存活,guard 失效。把已 elapsed 的定时器推到极远,
-                    // 避免每轮立即就绪造成忙轮询(此后回收只靠子进程死亡 / cancel)。
-                    idle
-                        .as_mut()
-                        .reset(tokio::time::Instant::now() + Duration::from_secs(86_400));
-                }
-            }
-        }
-    }
-}
-
 /// 镜像会话 fan-out 主循环(方案甲):归一**外部喂入**的镜像事件流(M3 hooks / M4 transcript)→
-/// 逐条编码 + 入历史 + 投递给 attached(复用 [`fan_out_one`],与 ACP 同一套「精确一次 + 有序」不变式)。
+/// 逐条编码 + 入历史 + 投递给 attached(经 [`fan_out_one`],「精确一次 + 有序」不变式见模块级说明)。
 ///
-/// 与 ACP 的 [`run_fan_out`] 的关键区别 —— 镜像**没有 AcpClient 子进程**,故只有三条结束路径:
+/// 镜像**没有托管子进程**,故只有三条结束路径:
 /// ① `event_rx` 关闭(`None`:全部 event_tx drop);② `cancel` 触发(底层 PTY 会话被
 /// delete/reap → `session.cancel()`);③ **MirrorEnded 终结**(FIX-5:claude 退出,cleanup
 /// 发出的最后一条事件——广播完它立即收尾,不再 drain 尾随事件)。
-/// **不 wait_closed**(无子进程可等)、**不 idle-guard**(镜像在 SessionStart 时 claude 已在跑,
+/// **不等子进程**(无子进程可等)、**不 idle-guard**(镜像在 SessionStart 时 claude 已在跑,
 /// 非「创建后无人连」——会话存活由终端会话生命周期 + reaper 负责,不在此回收)。`select!` 别无
 /// 其它分支,退出条件封闭可证:除上述三条外无从返回,故绝不因 idle / 无子进程而误退。抽成独立
 /// 函数便于单测(注入 channel / cancel,断言恰在这三条路径结束、其余情形一直阻塞不误退)。
@@ -632,49 +443,23 @@ async fn run_mirror_fan_out(
     }
 }
 
-/// fan-out 主循环结束后的收尾:`shutdown`(kill 子进程,幂等)→ 从 AcpAgentManager
-/// 移除本条目 → **从 SessionManager 移除本 Session**。三步覆盖所有终局,不留残留。
+/// 镜像会话 fan-out 收尾(方案甲):**只从 AgentManager 移除自己的条目**。
 ///
-/// 第三步(FIX-L2 的关键):子进程死亡 / idle-guard 路径下 Session 仍在 SessionManager
-/// 表中、且被 FIX-L1 豁免了 client-TTL 回收,若不移除即成永不回收的僵尸。`delete` 会
-/// 广播 SESSION_END + cancel + 清理;若会话已被显式 delete / stop 移走 → 返回 Err,忽略
-/// (幂等,不重复广播/清理)。故三条回收路径(子进程死 / idle-guard / 显式 delete)终态一致:
-/// AgentEntry 与 Session 都被清。
-///
-/// 把「post-loop 收尾」抽成独立函数 + 注入 `shutdown` future:`register` 真实路径传
-/// `client.shutdown()`;测试传一个设置 flag 的 future,即可在**无真实子进程**下锁定
-/// 「各终止路径都会 remove_entry + delete Session」。
-async fn finalize_fan_out<F>(
-    manager: &AcpAgentManager,
-    session_manager: &SessionManager,
-    session_id: &str,
-    shutdown: F,
-) where
-    F: std::future::Future<Output = ()>,
-{
-    shutdown.await;
-    manager.remove_entry(session_id);
-    let _ = session_manager.delete(session_id);
-}
-
-/// 镜像会话 fan-out 收尾(方案甲):**只从 AcpAgentManager 移除自己的条目**。
-///
-/// 与 ACP 的 [`finalize_fan_out`] 的根本区别:镜像结束 = claude 退出(SessionEnd hook),但底层
-/// local-shell 会话的 PTY shell **仍在运行**、终端页继续可用,故**绝不删 Session**(那会误杀
-/// 用户的 shell)。也**不 shutdown**(无子进程)、**不清 hook secret**(secret 绑 PTY 会话生命
+/// 镜像结束 = claude 退出(SessionEnd hook),但底层 local-shell 会话的 PTY shell **仍在运行**、
+/// 终端页继续可用,故**绝不删 Session**(那会误杀用户的 shell)。也**不 shutdown**(无子进程)、**不清 hook secret**(secret 绑 PTY 会话生命
 /// 周期,同一 PTY 可再跑 claude → 再 register_mirror;secret 由 `SessionManager::reap` 在会话真正
 /// 消失时统一清,见 §M5-5)。
 ///
-/// FIX-2:必须带身份守卫删除([`AcpAgentManager::remove_entry_if_same`])——Task D 的
+/// FIX-2:必须带身份守卫删除([`AgentManager::remove_entry_if_same`])——Task D 的
 /// cleanup 打破了「entry 会话期内从不移除」旧不变式,cleanup 后新 SessionStart 可在旧
 /// fan-out drain 完(毫秒级窗口)之前 register 新 entry,裸 remove 会误删新 entry
 /// (新镜像 agents.get→None,手机整段无法 attach)。抽成独立函数便于单测。
-fn finalize_mirror(manager: &AcpAgentManager, session_id: &str, entry: &Arc<AgentEntry>) {
+fn finalize_mirror(manager: &AgentManager, session_id: &str, entry: &Arc<AgentEntry>) {
     manager.remove_entry_if_same(session_id, entry);
 }
 
 // ---------------------------------------------------------------------------
-// AcpAgentManager —— 注册表
+// AgentManager —— 注册表
 // ---------------------------------------------------------------------------
 
 /// agent 会话注册表 —— `session_id -> Arc<AgentEntry>` 的线程安全映射。
@@ -682,11 +467,11 @@ fn finalize_mirror(manager: &AcpAgentManager, session_id: &str, entry: &Arc<Agen
 /// `Clone` 共享内部 `Arc<Mutex<..>>`,与 `PresenceRegistry`/`PushRegistry` 同一模式,
 /// 多处持有的克隆体操作同一份数据。
 #[derive(Clone)]
-pub struct AcpAgentManager {
+pub struct AgentManager {
     inner: Arc<Mutex<HashMap<String, Arc<AgentEntry>>>>,
 }
 
-impl AcpAgentManager {
+impl AgentManager {
     /// 新建空注册表。
     pub fn new() -> Self {
         Self {
@@ -709,78 +494,18 @@ impl AcpAgentManager {
         self.inner.lock().unwrap().is_empty()
     }
 
-    /// 登记一个 agent 会话并起 fan-out 任务(一次搞定,handler 更薄)。
-    ///
-    /// fan-out 任务:`run_fan_out`(event_rx → 编码 + 入历史 + 广播)结束后收尾——
-    /// `client.shutdown()`(kill 子进程,幂等)+ 移除 AgentEntry + 移除 Session。
-    /// run_fan_out 的四条结束路径(event_rx 关闭 / cancel(显式 delete·stop)/ **子进程
-    /// 退出**(FIX-L2)/ **idle-guard**(FIX-L3))都会驱动其返回并收尾,从而**无子进程 /
-    /// 会话泄漏**。agent 会话「随子进程存活」:手机断连使其 Draining 时被 reaper 豁免
-    /// client-TTL 回收(FIX-L1),回收改由上述子进程死 / idle-guard / 显式 delete 三路兜住。
-    pub fn register(
-        &self,
-        session_id: String,
-        client: Arc<AcpClient>,
-        event_rx: mpsc::UnboundedReceiver<AgentEvent>,
-        session: Arc<Session>,
-        session_manager: Arc<SessionManager>,
-        event_bus: EventBus,
-        cancel: CancellationToken,
-        meta: AgentMeta,
-    ) -> Arc<AgentEntry> {
-        let fan = Arc::new(Mutex::new(FanState::new()));
-        let ever_attached = Arc::new(AtomicBool::new(false));
-        let entry = Arc::new(AgentEntry {
-            client: Some(client.clone()),
-            fan: fan.clone(),
-            meta,
-            task: Mutex::new(None),
-            busy: AtomicBool::new(false),
-            ever_attached: ever_attached.clone(),
-        });
-        // 先存表:fan-out 收尾能据 session_id 移除自己;ws attach 分支能据表判定 agent 会话。
-        self.inner
-            .lock()
-            .unwrap()
-            .insert(session_id.clone(), entry.clone());
-
-        let manager = self.clone();
-        // 子进程关闭信号(reader EOF / shutdown 触发),供 run_fan_out 感知子进程死亡。
-        let (closed, closed_notify) = client.closed_signal();
-        let handle = tokio::spawn(async move {
-            run_fan_out(
-                fan,
-                session,
-                event_bus,
-                cancel,
-                event_rx,
-                closed,
-                closed_notify,
-                ever_attached,
-                ATTACH_DEADLINE,
-            )
-            .await;
-            // 收尾:kill 子进程(shutdown 幂等,与外部 remove 不冲突)+ 移除 AgentEntry +
-            // 移除 Session(子进程死 / idle-guard 路径下 Session 仍在表且豁免了 TTL,须显式清)。
-            finalize_fan_out(&manager, &session_manager, &session_id, client.shutdown()).await;
-        });
-        *entry.task.lock().unwrap() = Some(handle);
-        entry
-    }
-
     /// 登记一个**镜像**会话(方案甲)并起镜像 fan-out 任务。
     ///
-    /// 与 [`register`](Self::register) 的三点关键区别:
-    /// - `client=None`、`kind=Mirror`:事件源不是 AcpClient 子进程,而是外部喂入的 `event_rx`
+    /// - 事件源是外部喂入的 `event_rx`
     ///   (M3 的 hook 端点 / M4 的 transcript tailer 归一为 [`AgentEvent`] 后 send)。
     /// - fan-out 用 [`run_mirror_fan_out`]:只有 `event_rx 关闭` / `cancel` 两条结束路径,
-    ///   **不 wait_closed**(无子进程)、**不 idle-guard**(镜像在 SessionStart 时 claude 已在跑)。
-    /// - 收尾用 [`finalize_mirror`]:**只 remove_entry,绝不删 PTY 会话**——镜像结束 = claude 退出,
+    ///   **不等子进程**(无子进程)、**不 idle-guard**(镜像在 SessionStart 时 claude 已在跑)。
+    /// - 收尾用 [`finalize_mirror`]:**只移除自己的表条目,绝不删 PTY 会话**——镜像结束 = claude 退出,
     ///   但底层 local-shell 会话仍在、终端页继续可用(会话回收另由终端 reaper / 显式 delete 负责)。
     ///
     /// `cancel` 取自底层 PTY 会话的 cancellation token:会话被 delete/reap 时 `session.cancel()`
-    /// 触发,镜像 fan-out 随之收尾。fan / history / attached 与 ACP 路径完全一致(共用 `fan_out_one`
-    /// / `attach_client`),故「精确一次 + 有序」+ 背压回放不变式对镜像事件同样成立。
+    /// 触发,镜像 fan-out 随之收尾。fan / history / attached 经 `fan_out_one` / `attach_client`,
+    /// 故「精确一次 + 有序」+ 背压回放不变式对镜像事件成立。
     pub fn register_mirror(
         &self,
         session_id: String,
@@ -790,17 +515,8 @@ impl AcpAgentManager {
     ) -> Arc<AgentEntry> {
         let fan = Arc::new(Mutex::new(FanState::new()));
         let entry = Arc::new(AgentEntry {
-            client: None, // 镜像无 AcpClient,事件源是外部喂入的 mpsc
             fan: fan.clone(),
-            meta: AgentMeta {
-                agent: "claude".to_string(),
-                cwd: String::new(),
-                kind: AgentKind::Mirror,
-            },
             task: Mutex::new(None),
-            busy: AtomicBool::new(false),
-            // 镜像不参与 idle-guard(run_mirror_fan_out 无该分支);字段仍在,attach 照常置 true。
-            ever_attached: Arc::new(AtomicBool::new(true)),
         });
         // 先存表:ws / ipc attach 分支据表判定 agent 会话;收尾据 session_id 移除自己。
         self.inner
@@ -824,17 +540,11 @@ impl AcpAgentManager {
         entry
     }
 
-    /// 测试专用:直接往注册表塞一个条目(绕过 `register` 的子进程依赖),
-    /// 供表增删([`manager_remove_entry_updates_table`])与收尾移除([`finalize_fan_out`])断言。
+    /// 测试专用:直接往注册表塞一个条目(绕过 `register_mirror` 的 fan-out 任务),
+    /// 供表增删断言。
     #[cfg(test)]
     fn insert_for_test(&self, id: &str, entry: Arc<AgentEntry>) {
         self.inner.lock().unwrap().insert(id.to_string(), entry);
-    }
-
-    /// 仅从表移除条目(不 shutdown、不 abort)。fan-out 收尾路径调用;若已被外部
-    /// `remove` 移走则为 no-op。
-    fn remove_entry(&self, id: &str) -> Option<Arc<AgentEntry>> {
-        self.inner.lock().unwrap().remove(id)
     }
 
     /// 身份守卫移除(FIX-2):仅当表中该 id 现存条目与 `expected` 是**同一个 Arc**
@@ -851,68 +561,27 @@ impl AcpAgentManager {
         }
     }
 
-    /// 显式清理一个 agent 会话:从表移除 → `shutdown` 子进程 → abort fan-out 任务。
+    /// 显式清理一个 agent 会话:从表移除 → abort fan-out 任务。返回是否移除了条目。
     ///
     /// 常规销毁由会话 cancel token 驱动 fan-out 自收尾;此法供未来显式清理路径。
-    /// 与 fan-out 自收尾并发也安全:`remove_entry` 保证只有一方拿到 entry,
-    /// `shutdown` 幂等,重复 abort 无害。
-    pub async fn remove(&self, id: &str) {
+    /// 与 fan-out 自收尾并发也安全:表锁内 remove 保证只有一方拿到 entry,重复 abort 无害。
+    pub fn remove(&self, id: &str) -> bool {
         let entry = self.inner.lock().unwrap().remove(id);
+        let removed = entry.is_some();
         if let Some(entry) = entry {
-            if let Some(client) = entry.client() {
-                client.shutdown().await;
-            }
             let handle = entry.task.lock().unwrap().take();
             if let Some(h) = handle {
                 h.abort();
             }
         }
+        removed
     }
 }
 
-impl Default for AcpAgentManager {
+impl Default for AgentManager {
     fn default() -> Self {
         Self::new()
     }
-}
-
-// ---------------------------------------------------------------------------
-// validate_agent_req —— 创建请求校验(纯函数)
-// ---------------------------------------------------------------------------
-
-/// agent 会话创建请求的校验错误(REST handler 映射为 400 + `code`)。
-#[derive(Debug, PartialEq, Eq)]
-pub enum AgentReqError {
-    /// 未知/不支持的 agent 名。
-    UnsupportedAgent,
-    /// cwd 非法(空 / 非绝对路径 / 不存在 / 不是目录)。
-    InvalidCwd,
-}
-
-impl AgentReqError {
-    /// 稳定的机器可读错误码(REST 响应 `{"code": ...}`)。
-    pub fn code(&self) -> &'static str {
-        match self {
-            AgentReqError::UnsupportedAgent => "unsupported_agent",
-            AgentReqError::InvalidCwd => "invalid_cwd",
-        }
-    }
-}
-
-/// 校验 agent 会话创建参数(纯函数,便于单测)。成功返回拉起 agent 的 `AcpCommand`。
-///
-/// - `agent`:目前只认 `"claude"` → `AcpCommand::claude_code()`;其它 → `UnsupportedAgent`。
-/// - `cwd`:必须非空、绝对路径、存在且是目录;否则 `InvalidCwd`。
-pub fn validate_agent_req(agent: &str, cwd: &str) -> Result<AcpCommand, AgentReqError> {
-    let cmd = match agent {
-        "claude" => AcpCommand::claude_code(),
-        _ => return Err(AgentReqError::UnsupportedAgent),
-    };
-    let path = std::path::Path::new(cwd);
-    if cwd.is_empty() || !path.is_absolute() || !path.is_dir() {
-        return Err(AgentReqError::InvalidCwd);
-    }
-    Ok(cmd)
 }
 
 // ---------------------------------------------------------------------------
@@ -922,10 +591,6 @@ pub fn validate_agent_req(agent: &str, cwd: &str) -> Result<AcpCommand, AgentReq
 #[cfg(test)]
 #[path = "manager_tests.rs"]
 mod tests;
-
-#[cfg(test)]
-#[path = "manager_guard_validation_tests.rs"]
-mod guard_validation_tests;
 
 // 镜像会话(方案甲 M5)测试拆到独立文件,保持两个测试文件都在 1000 行以内(项目规范)。
 #[cfg(test)]

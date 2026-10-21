@@ -324,6 +324,10 @@ pub struct AgentReadResult {
     pub is_binary: bool,
     /// True if the file exceeds the size limit and content was skipped.
     pub too_large: bool,
+    /// True when `max_lines` cut the content short.
+    pub truncated: bool,
+    /// Total line count, when the whole file was scanned within `max_bytes`.
+    pub total_lines: Option<u64>,
 }
 
 /// Resolve Agent read paths through symlinks and keep them within the active
@@ -402,11 +406,18 @@ pub fn agent_read_path_requires_confirmation(
 pub async fn agent_read_file(
     path: String,
     max_bytes: Option<u64>,
+    max_lines: Option<u64>,
     workspace_root: String,
     approved_canonical_path: Option<String>,
 ) -> Result<AgentReadResult, String> {
     run_blocking(move || {
-        agent_read_file_blocking(path, max_bytes, workspace_root, approved_canonical_path)
+        agent_read_file_blocking(
+            path,
+            max_bytes,
+            max_lines,
+            workspace_root,
+            approved_canonical_path,
+        )
     })
     .await
 }
@@ -414,6 +425,7 @@ pub async fn agent_read_file(
 fn agent_read_file_blocking(
     path: String,
     max_bytes: Option<u64>,
+    max_lines: Option<u64>,
     workspace_root: String,
     approved_canonical_path: Option<String>,
 ) -> Result<AgentReadResult, String> {
@@ -428,12 +440,18 @@ fn agent_read_file_blocking(
     let size = meta.len();
     let cap = max_bytes.unwrap_or(10 * 1024 * 1024); // 10 MB default
 
+    if let Some(max_lines) = max_lines {
+        return read_head_lines(&p, size, max_lines, cap);
+    }
+
     if size > cap {
         return Ok(AgentReadResult {
             content: None,
             size,
             is_binary: false,
             too_large: true,
+            truncated: false,
+            total_lines: None,
         });
     }
 
@@ -447,6 +465,8 @@ fn agent_read_file_blocking(
             size,
             is_binary: true,
             too_large: false,
+            truncated: false,
+            total_lines: None,
         });
     }
 
@@ -458,15 +478,139 @@ fn agent_read_file_blocking(
         size,
         is_binary: false,
         too_large: false,
+        truncated: false,
+        total_lines: None,
+    })
+}
+
+/// Bytes of content kept for a line-limited read, whatever the line count.
+const HEAD_CONTENT_CAP: usize = 2 * 1024 * 1024;
+
+/// Read only the first `max_lines` lines, streaming instead of loading the
+/// whole file. The rest is scanned (up to `scan_cap` bytes, without being
+/// kept) just to report the total line count.
+fn read_head_lines(
+    p: &std::path::Path,
+    size: u64,
+    max_lines: u64,
+    scan_cap: u64,
+) -> Result<AgentReadResult, String> {
+    use std::io::{BufRead, Read};
+
+    let file = std::fs::File::open(p).map_err(|e| format!("read failed: {}", e))?;
+    let mut reader = std::io::BufReader::with_capacity(64 * 1024, file);
+
+    // Binary detection: any NUL byte in the first 4KB.
+    if reader
+        .fill_buf()
+        .map_err(|e| format!("read failed: {}", e))?
+        .iter()
+        .take(4096)
+        .any(|b| *b == 0)
+    {
+        return Ok(AgentReadResult {
+            content: None,
+            size,
+            is_binary: true,
+            too_large: false,
+            truncated: false,
+            total_lines: None,
+        });
+    }
+
+    let mut kept: Vec<u8> = Vec::new();
+    let mut lines: u64 = 0;
+    let mut newlines: u64 = 0;
+    let mut scanned: u64 = 0;
+    let mut truncated = false;
+    while lines < max_lines {
+        let n = reader
+            .read_until(b'\n', &mut kept)
+            .map_err(|e| format!("read failed: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        scanned += n as u64;
+        lines += 1;
+        if kept.last() == Some(&b'\n') {
+            newlines += 1;
+        }
+        if kept.len() > HEAD_CONTENT_CAP {
+            kept.truncate(HEAD_CONTENT_CAP);
+            truncated = true;
+            break;
+        }
+    }
+    // The separator after the last kept line is not part of the content
+    // (same shape as splitting on '\n' and keeping the first lines).
+    if lines == max_lines && kept.last() == Some(&b'\n') {
+        kept.pop();
+    }
+
+    // Count the remaining lines without keeping them.
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut complete = true;
+    loop {
+        if scanned >= scan_cap {
+            let more = !reader
+                .fill_buf()
+                .map_err(|e| format!("read failed: {}", e))?
+                .is_empty();
+            truncated |= more;
+            complete = !more;
+            break;
+        }
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("read failed: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        truncated = true;
+        scanned += n as u64;
+        newlines += buf[..n].iter().filter(|b| **b == b'\n').count() as u64;
+    }
+
+    let content = String::from_utf8(kept)
+        .or_else(|e| {
+            // A byte cap can split a multi-byte character; keep the valid part.
+            let valid = e.utf8_error().valid_up_to();
+            if truncated && valid > 0 {
+                let mut bytes = e.into_bytes();
+                bytes.truncate(valid);
+                Ok(String::from_utf8(bytes).unwrap_or_default())
+            } else {
+                Err(e)
+            }
+        })
+        .map_err(|e| format!("file is not valid UTF-8: {}", e))?;
+
+    Ok(AgentReadResult {
+        content: Some(content),
+        size,
+        is_binary: false,
+        too_large: false,
+        truncated,
+        total_lines: complete.then_some(newlines + 1),
     })
 }
 
 /// Read a local file as raw bytes (for binary inputs like images
-/// the agent picks via the file picker). Returns a Vec<u8> serialized
-/// as a JSON number array; the TS side rebuilds a Uint8Array from it.
+/// the user attaches via the file picker). Returned as a raw IPC body,
+/// which the TS side receives as an ArrayBuffer — not a JSON number
+/// array, which was several times the file size to encode and parse.
 #[tauri::command]
-pub fn agent_read_file_bytes(path: String, max_bytes: Option<u64>) -> Result<Vec<u8>, String> {
-    let resolved = normalize_path(&path);
+pub async fn agent_read_file_bytes(
+    path: String,
+    max_bytes: Option<u64>,
+) -> Result<tauri::ipc::Response, String> {
+    run_blocking(move || read_file_bytes_blocking(&path, max_bytes))
+        .await
+        .map(tauri::ipc::Response::new)
+}
+
+fn read_file_bytes_blocking(path: &str, max_bytes: Option<u64>) -> Result<Vec<u8>, String> {
+    let resolved = normalize_path(path);
     let p = std::path::Path::new(&resolved);
     if !p.is_file() {
         return Err(format!("not a regular file: {}", resolved));
@@ -483,12 +627,69 @@ pub fn agent_read_file_bytes(path: String, max_bytes: Option<u64>) -> Result<Vec
     std::fs::read(p).map_err(|e| format!("read failed: {}", e))
 }
 
+/// Canonical form of `path`, resolving the nearest existing ancestor when
+/// the target itself does not exist yet (so symlinks are followed either way).
+fn canonical_write_target(path: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut missing: Vec<std::ffi::OsString> = Vec::new();
+    let mut cursor = path.to_path_buf();
+    loop {
+        if let Ok(canonical) = std::fs::canonicalize(&cursor) {
+            let mut out = canonical;
+            for part in missing.iter().rev() {
+                if part == ".." {
+                    out.pop();
+                } else if part != "." {
+                    out.push(part);
+                }
+            }
+            return Some(out);
+        }
+        match cursor.components().next_back()? {
+            std::path::Component::Normal(name) => missing.push(name.to_os_string()),
+            std::path::Component::ParentDir => missing.push("..".into()),
+            std::path::Component::CurDir => {}
+            _ => return None,
+        }
+        let parent = cursor.parent()?.to_path_buf();
+        cursor = parent;
+    }
+}
+
+/// Agent writes may go anywhere the user can write, except MeTerm's own
+/// data and config directories: settings, saved connections, chat history
+/// and the audit log live there, and an agent that could rewrite them
+/// could, for example, switch itself to bypass mode or erase its audit
+/// trail. Attachments are the one exception (they are agent inputs).
+fn ensure_agent_write_allowed(app: &AppHandle, target: &std::path::Path) -> Result<(), String> {
+    let Some(canonical) = canonical_write_target(target) else {
+        return Err(format!("cannot resolve write target: {}", target.display()));
+    };
+    let resolver = app.path();
+    let protected = [
+        resolver.app_data_dir().ok(),
+        resolver.app_config_dir().ok(),
+        resolver.app_local_data_dir().ok(),
+    ];
+    for dir in protected.into_iter().flatten() {
+        let Ok(dir) = std::fs::canonicalize(&dir) else {
+            continue;
+        };
+        if canonical.starts_with(&dir) && !canonical.starts_with(dir.join("attachments")) {
+            return Err(
+                "writing into MeTerm's own data directory is not allowed for the agent".into(),
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Write a local file by absolute / `~`-prefixed path. Creates parent
 /// directories as needed. Overwrites existing files.
 #[tauri::command]
-pub fn agent_write_file(path: String, content: String) -> Result<u64, String> {
+pub fn agent_write_file(app: AppHandle, path: String, content: String) -> Result<u64, String> {
     let resolved = normalize_path(&path);
     let p = std::path::Path::new(&resolved);
+    ensure_agent_write_allowed(&app, p)?;
 
     if let Some(parent) = p.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
@@ -508,12 +709,25 @@ pub fn agent_write_file(path: String, content: String) -> Result<u64, String> {
 /// directory is created on demand. The on-disk filename is prefixed
 /// with a timestamp + short random hash to avoid collisions when the
 /// user drops two files with the same name.
+///
+/// The bytes arrive as the raw IPC body (a Uint8Array on the TS side) and
+/// the file name in the `x-attachment-name` header, URI-encoded so that
+/// non-ASCII names survive the header.
 #[tauri::command]
 pub async fn agent_save_attachment(
     app: AppHandle,
-    name: String,
-    bytes: Vec<u8>,
+    request: tauri::ipc::Request<'_>,
 ) -> Result<AgentAttachmentInfo, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("attachment bytes must be sent as a raw body".to_string());
+    };
+    let name = request
+        .headers()
+        .get("x-attachment-name")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| urlencoding::decode(v).ok())
+        .map(|v| v.into_owned())
+        .unwrap_or_default();
     let app_data = app
         .path()
         .app_data_dir()
@@ -548,12 +762,52 @@ pub async fn agent_save_attachment(
 
     let dest = att_dir.join(&prefixed);
     let size = bytes.len() as u64;
-    std::fs::write(&dest, &bytes).map_err(|e| format!("write attachment failed: {}", e))?;
+    std::fs::write(&dest, bytes).map_err(|e| format!("write attachment failed: {}", e))?;
 
     Ok(AgentAttachmentInfo {
         path: dest.to_string_lossy().to_string(),
         size,
     })
+}
+
+/// Rotate the agent audit log once it passes this size.
+const AUDIT_LOG_MAX_BYTES: u64 = 5 * 1024 * 1024;
+const AUDIT_LOG_FILE: &str = "agent-audit.jsonl";
+const AUDIT_LOG_PREVIOUS: &str = "agent-audit.1.jsonl";
+
+static AUDIT_LOG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Append one line to the agent audit log, keeping it bounded: when the
+/// file passes AUDIT_LOG_MAX_BYTES it becomes `agent-audit.1.jsonl`
+/// (replacing the previous one) and a fresh file is started.
+#[tauri::command]
+pub async fn agent_audit_append(app: AppHandle, line: String) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("failed to get app data dir: {}", e))?;
+    run_blocking(move || append_audit_line(&dir, &line)).await
+}
+
+fn append_audit_line(dir: &std::path::Path, line: &str) -> Result<(), String> {
+    use std::io::Write;
+
+    let _guard = AUDIT_LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    std::fs::create_dir_all(dir).map_err(|e| format!("audit log dir: {}", e))?;
+    let path = dir.join(AUDIT_LOG_FILE);
+    if std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) >= AUDIT_LOG_MAX_BYTES {
+        std::fs::rename(&path, dir.join(AUDIT_LOG_PREVIOUS))
+            .map_err(|e| format!("audit log rotate: {}", e))?;
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|e| format!("audit log open: {}", e))?;
+    let mut entry = line.trim_end_matches('\n').to_string();
+    entry.push('\n');
+    file.write_all(entry.as_bytes())
+        .map_err(|e| format!("audit log write: {}", e))
 }
 
 #[derive(serde::Serialize)]
@@ -572,13 +826,28 @@ pub fn agent_delete_attachment(app: AppHandle, path: String) -> Result<(), Strin
         .path()
         .app_data_dir()
         .map_err(|e| format!("failed to get app data dir: {}", e))?;
-    let att_dir = app_data.join("attachments");
+    let Ok(att_dir) = std::fs::canonicalize(app_data.join("attachments")) else {
+        return Ok(()); // no attachments directory → nothing to delete
+    };
     let target = std::path::Path::new(&path);
-    if !target.starts_with(&att_dir) {
+    // Resolve the parent only: `..` segments and symlinked directories
+    // must not reach outside, but a symlink that is itself the attachment
+    // is removed as a link rather than followed.
+    let (Some(parent), Some(name)) = (target.parent(), target.file_name()) else {
+        return Err("attachment path is outside the managed attachments directory".to_string());
+    };
+    let Ok(parent) = std::fs::canonicalize(parent) else {
+        return Ok(()); // already gone
+    };
+    if parent != att_dir || name == ".." || name == "." {
         return Err("attachment path is outside the managed attachments directory".to_string());
     }
-    if target.is_file() {
-        std::fs::remove_file(target).map_err(|e| format!("delete failed: {}", e))?;
+    let target = parent.join(name);
+    match std::fs::symlink_metadata(&target) {
+        Ok(meta) if meta.is_file() || meta.file_type().is_symlink() => {
+            std::fs::remove_file(&target).map_err(|e| format!("delete failed: {}", e))?;
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -589,9 +858,14 @@ pub fn agent_delete_attachment(app: AppHandle, path: String) -> Result<(), Strin
 /// created on demand. Uses std::fs::copy which is zero-copy on systems
 /// that support it (macOS APFS clonefile, Linux CoW FS).
 #[tauri::command]
-pub fn agent_copy_local_file(source_path: String, dest_path: String) -> Result<u64, String> {
+pub fn agent_copy_local_file(
+    app: AppHandle,
+    source_path: String,
+    dest_path: String,
+) -> Result<u64, String> {
     let src = normalize_path(&source_path);
     let dst = normalize_path(&dest_path);
+    ensure_agent_write_allowed(&app, std::path::Path::new(&dst))?;
     let src_p = std::path::Path::new(&src);
     if !src_p.exists() {
         return Err(format!("source not found: {}", src));
@@ -608,25 +882,6 @@ pub fn agent_copy_local_file(source_path: String, dest_path: String) -> Result<u
     }
     let bytes = std::fs::copy(src_p, dst_p).map_err(|e| format!("copy failed: {}", e))?;
     Ok(bytes)
-}
-
-/// Write a local file as raw bytes. Used by upload_file / download_file
-/// to ship binary payloads (PNGs, compiled artifacts, archives) without
-/// the lossy UTF-8 round-trip that `agent_write_file` would force.
-#[tauri::command]
-pub fn agent_write_file_bytes(path: String, bytes: Vec<u8>) -> Result<u64, String> {
-    let resolved = normalize_path(&path);
-    let p = std::path::Path::new(&resolved);
-
-    if let Some(parent) = p.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("failed to create parent directory: {}", e))?;
-        }
-    }
-
-    std::fs::write(p, &bytes).map_err(|e| format!("write failed: {}", e))?;
-    Ok(bytes.len() as u64)
 }
 
 // ─── Agent filesystem search (list / glob / grep) ───
@@ -1317,5 +1572,81 @@ fn crc32(data: &[u8]) -> u32 {
             crc = TABLE[idx] ^ (crc >> 8);
         }
         crc ^ 0xffffffff
+    }
+}
+
+#[cfg(test)]
+mod agent_fs_tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("meterm-fs-{}-{}", tag, uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn head_read_keeps_only_requested_lines_and_counts_the_rest() {
+        let dir = temp_dir("head");
+        let file = dir.join("a.txt");
+        std::fs::write(&file, "one\ntwo\nthree\nfour").unwrap();
+        let r = read_head_lines(&file, 18, 2, 1024).unwrap();
+        assert_eq!(r.content.as_deref(), Some("one\ntwo"));
+        assert!(r.truncated);
+        assert_eq!(r.total_lines, Some(4));
+
+        let all = read_head_lines(&file, 18, 10, 1024).unwrap();
+        assert_eq!(all.content.as_deref(), Some("one\ntwo\nthree\nfour"));
+        assert!(!all.truncated);
+        assert_eq!(all.total_lines, Some(4));
+
+        // Past the scan cap the total is unknown but the head is still read.
+        let capped = read_head_lines(&file, 18, 1, 4).unwrap();
+        assert_eq!(capped.content.as_deref(), Some("one"));
+        assert!(capped.truncated);
+        assert_eq!(capped.total_lines, None);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn head_read_flags_binary() {
+        let dir = temp_dir("bin");
+        let file = dir.join("b.bin");
+        std::fs::write(&file, [1u8, 0, 2, 3]).unwrap();
+        assert!(read_head_lines(&file, 4, 10, 1024).unwrap().is_binary);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn audit_log_rotates_past_the_size_limit() {
+        let dir = temp_dir("audit");
+        let path = dir.join(AUDIT_LOG_FILE);
+        std::fs::write(&path, vec![b'x'; AUDIT_LOG_MAX_BYTES as usize]).unwrap();
+        append_audit_line(&dir, "{\"a\":1}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":1}\n");
+        assert_eq!(
+            std::fs::metadata(dir.join(AUDIT_LOG_PREVIOUS))
+                .unwrap()
+                .len(),
+            AUDIT_LOG_MAX_BYTES
+        );
+        append_audit_line(&dir, "{\"b\":2}\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"a\":1}\n{\"b\":2}\n"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn write_target_resolves_missing_parents_through_existing_ancestors() {
+        let dir = temp_dir("target");
+        let canonical = std::fs::canonicalize(&dir).unwrap();
+        let target = dir.join("new").join("..").join("x").join("f.txt");
+        assert_eq!(
+            canonical_write_target(&target).unwrap(),
+            canonical.join("x").join("f.txt")
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

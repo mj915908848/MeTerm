@@ -54,17 +54,17 @@ pub enum DesktopEvent {
         duration_ms: u64,
     },
 
-    /// agent 会话一轮结束(ACP `TurnComplete`);手机侧提示"该轮已完成"。
+    /// agent 会话一轮结束(`AgentEvent::TurnComplete`);手机侧提示"该轮已完成"。
     #[serde(rename = "agent_turn_done")]
     AgentTurnDone {
         /// 每条事件唯一 id(手机通知身份 / 去重),生成自 `Uuid::new_v4`。
         id: String,
         session_id: String,
-        /// 会话标题,语义同 `Notify::session_title`(agent 会话由 cwd basename 兜底)。
+        /// 会话标题,语义同 `Notify::session_title`。
         session_title: String,
     },
 
-    /// agent 会话需要用户审批(ACP 反向请求 `session/request_permission`);
+    /// agent 会话需要用户审批(`AgentEvent::PermissionRequest`);
     /// 手机侧提示"需要审批",`title` = 待审批工具标题(来自 `AgentEvent::PermissionRequest.title`)。
     #[serde(rename = "agent_needs_approval")]
     AgentNeedsApproval {

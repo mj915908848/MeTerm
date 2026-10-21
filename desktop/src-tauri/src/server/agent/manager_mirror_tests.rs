@@ -7,6 +7,7 @@
 use super::*;
 use crate::server::hook_secret::HookSecretRegistry;
 use crate::server::session::client::{Client, WsReceivers};
+use crate::server::session::manager::SessionManager;
 use crate::server::session::state::ClientRole;
 use crate::server::session::{Session, SessionConfig};
 use std::time::Duration;
@@ -58,25 +59,17 @@ fn drain(rx: &mut mpsc::Receiver<Vec<u8>>) -> Vec<Vec<u8>> {
     std::iter::from_fn(|| rx.try_recv().ok()).collect()
 }
 
-/// 构造一个 Mirror 表条目(client=None、kind=Mirror),供 attach 双回放 / finalize 断言。
+/// 构造一个 Mirror 表条目(不带 fan-out 任务),供 attach 双回放 / finalize 断言。
 fn test_mirror_entry() -> Arc<AgentEntry> {
     Arc::new(AgentEntry {
-        client: None,
         fan: Arc::new(Mutex::new(FanState::new())),
-        meta: AgentMeta {
-            agent: "claude".into(),
-            cwd: String::new(),
-            kind: AgentKind::Mirror,
-        },
         task: Mutex::new(None),
-        busy: AtomicBool::new(false),
-        ever_attached: Arc::new(AtomicBool::new(true)),
     })
 }
 
 // ── register_mirror ──
 
-/// register_mirror 建 Mirror entry:kind==Mirror、client==None、可查表;喂事件经 fan_out 广播;
+/// register_mirror 建 Mirror entry 并入表;喂事件经 fan_out 广播;
 /// event_rx 关闭后镜像 fan-out 收尾(finalize_mirror)→ 表条目移除。
 #[tokio::test]
 async fn register_mirror_creates_mirror_entry_and_fans_out() {
@@ -86,7 +79,7 @@ async fn register_mirror_creates_mirror_entry_and_fans_out() {
         mut priority_rx, ..
     } = rx;
 
-    let mgr = AcpAgentManager::new();
+    let mgr = AgentManager::new();
     let (tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
     let entry = mgr.register_mirror(
         session.id.clone(),
@@ -95,17 +88,12 @@ async fn register_mirror_creates_mirror_entry_and_fans_out() {
         EventBus::new(),
     );
 
-    // 建的是 Mirror entry:kind==Mirror、无 AcpClient、已入表。
-    assert_eq!(
-        entry.kind(),
-        AgentKind::Mirror,
-        "register_mirror 应建 Mirror 类型"
-    );
+    // 建的 Mirror entry 已入表,且查表得到的正是返回的同一个 entry。
+    let got = mgr.get(&session.id).expect("register_mirror 后应可查表");
     assert!(
-        entry.client().is_none(),
-        "镜像 entry 无 AcpClient(client=None)"
+        Arc::ptr_eq(&got, &entry),
+        "查表应得到 register_mirror 返回的 entry"
     );
-    assert!(mgr.get(&session.id).is_some(), "register_mirror 后应可查表");
 
     // attach → 之后喂的 live 帧会投给它。
     entry.attach(&client).await;
@@ -196,8 +184,8 @@ async fn mirror_fan_out_ends_on_cancel() {
 }
 
 /// 不误退:sender 保活 + cancel 不触发时,即便无任何 deadline / 无子进程可等,run_mirror_fan_out
-/// 也应一直阻塞在 select(不返回)。与 ACP 的 idle-guard 语义相反——镜像会话的存活不由 agent 层的
-/// idle 计时决定。旧 ACP run_fan_out 有 idle-guard / wait_closed 分支,若误复用会在此处提前退出。
+/// 也应一直阻塞在 select(不返回)——镜像会话的存活不由 agent 层的 idle 计时决定
+/// (若误加 idle-guard / 子进程等待分支,会在此处提前退出)。
 #[tokio::test]
 async fn mirror_fan_out_does_not_end_without_close_or_cancel() {
     let session = test_session();
@@ -217,7 +205,7 @@ async fn mirror_fan_out_does_not_end_without_close_or_cancel() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(
         !task.is_finished(),
-        "无 close / cancel 时镜像 fan-out 不应结束(无 idle-guard / wait_closed 误退)"
+        "无 close / cancel 时镜像 fan-out 不应结束(无 idle-guard / 子进程等待误退)"
     );
 
     // 用 cancel 收尾,避免遗留后台任务。
@@ -230,8 +218,7 @@ async fn mirror_fan_out_does_not_end_without_close_or_cancel() {
 
 // ── finalize_mirror(镜像不删会话)──
 
-/// finalize_mirror 只从 AcpAgentManager 移除表条目,**绝不删 PTY 会话**——对比 ACP 的
-/// finalize_fan_out 会 delete 会话(见 manager_tests::finalize_runs_shutdown_removes_entry_and_deletes_session)。
+/// finalize_mirror 只从 AgentManager 移除表条目,**绝不删 PTY 会话**。
 /// 锁定镜像结束(claude 退出)后底层 local-shell 会话仍在、终端页继续可用。
 #[tokio::test]
 async fn finalize_mirror_removes_entry_but_keeps_session() {
@@ -239,7 +226,7 @@ async fn finalize_mirror_removes_entry_but_keeps_session() {
     let session = sm.create(); // 底层是默认 local-shell 会话(非 agent)
     let sid = session.id.clone();
 
-    let mgr = AcpAgentManager::new();
+    let mgr = AgentManager::new();
     let entry = test_mirror_entry();
     mgr.insert_for_test(&sid, entry.clone());
     assert!(mgr.get(&sid).is_some(), "前置:AgentEntry 在表中");
@@ -267,7 +254,7 @@ async fn finalize_mirror_removes_entry_but_keeps_session() {
 /// 正常路径(表中仍是自己)照删。
 #[tokio::test]
 async fn finalize_mirror_identity_guard_spares_new_entry() {
-    let mgr = AcpAgentManager::new();
+    let mgr = AgentManager::new();
     let old_entry = test_mirror_entry();
     let new_entry = test_mirror_entry();
     // 模拟:cleanup 移除旧条目后,新 SessionStart 已 register 新 entry;
@@ -353,7 +340,7 @@ async fn mirror_fan_out_ends_at_mirror_ended_and_drops_trailing_events() {
 
 /// ws.rs / ipc 步骤6 的 Mirror 双回放:Mirror 会话 attach 后,client 应**同时**收到终端环形缓冲帧
 /// (MSG_OUTPUT)与 AI 历史帧(0x50)。这里复用 ws.rs 同款组合(attach + flush_ring_buffer)以锁定
-/// 两类历史都回放——ACP 会话只 attach(无 flush),None 会话只 flush,对比见 kind 分支。
+/// 两类历史都回放(非 agent 会话只 flush,见 ws.rs 的 agents.get 分支)。
 #[tokio::test]
 async fn ws_attach_mirror_replays_both_terminal_and_agent_history() {
     let session = test_session();
@@ -371,7 +358,6 @@ async fn ws_attach_mirror_replays_both_terminal_and_agent_history() {
     entry.fan.lock().unwrap().history.push(agent_frame.clone());
 
     // 模拟 ws.rs 的 Mirror 分支:attach(AI 历史)+ flush_ring_buffer_async(终端历史,背压变体)。
-    assert_eq!(entry.kind(), AgentKind::Mirror);
     entry.attach(&client).await;
     session
         .flush_ring_buffer_async(&client, client.conn_gen())

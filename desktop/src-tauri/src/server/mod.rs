@@ -119,9 +119,9 @@ pub struct ServerState {
     pub event_bus: EventBus,
     /// presence 客户端注册表:记录当前在线的 presence 连接,供后续 P3 推送判定用。
     pub presence: PresenceRegistry,
-    /// agent 会话注册表(agent 聊天 P1-T2):`session_id -> AgentEntry`(托管的
-    /// AcpClient + 下行帧历史 + fan-out 任务)。也是「某会话是不是 agent 会话」的唯一真相。
-    pub agents: agent::AcpAgentManager,
+    /// agent 会话注册表(方案甲镜像):`session_id -> AgentEntry`(下行帧历史 +
+    /// fan-out 任务)。也是「某会话是不是 agent 会话」的唯一真相。
+    pub agents: agent::AgentManager,
     /// hook secret 注册表(agent 终端镜像 M1):`session_id -> secret`。local-shell 会话
     /// 创建时随机生成 secret 注入 PTY env,并登记于此;M3 的 hook 回报端点凭此常量时间校验。
     pub hook_secrets: HookSecretRegistry,
@@ -466,11 +466,6 @@ fn build_router(state: Arc<ServerState>) -> Router {
     let desktop_control_routes = Router::new()
         .route("/api/sessions", post(handlers::create_session))
         .route(
-            "/api/agent-sessions",
-            post(agent::http::create_agent_session),
-        )
-        .route("/api/agent-options", get(agent::http::get_agent_options))
-        .route(
             "/api/sessions/{id}/git/status",
             get(git_handlers::git_status),
         )
@@ -719,7 +714,7 @@ pub fn create_dummy_state() -> ServerState {
         device_id: uuid::Uuid::new_v4().to_string(),
         event_bus,
         presence: PresenceRegistry::new(),
-        agents: agent::AcpAgentManager::new(),
+        agents: agent::AgentManager::new(),
         hook_secrets,
         mirrors: agent::MirrorRegistry::new(),
         permission_bridge: agent::PermissionBridge::new(),

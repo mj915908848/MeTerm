@@ -94,9 +94,7 @@ pub async fn ipc_connect_session(
         entry.attach(&client).await;
         // Mirror 会话底层带 PTY:AI 历史(attach)之外再回放终端环形缓冲(见 ws.rs 同段说明)。
         // IPC 下行是 Tauri Channel(无背压容量限制),两类帧顺序不影响正确性。
-        if entry.kind() == crate::server::agent::AgentKind::Mirror {
-            session.flush_ring_buffer(&client, conn_gen);
-        }
+        session.flush_ring_buffer(&client, conn_gen);
     } else {
         session.flush_ring_buffer(&client, conn_gen);
     }

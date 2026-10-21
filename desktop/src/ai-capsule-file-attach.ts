@@ -70,12 +70,10 @@ async function saveBlobAsAttachment(blob: Blob, name: string): Promise<RustAttac
     throw new Error(`file is ${fmtBytes(blob.size)}, exceeds the ${fmtBytes(MAX_ATTACHMENT_BYTES)} attachment cap`);
   }
   const buf = await blob.arrayBuffer();
-  // Tauri expects Vec<u8>; send as a regular number array (webview
-  // encodes the typed array into JSON well enough).
-  const bytes = Array.from(new Uint8Array(buf));
-  return invoke<RustAttachmentInfo>('agent_save_attachment', {
-    name,
-    bytes,
+  // Raw IPC body: the bytes go across as-is instead of as a JSON number
+  // array. The name rides in a header, URI-encoded for non-ASCII names.
+  return invoke<RustAttachmentInfo>('agent_save_attachment', new Uint8Array(buf), {
+    headers: { 'x-attachment-name': encodeURIComponent(name) },
   });
 }
 
@@ -202,7 +200,7 @@ export async function pickAttachmentFiles(
 
       try {
         const cap = isImage ? MAX_IMAGE_RAW_BYTES : MAX_ATTACHMENT_BYTES;
-        const bytes = await invoke<number[]>('agent_read_file_bytes', {
+        const bytes = await invoke<ArrayBuffer>('agent_read_file_bytes', {
           path: String(p),
           maxBytes: cap,
         });

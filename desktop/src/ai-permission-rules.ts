@@ -157,7 +157,7 @@ const SENSITIVE_PATH_SEQUENCES = [
   ['appdata', 'local', 'microsoft', 'vault'],
 ];
 
-function hasSensitivePathComponent(path: string): boolean {
+export function hasSensitivePathComponent(path: string): boolean {
   const parts = path.replace(/\\/g, '/').split('/').filter(Boolean).map((part) => part.toLowerCase());
   if (SENSITIVE_PATH_SEQUENCES.some((sequence) => parts.some((_, start) =>
     sequence.every((part, index) => parts[start + index] === part)))) {

@@ -6,8 +6,9 @@
 // dependencies minimal: only Tauri fs plugin, no external libs.
 // Call installAuditLog() once during app startup.
 //
-// We write into the one AppData file explicitly allowed by the Tauri
-// filesystem capability. On macOS this resolves to
+// Lines are appended by the Rust `agent_audit_append` command, which
+// serializes writes and rotates the file to agent-audit.1.jsonl once it
+// passes 5 MB. On macOS the log lives at
 //   ~/Library/Application Support/com.meterm.app/agent-audit.jsonl
 
 import {
@@ -16,6 +17,7 @@ import {
   exists,
 } from '@tauri-apps/plugin-fs';
 import { appDataDir, join } from '@tauri-apps/api/path';
+import { invoke } from '@tauri-apps/api/core';
 import { hooks } from './ai-hooks';
 
 /** File name relative to AppData. */
@@ -24,19 +26,13 @@ const AUDIT_FILE = 'agent-audit.jsonl';
 interface AuditEntry {
   ts: string;
   sessionId: string;
-  kind: 'prompt' | 'tool' | 'session_start' | 'session_end' | 'compact';
+  kind: 'prompt' | 'tool' | 'tool_rejected' | 'session_start' | 'session_end' | 'compact';
   [k: string]: unknown;
 }
 
 async function append(entry: AuditEntry): Promise<void> {
   try {
-    const line = JSON.stringify(entry) + '\n';
-    // Tauri plugin-fs writeTextFile with append flag — AppData dir
-    // is auto-created by the plugin on first write.
-    await writeTextFile(AUDIT_FILE, line, {
-      baseDir: BaseDirectory.AppData,
-      append: true,
-    });
+    await invoke('agent_audit_append', { line: JSON.stringify(entry) });
   } catch {
     // Ignore filesystem failures — audit log is best effort.
   }
@@ -72,30 +68,38 @@ export function installAuditLog(): void {
   });
 
   hooks.onPostToolUse(({ sessionId, toolName, callId, args, isError, durationMs }) => {
-    // type_text / press_keys may write secrets to the PTY (the
-    // user's response to a prompt, even if not literally a
-    // password). Redact the actual payload — we only log the
-    // length / shape so an auditor can see "something was sent"
-    // without exposing the contents.
-    let safeArgs: Record<string, unknown>;
-    if (toolName === 'type_text' && typeof args.text === 'string') {
-      safeArgs = { text: `<redacted ${(args.text as string).length} chars>` };
-    } else if (toolName === 'press_keys') {
-      // Key tokens are not secrets, but we still pass through clipArgs
-      // for size protection.
-      safeArgs = clipArgs(args);
-    } else {
-      safeArgs = clipArgs(args);
-    }
     void append({
       ts: new Date().toISOString(),
       sessionId,
       kind: 'tool',
       tool: toolName,
       callId,
-      args: safeArgs,
+      args: safeToolArgs(toolName, args),
       isError,
       durationMs,
+    });
+  });
+
+  // Denied, rejected and unconfirmed calls never reach PostToolUse, but
+  // they are exactly what a security review wants to see.
+  hooks.onToolRejected(({ sessionId, toolName, callId, rawArgs, reason }) => {
+    let args: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(rawArgs || '{}');
+      args = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : { raw: rawArgs };
+    } catch {
+      args = { raw: rawArgs };
+    }
+    void append({
+      ts: new Date().toISOString(),
+      sessionId,
+      kind: 'tool_rejected',
+      tool: toolName,
+      callId,
+      args: safeToolArgs(toolName, args),
+      reason: reason.length > 500 ? reason.slice(0, 500) + '...(truncated)' : reason,
     });
   });
 
@@ -117,6 +121,19 @@ export function installAuditLog(): void {
       reason,
     });
   });
+}
+
+/**
+ * type_text may write secrets to the PTY (the user's response to a
+ * prompt, even if not literally a password). Redact the payload and log
+ * only its length so an auditor can see "something was sent" without
+ * exposing the contents. Everything else is clipped for size.
+ */
+function safeToolArgs(toolName: string, args: Record<string, unknown>): Record<string, unknown> {
+  if (toolName === 'type_text' && typeof args.text === 'string') {
+    return { text: `<redacted ${args.text.length} chars>` };
+  }
+  return clipArgs(args);
 }
 
 function clipArgs(args: Record<string, unknown>): Record<string, unknown> {

@@ -48,7 +48,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
 use super::events::{AgentEvent, PermissionOption};
-use super::manager::{AcpAgentManager, AgentKind};
+use super::manager::AgentManager;
 use super::mirror::{spawn_transcript_tailer, TailerHandle};
 use super::permission_bridge::{PermissionBridge, PermissionReply};
 use crate::server::events::EventBus;
@@ -195,7 +195,7 @@ impl MirrorRegistry {
         claude_sid: &str,
         transcript_path: PathBuf,
         session: Arc<Session>,
-        agents: &AcpAgentManager,
+        agents: &AgentManager,
         event_bus: EventBus,
         bridge: &PermissionBridge,
     ) {
@@ -423,17 +423,6 @@ impl Default for MirrorRegistry {
     fn default() -> Self {
         Self::new()
     }
-}
-
-// ---------------------------------------------------------------------------
-// agent_mirror 字段映射(决策 4,/api/sessions 用)
-// ---------------------------------------------------------------------------
-
-/// `/api/sessions` 的 `agent_mirror` 字段值:agents 表有该会话 entry 且 kind==Mirror 才 true
-/// (普通会话无 entry → false;方案 B 的 Acp 会话 kind 不符 → false)。抽成纯函数供
-/// `handlers.rs` 两处复用 + 单测锁定(Acp entry 需真实子进程才能入表,纯函数级覆盖该分支)。
-pub(crate) fn agent_mirror_flag(kind: Option<AgentKind>) -> bool {
-    kind == Some(AgentKind::Mirror)
 }
 
 // ---------------------------------------------------------------------------
@@ -693,8 +682,8 @@ pub async fn agent_hook(
 /// claude 回落原生 TUI 弹窗——终端旁的用户不受手机不在场影响。
 const PERMISSION_WAIT: Duration = Duration::from_secs(80);
 
-/// PermissionRequest hook 主流程:仅镜像态桥接;登记 pending → 下行审批卡(复用方案 B
-/// 的 `permission_request` 冻结契约与手机审批卡 UI)→ 阻塞等手机 0x52 决策(经
+/// PermissionRequest hook 主流程:仅镜像态桥接;登记 pending → 下行审批卡(复用
+/// `permission_request` 冻结契约与手机审批卡 UI)→ 阻塞等手机 0x52 决策(经
 /// `upstream.rs` 回投)→ 返回 decision JSON。任何异常(非镜像/通道断/超时/claude 退出
 /// drain)→ 空 200 回落 TUI 弹窗(fail-open-to-TUI)。
 async fn handle_permission_request(
@@ -712,7 +701,7 @@ async fn handle_permission_request(
         .filter(|s| !s.is_empty())
         .unwrap_or("工具");
     // request_id 自生成(PermissionRequest payload 无 tool_use_id):手机原样回传,
-    // upstream 凭它回投决策。"mperm-" 前缀便于日志区分镜像桥与 ACP 的 JSON-RPC id。
+    // upstream 凭它回投决策。"mperm-" 前缀便于日志识别镜像桥审批。
     let request_id = format!("mperm-{}", uuid::Uuid::new_v4());
     let rx = state.permission_bridge.register(pty_sid, &request_id);
     // fix11:AskUserQuestion(选择题工具)走专属事件——questions 原样透传,手机渲染

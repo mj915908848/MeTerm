@@ -4,7 +4,7 @@
 //! (append-only,content block 级,实证见 mirror-r2 调研)。本模块:
 //! - [`spawn_transcript_tailer`] —— tokio task,byte-offset 轮询增量 tail 该文件,
 //!   逐行解析 → [`transcript_line_to_events`] 纯映射 → 经 `event_tx` 喂给 M5 的镜像
-//!   fan-out([`register_mirror`](super::manager::AcpAgentManager::register_mirror) 消费端)。
+//!   fan-out([`register_mirror`](super::manager::AgentManager::register_mirror) 消费端)。
 //! - [`TailerHandle`] —— 外部控制柄:M3 的 hook handler 在 Stop/UserPromptSubmit 到达时
 //!   `poke_catch_up`(立即增量读,不等 tick);Stop hook 另用 `poke_turn_end` 兜底补发
 //!   `TurnComplete`(覆盖 transcript 缺终止 stop_reason 的场景,如用户 Esc 打断)。
