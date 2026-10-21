@@ -1178,11 +1178,19 @@ export class ToolAgent {
           (name) => this.toolRegistry.get(name),
           async (toolCall, handler) => {
             const decision = decisions.get(toolCall.id);
+            const rejected = (reason: string) => {
+              void hooks.emitToolRejected({
+                sessionId,
+                toolName: toolCall.function.name,
+                callId: toolCall.id,
+                rawArgs: toolCall.function.arguments,
+                reason,
+              });
+              // Rejected tools are flagged as errors so the LLM doesn't misinterpret the denial as a success
+              return { result: reason, isError: true };
+            };
             if (!decision || decision.kind === 'reject') {
-              return {
-                result: decision?.kind === 'reject' ? decision.message : 'No decision',
-                isError: true,  // Rejected tools should be flagged as errors so the LLM doesn't misinterpret the denial as a success
-              };
+              return rejected(decision?.kind === 'reject' ? decision.message : 'No decision');
             }
             if (decision.recheckTerminal) {
               // An earlier call in this batch changed this terminal; judge
@@ -1191,10 +1199,10 @@ export class ToolAgent {
                 toolCall.function.name, decision.args, { kind: 'allow' }, toolCtx, permMode, permRules,
                 this.toolRegistry.get('run_command'),
               );
-              if (check.perm.kind === 'deny') return { result: check.perm.reason, isError: true };
+              if (check.perm.kind === 'deny') return rejected(check.perm.reason);
               if (check.perm.kind === 'ask') {
                 if (!callbacks.onConfirmRequired) {
-                  return { result: 'User confirmation required but no handler available.', isError: true };
+                  return rejected('User confirmation required but no handler available.');
                 }
                 const confirmArgs = terminalConfirmArgs(decision.args, check.submit);
                 const confirmSignal = toolCtx.abortSignal;
@@ -1203,7 +1211,7 @@ export class ToolAgent {
                       callbacks.onConfirmRequired!(toolCall.function.name, confirmArgs).then(resolve, reject);
                     }).catch(() => false)
                   : await callbacks.onConfirmRequired(toolCall.function.name, confirmArgs);
-                if (approved === false) return { result: 'User rejected this action.', isError: true };
+                if (approved === false) return rejected('User rejected this action.');
               }
             }
             const started = Date.now();

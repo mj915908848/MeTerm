@@ -513,6 +513,10 @@ class AICapsuleManagerClass {
   private bindCommandButtons(instance: AICapsuleInstance, container: Element): void {
     // Run buttons
     container.querySelectorAll<HTMLButtonElement>('.ai-cmd-run').forEach((btn) => {
+      // This runs again whenever the container re-renders; a second
+      // listener would send the command to the terminal twice.
+      if (btn.dataset.runBound) return;
+      btn.dataset.runBound = 'true';
       btn.addEventListener('click', () => {
         const cmd = btn.dataset.cmd ?? '';
         const sid = btn.dataset.session ?? instance.sessionId;

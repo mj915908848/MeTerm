@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { anthropicCacheLayout, parseToolArguments, sseData, streamPayloadError, TURN_CONTEXT_HEADING } from '../src/ai-provider-wire.ts';
+import { anthropicAcceptsTemperature, anthropicCacheLayout, parseToolArguments, sseData, streamPayloadError, TURN_CONTEXT_HEADING } from '../src/ai-provider-wire.ts';
 import { classifyError } from '../src/ai-agent-errors.ts';
 
 test('SSE data lines are read with or without a space after the colon', () => {
@@ -78,4 +78,15 @@ test('anthropic cache layout falls back to system blocks when it cannot split', 
     { type: 'text', text: 'hi', cache_control: { type: 'ephemeral' } },
     { type: 'text', text: `${TURN_CONTEXT_HEADING}\n\nB` },
   ]);
+});
+
+test('temperature is only sent to Claude models that still accept it', () => {
+  for (const m of ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5', 'claude-sonnet-4-5-20250929',
+    'claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022', 'claude-3-7-sonnet-latest', 'my-proxy-model']) {
+    assert.equal(anthropicAcceptsTemperature(m), true, m);
+  }
+  for (const m of ['claude-opus-4-7', 'claude-opus-4-8', 'claude-opus-5', 'claude-opus-5-5', 'claude-sonnet-5-5',
+    'claude-haiku-5-5', 'claude-fable-5-1']) {
+    assert.equal(anthropicAcceptsTemperature(m), false, m);
+  }
 });

@@ -223,9 +223,9 @@ export async function pickImageFiles(
         ext === 'gif' ? 'image/gif' :
         'image/png';
 
-      let bytes: number[];
+      let bytes: ArrayBuffer;
       try {
-        bytes = await invoke<number[]>('agent_read_file_bytes', {
+        bytes = await invoke<ArrayBuffer>('agent_read_file_bytes', {
           path,
           maxBytes: MAX_IMAGE_RAW_BYTES,
         });

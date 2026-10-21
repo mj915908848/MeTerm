@@ -117,3 +117,16 @@ function userBlocks(content: unknown): unknown[] {
   if (typeof content === 'string') return content ? [{ type: 'text', text: content }] : [];
   return Array.isArray(content) ? [...content] : [];
 }
+
+/**
+ * Whether a Claude model still accepts `temperature`. Opus 4.7 and every
+ * later model reject sampling parameters with a 400, so they are only
+ * sent to the 3.x line and the 4.0 – 4.6 models. Names that are not Claude
+ * model IDs (proxies, custom deployments) keep the old behavior.
+ */
+export function anthropicAcceptsTemperature(model: string): boolean {
+  const id = model.trim().toLowerCase().replace(/^anthropic\./, '');
+  if (!id.startsWith('claude-')) return true;
+  if (/^claude-(instant|2|3)([-.]|$)/.test(id)) return true;
+  return /^claude-(opus|sonnet|haiku)-4(-[0-6])?([-@]\d{8})?(-v\d+(:\d+)?)?$/.test(id);
+}

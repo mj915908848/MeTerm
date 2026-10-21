@@ -17,12 +17,17 @@
 import { invoke } from '@tauri-apps/api/core';
 import { resolveLocalToolPath, ToolHandler } from './ai-tools-core';
 import { executeViaTerminal } from './ai-tools-shell';
+import { hasSensitivePathComponent } from './ai-permission-rules';
 
 interface AgentReadResult {
   content: string | null;
   size: number;
   is_binary: boolean;
   too_large: boolean;
+  /** True when maxLines cut the content short. */
+  truncated?: boolean;
+  /** Total line count, when the whole file was scanned. */
+  total_lines?: number | null;
 }
 
 /** Format any thrown value into a human-readable error message. */
@@ -94,8 +99,10 @@ export function createReadFileTool(): ToolHandler {
       try {
         const result = await invoke<AgentReadResult>('agent_read_file', {
           path: localPath,
-          // 10 MB cap matches the previous behavior.
+          // Only the first maxLines lines are read; the rest of the file
+          // (up to 10 MB) is scanned just to count its lines.
           maxBytes: 10 * 1024 * 1024,
+          maxLines,
           workspaceRoot: ctx.cwd,
           approvedCanonicalPath: ctx.approvedReadPaths?.get(localPath) ?? null,
         });
@@ -107,11 +114,12 @@ export function createReadFileTool(): ToolHandler {
           return `This appears to be a binary file (${result.size} bytes). Cannot display content. Use run_command with xxd / file / strings to inspect.`;
         }
         const content = result.content ?? '';
-        const lines = content.split('\n');
-        if (lines.length > maxLines) {
+        if (result.truncated) {
+          const shown = content.split('\n').length;
+          const total = result.total_lines ? `of ${result.total_lines} lines` : 'lines';
           return (
-            lines.slice(0, maxLines).join('\n') +
-            `\n\n--- Showing first ${maxLines} of ${lines.length} lines (${result.size} bytes total). ` +
+            content +
+            `\n\n--- Showing first ${shown} ${total} (${result.size} bytes total). ` +
             `Use the maxLines parameter, or run_command with sed/awk, to read other ranges. ---`
           );
         }
@@ -144,8 +152,9 @@ export function createWriteFileTool(): ToolHandler {
     isConcurrencySafe: false,
     // Level 1: write_file always needs confirmation
     requiresConfirm: () => true,
-    // Level 2: write_file does NOT need confirmation (user chose full-auto)
-    isDestructive: () => false,
+    // Full-auto skips confirmation, except for credential locations
+    // (~/.ssh, .env, keys, …) where a silent write could plant access.
+    isDestructive: (args) => hasSensitivePathComponent(String(args.path ?? '')),
 
     async execute(args, ctx): Promise<string> {
       const filePath = String(args.path ?? '').trim();
