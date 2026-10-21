@@ -504,8 +504,6 @@ mod lan_registration_tests {
     #[tokio::test]
     async fn late_direct_registrations_are_removed_but_relay_registrations_survive() {
         let state = Arc::new(crate::server::create_dummy_state());
-        state.set_lan_access(true).unwrap();
-        state.set_lan_access(false).unwrap();
 
         let session = state.session_manager.create();
         let (direct, _direct_receivers) = Client::new(

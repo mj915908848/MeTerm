@@ -1269,11 +1269,10 @@ pub fn run() {
                     }
                 }
                 RunEvent::Exit => {
-                    // Stop Rust server session manager and LAN proxy
+                    // Stop Rust server session manager
                     // Startup may have failed before ServerState was managed. In
                     // that fail-closed path there is nothing to stop.
                     if let Some(server) = app_handle.try_state::<Arc<server::ServerState>>() {
-                        server.shutdown_lan_access();
                         server.session_manager.stop();
                     }
                 }

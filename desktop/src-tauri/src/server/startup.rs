@@ -74,15 +74,10 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
     // no TLS identity, no discovery advertisement and no relay tunnel.
     let tls_acceptor: Option<tokio_rustls::TlsAcceptor> = None;
     let cert_fp = String::new();
-    let discovery_manager: Option<DiscoveryManager> = None;
 
-    let lan_access = lan_access::LanAccessControl::new(&config.log_dir);
     let state = Arc::new(ServerState {
         port,
-        lan_port: AtomicU16::new(port),
         ready: AtomicBool::new(false),
-        proxy_handle: std::sync::Mutex::new(None),
-        proxy_cancel: std::sync::Mutex::new(None),
         config,
         session_manager,
         authenticator,
@@ -90,11 +85,7 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
         pairing_manager,
         jumpserver_sessions: jumpserver::ssh_session::JumpServerSessionRegistry::new(),
         connections,
-        discovery_manager,
         bypass_proxy: AtomicBool::new(true),
-        // Always closed: the listener is loopback-only and no persisted LAN
-        // policy is restored.
-        lan_access,
         device_name: std::sync::Mutex::new(String::new()),
         device_id,
         cert_fp,
@@ -130,7 +121,6 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
                 listener,
                 app,
                 tls_acceptor.clone(),
-                state_for_serve.clone(),
             ))
             .await,
         );
@@ -160,7 +150,6 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
                     listener,
                     app,
                     tls_acceptor.clone(),
-                    state_for_serve.clone(),
                 ))
                 .await,
             );

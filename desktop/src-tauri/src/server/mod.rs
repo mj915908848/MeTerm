@@ -19,7 +19,6 @@ pub(crate) mod dev_relay_config;
 mod device_access;
 pub mod device_admin;
 pub mod device_auth;
-pub mod discover;
 pub mod dispatch;
 pub mod encoding;
 pub mod events;
@@ -31,14 +30,11 @@ pub mod git_handlers;
 pub mod handlers;
 pub mod hook_secret;
 pub mod jumpserver;
-pub mod lan_access;
 pub mod osc_filter;
 pub mod pairing;
-pub mod pairing_http;
 pub mod pop;
 pub(crate) mod private_file;
 pub mod protocol;
-pub mod proxy;
 pub mod push_crypto;
 pub mod push_dispatch;
 pub mod push_registry;
@@ -61,7 +57,7 @@ mod transport;
 pub mod ws;
 
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use axum::routing::{any, delete, get, post, put};
@@ -72,7 +68,6 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use auth::Authenticator;
 use ban::BanManager;
 use connections::ConnectionRegistry;
-use discover::DiscoveryManager;
 use events::{EventBus, PresenceRegistry};
 use hook_secret::HookSecretRegistry;
 use pairing::PairingManager;
@@ -115,10 +110,7 @@ pub(crate) struct DeviceGenerationCleanup {
 /// Core shared state — replaces the old `MeTermProcess` (sidecar manager).
 pub struct ServerState {
     pub port: u16,
-    pub lan_port: AtomicU16,
     pub ready: AtomicBool,
-    pub proxy_handle: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
-    pub proxy_cancel: std::sync::Mutex<Option<CancellationToken>>,
     pub config: ServerConfig,
     pub session_manager: Arc<SessionManager>,
     pub authenticator: Arc<Authenticator>,
@@ -129,12 +121,8 @@ pub struct ServerState {
     pub(crate) jumpserver_sessions: jumpserver::ssh_session::JumpServerSessionRegistry,
     /// SSH 连接同步的元数据注册表(密钥另存钥匙串,见 `secret_vault`)。
     pub connections: Arc<ConnectionRegistry>,
-    pub discovery_manager: Option<DiscoveryManager>,
     /// When true, all outgoing HTTP requests bypass system proxy (direct connection).
     pub bypass_proxy: AtomicBool,
-    /// Backend-authoritative direct-LAN gate, discovery state, persistence and
-    /// per-generation cancellation for accepted remote sockets.
-    pub(crate) lan_access: lan_access::LanAccessControl,
     /// Custom device name for LAN sharing (empty = OS hostname).
     pub device_name: std::sync::Mutex<String>,
     /// 稳定设备 ID(UUID),跨重启/换端口/换 IP 不变——LAN 重发现与未来中继按此路由。
@@ -196,14 +184,6 @@ impl ServerState {
     /// 中继自签证书指纹,见 `relay_cert_fp` 字段注释。空串表示中继未启用。
     pub fn relay_cert_fp(&self) -> &str {
         &self.relay_cert_fp
-    }
-
-    pub fn lan_port(&self) -> u16 {
-        self.lan_port.load(Ordering::Relaxed)
-    }
-
-    pub fn set_lan_port(&self, port: u16) {
-        self.lan_port.store(port, Ordering::Relaxed);
     }
 
     pub fn is_running(&self) -> bool {
@@ -298,6 +278,16 @@ impl ServerState {
         )
     }
 
+    /// Revalidate one HTTP-upgraded connection after it has entered its runtime
+    /// registry. Sharing was removed, so a direct remote socket is never kept;
+    /// renewal-only relay substreams never register sessions.
+    pub(crate) fn registered_ingress_allowed(&self, ingress: auth::TrustedIngress) -> bool {
+        matches!(
+            ingress,
+            auth::TrustedIngress::DirectLoopback | auth::TrustedIngress::Relay
+        )
+    }
+
     /// Get the display name for this device (custom name or OS hostname).
     pub fn display_name(&self) -> String {
         let custom = self.device_name.lock().unwrap().clone();
@@ -374,25 +364,17 @@ async fn run_accept_loop(
     listener: tokio::net::TcpListener,
     app: Router,
     tls: Option<tokio_rustls::TlsAcceptor>,
-    state: Arc<ServerState>,
 ) -> std::io::Result<()> {
     let connection_slots = transport::connection_slots();
     loop {
         match listener.accept().await {
             Ok((stream, peer)) => {
-                // Reject disabled direct-LAN ingress before it can consume the
-                // shared pre-auth permit, peek timeout, or TLS handshake work.
-                let remote_lease = if peer.ip().is_loopback() {
-                    None
-                } else {
-                    match state.direct_remote_lease() {
-                        Some(lease) => Some(lease),
-                        None => {
-                            drop(stream);
-                            continue;
-                        }
-                    }
-                };
+                // Sharing was removed: only this machine may connect. Reject
+                // anything else before it consumes a pre-auth permit.
+                if !peer.ip().is_loopback() {
+                    drop(stream);
+                    continue;
+                }
                 let permit = match connection_slots.clone().try_acquire_owned() {
                     Ok(permit) => permit,
                     Err(_) => {
@@ -404,14 +386,7 @@ async fn run_accept_loop(
                 let tls = tls.clone();
                 tokio::spawn(async move {
                     let _permit = permit;
-                    if let Some(cancel) = remote_lease {
-                        tokio::select! {
-                            _ = cancel.cancelled() => {}
-                            _ = transport::serve_connection(stream, peer, app, tls) => {}
-                        }
-                    } else {
-                        transport::serve_connection(stream, peer, app, tls).await;
-                    }
+                    transport::serve_connection(stream, peer, app, tls).await;
                 });
             }
             Err(e) => {
@@ -509,14 +484,6 @@ fn build_router(state: Arc<ServerState>) -> Router {
         }
     });
 
-    // Pairing exchanges a short-lived secret and may return the long-lived
-    // bearer, so remote callers must enter through the connection-proven TLS path.
-    let pairing_routes = Router::new()
-        .route("/api/pair/bootstrap", post(pairing_http::bootstrap_pair))
-        .route("/api/pair", post(pairing_http::create_pair))
-        .route("/api/pair/{id}", post(pairing_http::poll_pair_post))
-        .layer(middleware::from_fn(auth::secure_remote_middleware));
-
     // Routes that DON'T require authentication
     let public_routes = Router::new()
         .route("/api/ping", get(handlers::ping))
@@ -529,8 +496,7 @@ fn build_router(state: Arc<ServerState>) -> Router {
                     agent::hook::AGENT_HOOK_BODY_LIMIT,
                 ))
                 .layer(hook_guard),
-        )
-        .merge(pairing_routes);
+        );
 
     // Resource-specific routes are split before the common authentication
     // layer so every device capability has one auditable boundary.
@@ -543,7 +509,6 @@ fn build_router(state: Arc<ServerState>) -> Router {
         )
         .route("/api/sessions/{id}/master", post(handlers::request_master))
         .route("/ws/{session_id}", get(ws::ws_upgrade))
-        .route("/api/pair/claim", post(pairing_http::claim_pair))
         .route("/api/info", get(relay_http::server_info))
         .route(
             "/api/device-credential/self",
@@ -695,11 +660,6 @@ fn build_router(state: Arc<ServerState>) -> Router {
             put(device_admin::update_credential_scopes).delete(device_admin::revoke_credential),
         )
         .route("/api/sessions/{id}/private", post(handlers::set_private))
-        .route("/api/pair/pending", get(pairing_http::list_pending_pairs))
-        .route("/api/pair/{id}/respond", post(pairing_http::respond_pair))
-        .route("/api/pair/claim-status", get(pairing_http::claim_status))
-        .route("/api/discoverable", post(pairing_http::toggle_discoverable))
-        .route("/api/discover", get(pairing_http::discover))
         .route("/api/token", post(device_admin::set_owner_token))
         .route(
             "/api/token/refresh",
@@ -754,31 +714,25 @@ fn build_router(state: Arc<ServerState>) -> Router {
 
     let router = Router::new().merge(public_routes).merge(authed_routes);
 
-    // LAN access guard: direct remote sockets require LAN sharing. Relay is a
-    // separately configured authenticated ingress and must never inherit its
-    // synthetic loopback peer's privileges.
-    let lan_guard = middleware::from_fn({
-        let state = state.clone();
-        move |req: axum::extract::Request, next: middleware::Next| {
-            let state = state.clone();
-            async move {
-                if !state.lan_access_enabled() {
-                    let allowed = matches!(
-                        req.extensions().get::<auth::TrustedIngress>(),
-                        Some(auth::TrustedIngress::DirectLoopback | auth::TrustedIngress::Relay)
-                    );
-                    if !allowed {
-                        return Err(axum::http::StatusCode::FORBIDDEN);
-                    }
-                }
-                Ok(next.run(req).await)
+    // Ingress guard: sharing was removed, so direct remote sockets are never
+    // served. Relay is a separately configured authenticated ingress and must
+    // never inherit its synthetic loopback peer's privileges.
+    let ingress_guard = middleware::from_fn(
+        |req: axum::extract::Request, next: middleware::Next| async move {
+            let allowed = matches!(
+                req.extensions().get::<auth::TrustedIngress>(),
+                Some(auth::TrustedIngress::DirectLoopback | auth::TrustedIngress::Relay)
+            );
+            if !allowed {
+                return Err(axum::http::StatusCode::FORBIDDEN);
             }
-        }
-    });
+            Ok(next.run(req).await)
+        },
+    );
 
     router
         .layer(cors)
-        .layer(lan_guard)
+        .layer(ingress_guard)
         .layer(axum::Extension(state))
         .layer(middleware::from_fn(auth_body::idle_timeout_middleware))
 }
@@ -832,10 +786,7 @@ pub fn create_dummy_state() -> ServerState {
     let pm = PairingManager::new(auth.clone(), sm.clone(), bm.clone());
     ServerState {
         port: 0,
-        lan_port: AtomicU16::new(0),
         ready: AtomicBool::new(false),
-        proxy_handle: std::sync::Mutex::new(None),
-        proxy_cancel: std::sync::Mutex::new(None),
         config: ServerConfig::default(),
         session_manager: sm,
         authenticator: auth,
@@ -847,9 +798,7 @@ pub fn create_dummy_state() -> ServerState {
             ConnectionRegistry::new(std::path::PathBuf::new())
                 .expect("empty in-memory connection registry"),
         ),
-        discovery_manager: None,
         bypass_proxy: AtomicBool::new(true),
-        lan_access: lan_access::LanAccessControl::new(""),
         device_name: std::sync::Mutex::new(String::new()),
         // dummy state 无 app_data_dir,生成一个临时性 UUID(不落盘,进程重启即变),
         // 与其他字段的降级行为一致。
@@ -880,10 +829,6 @@ mod revoke_cleanup_tests;
 #[cfg(test)]
 #[path = "device_id_tests.rs"]
 mod device_id_tests;
-
-#[cfg(test)]
-#[path = "lan_access_route_tests.rs"]
-mod lan_access_route_tests;
 
 #[cfg(test)]
 #[path = "relay_renewal_tests.rs"]

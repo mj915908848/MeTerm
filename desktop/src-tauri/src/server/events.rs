@@ -181,22 +181,6 @@ impl PresenceRegistry {
         cancel
     }
 
-    /// Cancel only presence sockets accepted through one trusted transport.
-    pub(crate) fn disconnect_ingress(&self, ingress: TrustedIngress) -> usize {
-        let mut entries = self.inner.lock().unwrap();
-        let matching: Vec<String> = entries
-            .iter()
-            .filter(|(_, entry)| entry.ingress == ingress)
-            .map(|(client_id, _)| client_id.clone())
-            .collect();
-        for client_id in &matching {
-            if let Some(entry) = entries.remove(client_id) {
-                entry.cancel.cancel();
-            }
-        }
-        matching.len()
-    }
-
     /// 注销一个 presence 客户端(断开连接时调用)。
     pub fn remove(&self, client_id: &str) {
         self.inner.lock().unwrap().remove(client_id);
@@ -442,37 +426,6 @@ mod tests {
             reg.has_any(),
             "local owner presence must survive device revoke"
         );
-    }
-
-    #[test]
-    fn lan_shutdown_cancels_only_direct_remote_presence() {
-        let reg = PresenceRegistry::new();
-        let direct = reg.insert_with_ingress(
-            "direct".into(),
-            Some("device-direct".into()),
-            Some(uuid::Uuid::new_v4()),
-            true,
-            TrustedIngress::DirectRemote,
-        );
-        let relay = reg.insert_with_ingress(
-            "relay".into(),
-            Some("device-relay".into()),
-            Some(uuid::Uuid::new_v4()),
-            true,
-            TrustedIngress::Relay,
-        );
-        let local = reg.insert_with_ingress(
-            "local".into(),
-            None,
-            None,
-            false,
-            TrustedIngress::DirectLoopback,
-        );
-
-        assert_eq!(reg.disconnect_ingress(TrustedIngress::DirectRemote), 1);
-        assert!(direct.is_cancelled());
-        assert!(!relay.is_cancelled());
-        assert!(!local.is_cancelled());
     }
 
     #[test]
