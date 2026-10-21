@@ -975,6 +975,13 @@ pub async fn test_connection(config: &SshConfig) -> Result<SshAuthUsed, String> 
 /// same two guards are duplicated in `pty_unix.rs` (proxy `.bashrc`, which
 /// sources the user's rc first) and in `ai-tools-shell.ts`'s fallback injection;
 /// `hook_tests` here and the drift test pin them on every emitter.
+///
+/// The hook is written to whatever login shell the host has, so the whole line
+/// must *parse* in a POSIX `sh` (dash, BusyBox ash) even though only the zsh and
+/// bash branches act. The array form of the `PROMPT_COMMAND` extension is
+/// bash-only syntax, so it sits behind `eval`: without that, dash rejects the
+/// entire line, nothing runs, and the trailing `stty echo` is lost with it,
+/// leaving the user typing blind.
 pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meterm_cmd_running=0; __meterm_in_prompt=0; \
                 __meterm_preexec(){ \
                 [ -n \"${COMP_LINE:-}\" ] && return; \
@@ -1017,7 +1024,7 @@ pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meter
                 elif [ -n \"${BASH_VERSION:-}\" ]; then \
                 if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi; \
                 case \"$(declare -p PROMPT_COMMAND 2>/dev/null)\" in 'declare -a'*) \
-                PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\") ;; \
+                eval 'PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\")' ;; \
                 *) PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;; esac; fi; \
                 if [ -n \"${ZSH_VERSION:-}\" ]; then setopt HIST_IGNORE_SPACE 2>/dev/null; \
                 elif [ -n \"${BASH_VERSION:-}\" ]; then export HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\"; fi; \
