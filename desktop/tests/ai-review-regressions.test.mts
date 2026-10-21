@@ -57,9 +57,10 @@ function approvalHarness() {
   const preflight = find('ai-agent.ts', node => ts.isFunctionDeclaration(node) && node.name?.text === 'preflightReadScopeConfirmation').getText();
   const resolveLocalToolPath = find('ai-tools-core.ts', node => ts.isFunctionDeclaration(node) && node.name?.text === 'resolveLocalToolPath').getText().replace(/^export\s+/, '');
   const resolvePaneTarget = find('ai-tools-core.ts', node => ts.isFunctionDeclaration(node) && node.name?.text === 'resolvePaneTarget').getText().replace(/^export\s+/, '');
-  const body = `async check(response,callbacks) { const sessionId='test', iteration=1, permMode='acceptSafe', permRules=[], decisions=new Map(); const toolCtx={abortSignal:this.abortController.signal, sessionId, cwd:'/workspace', isSSH:false, panes:[{isDefaultTarget:true, cwd:'/workspace', isSSH:false}]}; ${loop.getText()} ${after.getText()} }`;
+  const body = `async check(response,callbacks) { const sessionId='test', iteration=1, permMode='acceptSafe', permRules=[], decisions=new Map(), terminalsWritten=new Set(); const toolCtx={abortSignal:this.abortController.signal, sessionId, cwd:'/workspace', isSSH:false, panes:[{isDefaultTarget:true, cwd:'/workspace', isSSH:false}]}; ${loop.getText()} ${after.getText()} }`;
   let preflightCalls = 0;
   const Agent = new Function('hooks', 'SCOPED_READ_TOOLS', 'invoke', 'decidePermission', 'requiresReadScopeConfirmation', 'abortableOperation',
+    'TERMINAL_INPUT_TOOLS', 'TERMINAL_WRITE_TOOLS', 'terminalSessionFor', 'checkTerminalInput', 'terminalConfirmArgs',
     compile(`${resolveLocalToolPath}\n${resolvePaneTarget}\n${preflight}\nclass Agent { ${method('completeAbortedToolBatch')} ${body} }`) + ';return Agent;')(
     { emitPreToolUse: async () => ({}) },
     new Set(['read_file', 'grep_search', 'glob_search', 'list_directory']),
@@ -73,6 +74,11 @@ function approvalHarness() {
     decidePermission,
     requiresReadScopeConfirmation,
     abortableOperation,
+    new Set(['type_text', 'press_keys']),
+    new Set(['run_command', 'type_text', 'press_keys']),
+    () => null,
+    () => assert.fail('terminal input check reached for a read tool'),
+    (args: Record<string, unknown>) => args,
   );
   const agent = new Agent(); agent.messages = []; agent.aborted = false;
   agent.abortController = new AbortController(); agent.toolRegistry = { get: () => ({ requiresConfirm: () => false, isDestructive: () => false }) };

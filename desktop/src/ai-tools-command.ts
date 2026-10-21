@@ -36,6 +36,7 @@ import {
   type PromptReturnWatch,
 } from './ai-wait-prompt-return';
 import { resolveSingleKey } from './ai-tools-keys';
+import type { InputLine } from './ai-terminal-submit';
 import { waitAutoDetectedReason } from './ai-tool-i18n';
 
 // ─── Pre-emptive wait card lifecycle ────────────────────────────
@@ -269,6 +270,62 @@ function isAlternateScreen(sessionId: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Who receives keystrokes typed into a session right now. */
+export type ShellInputState =
+  /** A full-screen program owns the keyboard. */
+  | { kind: 'tui' }
+  /** A running program is asking a question (Y/n, a value). */
+  | { kind: 'prompt' }
+  /** A shell or REPL; `line` is its current input when known. */
+  | { kind: 'shell'; line: InputLine };
+
+/**
+ * Inspect a session before type_text / press_keys run, so a submitted
+ * line can be checked like run_command. Only a hooked shell whose
+ * prompt is still the last logical line yields a known input line;
+ * everything else that is not a TUI or a recognised question reports
+ * an unknown line.
+ */
+export function readShellInputState(sessionId: string): ShellInputState {
+  const mt = TerminalRegistry.get(sessionId);
+  if (!mt) return { kind: 'shell', line: null };
+  if (isAlternateScreen(sessionId)) return { kind: 'tui' };
+  try {
+    const buf = mt.terminal.buffer.active;
+    const cursorRow = buf.baseY + buf.cursorY;
+    const { hookInjected, promptRow, promptCol } = mt.shellState;
+    if (hookInjected && promptRow >= 0 && cursorRow >= promptRow) {
+      let atPrompt = true;
+      for (let r = promptRow + 1; r <= cursorRow; r++) {
+        if (!buf.getLine(r)?.isWrapped) { atPrompt = false; break; }
+      }
+      if (atPrompt) {
+        let text = '';
+        for (let r = promptRow; ; r++) {
+          const row = buf.getLine(r);
+          if (!row || (r > promptRow && !row.isWrapped)) break;
+          text += row.translateToString(false, r === promptRow ? promptCol : 0);
+        }
+        return { kind: 'shell', line: text.trimEnd() };
+      }
+    }
+    const tailRows: string[] = [];
+    for (let r = Math.max(0, cursorRow - 3); r <= cursorRow; r++) {
+      tailRows.push(buf.getLine(r)?.translateToString(true) ?? '');
+    }
+    const tail = tailRows.join('\n');
+    if (!endsWithShellPrompt(tail)) {
+      const { state } = detectInteractiveState(tail, false);
+      if (state === 'waiting_confirm' || state === 'waiting_input' || state === 'waiting_password') {
+        return { kind: 'prompt' };
+      }
+    }
+  } catch {
+    // Fall through: treat an unreadable buffer as an unknown line.
+  }
+  return { kind: 'shell', line: null };
 }
 
 /**
@@ -540,7 +597,8 @@ export function createTypeTextTool(): ToolHandler {
         '  • REFUSED on password prompts: use wait_for_user_input.\n' +
         '  • Empty string is rejected — pass a real value.\n' +
         '  • For Enter / Tab / arrows / Ctrl-C / etc., call press_keys() — type_text("\\n") types a literal backslash + n.\n' +
-        '  • The send is one contiguous PTY write.',
+        '  • The send is one contiguous PTY write.\n' +
+        '  • A newline that submits a line at a shell prompt is permission-checked like run_command — use run_command for shell commands.',
       parameters: {
         type: 'object',
         properties: {
@@ -644,7 +702,8 @@ export function createPressKeysTool(): ToolHandler {
         '  • REFUSED on password prompts: use wait_for_user_input.\n' +
         '  • Unknown key tokens (e.g. "FooBar") return an error — use type_text for literal characters.\n' +
         '  • A single non-alphanumeric character (".", ",", "/", "q") is accepted as itself.\n' +
-        '  • All keys in one call are sent as a contiguous burst.',
+        '  • All keys in one call are sent as a contiguous burst.\n' +
+        '  • Enter at a shell prompt runs the current line and is permission-checked like run_command.',
       parameters: {
         type: 'object',
         properties: {

@@ -120,3 +120,10 @@ export function waitResolvedLabel(status: 'completed' | 'aborted' | 'timeout' | 
     : status;
   return `${base} · ${tail ?? status}`;
 }
+
+/** Confirm-card note when keystrokes submit a shell line that cannot be read. */
+export function submittedLineUnknownLabel(): string {
+  return getLanguage() === 'zh'
+    ? '将在终端中执行当前输入行（内容无法读取）'
+    : 'Runs the current terminal line (its content could not be read)';
+}

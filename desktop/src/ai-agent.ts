@@ -50,9 +50,13 @@ import {
   requiresReadScopeConfirmation,
   trustLevelToMode,
   mergePermissionRules,
+  decideTerminalSubmitPermission,
+  type PermissionDecision,
   type PermissionMode,
   type PermissionRule,
 } from './ai-permission-rules';
+import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit';
+import { readShellInputState } from './ai-tools-command';
 
 // Re-exports for backward compatibility
 export type { TerminalContext } from './ai-agent-context';
@@ -60,6 +64,48 @@ export { gatherContext } from './ai-agent-context';
 export type { AgentEvent } from './ai-agent-events';
 
 const SCOPED_READ_TOOLS = new Set(['read_file', 'grep_search', 'glob_search', 'list_directory']);
+const TERMINAL_INPUT_TOOLS = new Set(['type_text', 'press_keys']);
+const TERMINAL_WRITE_TOOLS = new Set(['run_command', 'type_text', 'press_keys']);
+
+function terminalSessionFor(
+  context: ReturnType<typeof buildToolContext>,
+  args: Record<string, unknown>,
+): string | null {
+  const target = resolvePaneTarget(context, args.pane);
+  return target.ok ? target.pane.sessionId : null;
+}
+
+/**
+ * Tighten a type_text / press_keys decision when the call would submit
+ * a line at a shell prompt: each submitted line is judged as a
+ * run_command (rules + danger heuristic), and an unreadable line asks.
+ */
+function checkTerminalInput(
+  toolName: string,
+  args: Record<string, unknown>,
+  base: PermissionDecision,
+  context: ReturnType<typeof buildToolContext>,
+  mode: PermissionMode,
+  rules: PermissionRule[],
+  commandHandler: ToolHandler | undefined,
+): { perm: PermissionDecision; submit: TerminalSubmit } {
+  const none = { perm: base, submit: { kind: 'none' } as TerminalSubmit };
+  const sessionId = terminalSessionFor(context, args);
+  if (!sessionId) return none;
+  const state = readShellInputState(sessionId);
+  if (state.kind !== 'shell') return none;
+  const { submit } = classifyTerminalInput(toolName, args, state.line);
+  return {
+    perm: decideTerminalSubmitPermission(base, submit, args.pane, commandHandler, mode, rules, context),
+    submit,
+  };
+}
+
+/** Args shown on the confirm card: the lines the keystrokes would run. */
+function terminalConfirmArgs(args: Record<string, unknown>, submit: TerminalSubmit): Record<string, unknown> {
+  if (submit.kind === 'none') return args;
+  return { ...args, submittedCommands: submit.lines, submittedLineUnknown: submit.kind === 'unknown' };
+}
 
 type ReadScopePreflight =
   | { kind: 'safe'; canonicalPath: string }
@@ -887,9 +933,12 @@ export class ToolAgent {
         // PreToolUse hook + consult permission rules. Builds a map from
         // call id → decision.
         type Decision =
-          | { kind: 'run'; args: Record<string, unknown> }
+          | { kind: 'run'; args: Record<string, unknown>; recheckTerminal?: boolean }
           | { kind: 'reject'; message: string };
         const decisions = new Map<string, Decision>();
+        // Terminals an earlier call in this batch writes to. Their state
+        // (shell prompt, TUI, question) is only known once that call ran.
+        const terminalsWritten = new Set<string>();
 
         for (const toolCall of response.toolCalls) {
           if (this.aborted) {
@@ -949,7 +998,7 @@ export class ToolAgent {
           const readScopeConfirmation = readScopePreflight?.kind === 'confirmation-required';
 
           // Permission decision via mode + rules + handler heuristic.
-          const perm = decidePermission(
+          let perm = decidePermission(
             toolCall.function.name,
             args,
             handler,
@@ -958,6 +1007,23 @@ export class ToolAgent {
             toolCtx,
             readScopeConfirmation,
           );
+          // Keystrokes that submit a shell line are judged like run_command.
+          let terminalSubmit: TerminalSubmit = { kind: 'none' };
+          let recheckTerminal = false;
+          const writtenSession = TERMINAL_WRITE_TOOLS.has(toolCall.function.name)
+            ? terminalSessionFor(toolCtx, args)
+            : null;
+          if (TERMINAL_INPUT_TOOLS.has(toolCall.function.name)) {
+            if (writtenSession && terminalsWritten.has(writtenSession)) {
+              recheckTerminal = perm.kind === 'allow';
+            } else {
+              ({ perm, submit: terminalSubmit } = checkTerminalInput(
+                toolCall.function.name, args, perm, toolCtx, permMode, permRules,
+                this.toolRegistry.get('run_command'),
+              ));
+            }
+          }
+          if (writtenSession) terminalsWritten.add(writtenSession);
           if (perm.kind === 'deny') {
             decisions.set(toolCall.id, { kind: 'reject', message: perm.reason });
             continue;
@@ -972,7 +1038,7 @@ export class ToolAgent {
               toolCtx,
               allowScopeBypass ? readScopePreflight?.canonicalPath : undefined,
             );
-            decisions.set(toolCall.id, { kind: 'run', args });
+            decisions.set(toolCall.id, { kind: 'run', args, recheckTerminal });
             continue;
           }
 
@@ -992,9 +1058,9 @@ export class ToolAgent {
           try {
             approved = confirmSignal
               ? await abortableOperation<boolean | string>(confirmSignal, (resolve, reject) => {
-                  callbacks.onConfirmRequired!(toolCall.function.name, args).then(resolve, reject);
+                  callbacks.onConfirmRequired!(toolCall.function.name, terminalConfirmArgs(args, terminalSubmit)).then(resolve, reject);
                 })
-              : await callbacks.onConfirmRequired!(toolCall.function.name, args);
+              : await callbacks.onConfirmRequired!(toolCall.function.name, terminalConfirmArgs(args, terminalSubmit));
           } catch (error) {
             if (this.aborted) break;
             throw error;
@@ -1085,6 +1151,28 @@ export class ToolAgent {
                 result: decision?.kind === 'reject' ? decision.message : 'No decision',
                 isError: true,  // Rejected tools should be flagged as errors so the LLM doesn't misinterpret the denial as a success
               };
+            }
+            if (decision.recheckTerminal) {
+              // An earlier call in this batch changed this terminal; judge
+              // the keystrokes against its live state right before writing.
+              const check = checkTerminalInput(
+                toolCall.function.name, decision.args, { kind: 'allow' }, toolCtx, permMode, permRules,
+                this.toolRegistry.get('run_command'),
+              );
+              if (check.perm.kind === 'deny') return { result: check.perm.reason, isError: true };
+              if (check.perm.kind === 'ask') {
+                if (!callbacks.onConfirmRequired) {
+                  return { result: 'User confirmation required but no handler available.', isError: true };
+                }
+                const confirmArgs = terminalConfirmArgs(decision.args, check.submit);
+                const confirmSignal = toolCtx.abortSignal;
+                const approved = confirmSignal
+                  ? await abortableOperation<boolean | string>(confirmSignal, (resolve, reject) => {
+                      callbacks.onConfirmRequired!(toolCall.function.name, confirmArgs).then(resolve, reject);
+                    }).catch(() => false)
+                  : await callbacks.onConfirmRequired(toolCall.function.name, confirmArgs);
+                if (approved === false) return { result: 'User rejected this action.', isError: true };
+              }
             }
             const started = Date.now();
             const out = await this.safeExecute(handler as ToolHandler, decision.args, toolCtx, toolCall.function.name);
