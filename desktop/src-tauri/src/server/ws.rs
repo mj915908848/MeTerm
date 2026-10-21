@@ -241,10 +241,8 @@ async fn handle_ws(
         // `flush_ring_buffer_async`:attach 的背压回放可能把 priority 通道填到正好满,若这里再用
         // 非阻塞 `flush_ring_buffer` 首块就撞 Full → disconnect + 截断 → 大历史/慢 sink 下永久重连环
         // (attach 背压化消灭的 Critical bug 的终端缓冲镜像版)。背压 flush 满则等 writer 排空、绝不断连;
-        // flush 同样在 writer 之后(步骤5),故背压前提成立。Acp 会话无 PTY,跳过 flush(现状不变)。
-        if entry.kind() == super::agent::AgentKind::Mirror {
-            session.flush_ring_buffer_async(&client, conn_gen).await;
-        }
+        // flush 同样在 writer 之后(步骤5),故背压前提成立。
+        session.flush_ring_buffer_async(&client, conn_gen).await;
     } else {
         session.flush_ring_buffer(&client, conn_gen);
     }

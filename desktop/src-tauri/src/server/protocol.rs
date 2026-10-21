@@ -43,11 +43,11 @@ pub const MSG_NUDGE: u8 = 0x18;
 // Desktop presence event (桌面事件总线经 `/ws-events` 转发给手机的帧,JSON 负载,见 `events.rs`)
 pub const MSG_NOTIFY_EVENT: u8 = 0x41;
 
-// agent 聊天(方案 B):桌面用 AcpClient 托管外部 agent,归一 AgentEvent 经此下行;
-// 上行输入/控制见 P1-T4。0x50/0x51/0x52 三个常量都在本段定义,便于协议一览。
-pub const MSG_AGENT_EVENT: u8 = 0x50; // ↓ JSON: AgentEvent(下行,T2 使用)
-pub const MSG_AGENT_INPUT: u8 = 0x51; // ↑ JSON: {prompt}(dispatch 处理在 T4)
-pub const MSG_AGENT_CONTROL: u8 = 0x52; // ↑ JSON: {action,requestId?,optionId?,mode?}(T4)
+// agent 聊天(方案甲镜像):镜像事件流归一 AgentEvent 经此下行;上行输入/控制见
+// agent::upstream。0x50/0x51/0x52 三个常量都在本段定义,便于协议一览。
+pub const MSG_AGENT_EVENT: u8 = 0x50; // ↓ JSON: AgentEvent(下行)
+pub const MSG_AGENT_INPUT: u8 = 0x51; // ↑ JSON: {prompt}
+pub const MSG_AGENT_CONTROL: u8 = 0x52; // ↑ JSON: {action,requestId?,optionId?,message?,answers?}
 
 // Master role management
 pub const MSG_MASTER_REQUEST: u8 = 0x19;

@@ -133,116 +133,12 @@ fn count_of(frames: &[Vec<u8>], target: &[u8]) -> usize {
     frames.iter().filter(|f| f.as_slice() == target).count()
 }
 
-/// 测试专用:构造一个不带 `AcpClient`(client=None)的表条目,供表增删 / 收尾移除断言。
-pub(super) fn test_entry() -> Arc<AgentEntry> {
+/// 测试专用:构造一个不带 fan-out 任务的表条目,供表增删断言。
+fn test_entry() -> Arc<AgentEntry> {
     Arc::new(AgentEntry {
-        client: None,
         fan: Arc::new(Mutex::new(FanState::new())),
-        meta: AgentMeta {
-            agent: "claude".into(),
-            cwd: "/tmp".into(),
-            kind: AgentKind::Acp,
-        },
         task: Mutex::new(None),
-        busy: AtomicBool::new(false),
-        ever_attached: Arc::new(AtomicBool::new(false)),
     })
-}
-
-/// 测试专用:一对「从未关闭」的子进程信号(closed=false + 新 Notify),供 run_fan_out
-/// 的非「子进程死亡」用例注入(排除该结束路径)。
-fn never_closed() -> (Arc<AtomicBool>, Arc<Notify>) {
-    (Arc::new(AtomicBool::new(false)), Arc::new(Notify::new()))
-}
-
-/// 测试专用:构造一个空 `SessionManager`,供 finalize 的 Session 移除断言用。
-fn test_session_manager() -> Arc<SessionManager> {
-    SessionManager::new(
-        SessionConfig {
-            session_ttl: Duration::from_secs(300),
-            reconnect_grace: Duration::from_secs(60),
-            ring_buffer_size: 4096,
-            log_dir: String::new(),
-        },
-        EventBus::new(),
-        HookSecretRegistry::new(),
-    )
-}
-
-/// 喂 3 个事件:3 帧入历史 + 3 帧投递到已 attach 的 client;event_rx 关闭后 run_fan_out 结束(不 hang)。
-#[tokio::test]
-async fn fan_out_records_history_delivers_to_attached_then_ends_on_close() {
-    let session = test_session();
-    let (client, rx) = attached_client(&session, "c1");
-    let WsReceivers {
-        mut priority_rx, ..
-    } = rx;
-
-    let fan = Arc::new(Mutex::new(FanState::new()));
-    // c1 先完成 attach(空历史,回放 0 帧;登记进 attached)→ 后续 live 帧才会投给它。
-    attach_client(&fan, &client).await;
-
-    let cancel = CancellationToken::new();
-    let (tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
-    for t in ["a", "b", "c"] {
-        tx.send(AgentEvent::AssistantDelta { text: t.into() })
-            .unwrap();
-    }
-    drop(tx); // 关闭 event_rx → run_fan_out 应 break 返回
-
-    let (closed, notify) = never_closed();
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        run_fan_out(
-            fan.clone(),
-            session.clone(),
-            EventBus::new(),
-            cancel,
-            event_rx,
-            closed,
-            notify,
-            Arc::new(AtomicBool::new(true)), // 已 attach → 排除 idle-guard 干扰
-            Duration::from_secs(300),
-        ),
-    )
-    .await
-    .expect("event_rx 关闭后 fan-out 应结束,不应 hang");
-
-    // 3 帧入历史。
-    assert_eq!(fan.lock().unwrap().history.frames.len(), 3);
-    // 3 帧投递到 client,且都是 0x50 帧。
-    let got = drain(&mut priority_rx);
-    assert_eq!(got.len(), 3, "3 个事件应投递 3 帧");
-    assert!(got.iter().all(|f| f[0] == protocol::MSG_AGENT_EVENT));
-}
-
-/// cancel 触发 → run_fan_out 结束(即便 event_rx 的 sender 仍保活)。
-#[tokio::test]
-async fn fan_out_ends_on_cancel() {
-    let session = test_session();
-    let fan = Arc::new(Mutex::new(FanState::new()));
-    let cancel = CancellationToken::new();
-    // sender 保活(不 drop),确保结束原因只能是 cancel。
-    let (_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
-    cancel.cancel();
-
-    let (closed, notify) = never_closed();
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        run_fan_out(
-            fan,
-            session,
-            EventBus::new(),
-            cancel.clone(),
-            event_rx,
-            closed,
-            notify,
-            Arc::new(AtomicBool::new(true)),
-            Duration::from_secs(300),
-        ),
-    )
-    .await
-    .expect("cancel 后 fan-out 应结束");
 }
 
 // ── P1-T6:fan-out 额外副作用——通知性事件 publish 到桌面事件总线 ──
@@ -746,237 +642,23 @@ async fn attach_aborts_when_conn_gen_bumps_midway() {
     drainer.abort();
 }
 
-// ── AcpAgentManager 表操作(不涉及子进程)──
+// ── AgentManager 表操作 ──
 
-/// remove_entry 从表移除;get / len 反映真实增删(用测试插入口塞真 entry)。
+/// remove 从表移除;get / len 反映真实增删(用测试插入口塞真 entry)。
 #[test]
-fn manager_remove_entry_updates_table() {
-    let mgr = AcpAgentManager::new();
+fn manager_remove_updates_table() {
+    let mgr = AgentManager::new();
     assert!(mgr.is_empty());
-    // 空表移除安全(no-op → None)。
-    assert!(mgr.remove_entry("nope").is_none());
+    // 空表移除安全(no-op → false)。
+    assert!(!mgr.remove("nope"));
 
     // 塞入一个真 entry,断言 get/len 反映插入。
     mgr.insert_for_test("s1", test_entry());
     assert_eq!(mgr.len(), 1);
     assert!(mgr.get("s1").is_some());
 
-    // 移除已存在条目:返回 Some,且 get/len 反映移除。
-    assert!(
-        mgr.remove_entry("s1").is_some(),
-        "移除已存在条目应返回 Some"
-    );
+    // 移除已存在条目:返回 true,且 get/len 反映移除。
+    assert!(mgr.remove("s1"), "移除已存在条目应返回 true");
     assert!(mgr.get("s1").is_none());
     assert_eq!(mgr.len(), 0);
-}
-
-/// FIX-B / FIX-L2:fan-out 收尾锁定——`finalize_fan_out` 先执行 shutdown 钩子、再从
-/// AcpAgentManager 移除条目、**再从 SessionManager 移除 Session**。register 的各终止路径
-/// (event_rx 关闭 / cancel / 子进程死 / idle-guard)都经此收尾,故锁定「都会清 entry + Session」。
-#[tokio::test]
-async fn finalize_runs_shutdown_removes_entry_and_deletes_session() {
-    let sm = test_session_manager();
-    let session = sm.create();
-    *session.executor_type.lock().unwrap() = "agent".to_string();
-    let sid = session.id.clone();
-
-    let mgr = AcpAgentManager::new();
-    mgr.insert_for_test(&sid, test_entry());
-    assert_eq!(mgr.len(), 1);
-    assert!(
-        sm.get(&sid).is_some(),
-        "前置:Session 应在 SessionManager 表中"
-    );
-
-    let shut = Arc::new(AtomicBool::new(false));
-    let shut2 = shut.clone();
-    finalize_fan_out(&mgr, &sm, &sid, async move {
-        shut2.store(true, Ordering::SeqCst);
-    })
-    .await;
-
-    assert!(
-        shut.load(Ordering::SeqCst),
-        "finalize 应先执行 shutdown 钩子"
-    );
-    assert!(
-        mgr.get(&sid).is_none(),
-        "finalize 后应从 AcpAgentManager 移除条目"
-    );
-    assert_eq!(mgr.len(), 0);
-    assert!(
-        sm.get(&sid).is_none(),
-        "finalize 后应从 SessionManager 移除 Session(FIX-L2,否则豁免 TTL 后成僵尸)"
-    );
-}
-
-/// FIX-L2:模拟子进程死亡——`event_tx` 保活(排除 event_rx 关闭)、cancel 不触发、
-/// 已 attach(排除 idle-guard),仅 fire「子进程已关闭」信号(closed=true + notify)→
-/// 断言 run_fan_out 因 `wait_closed` 分支而 break 返回(不 hang)。
-#[tokio::test]
-async fn fan_out_ends_when_subprocess_closes() {
-    let session = test_session();
-    let fan = Arc::new(Mutex::new(FanState::new()));
-    let cancel = CancellationToken::new();
-    // sender 保活:排除「event_rx 关闭」这条结束路径,确保结束原因只能是子进程关闭。
-    let (_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
-    let closed = Arc::new(AtomicBool::new(false));
-    let notify = Arc::new(Notify::new());
-    let closed2 = closed.clone();
-    let notify2 = notify.clone();
-
-    let task = tokio::spawn(run_fan_out(
-        fan,
-        session,
-        EventBus::new(),
-        cancel,
-        event_rx,
-        closed,
-        notify,
-        Arc::new(AtomicBool::new(true)), // 已 attach → 排除 idle-guard
-        Duration::from_secs(300),
-    ));
-
-    // 让 run_fan_out 先 park 到 select(注册 wait_closed 的 waiter),再 fire 子进程关闭信号。
-    tokio::task::yield_now().await;
-    closed2.store(true, Ordering::SeqCst); // 先置 closed
-    notify2.notify_waiters(); // 再唤醒
-
-    tokio::time::timeout(Duration::from_secs(5), task)
-        .await
-        .expect("子进程关闭后 run_fan_out 应 break,不应 hang")
-        .expect("run_fan_out 任务不应 panic");
-}
-
-// ── FIX-L3:create-never-connected idle-guard ──
-
-/// 从未 attach + deadline 到点 → idle-guard 触发 run_fan_out 结束(其他结束路径均已排除:
-/// event_tx 保活、cancel 不触发、子进程未关闭)。
-#[tokio::test]
-async fn idle_guard_ends_run_fan_out_when_never_attached() {
-    let session = test_session();
-    let fan = Arc::new(Mutex::new(FanState::new()));
-    let cancel = CancellationToken::new();
-    let (_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>(); // 保活
-    let (closed, notify) = never_closed();
-
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        run_fan_out(
-            fan,
-            session,
-            EventBus::new(),
-            cancel,
-            event_rx,
-            closed,
-            notify,
-            Arc::new(AtomicBool::new(false)), // 从未 attach
-            Duration::from_millis(50),        // 极短 deadline
-        ),
-    )
-    .await
-    .expect("从未 attach 且 deadline 到 → idle-guard 应结束 run_fan_out,不应 hang");
-}
-
-/// 已 attach(ever_attached=true)→ 即便 deadline 早已过,idle-guard 也不回收(随子进程
-/// 存活;attached-then-left 不回收)。断言:超过 deadline 后任务仍在跑;再由 cancel 收尾。
-#[tokio::test]
-async fn idle_guard_does_not_end_after_attach() {
-    let session = test_session();
-    let fan = Arc::new(Mutex::new(FanState::new()));
-    let cancel = CancellationToken::new();
-    let (_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>();
-    let (closed, notify) = never_closed();
-    let cancel2 = cancel.clone();
-
-    let task = tokio::spawn(run_fan_out(
-        fan,
-        session,
-        EventBus::new(),
-        cancel,
-        event_rx,
-        closed,
-        notify,
-        Arc::new(AtomicBool::new(true)), // 已 attach
-        Duration::from_millis(50),       // 极短 deadline(若误触发,任务会提前结束)
-    ));
-
-    // 等到远超 deadline:idle-guard 若误回收已 attach 会话,task 早已结束。
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert!(
-        !task.is_finished(),
-        "已 attach 的会话不应被 idle-guard 回收(随子进程存活)"
-    );
-
-    // 用 cancel 收尾,避免遗留后台任务。
-    cancel2.cancel();
-    tokio::time::timeout(Duration::from_secs(5), task)
-        .await
-        .expect("cancel 后应结束")
-        .expect("run_fan_out 任务不应 panic");
-}
-
-/// 【FIX(lifecycle-race)回归锁定】idle-guard 不误杀「正在连接中」的会话:client 已
-/// `add_client`(在 session.clients、connected)但尚未 attach(ever_attached 仍 false)时,
-/// deadline 到点**也不回收**;直到该 client 掉线(connected 归零、始终未 attach)后才回收。
-/// 锁定「连接中不误杀、真无人连才回收」,关掉 add_client→attach 窗口(隔着 hello/role 的
-/// await)里 deadline 触发会误回收正连接会话的竞态。
-#[tokio::test]
-async fn idle_guard_does_not_reap_while_client_connecting() {
-    let session = test_session();
-    // 模拟 handle_ws 步骤2:client 已 add_client、connected,但尚未 attach(ever_attached=false)。
-    let (client, _rx) = attached_client(&session, "connecting");
-    assert_eq!(
-        session.connected_client_count(),
-        1,
-        "前置:client 已连接、在场"
-    );
-
-    let fan = Arc::new(Mutex::new(FanState::new()));
-    let cancel = CancellationToken::new();
-    let (_tx, event_rx) = mpsc::unbounded_channel::<AgentEvent>(); // 保活(排除 event_rx 关闭)
-    let (closed, notify) = never_closed();
-
-    let task = tokio::spawn(run_fan_out(
-        fan,
-        session.clone(),
-        EventBus::new(),
-        cancel,
-        event_rx,
-        closed,
-        notify,
-        Arc::new(AtomicBool::new(false)), // 从未 attach
-        Duration::from_millis(50),        // 极短 deadline(反复到点)
-    ));
-
-    // 远超 deadline:若误把「连接中」会话回收,task 早已结束。
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert!(
-        !task.is_finished(),
-        "有 connected client(正在连接中)时 idle-guard 不应回收会话"
-    );
-
-    // client 掉线(连接失败/中断,始终未 attach):connected 归零 → 下一轮 deadline 应回收。
-    client.disconnect();
-    tokio::time::timeout(Duration::from_secs(5), task)
-        .await
-        .expect("client 掉线且从未 attach 后,idle-guard 应回收(不应 hang)")
-        .expect("run_fan_out 任务不应 panic");
-}
-
-/// `AgentEntry::attach` 应把 `ever_attached` 置 true(idle-guard 失效的触发点)。
-#[tokio::test]
-async fn attach_sets_ever_attached_flag() {
-    let session = test_session();
-    let (client, _rx) = attached_client(&session, "c1");
-    let entry = test_entry();
-    assert!(
-        !entry.ever_attached.load(Ordering::SeqCst),
-        "前置:新建 entry 的 ever_attached 应为 false"
-    );
-    entry.attach(&client).await;
-    assert!(
-        entry.ever_attached.load(Ordering::SeqCst),
-        "attach 后 ever_attached 应为 true"
-    );
 }

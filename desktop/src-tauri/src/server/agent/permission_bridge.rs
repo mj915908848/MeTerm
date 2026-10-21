@@ -2,7 +2,7 @@
 //!
 //! 链路:claude 弹权限前触发 `PermissionRequest` hook(**非 async**,claude 阻塞等 hook
 //! 输出)→ 转发脚本长超时 POST `/api/agent-hook` → handler 在本桥登记 pending、把审批卡
-//! (`AgentEvent::PermissionRequest`,复用方案 B 的 0x50 冻结契约与手机审批卡 UI)下行 →
+//! (`AgentEvent::PermissionRequest`,复用 0x50 冻结契约与手机审批卡 UI)下行 →
 //! 手机 0x52 approve/reject → `upstream.rs` 经 [`PermissionBridge::resolve`] 回投决策 →
 //! handler 返回 `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":…}}`
 //! → claude 按 allow/deny 放行/拒绝,**全程 TUI 不弹窗**(local 模式手机可批,Happy 做不到)。

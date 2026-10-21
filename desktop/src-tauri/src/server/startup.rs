@@ -88,7 +88,7 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
         device_id,
         event_bus,
         presence: PresenceRegistry::new(),
-        agents: agent::AcpAgentManager::new(),
+        agents: agent::AgentManager::new(),
         hook_secrets,
         mirrors: agent::MirrorRegistry::new(),
         permission_bridge: agent::PermissionBridge::new(),

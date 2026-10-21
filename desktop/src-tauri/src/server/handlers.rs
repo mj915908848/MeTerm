@@ -256,10 +256,8 @@ pub async fn list_sessions(
                 "ssh_username": ssh_username,
                 "ssh_port": ssh_port,
                 // agent 镜像标记(方案甲 M3,wire 契约冻结、M8 手机已按此解码):
-                // agents 表有 entry 且 kind==Mirror 才 true(方案 B 的 Acp 会话为 false)。
-                "agent_mirror": super::agent::hook::agent_mirror_flag(
-                    state.agents.get(&s.id).map(|e| e.kind())
-                ),
+                // agents 表有 entry 即 true(表中只有镜像会话)。
+                "agent_mirror": state.agents.get(&s.id).is_some(),
             })
         })
         .collect();
@@ -294,9 +292,7 @@ pub async fn get_session(
                 "has_local_client": s.has_connected_loopback_client(),
                 "created_at": format_system_time(&s.created_at_system),
                 // agent 镜像标记(方案甲 M3):与 list_sessions 同一映射。
-                "agent_mirror": super::agent::hook::agent_mirror_flag(
-                    state.agents.get(&s.id).map(|e| e.kind())
-                ),
+                "agent_mirror": state.agents.get(&s.id).is_some(),
             })),
         ),
         None => (

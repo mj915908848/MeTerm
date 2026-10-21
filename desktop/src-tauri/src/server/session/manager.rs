@@ -377,11 +377,7 @@ impl SessionManager {
             }
 
             // Check if session should be closed by TTL.
-            // FIX-L1:agent 会话「随子进程存活」——手机全断开使其 Draining 也豁免 client-TTL
-            // 回收(否则手机后台 5min 后 agent CLI 被半路杀掉,削弱异步通知/长任务卖点)。
-            // 其回收改由子进程死亡 / idle-guard / 显式 delete 三路兜住(agent::manager::finalize)。
-            // 终端会话逻辑完全不变;Closed(含显式 delete 后)仍照常清(见下)。
-            let ttl_claimed = !session.is_agent() && session.try_close_by_ttl(now);
+            let ttl_claimed = session.try_close_by_ttl(now);
 
             // Also remove sessions closed by terminal EOF or explicit shutdown.
             if ttl_claimed || *session.state.lock().unwrap() == SessionState::Closed {
@@ -441,8 +437,7 @@ mod tests {
 
     /// 测试用小 session_ttl(1s):配合 `make_draining_over_ttl` 的小 offset(2s),
     /// 令「drain_start 超 TTL」只需回拨 2s——避免旧版回拨 400s 在低 uptime 主机上 panic
-    /// (见 `make_draining_over_ttl`)。TTL 大小不影响 agent 会话的豁免语义(FIX-L1 按
-    /// `is_agent()` 豁免,与 TTL 无关),只决定终端会话是否被判超时回收。
+    /// (见 `make_draining_over_ttl`)。
     fn test_config() -> SessionConfig {
         SessionConfig {
             session_ttl: Duration::from_secs(1),
@@ -464,53 +459,6 @@ mod tests {
             .checked_sub(Duration::from_secs(2))
             .unwrap_or_else(Instant::now);
         *session.drain_start.lock().unwrap() = Some(drained_at);
-    }
-
-    /// FIX-L1:同为「Draining 且超 client-TTL」时,agent 会话被 reaper **豁免**(不回收),
-    /// 终端会话仍被回收。锁定豁免只针对 executor_type=="agent",终端生命周期不变。
-    #[tokio::test]
-    async fn reaper_exempts_agent_session_from_client_ttl_but_reaps_terminal() {
-        let mgr = SessionManager::new(test_config(), EventBus::new(), HookSecretRegistry::new());
-
-        // agent 会话:Draining 且 drain_start 远超 TTL。
-        let agent = mgr.create();
-        *agent.executor_type.lock().unwrap() = "agent".to_string();
-        make_draining_over_ttl(&agent);
-        let agent_id = agent.id.clone();
-
-        // 终端会话(默认 executor_type=local-shell):同样条件。
-        let term = mgr.create();
-        make_draining_over_ttl(&term);
-        let term_id = term.id.clone();
-
-        mgr.reap();
-
-        assert!(
-            mgr.get(&agent_id).is_some(),
-            "agent 会话应豁免 client-TTL 回收(随子进程存活)"
-        );
-        assert!(
-            mgr.get(&term_id).is_none(),
-            "终端会话超 client-TTL 应照常被 reap"
-        );
-    }
-
-    /// FIX-L1 补充:处于 Closed 的 agent 会话仍被 reaper 清除(豁免只针对 client-TTL 的
-    /// Draining 回收,不豁免 Closed / 显式 delete)。
-    #[tokio::test]
-    async fn reaper_still_removes_closed_agent_session() {
-        let mgr = SessionManager::new(test_config(), EventBus::new(), HookSecretRegistry::new());
-        let agent = mgr.create();
-        *agent.executor_type.lock().unwrap() = "agent".to_string();
-        *agent.state.lock().unwrap() = SessionState::Closed;
-        let agent_id = agent.id.clone();
-
-        mgr.reap();
-
-        assert!(
-            mgr.get(&agent_id).is_none(),
-            "Closed 的 agent 会话不豁免,应被 reaper 清除"
-        );
     }
 
     /// 修 M1 泄漏(§M5-5):会话被 `reap` 回收(TTL/exit/idle)时,其 hook secret 也一并从
