@@ -29,17 +29,37 @@ type HostKeyChallenge = {
 
 type TestResult = { ok: boolean; error?: string };
 
+function sameEndpoint(a: SSHConnectionConfig, b: SSHConnectionConfig): boolean {
+  return a.host === b.host && a.port === b.port && a.username === b.username;
+}
+
+/**
+ * The id this device's registry knows the connection by. A config can carry a
+ * stale `serverConnectionId` — a recent-list entry recorded by another build
+ * (e.g. MeTerm Dev vs. release share WebView storage when run unbundled) or
+ * before the connection was re-created. Only trust an id the current saved
+ * list still has; otherwise find the same endpoint, preferring the same name.
+ */
 function brokerConnectionId(config: SSHConnectionConfig): string | undefined {
   const explicit = (config as BrokerBackedConfig).serverConnectionId;
+  const saved = loadSavedConnections();
+  if (explicit && saved.some((candidate) => candidate.serverConnectionId === explicit)) {
+    return explicit;
+  }
+  const endpointMatches = saved.filter((candidate) => (
+    candidate.serverConnectionId && sameEndpoint(candidate, config)
+  ));
+  const byEndpoint = endpointMatches.find((candidate) => candidate.name === config.name)
+    ?? endpointMatches[0];
+  if (byEndpoint) return byEndpoint.serverConnectionId;
   return explicit || (config.name ? existingConnectionId(config.name) : undefined);
 }
 
 function matchesSavedMetadata(config: SSHConnectionConfig): boolean {
   const id = brokerConnectionId(config);
-  const saved = loadSavedConnections().find((candidate) => (
-    candidate.name === config.name
-    || Boolean(id && candidate.serverConnectionId === id)
-  ));
+  const candidates = loadSavedConnections();
+  const saved = (id && candidates.find((candidate) => candidate.serverConnectionId === id))
+    || candidates.find((candidate) => candidate.name === config.name);
   if (!saved) return false;
   return saved.host === config.host
     && saved.port === config.port

@@ -68,3 +68,21 @@ test('saved connect posts current shell-hook choice, including false', async () 
   await h.api.createSSHSessionForConfig({ ...saved, skipShellHook: false }, 51766, 'token');
   assert.deepEqual(h.requests.map(({ body }) => body.skip_shell_hook), [true, false]);
 });
+
+test('a stale registry id from the recent list resolves to the saved endpoint', async () => {
+  // Recent entries can carry an id from another build or an older registry.
+  const h = harness(saved);
+  const recent = { ...saved, serverConnectionId: 'stale-id', privateKey: undefined };
+  assert.equal(h.api.shouldUseSavedSessionBroker(recent), true);
+  assert.equal(await h.api.createSSHSessionForConfig(recent, 51766, 'token'), 'saved-session');
+  assert.equal(h.requests[0].body.id, 'saved-id');
+  assert.equal(h.raw.length, 0);
+});
+
+test('a stale id never borrows a saved connection for a different endpoint', async () => {
+  const h = harness(saved);
+  const other = { ...saved, serverConnectionId: 'stale-id', host: 'other.example.com' };
+  assert.equal(h.api.shouldUseSavedSessionBroker(other), false);
+  assert.equal(await h.api.createSSHSessionForConfig(other, 51766, 'token'), 'raw-session');
+  assert.equal(h.requests.length, 0);
+});
