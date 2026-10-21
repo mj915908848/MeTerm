@@ -585,7 +585,7 @@ impl Session {
     pub(crate) fn reconnect_ipc_client(
         &self,
         client_id: &str,
-        channel: tauri::ipc::Channel<Vec<u8>>,
+        channel: tauri::ipc::Channel,
     ) -> Result<(Arc<Client>, u64), String> {
         let _private_guard = self.private.lock().unwrap();
         let clients = self.clients.lock().unwrap();

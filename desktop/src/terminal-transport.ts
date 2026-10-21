@@ -36,9 +36,17 @@ export class IpcTransport implements TerminalTransport {
   get clientId(): string | null { return this._clientId; }
 
   async connect(): Promise<{ client_id: string; role: string; cols: number; rows: number }> {
-    const channel = new Channel<number[]>();
-    channel.onmessage = (payload: number[]) => {
-      if (this.onmessage) {
+    // The backend sends raw bytes (`InvokeResponseBody::Raw`), which arrive as
+    // an ArrayBuffer. Accept the old number[] shape too, defensively.
+    const channel = new Channel<ArrayBuffer | ArrayBufferView | number[]>();
+    channel.onmessage = (payload) => {
+      if (!this.onmessage) return;
+      if (payload instanceof ArrayBuffer) {
+        this.onmessage(payload);
+      } else if (ArrayBuffer.isView(payload)) {
+        const view = new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+        this.onmessage(view.slice().buffer);
+      } else {
         this.onmessage(new Uint8Array(payload).buffer);
       }
     };

@@ -1,6 +1,6 @@
 //! Local IPC terminal commands — replaces WebSocket for local frontend communication.
 //!
-//! Uses `tauri::ipc::Channel<Vec<u8>>` for downstream (server → frontend) and
+//! Uses a raw-bytes `tauri::ipc::Channel` for downstream (server → frontend) and
 //! `invoke` for upstream (frontend → server). Messages use the same binary
 //! frame format `[MsgType: u8][Payload]` as WebSocket for protocol compatibility.
 
@@ -35,7 +35,7 @@ pub async fn ipc_connect_session(
     state: State<'_, Arc<ServerState>>,
     session_id: String,
     client_id: Option<String>,
-    on_output: tauri::ipc::Channel<Vec<u8>>,
+    on_output: tauri::ipc::Channel,
 ) -> Result<String, String> {
     let session = state
         .session_manager
