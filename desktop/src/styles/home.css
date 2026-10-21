@@ -829,14 +829,6 @@ html[data-theme="light"] .home-btn-local:hover {
 }
 
 /* Light theme: cards need subtle shadow since no borders */
-html[data-theme="light"] .home-dash-group-card {
-  background: rgba(var(--bg-card), 0.8);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
-}
-html[data-theme="light"] .home-dash-group-card:hover {
-  background: rgba(var(--bg-card), 0.95);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
-}
 html[data-theme="light"] .home-dash-recent-card {
   background: rgba(var(--bg-card), 0.7);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -920,33 +912,21 @@ html[data-theme="light"] .tray-tip {
 }
 
 /* ── Recent Activity horizontal track ── */
+/* Recent connections wrap into a grid inside the content column, so every
+   one is visible at once (there are at most five) instead of scrolling sideways. */
 .home-dash-recent-track {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 10px;
-  overflow-x: auto;
-  padding: 8px 28px 4px;
-  margin: 0 -28px;
-  scrollbar-width: none;
-}
-.home-dash-recent-track.fade-right {
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent calc(100% - 14px));
-  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent calc(100% - 14px));
-}
-.home-dash-recent-track.fade-left {
-  -webkit-mask-image: linear-gradient(to right, transparent 14px, black 28px);
-  mask-image: linear-gradient(to right, transparent 14px, black 28px);
-}
-.home-dash-recent-track.fade-both {
-  -webkit-mask-image: linear-gradient(to right, transparent 14px, black 28px, black calc(100% - 28px), transparent calc(100% - 14px));
-  mask-image: linear-gradient(to right, transparent 14px, black 28px, black calc(100% - 28px), transparent calc(100% - 14px));
+  padding: 8px 0 4px;
+  margin: 0;
 }
 .home-dash-recent-track::-webkit-scrollbar {
   display: none;
 }
 
 .home-dash-recent-card {
-  flex: 0 0 auto;
-  max-width: 220px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1033,241 +1013,7 @@ html[data-theme="light"] .home-dash-recent-jumpserver .home-dash-recent-icon { c
   margin-top: 1px;
 }
 
-/* ── Groups grid ── */
-.home-dash-groups-grid {
-  display: flex;
-  /* Cards keep their own width and wrap onto further rows: a row that does not
-     divide evenly leaves its leftover space blank on the right instead of
-     stretching the cards to fill it. */
-  flex-wrap: wrap;
-  gap: 12px;
-  overflow-x: auto;
-  padding: 4px 28px;
-  margin: 0 -28px;
-  scrollbar-width: none;
-}
-.home-dash-groups-grid.fade-right {
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent calc(100% - 14px));
-  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent calc(100% - 14px));
-}
-.home-dash-groups-grid.fade-left {
-  -webkit-mask-image: linear-gradient(to right, transparent 14px, black 28px);
-  mask-image: linear-gradient(to right, transparent 14px, black 28px);
-}
-.home-dash-groups-grid.fade-both {
-  -webkit-mask-image: linear-gradient(to right, transparent 14px, black 28px, black calc(100% - 28px), transparent calc(100% - 14px));
-  mask-image: linear-gradient(to right, transparent 14px, black 28px, black calc(100% - 28px), transparent calc(100% - 14px));
-}
-.home-dash-groups-grid::-webkit-scrollbar {
-  display: none;
-}
-
-.home-dash-group-card {
-  /* A flat 260px card. The row wraps (see .home-dash-groups-grid) so one more
-     card starts a new line instead of every card being stretched to fill the
-     space; a name longer than 260px is ellipsised. To give one card more room,
-     drag its right edge — see makeCardResizable(). */
-  flex: 0 0 260px;
-  min-width: 220px;
-  max-width: 100%;
-  border: none;
-  border-radius: 8px;
-  background: rgba(var(--bg-card), 0.55);
-  overflow: hidden;
-  transition: background 0.12s;
-  height: 240px;
-  display: flex;
-  flex-direction: column;
-  position: relative;
-  z-index: 0; /* stacking context: contain overlay-sb z-index within card */
-}
-
-/* A dragged width (home-card-width.ts): stop growing, hold the pinned size. */
-.home-dash-group-card[data-fixed-width] {
-  flex: 0 0 auto;
-}
-
-/* ── Resize handle (right edge) ──
-   Sits inside the card because the card clips (overflow: hidden). The card's
-   overlay scrollbar is nudged 8px left (see `.home-dash-group-card > .overlay-sb`
-   below) so grabbing the edge resizes instead of dragging the scrollbar. */
-.home-dash-card-resizer {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 8px;
-  cursor: col-resize;
-  touch-action: none;
-  z-index: 12;
-}
-.home-dash-card-resizer::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  right: 2px;
-  width: 2px;
-  height: 28px;
-  margin-top: -14px;
-  border-radius: 1px;
-  background: var(--text-muted);
-  opacity: 0;
-  transition: opacity 0.12s;
-  pointer-events: none;
-}
-.home-dash-group-card:hover .home-dash-card-resizer::after,
-.home-dash-group-card.resizing .home-dash-card-resizer::after {
-  opacity: 0.35;
-}
-.home-dash-group-card.resizing {
-  transition: none;
-}
-/* Keep the card's own scrollbar clear of the resize strip. */
-.home-dash-group-card > .overlay-sb {
-  transform: translateX(-8px);
-}
-
-.home-dash-group-card:hover {
-  background: rgba(var(--bg-card), 0.75);
-}
-
-/* Color accent strip on top */
-.home-dash-group-card[data-color]::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: var(--group-color);
-  border-radius: 8px 8px 0 0;
-}
-
-/* Collapsed state */
-.home-dash-group-card.collapsed {
-  height: auto;
-}
-.home-dash-group-card.collapsed .home-dash-group-list {
-  max-height: 0;
-  overflow: hidden;
-}
-.home-dash-group-card.collapsed .home-dash-group-chevron svg {
-  transform: rotate(-90deg);
-}
-
-/* Drag state */
-.home-dash-group-card.dragging {
-  opacity: 0.85;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  transition: none;
-}
-.home-dash-group-card.drag-over {
-  background: rgba(var(--bg-card-hover), 0.9);
-  box-shadow: 0 0 0 2px var(--accent-bg);
-}
-.home-dash-group-card-placeholder {
-  border-radius: 8px;
-  background: rgba(var(--bg-card), 0.25);
-  border: 2px dashed rgba(var(--bg-button), 0.4);
-  flex-shrink: 0;
-}
-
-.home-dash-group-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid rgba(var(--bg-button), 0.3);
-  flex-shrink: 0;
-  cursor: grab;
-  user-select: none;
-}
-.home-dash-group-header:active {
-  cursor: grabbing;
-}
-
-.home-dash-group-icon {
-  display: inline-flex;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.home-dash-group-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-heading);
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Inline rename input */
-.home-dash-group-name-input {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-heading);
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--accent);
-  outline: none;
-  padding: 0;
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-  font-family: inherit;
-}
-
-.home-dash-group-count {
-  font-size: 11px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-/* Collapse chevron */
-.home-dash-group-chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: 3px;
-  transition: background 0.12s;
-}
-.home-dash-group-chevron:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-html[data-theme="light"] .home-dash-group-chevron:hover {
-  background: rgba(0, 0, 0, 0.06);
-}
-.home-dash-group-chevron svg {
-  transition: transform 0.2s ease;
-}
-
-.home-dash-group-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  transition: max-height 0.25s ease;
-}
-
-/* Group empty state */
-.home-dash-group-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  font-size: 12px;
-  color: var(--text-muted);
-  opacity: 0.5;
-}
-
-/* ── Connection rows inside groups ── */
+/* ── Connection rows (JumpServer asset history in the detail pane) ── */
 .home-dash-conn-row {
   display: flex;
   align-items: center;
@@ -1281,67 +1027,11 @@ html[data-theme="light"] .home-dash-group-chevron:hover {
   background: rgba(var(--bg-button), 0.25);
 }
 
-/* ── Multi-select + drag into groups (saved connections) ── */
-
-/* A picked row tints and gets a left rule, so a multi-row selection reads as one
-   block. Same treatment the connection list used before it moved here. */
-.home-dash-conn-row.picked {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.22);
-  box-shadow: inset 2px 0 0 rgba(var(--accent-rgb, 106, 164, 255), 0.9);
-}
-.home-dash-conn-row.picked .home-dash-conn-name { font-weight: 600; }
-
-.home-dash-selbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 8px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.1);
-}
-/* `display: flex` above would otherwise beat the `hidden` attribute. */
-.home-dash-selbar[hidden] { display: none; }
-
-.home-dash-selbar-count {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11.5px;
-  color: var(--text-primary);
-}
-
-.home-dash-selbar-btn {
-  flex-shrink: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--border-primary);
-  border-radius: 6px;
-  background: rgba(var(--bg-button, 50, 50, 52), 0.5);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.home-dash-selbar-btn:hover {
-  background: rgba(var(--bg-button-hover, 60, 60, 63), var(--app-window-opacity, 1));
-}
-.home-dash-selbar-btn.danger { color: var(--error-text); }
+/* ── Drag ghost (connection-drag.ts) ── */
 
 body.is-connection-dragging,
-body.is-connection-dragging .home-dash-conn-row,
-body.is-connection-dragging .home-dash-group-card { cursor: grabbing; }
-
-.home-dash-groups-grid.is-dragging .home-dash-group-card {
-  outline: 1px dashed rgba(var(--accent-rgb, 106, 164, 255), 0.5);
-  outline-offset: -2px;
-}
-/* Must out-specify the dashed-outline rule above. */
-.home-dash-groups-grid.is-dragging .home-dash-group-card.drop-target {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.12);
-  outline: 1px solid rgba(var(--accent-rgb, 106, 164, 255), 0.9);
-}
+body.is-connection-dragging .home-side-row,
+body.is-connection-dragging .home-side-group { cursor: grabbing; }
 
 /* Follows the pointer; `pointer-events: none` is load-bearing — the drop target
    is found with elementFromPoint, and the ghost sits under the cursor. */
@@ -2430,26 +2120,8 @@ html[data-theme="light"] .home-btn:hover { background: rgba(0, 0, 0, 0.07); }
 html[data-theme="light"] .group-modal-btn { background: rgba(0, 0, 0, 0.04); }
 html[data-theme="light"] .group-modal-btn:hover { background: rgba(0, 0, 0, 0.07); }
 
-/* Always-visible group sorting control, independent of the collapse target. */
-.hsg-sort {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-/* The glyph this replaced sized itself via font-size; the SVG needs an explicit box.
-   14px matches the icon's own 14-unit grid, so it renders 1:1 and stays crisp. */
-.hsg-sort svg { width: 14px; height: 14px; }
-.hsg-sort:hover, .hsg-sort[aria-expanded="true"] { background: rgba(var(--bg-button-hover), var(--app-window-opacity)); color: var(--text-primary); }
-.hsg-sort:focus-visible, .connection-sort-menu .home-card-menu-item:focus-visible {
+/* The sort-mode menu (group-sort-menu.ts). */
+.connection-sort-menu .home-card-menu-item:focus-visible {
   outline: 2px solid var(--text-secondary);
   outline-offset: -2px;
 }
@@ -2461,3 +2133,11 @@ html[data-theme="light"] .group-modal-btn:hover { background: rgba(0, 0, 0, 0.07
 .home-dashboard #home-recent-activity:empty { display: none; }
 
 
+
+/* A group's colour, as a dot before its name. */
+.home-side-group .hsg-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}

@@ -11,7 +11,10 @@
  * launch" setting (off by default), so the page IS the starting point again; and
  * the connection list moved off this page (now the connections drawer), freeing it to be
  * what it used to be. So the page is back: search bar, the 2×2 session grid,
- * recent connections, saved connections and the footer.
+ * recent connections and the footer, with the saved-connection manager
+ * (home-connection-manager.ts) beside them: list on the left, the selected
+ * connection on the right, and the start content shown there while nothing is
+ * selected.
  *
  * Division of labour, unchanged from v0.2.17: this page is the *no-session*
  * starting point, the connections drawer (connections-drawer.ts) is for looking
@@ -23,7 +26,8 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 import { t } from './i18n';
 import { icon } from './icons';
 import { createOverlayScrollbar } from './overlay-scrollbar';
-import { renderGroupsSection, renderRecentActivity } from './home-dashboard-left';
+import { renderRecentActivity } from './home-dashboard-left';
+import { createConnectionManager, refreshConnectionManager } from './home-connection-manager';
 import { renderSearchOverlay, hideSearchOverlay } from './home-dashboard-right';
 import { createUnifiedSearch } from './home-dashboard-search';
 import { planHomeActionGrid } from './home-action-grid';
@@ -130,13 +134,10 @@ export function createDashboardHomeView(): HTMLDivElement {
   recentSection.id = 'home-recent-activity';
   scroll.appendChild(recentSection);
 
-  // ── Saved connections (filled by renderGroupsSection) ──
-  const groupsSection = document.createElement('div');
-  groupsSection.className = 'home-dash-section';
-  groupsSection.id = 'home-groups-section';
-  scroll.appendChild(groupsSection);
-
-  container.appendChild(scroll);
+  // ── Saved connections: list on the left, the selection on the right ──
+  // The start content above (search, session grid, recent) is what the right
+  // pane shows while nothing is selected.
+  container.appendChild(createConnectionManager(scroll));
 
   // ── Footer (outside the scroll, pinned to the bottom) ──
   const footer = document.createElement('div');
@@ -227,5 +228,5 @@ export function createDashboardHomeView(): HTMLDivElement {
 
 export function updateDashboardHomeView(): void {
   renderRecentActivity('');
-  renderGroupsSection('', () => updateDashboardHomeView());
+  refreshConnectionManager();
 }

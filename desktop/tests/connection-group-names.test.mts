@@ -134,7 +134,6 @@ test('the reserved namespace is exactly what the app compares by value', () => {
     ['src/connection-drag.ts', "const UNGROUPED = '__ungrouped__'"],
     ['src/connection-sort.ts', "const UNGROUPED_GROUP = '__ungrouped__'"],
     ['src/connection-groups.ts', "RESERVED_GROUP_PREFIX = '__'"],
-    ['src/home-dashboard-left.ts', 'card.dataset.groupName = `__type:${type}`'],
   ] as const;
   for (const [rel, fragment] of sentinels) {
     const source = readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8');

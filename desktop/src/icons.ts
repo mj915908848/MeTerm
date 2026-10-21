@@ -19,11 +19,11 @@ const icons: Record<IconName, string> = {
   // ascending or descending.
   //
   // This is the one entry drawn on a 14-unit grid instead of 24, because it renders
-  // at exactly 14px in the group header: scaling a 24-unit grid down to 14px lands
+  // at exactly 14px in the connection list toolbar: scaling a 24-unit grid down to 14px lands
   // every coordinate on a fractional pixel and softens the edges, which is what made
   // the text glyph it replaced look muddy. It is drawn with solid rects (not strokes)
   // on integer coordinates, so scaling is exactly 1:1 and every edge stays sharp.
-  // The viewBox and the CSS size in `.hsg-sort svg` have to stay in step.
+  // The viewBox and the CSS size in `.hcm-sort-btn svg` have to stay in step.
   sort: '<svg viewBox="0 0 14 14" aria-hidden="true"><rect x="2" y="2" width="10" height="2" rx="1" fill="currentColor"/><rect x="2" y="6" width="7" height="2" rx="1" fill="currentColor"/><rect x="2" y="10" width="4" height="2" rx="1" fill="currentColor"/></svg>',
 };
 

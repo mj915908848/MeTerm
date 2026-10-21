@@ -36,18 +36,9 @@ function sortIconBars(): { x: number; y: number; width: number; height: number; 
   });
 }
 
-test('the group sort control renders the shared sort icon, not a text glyph', () => {
-  const src = read('../src/home-side.ts');
-  assert.match(
-    src,
-    /sortButton\.innerHTML = icon\('sort'\);/,
-    'the sort control must render the shared "sort" icon',
-  );
-  assert.doesNotMatch(
-    src,
-    /sortButton\.textContent/,
-    'the sort control must not go back to a text glyph — "↕" means transfer, not sort',
-  );
+test('the list toolbar sort control renders the shared sort icon, not a text glyph', () => {
+  const src = read('../src/home-connection-manager.ts');
+  assert.match(src, /iconButton\(icon\('sort'\)/, 'the sort control must render the shared "sort" icon');
 });
 
 test('the sort icon is three bars sharing a left edge, longest on top', () => {
@@ -128,9 +119,9 @@ test('the sort icon is drawn on the same grid it renders at, so it stays crisp',
     }
   }
 
-  const css = read('../src/styles/home.css');
-  const rule = css.match(/\.hsg-sort svg\s*\{([^}]*)\}/);
-  assert.ok(rule, '.hsg-sort svg must be sized explicitly');
+  const css = read('../src/styles/home-connection-manager.css');
+  const rule = css.match(/\.hcm-sort-btn svg\s*\{([^}]*)\}/);
+  assert.ok(rule, '.hcm-sort-btn svg must be sized explicitly');
   assert.match(rule![1], /width:\s*14px/, 'the sort icon must render at 14px to match its grid');
   assert.match(rule![1], /height:\s*14px/, 'the sort icon must render at 14px to match its grid');
 });

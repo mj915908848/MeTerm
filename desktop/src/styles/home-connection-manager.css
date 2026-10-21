@@ -1,0 +1,280 @@
+/* ============================================================================
+   Home page connection manager (home-connection-manager.ts)
+   List on the left, the selected connection on the right. The list reuses the
+   shared .home-side-* row/group styles from home.css; the right pane hosts the
+   page's start content (.home-dash-scroll) while nothing is selected.
+   ============================================================================ */
+
+.hcm {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* ── Left: the list ── */
+
+.hcm-list-pane {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border-subtle);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.hcm-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 8px 4px;
+}
+.hcm-toolbar .hcm-search { flex: 1; min-width: 0; margin: 0; }
+
+/* Quiet square icon buttons: "+" in the list toolbar, "⋯" in the detail header. */
+.hcm-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.hcm-icon-btn svg { width: 16px; height: 16px; }
+.hcm-icon-btn:hover { background: rgba(var(--bg-button-hover), var(--app-window-opacity, 1)); color: var(--text-primary); }
+.hcm-icon-btn:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: 1px; }
+.hcm-detail-actions .hcm-icon-btn { width: 32px; height: 32px; border-radius: 9999px; }
+
+.hcm-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 10px;
+  outline: none;
+}
+.hcm-list:focus-visible { box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb, 106, 164, 255), 0.5); }
+
+/* Rows sit inset with rounded corners rather than as full-bleed stripes. */
+.hcm-list-pane .home-side-row,
+.hcm-list-pane .home-side-group {
+  margin: 0 6px;
+  border-radius: 6px;
+}
+
+/* Several picked rows read as one block. */
+.hcm-list .home-side-row.hsr-picked { background: rgba(var(--accent-rgb, 106, 164, 255), 0.18); }
+.hcm-list .home-side-row.selected { background: rgba(var(--accent-rgb, 106, 164, 255), 0.16); }
+
+.hcm-list .home-side-group-empty {
+  padding: 5px 10px 5px 22px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-dim, var(--text-muted));
+}
+
+.hcm-list.is-dragging .home-side-group {
+  outline: 1px dashed rgba(var(--accent-rgb, 106, 164, 255), 0.5);
+  outline-offset: -2px;
+  border-radius: 5px;
+}
+/* Out-specifies the dashed outline above. */
+.hcm-list.is-dragging .home-side-group.drop-target,
+.home-side-grouphdr .home-side-group.drop-target {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.22);
+  outline: 1px solid rgba(var(--accent-rgb, 106, 164, 255), 0.9);
+  color: var(--text-primary);
+}
+
+/* "Home" is drawn as a list row (.home-side-row); these undo the button defaults. */
+.hcm-home {
+  flex-shrink: 0;
+  width: calc(100% - 12px);
+  margin-bottom: 6px;
+  padding-left: 10px;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+}
+.hcm-home .hsr-icon svg { width: 15px; height: 15px; }
+.hcm-home.active { background: rgba(var(--accent-rgb, 106, 164, 255), 0.16); }
+.hcm-home.active .hsr-icon { color: var(--accent); }
+.hcm-home:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: -2px; }
+
+/* ── Right: the selection ── */
+
+.hcm-detail-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+/* The start content brings its own padding and scroll. */
+.hcm-detail-pane > .home-dash-scroll { min-width: 0; }
+
+/* Everything else sits in one centred column. */
+.hcm-detail-body {
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 32px;
+  box-sizing: border-box;
+}
+
+.hcm-detail-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 14px;
+  padding: 32px 0 20px;
+}
+.hcm-detail-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+}
+.hcm-detail-icon svg { width: 24px; height: 24px; }
+.hcm-detail-icon-jumpserver { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
+.hcm-detail-title { flex: 1; min-width: 0; }
+.hcm-detail-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-heading);
+  overflow-wrap: anywhere;
+}
+.hcm-detail-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.hcm-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* The one thing this page is for: a solid button, not a tinted one. */
+.hcm-detail-actions .ssh-btn-primary,
+[data-theme="light"] .hcm-detail-actions .ssh-btn-primary {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: none;
+}
+.hcm-detail-actions .ssh-btn-primary:hover,
+[data-theme="light"] .hcm-detail-actions .ssh-btn-primary:hover { filter: brightness(1.08); background: var(--accent); }
+.hcm-detail-actions .ssh-btn { padding: 0 16px; }
+
+/* The SSH form outside its modal. */
+.hcm-detail-pane .ssh-form-embedded { padding-bottom: 24px; }
+
+/* Facts as one grouped card, a row per fact. */
+.hcm-facts {
+  margin: 0 0 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: rgba(var(--bg-card), 0.5);
+  overflow: hidden;
+}
+.hcm-fact {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 10px 16px;
+  font-size: 13px;
+}
+.hcm-fact + .hcm-fact { border-top: 1px solid var(--border-subtle); }
+.hcm-fact-label { width: 72px; flex-shrink: 0; color: var(--text-muted); }
+.hcm-fact-value { flex: 1; min-width: 0; color: var(--text-primary); overflow-wrap: anywhere; }
+
+.hcm-section-title {
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hcm-assets {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 24px;
+}
+
+.hcm-batch-list {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  font-size: 12.5px;
+}
+.hcm-batch-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.hcm-batch-detail {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hcm-tip {
+  margin-bottom: 24px;
+  font-size: 11.5px;
+  color: var(--text-dim, var(--text-muted));
+}
+
+@media (max-width: 760px) {
+  .hcm-list-pane { width: 220px; }
+  .hcm-detail-body { padding: 0 16px; }
+}
+
+/* The sort icon is drawn on a 14-unit grid; render it 1:1 like .hsg-sort did. */
+.hcm-sort-btn svg { width: 14px; height: 14px; }
+
+/* With nothing selected the start content (search, new-session buttons, recent)
+   is a launcher: a centred column a little above the middle, instead of a strip
+   stretched across the top of an otherwise empty pane. */
+.hcm-detail-pane > .home-dash-scroll {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding-top: clamp(24px, 14vh, 160px);
+  box-sizing: border-box;
+}
+
+/* "← Back" above the detail header. */
+.hcm-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 18px 0 -14px -8px;
+  padding: 4px 10px 4px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.hcm-back svg { width: 16px; height: 16px; }
+.hcm-back:hover { background: rgba(var(--bg-button-hover), var(--app-window-opacity, 1)); color: var(--text-primary); }
+.hcm-back:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: 1px; }

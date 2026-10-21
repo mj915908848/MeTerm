@@ -653,6 +653,7 @@ function createConnectionForm(
   prefill?: SSHConnectionConfig,
   onSubmit?: (config: SSHConnectionConfig) => void,
   onSaved?: (config: SSHConnectionConfig) => void,
+  options: { embedded?: boolean } = {},
 ): HTMLDivElement {
   const form = document.createElement('div');
   form.className = 'ssh-form';
@@ -1060,24 +1061,24 @@ function createConnectionForm(
   if (prefill?.proxyType) proxySection.open = true;
   form.appendChild(proxySection);
 
+  // Read through this form's own elements, never `document.getElementById`: the
+  // home page embeds a form while the modal can open another, and an id lookup
+  // would read whichever of the two comes first in the document.
   const readFormConfig = (): SSHConnectionConfig => ({
     serverConnectionId: prefill?.serverConnectionId,
-    name: (document.getElementById('ssh-name') as HTMLInputElement).value || 'Unnamed',
-    host: (document.getElementById('ssh-host') as HTMLInputElement).value,
-    port: parseInt((document.getElementById('ssh-port') as HTMLInputElement).value) || 22,
-    username: (document.getElementById('ssh-username') as HTMLInputElement).value,
-    authMethod: (document.getElementById('ssh-authMethod') as HTMLSelectElement).value as 'password' | 'key',
-    usesDesktopKeyLadder: (document.getElementById('ssh-authMethod') as HTMLSelectElement).value === 'key'
-      && keyLadderCheckbox.checked,
-    password: (document.getElementById('ssh-password') as HTMLInputElement).value,
-    privateKey: keyLadderCheckbox.checked
-      ? undefined
-      : (document.getElementById('ssh-privateKey') as HTMLInputElement).value,
-    proxyType: (document.getElementById('ssh-proxy-type') as HTMLSelectElement).value || undefined,
-    proxyHost: (document.getElementById('ssh-proxy-host') as HTMLInputElement)?.value || undefined,
-    proxyPort: parseInt((document.getElementById('ssh-proxy-port') as HTMLInputElement)?.value) || undefined,
-    proxyUsername: (document.getElementById('ssh-proxy-username') as HTMLInputElement)?.value || undefined,
-    proxyPassword: (document.getElementById('ssh-proxy-password') as HTMLInputElement)?.value || undefined,
+    name: nameInput.value || 'Unnamed',
+    host: hostInput.value,
+    port: parseInt(portInput.value) || 22,
+    username: userInput.value,
+    authMethod: authSelect.value as 'password' | 'key',
+    usesDesktopKeyLadder: authSelect.value === 'key' && keyLadderCheckbox.checked,
+    password: pwdInput.value,
+    privateKey: keyLadderCheckbox.checked ? undefined : keyInput.value,
+    proxyType: proxyTypeSelect.value || undefined,
+    proxyHost: proxyHostInput.value || undefined,
+    proxyPort: parseInt(proxyPortInput.value) || undefined,
+    proxyUsername: proxyUserInput.value || undefined,
+    proxyPassword: proxyPassInput.value || undefined,
     skipShellHook: prefill?.skipShellHook,
     multiplexSftp: prefill?.multiplexSftp,
   });
@@ -1250,8 +1251,12 @@ function createConnectionForm(
   btnRow.appendChild(testBtn);
   btnRow.appendChild(spacer);
   btnRow.appendChild(saveBtn);
-  btnRow.appendChild(connectSaveBtn);
-  btnRow.appendChild(connectBtn);
+  // Embedded on the home page the form is only for editing: connecting is the
+  // detail view's job, so the form keeps just "test" and "save".
+  if (!options.embedded) {
+    btnRow.appendChild(connectSaveBtn);
+    btnRow.appendChild(connectBtn);
+  }
   form.appendChild(btnRow);
 
   // Dirty tracking: snapshot initial state, track saves
@@ -1271,6 +1276,22 @@ function createConnectionForm(
   (form as any).__isDirty = () => getSnapshot() !== savedSnapshot;
 
   return form;
+}
+
+/**
+ * The SSH form for embedding in a page (the home page's detail panel) rather
+ * than in the modal. Same fields, same save path; `isDirty()` reports unsaved
+ * edits so the page can ask before replacing it.
+ */
+export function createEmbeddedSSHForm(
+  prefill: SSHConnectionConfig | undefined,
+  onSaved: (config: SSHConnectionConfig) => void,
+): { el: HTMLDivElement; isDirty: () => boolean } {
+  const el = createConnectionForm(prefill, (config) => {
+    onConnectHandler?.(config);
+  }, onSaved, { embedded: true });
+  el.classList.add('ssh-form-embedded');
+  return { el, isDirty: () => (el as any).__isDirty?.() ?? false };
 }
 
 function closeSSHModal(): void {

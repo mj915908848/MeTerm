@@ -31,6 +31,8 @@ function deletionHarness(reject = false) {
   let finish!: () => void;
   const gate = new Promise<void>(resolve => { finish = resolve; });
   const context = vm.createContext({
+    // The slice also carries the batch delete, which is exported.
+    exports: {},
     removeSSHConnection: async () => {
       await gate;
       if (reject) throw new Error('delete failed');

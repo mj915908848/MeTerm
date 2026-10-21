@@ -13,6 +13,7 @@ import './styles/drawer.css';
 import './styles/drawer-sidebar.css';
 import './styles/server-info-panel.css';
 import './styles/connections-drawer.css';
+import './styles/home-connection-manager.css';
 import './styles/file-sidebar.css';
 import './styles/ai-bar.css';
 import './styles/split-pane.css';
