@@ -18,6 +18,7 @@ import {
   visibleGroupName,
   loadGroupOrder,
   loadGroupCollapsed,
+  loadGroupColors,
   toggleGroupCollapsed,
 } from './connection-groups';
 
@@ -108,6 +109,7 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
   const groupMap = loadGroupMap();
   const order = loadGroupOrder();
   const collapsed = loadGroupCollapsed();
+  const colors = loadGroupColors();
   const selectedKey = deps.getSelectedKey();
 
   const buckets = new Map<string, ConnectionItem[]>();
@@ -167,7 +169,10 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
     const header = document.createElement('div');
     header.className = 'home-side-group' + (isCollapsed ? ' collapsed' : '');
     header.dataset.group = g;
-    header.innerHTML = `<span class="hsg-chevron">${icon('chevronRight')}</span>`
+    // A group's colour (set from its right-click menu) marks its header with a dot.
+    const color = isUngrouped ? '' : colors[g] ?? '';
+    const dot = /^#[0-9a-f]{3,8}$/i.test(color) ? `<span class="hsg-dot" style="background:${color}"></span>` : '';
+    header.innerHTML = `<span class="hsg-chevron">${icon('chevronRight')}</span>${dot}`
       + `<span class="hsg-name">${isUngrouped ? t('homeGroupUngrouped') : escapeHtml(g)}</span>`
       + `<span class="hsg-count">${items.length}</span>`;
     header.onclick = () => {

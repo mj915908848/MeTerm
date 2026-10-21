@@ -248,3 +248,14 @@
 
 /* The sort icon is drawn on a 14-unit grid; render it 1:1 like .hsg-sort did. */
 .hcm-sort-btn svg { width: 14px; height: 14px; }
+
+/* With nothing selected the start content (search, new-session buttons, recent)
+   is a launcher: a centred column a little above the middle, instead of a strip
+   stretched across the top of an otherwise empty pane. */
+.hcm-detail-pane > .home-dash-scroll {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding-top: clamp(24px, 14vh, 160px);
+  box-sizing: border-box;
+}

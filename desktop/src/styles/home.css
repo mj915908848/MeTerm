@@ -2147,3 +2147,11 @@ html[data-theme="light"] .group-modal-btn:hover { background: rgba(0, 0, 0, 0.07
 .home-dashboard #home-recent-activity:empty { display: none; }
 
 
+
+/* A group's colour, as a dot before its name. */
+.home-side-group .hsg-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}

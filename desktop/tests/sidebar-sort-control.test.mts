@@ -25,7 +25,7 @@ function render(deps: any) {
     './group-sort-menu': {showGroupSortMenu:(at:any, group:string)=>calls.menus.push({at, group})},
     './i18n': {t:(x:string)=>x}, './icons':{icon:()=>''}, './app-state':{settings:{language:'zh'}},
     './home-dashboard-left': {collectAllConnections:()=>items,filterConnections:(x:any)=>x,escapeHtml:(x:string)=>x},
-    './connection-groups':{loadGroupMap:()=>({'ssh:a':'prod'}),loadGroupOrder:()=>['prod'],loadGroupCollapsed:()=>new Set(['prod','__ungrouped__']),toggleGroupCollapsed:()=>calls.collapses++,visibleGroupName:(stored:string|null|undefined)=>(stored&&!stored.startsWith('__')?stored:null)},
+    './connection-groups':{loadGroupMap:()=>({'ssh:a':'prod'}),loadGroupOrder:()=>['prod'],loadGroupColors:()=>({}),loadGroupCollapsed:()=>new Set(['prod','__ungrouped__']),toggleGroupCollapsed:()=>calls.collapses++,visibleGroupName:(stored:string|null|undefined)=>(stored&&!stored.startsWith('__')?stored:null)},
   };
   const code=ts.transpileModule(readFileSync(new URL('../src/home-side.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2021}}).outputText;
   vm.runInNewContext(code,{exports,document:{createElement:()=>new Element()},require:(x:string)=>mocks[x]});

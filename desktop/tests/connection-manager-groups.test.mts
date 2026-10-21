@@ -104,6 +104,7 @@ function render(opts: RenderOptions): {
     './connection-groups': {
       loadGroupMap: () => groups,
       loadGroupOrder: () => opts.order ?? [],
+      loadGroupColors: () => ({ prod: "#22c55e", staging: "red;x" }),
       loadGroupCollapsed: () => new Set(opts.collapsed ?? []),
       toggleGroupCollapsed: () => {},
       // Stub of the real helper: the app's own `__` names are not groups a user
