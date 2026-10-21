@@ -116,22 +116,14 @@ jobs:
         run: |
           (cd desktop && npm ci && npm run build)
 
-      # 现有代码尚有少量未格式化处（部分在正被修改的 PTY/SSH 文件里），先只报告不拦截；
-      # 统一格式化后去掉 continue-on-error。
-      # Existing code has a few unformatted spots; report only until a formatting pass lands.
       - name: cargo fmt --check
         working-directory: desktop/src-tauri
-        continue-on-error: true
         run: cargo fmt --all -- --check
 
-      # 先只报告不拦截：现有代码有 3 处 deny 级别的 clippy::never_loop（transfer.rs、
-      # dispatch/download.rs、pty_wsl.rs，行为无误，只是写法）和几十条 warning。
-      # 清理干净后去掉 continue-on-error，再考虑 -D warnings。
-      # Report-only for now: existing code trips 3 deny-level clippy::never_loop lints
-      # (behaviour is correct) plus dozens of warnings. Make it blocking once cleaned up.
+      # 只拦截 error 级别的 lint；现有的 warning 尚未清理，暂不加 -D warnings。
+      # Blocks on error-level lints only; existing warnings aren't cleaned up yet, so no -D warnings.
       - name: cargo clippy
         working-directory: desktop/src-tauri
-        continue-on-error: true
         run: cargo clippy --all-targets
 
       - name: cargo test
