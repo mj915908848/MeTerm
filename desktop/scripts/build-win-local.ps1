@@ -21,9 +21,7 @@ function Invoke-Checked {
 
 $workRoot = Join-Path $env:LOCALAPPDATA "meterm-rust-dev"
 $desktopDir = Join-Path $workRoot "desktop"
-$frontendDir = Join-Path $workRoot "frontend"
-if (-not (Test-Path (Join-Path $desktopDir "package.json")) -or
-    -not (Test-Path (Join-Path $frontendDir "package.json"))) {
+if (-not (Test-Path (Join-Path $desktopDir "package.json"))) {
     throw "Windows worktree not found. Run make desktop-dev-win or make desktop-build-win first."
 }
 
@@ -31,15 +29,6 @@ $conptyDir = Join-Path (Join-Path $desktopDir "src-tauri\binaries") "conpty"
 if (-not (Test-Path (Join-Path $conptyDir "conpty.dll")) -or
     -not (Test-Path (Join-Path $conptyDir "OpenConsole.exe"))) {
     throw "ConPTY resources are missing from $conptyDir"
-}
-
-Write-Host "[build-win-local] Building standalone web frontend ..."
-Push-Location $frontendDir
-try {
-    Invoke-Checked "npm.cmd" @("install")
-    Invoke-Checked "npm.cmd" @("run", "build")
-} finally {
-    Pop-Location
 }
 
 Write-Host "[build-win-local] Building native Tauri/Rust installer from $workRoot ..."

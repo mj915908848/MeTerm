@@ -70,13 +70,6 @@ jobs:
         with:
           workspaces: desktop/src-tauri
 
-      # Rust 后端通过 rust_embed 嵌入 frontend/dist/
-      - name: Build web frontend
-        run: |
-          cd frontend
-          npm ci
-          npm run build
-
       - name: Build desktop frontend
         run: |
           cd desktop
@@ -268,13 +261,6 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
-
-      # Rust 后端通过 rust_embed 嵌入 frontend/dist/
-      - name: Build web frontend
-        run: |
-          cd frontend
-          npm ci
-          npm run build
 
       - name: Build desktop frontend
         run: |

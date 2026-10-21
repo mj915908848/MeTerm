@@ -2,7 +2,7 @@
 #
 # Partial file syncs and local source patches are unsafe for release builds and
 # were tied to the deleted sidecar layout. Use build-win.ps1, which mirrors the
-# complete desktop/ and frontend/ source trees before building.
+# complete desktop/ source tree before building.
 
 [CmdletBinding()]
 param(
@@ -17,7 +17,7 @@ $repoPath = $UncPath
 if (Test-Path (Join-Path $UncPath "package.json")) {
     # Backward compatibility: the old script accepted the desktop/ path.
     $parent = Split-Path $UncPath -Parent
-    if (Test-Path (Join-Path $parent "frontend\package.json")) {
+    if (Test-Path (Join-Path $parent "desktop\package.json")) {
         $repoPath = $parent
     }
 }

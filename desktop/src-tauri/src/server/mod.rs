@@ -58,7 +58,6 @@ pub mod terminal;
 pub mod tls;
 mod tls_key_vault;
 mod transport;
-pub mod web_embed;
 pub mod ws;
 
 use std::net::TcpListener;
@@ -753,12 +752,7 @@ fn build_router(state: Arc<ServerState>) -> Router {
         ])
         .max_age(std::time::Duration::from_secs(600));
 
-    let mut router = Router::new().merge(public_routes).merge(authed_routes);
-
-    // Serve embedded web frontend if dist/ has content
-    if web_embed::has_content() {
-        router = router.fallback(web_embed::serve_static);
-    }
+    let router = Router::new().merge(public_routes).merge(authed_routes);
 
     // LAN access guard: direct remote sockets require LAN sharing. Relay is a
     // separately configured authenticated ingress and must never inherit its

@@ -42,12 +42,6 @@ jobs:
         with:
           workspaces: desktop/src-tauri
 
-      - name: Build web frontend
-        run: |
-          cd frontend
-          npm ci
-          npm run build
-
       - name: Build desktop frontend
         run: |
           cd desktop

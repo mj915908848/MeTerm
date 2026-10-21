@@ -63,15 +63,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            frontend/package-lock.json
-            desktop/package-lock.json
-
-      - name: Web frontend build (tsc + vite)
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
+          cache-dependency-path: desktop/package-lock.json
 
       - name: Desktop frontend build (tsc + vite)
         working-directory: desktop
@@ -106,9 +98,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: |
-            frontend/package-lock.json
-            desktop/package-lock.json
+          cache-dependency-path: desktop/package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -120,11 +110,10 @@ jobs:
         with:
           workspaces: desktop/src-tauri
 
-      # rust_embed 嵌入 frontend/dist/，tauri::generate_context! 需要 desktop/dist/
-      # rust_embed embeds frontend/dist/ and generate_context! needs desktop/dist/
-      - name: Build frontends for embedding
+      # tauri::generate_context! 需要 desktop/dist/
+      # generate_context! needs desktop/dist/
+      - name: Build desktop frontend
         run: |
-          (cd frontend && npm ci && npm run build)
           (cd desktop && npm ci && npm run build)
 
       # 现有代码尚有少量未格式化处（部分在正被修改的 PTY/SSH 文件里），先只报告不拦截；
