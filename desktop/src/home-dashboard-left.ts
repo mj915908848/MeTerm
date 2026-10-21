@@ -117,7 +117,7 @@ export function renderRecentActivity(query: string): void {
 
     const card = document.createElement('div');
     card.className = `home-dash-recent-card home-dash-recent-${item.type}`;
-    // Names and hosts are ellipsised inside a 220px card, so the full pair is
+    // Names and hosts can be ellipsised in a narrow card, so the full pair is
     // available on hover.
     card.title = `${item.name} — ${item.detail}`;
     card.innerHTML = `<span class="home-dash-recent-icon">${icon(iconName)}</span>`
@@ -148,23 +148,7 @@ export function renderRecentActivity(query: string): void {
   }
 
   section.appendChild(track);
-  setupScrollFade(track);
 }
-
-/** Add/remove fade-left / fade-right / fade-both classes based on scroll position */
-function setupScrollFade(el: HTMLElement): void {
-  const update = () => {
-    const canLeft = el.scrollLeft > 1;
-    const canRight = el.scrollWidth - el.clientWidth - el.scrollLeft > 1;
-    el.classList.remove('fade-left', 'fade-right', 'fade-both');
-    if (canLeft && canRight) el.classList.add('fade-both');
-    else if (canRight) el.classList.add('fade-right');
-    else if (canLeft) el.classList.add('fade-left');
-  };
-  el.addEventListener('scroll', update, { passive: true });
-  requestAnimationFrame(update);
-}
-
 
 // ─── Move menu ───
 

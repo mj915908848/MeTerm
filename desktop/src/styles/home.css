@@ -912,35 +912,21 @@ html[data-theme="light"] .tray-tip {
 }
 
 /* ── Recent Activity horizontal track ── */
-/* The track stays inside the content column (same edges as the search bar and
-   the buttons above it); when it scrolls, its own edges fade instead. */
+/* Recent connections wrap into a grid inside the content column, so every
+   one is visible at once (there are at most five) instead of scrolling sideways. */
 .home-dash-recent-track {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 10px;
-  overflow-x: auto;
   padding: 8px 0 4px;
   margin: 0;
-  scrollbar-width: none;
-}
-.home-dash-recent-track.fade-right {
-  -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
-  mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
-}
-.home-dash-recent-track.fade-left {
-  -webkit-mask-image: linear-gradient(to right, transparent, black 32px);
-  mask-image: linear-gradient(to right, transparent, black 32px);
-}
-.home-dash-recent-track.fade-both {
-  -webkit-mask-image: linear-gradient(to right, transparent, black 32px, black calc(100% - 32px), transparent);
-  mask-image: linear-gradient(to right, transparent, black 32px, black calc(100% - 32px), transparent);
 }
 .home-dash-recent-track::-webkit-scrollbar {
   display: none;
 }
 
 .home-dash-recent-card {
-  flex: 0 0 auto;
-  max-width: 220px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
