@@ -582,7 +582,7 @@ pub fn sync_development_credential_recovery_available(
         target_os = "macos"
     ))]
     {
-        crate::server::dev_relay_config::validate_development_app_identity()?;
+        crate::server::dev_app_identity::validate_development_app_identity()?;
         Ok(true)
     }
 }
@@ -622,7 +622,7 @@ pub async fn sync_import_production_credential_for_development(
             .get_or_init(|| tokio::sync::Mutex::new(()))
             .try_lock()
             .map_err(|_| "development SSH credential import already in progress".to_string())?;
-        crate::server::dev_relay_config::validate_development_app_identity()?;
+        crate::server::dev_app_identity::validate_development_app_identity()?;
         let snapshot = state.connections.read_with(&id, |current| {
             current
                 .filter(|connection| connection.deleted_at.is_none())

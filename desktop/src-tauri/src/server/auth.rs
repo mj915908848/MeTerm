@@ -795,28 +795,6 @@ pub(crate) async fn secure_remote_middleware(
     Ok(next.run(req).await)
 }
 
-/// Isolation guard for the relay renewal-only router. Connection metadata and
-/// the authenticated preface context are set by the yamux/TLS acceptor and
-/// cannot be forged through HTTP headers. Browser origins are rejected because
-/// this is a native device recovery channel.
-pub(crate) async fn renewal_ingress_middleware(
-    req: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
-    if req.extensions().get::<ConnectionOrigin>() != Some(&ConnectionOrigin::RelayRenewal)
-        || req.extensions().get::<TrustedIngress>() != Some(&TrustedIngress::RelayRenewal)
-        || req.extensions().get::<TransportSecurity>() != Some(&TransportSecurity::Tls)
-        || req
-            .extensions()
-            .get::<super::relay_renewal_preface::RelayRenewalContext>()
-            .is_none()
-        || req.headers().contains_key(header::ORIGIN)
-    {
-        return Err(StatusCode::FORBIDDEN);
-    }
-    Ok(next.run(req).await)
-}
-
 fn trusted_embedded_origin(req: &Request, server_port: u16) -> bool {
     if !is_direct_loopback(req) {
         return false;

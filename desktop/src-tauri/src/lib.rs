@@ -757,58 +757,12 @@ fn extract_open_path(args: &[String]) -> Option<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Reserve the provisioning flag in every build before APP_START, startup
-    // logging, CLI debug output, or Tauri/WebView initialization. Unsupported
-    // builds reject it instead of ever logging accidentally appended values.
-    const DEV_RELAY_CONFIG_FLAG: &str = "--configure-dev-relay";
-    let early_args: Vec<std::ffi::OsString> = std::env::args_os().collect();
-    let dev_relay_config_requested = early_args
-        .iter()
-        .skip(1)
-        .any(|arg| arg == DEV_RELAY_CONFIG_FLAG);
-    if dev_relay_config_requested {
-        #[cfg(all(
-            debug_assertions,
-            feature = "development-mobile-control",
-            target_os = "macos"
-        ))]
-        let result = server::dev_relay_config::handle_cli(&early_args);
-        #[cfg(not(all(
-            debug_assertions,
-            feature = "development-mobile-control",
-            target_os = "macos"
-        )))]
-        let result: Result<(), String> =
-            Err("development relay provisioning is unavailable in this build".to_string());
-
-        let exit_code = match result {
-            Ok(()) => 0,
-            Err(error) => {
-                eprintln!("[dev-relay-config] {error}");
-                1
-            }
-        };
-        std::process::exit(exit_code);
-    }
-
-    // An unsupported attempt that put a value before the reserved flag is
-    // also rejected before generic CLI processing can record it.
-    if early_args
-        .iter()
-        .skip(1)
-        .any(|arg| arg.to_string_lossy().contains(DEV_RELAY_CONFIG_FLAG))
-    {
-        eprintln!("[dev-relay-config] invalid reserved argument");
-        std::process::exit(1);
-    }
-
     let _ = *APP_START; // initialize timer
     startup_log_reset();
     startup_log("=== App starting ===");
 
     // Parse CLI args for "open in terminal" path
-    let cli_args: Vec<String> = early_args
-        .iter()
+    let cli_args: Vec<String> = std::env::args_os()
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
     let initial_path = extract_open_path(&cli_args);

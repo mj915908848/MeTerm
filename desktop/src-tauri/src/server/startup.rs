@@ -72,8 +72,6 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
     // Sharing (LAN access, mDNS discovery, phone relay/push) has been removed:
     // the server only serves this app's own windows over loopback, so it needs
     // no TLS identity, no discovery advertisement and no relay tunnel.
-    let tls_acceptor: Option<tokio_rustls::TlsAcceptor> = None;
-    let cert_fp = String::new();
 
     let state = Arc::new(ServerState {
         port,
@@ -88,13 +86,8 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
         bypass_proxy: AtomicBool::new(true),
         device_name: std::sync::Mutex::new(String::new()),
         device_id,
-        cert_fp,
-        relay_url: String::new(),
-        relay_cert_fp: String::new(),
-        relay_register_token: String::new(),
         event_bus,
         presence: PresenceRegistry::new(),
-        push: PushRegistry::new(),
         agents: agent::AcpAgentManager::new(),
         hook_secrets,
         mirrors: agent::MirrorRegistry::new(),
@@ -116,14 +109,7 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
     tokio::spawn(async move {
         // First run uses the already-bound listener.
         let app = build_router(state_for_serve.clone());
-        log_serve_exit(
-            tokio::spawn(run_accept_loop(
-                listener,
-                app,
-                tls_acceptor.clone(),
-            ))
-            .await,
-        );
+        log_serve_exit(tokio::spawn(run_accept_loop(listener, app)).await);
 
         // Auto-restart loop: rebind to the same port and rebuild the router.
         loop {
@@ -145,14 +131,7 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
             let app = build_router(state_for_serve.clone());
             eprintln!("[meterm-server] restarted on {}", addr_for_restart);
 
-            log_serve_exit(
-                tokio::spawn(run_accept_loop(
-                    listener,
-                    app,
-                    tls_acceptor.clone(),
-                ))
-                .await,
-            );
+            log_serve_exit(tokio::spawn(run_accept_loop(listener, app)).await);
         }
     });
 

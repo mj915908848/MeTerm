@@ -181,17 +181,6 @@ const PROTECTED_ROUTES: &[ProtectedRoute] = &[
         method: Method::DELETE,
         uri: "/api/ssh/connections/not-a-connection",
     },
-    // push.self
-    ProtectedRoute {
-        scope: "push.self",
-        method: Method::POST,
-        uri: "/api/push/register",
-    },
-    ProtectedRoute {
-        scope: "push.self",
-        method: Method::GET,
-        uri: "/ws-events",
-    },
 ];
 
 fn scope_less_device_state() -> (Arc<ServerState>, String) {
@@ -200,9 +189,6 @@ fn scope_less_device_state() -> (Arc<ServerState>, String) {
 
     let mut state = create_dummy_state();
     state.port = 8022;
-    state.relay_url = "wss://relay.must-not-leak.invalid".to_string();
-    state.relay_cert_fp = "11".repeat(32);
-    state.relay_register_token = "relay-register-token-must-not-leak".to_string();
 
     let token = state
         .authenticator
@@ -317,26 +303,6 @@ async fn scope_less_release_device_keeps_only_base_self_service_routes() {
     assert_eq!(sessions.status(), StatusCode::OK);
     assert_eq!(json_body(sessions).await["sessions"], serde_json::json!([]));
 
-    let info = app
-        .clone()
-        .oneshot(relay_request(Method::GET, "/api/info", &token))
-        .await
-        .unwrap();
-    assert_eq!(info.status(), StatusCode::OK);
-    let info = json_body(info).await;
-    assert_eq!(info["device_scopes"], serde_json::json!([]));
-    for hidden in [
-        "relay_url",
-        "relay_cert_fp",
-        "relay_access_token",
-        "relay_access_expires_at",
-    ] {
-        assert!(
-            info.get(hidden).is_none(),
-            "/api/info leaked {hidden}: {info}"
-        );
-    }
-
     let revoke = app
         .clone()
         .oneshot(relay_request(
@@ -352,7 +318,7 @@ async fn scope_less_release_device_keeps_only_base_self_service_routes() {
     assert_eq!(revoke["revoked"], true);
 
     let after_revoke = app
-        .oneshot(relay_request(Method::GET, "/api/info", &token))
+        .oneshot(relay_request(Method::GET, "/api/sessions", &token))
         .await
         .unwrap();
     assert_eq!(after_revoke.status(), StatusCode::UNAUTHORIZED);

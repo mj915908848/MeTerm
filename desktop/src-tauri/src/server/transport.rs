@@ -23,13 +23,12 @@ pub(super) fn is_transient_accept_error(error: &std::io::Error) -> bool {
     )
 }
 
-/// Peek the first byte, select TLS or plaintext HTTP, and inject metadata that
+/// Wait for the first byte, then serve plaintext HTTP and inject metadata that
 /// is derived solely from this trusted acceptor rather than request headers.
 pub(super) async fn serve_connection(
     stream: tokio::net::TcpStream,
     peer: std::net::SocketAddr,
     app: Router,
-    tls: Option<tokio_rustls::TlsAcceptor>,
 ) {
     use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
     use hyper_util::server::conn::auto::Builder;
@@ -50,15 +49,6 @@ pub(super) async fn serve_connection(
         }
     }
 
-    if first[0] == 0x16 {
-        let Some(acceptor) = tls else {
-            eprintln!("[meterm-server] {peer} sent TLS without an acceptor; dropping");
-            return;
-        };
-        serve_tls_stream(stream, acceptor, app, peer, ConnectionOrigin::Direct).await;
-        return;
-    }
-
     let ingress = TrustedIngress::from_connection(ConnectionOrigin::Direct, peer);
     let tower_service = axum::Extension(axum::extract::ConnectInfo(peer)).layer(
         axum::Extension(ConnectionOrigin::Direct).layer(
@@ -77,48 +67,6 @@ pub(super) async fn serve_connection(
         .await
     {
         eprintln!("[meterm-server] plain conn {peer} ended: {error}");
-    }
-}
-
-/// Accept TLS on a direct socket or relay yamux substream and inject the
-/// acceptor-derived ingress marker before serving the shared axum router.
-pub(super) async fn serve_tls_stream<S>(
-    stream: S,
-    acceptor: tokio_rustls::TlsAcceptor,
-    app: Router,
-    peer: std::net::SocketAddr,
-    origin: ConnectionOrigin,
-) where
-    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
-{
-    use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
-    use hyper_util::server::conn::auto::Builder;
-    use hyper_util::service::TowerToHyperService;
-    use tower::Layer;
-
-    let ingress = TrustedIngress::from_connection(origin, peer);
-    let tower_service =
-        axum::Extension(axum::extract::ConnectInfo(peer)).layer(axum::Extension(origin).layer(
-            axum::Extension(ingress).layer(axum::Extension(TransportSecurity::Tls).layer(app)),
-        ));
-    let service = TowerToHyperService::new(tower_service);
-
-    match tokio::time::timeout(PRE_AUTH_TIMEOUT, acceptor.accept(stream)).await {
-        Ok(Ok(tls_stream)) => {
-            let mut builder = Builder::new(TokioExecutor::new());
-            builder
-                .http1()
-                .timer(TokioTimer::new())
-                .header_read_timeout(PRE_AUTH_TIMEOUT);
-            if let Err(error) = builder
-                .serve_connection_with_upgrades(TokioIo::new(tls_stream), service)
-                .await
-            {
-                eprintln!("[meterm-server] TLS conn {peer} ended: {error}");
-            }
-        }
-        Ok(Err(error)) => eprintln!("[meterm-server] TLS handshake {peer} failed: {error}"),
-        Err(_) => eprintln!("[meterm-server] TLS handshake {peer} timed out"),
     }
 }
 

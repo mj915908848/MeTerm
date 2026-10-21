@@ -19,9 +19,6 @@ use super::ServerState;
 mod master;
 pub use master::request_master;
 
-#[cfg(test)]
-use super::relay_http::relay_metadata_allowed;
-
 fn stale_owner_response() -> (StatusCode, Json<serde_json::Value>) {
     (
         StatusCode::UNAUTHORIZED,
@@ -829,114 +826,6 @@ pub async fn unban_ip(
         StatusCode::OK,
         Json(serde_json::json!({ "ok": true, "found": found })),
     )
-}
-
-// ---------------------------------------------------------------------------
-// 手机推送注册(终端通知 Phase 3 地基):登记 APNs token + 通知加密公钥。
-// ---------------------------------------------------------------------------
-
-/// `POST /api/push/register` —— 手机上报 APNs device token + 通知加密公钥(`notif_pub`,
-/// hex 或 base64,见 `push_crypto::parse_pub_hex_or_b64`)。
-///
-/// 请求体 `{ device_id, apns_token, notif_pub, env }`,四个字段均为必填字符串;
-/// `notif_pub` 解析失败或任意字段缺失/为空 → 400。`apns_token` 非纯十六进制/长度不符,
-/// 或 `env` 不是 `sandbox`/`production` 之一 → 400。只允许与 `device_id` 一致的
-/// Device principal；Owner 即使来自本机也返回 403。成功写入 `state.push` 后返回 200。
-fn push_device_generation(
-    principal: &AuthPrincipal,
-    requested_device_id: &str,
-) -> Result<uuid::Uuid, &'static str> {
-    match principal {
-        AuthPrincipal::Device {
-            device_id,
-            generation,
-            ..
-        } if device_id == requested_device_id => Ok(*generation),
-        AuthPrincipal::Device { .. } => Err("device identity mismatch"),
-        AuthPrincipal::Owner { .. } => Err("device credential required"),
-    }
-}
-
-pub async fn register_push(
-    Extension(state): Extension<Arc<ServerState>>,
-    Extension(principal): Extension<AuthPrincipal>,
-    Json(body): Json<serde_json::Value>,
-) -> impl IntoResponse {
-    let device_id = body.get("device_id").and_then(|v| v.as_str()).unwrap_or("");
-    let apns_token = body
-        .get("apns_token")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    let notif_pub_raw = body.get("notif_pub").and_then(|v| v.as_str()).unwrap_or("");
-    let env = body.get("env").and_then(|v| v.as_str()).unwrap_or("");
-
-    let principal_generation = match push_device_generation(&principal, device_id) {
-        Ok(generation) => generation,
-        Err(error) => {
-            return (
-                StatusCode::FORBIDDEN,
-                Json(serde_json::json!({ "error": error })),
-            )
-        }
-    };
-
-    if device_id.is_empty() || apns_token.is_empty() || notif_pub_raw.is_empty() || env.is_empty() {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({
-                "error": "device_id, apns_token, notif_pub, env are all required"
-            })),
-        );
-    }
-
-    if !super::push_crypto::is_valid_apns_token(apns_token) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "invalid apns_token" })),
-        );
-    }
-    if !super::push_crypto::is_valid_env(env) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "invalid env" })),
-        );
-    }
-
-    let Some(notif_pub) = super::push_crypto::parse_pub_hex_or_b64(notif_pub_raw) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(
-                serde_json::json!({ "error": "notif_pub must be 32 bytes, hex or base64 encoded" }),
-            ),
-        );
-    };
-
-    match state.push.register_if_current_generation(
-        &state.authenticator,
-        device_id,
-        apns_token,
-        notif_pub,
-        env,
-        principal_generation,
-    ) {
-        super::push_registry::PushRegistrationOutcome::Registered => {}
-        super::push_registry::PushRegistrationOutcome::CredentialRevoked => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(serde_json::json!({ "error": "credential revoked" })),
-            )
-        }
-        super::push_registry::PushRegistrationOutcome::NotificationKeyMismatch => {
-            return (
-                StatusCode::CONFLICT,
-                Json(serde_json::json!({
-                    "error": "notification key changed; remove and pair this device again"
-                })),
-            )
-        }
-    }
-
-    (StatusCode::OK, Json(serde_json::json!({ "ok": true })))
 }
 
 #[cfg(test)]
