@@ -373,13 +373,60 @@ export function decideTerminalSubmitPermission(
   if (base.kind !== 'allow' || submit.kind === 'none' || mode === 'bypass') return base;
   let result: PermissionDecision = submit.kind === 'unknown' ? { kind: 'ask' } : base;
   for (const command of submit.lines) {
-    const args: Record<string, unknown> = { command };
-    if (pane !== undefined) args.pane = pane;
-    const perLine = decidePermission('run_command', args, commandHandler, mode, rules, context);
-    if (perLine.kind === 'deny') {
-      return { kind: 'deny', reason: `${perLine.reason} The command was submitted through terminal input: ${command}` };
+    const variants = commandStartVariants(command);
+    // Too many words to judge every start: do not guess, ask.
+    if (!variants) result = { kind: 'ask' };
+    for (const variant of variants ?? [command]) {
+      const args: Record<string, unknown> = { command: variant };
+      if (pane !== undefined) args.pane = pane;
+      const perLine = decidePermission('run_command', args, commandHandler, mode, rules, context);
+      if (perLine.kind === 'deny') {
+        return { kind: 'deny', reason: `${perLine.reason} The command was submitted through terminal input: ${command}` };
+      }
+      if (perLine.kind === 'ask') result = perLine;
     }
-    if (perLine.kind === 'ask') result = perLine;
   }
   return result;
+}
+
+const MAX_COMMAND_START_VARIANTS = 64;
+
+/**
+ * A line read back from the terminal starts with the shell prompt (the
+ * prompt hook fires before PS1 is drawn), and where the prompt ends is
+ * not known. Rules anchored at `^` must still see the command, so the
+ * line is judged from every word start; the strictest result wins.
+ * Returns null when the line has too many words to check this way.
+ */
+export function commandStartVariants(line: string): string[] | null {
+  const variants = [line];
+  const re = /\s+(?=\S)/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(line)) !== null) {
+    if (variants.length >= MAX_COMMAND_START_VARIANTS) return null;
+    variants.push(line.slice(match.index + match[0].length));
+  }
+  return variants;
+}
+
+/**
+ * Keystrokes that answer a program's question (Y/n, a value) are not
+ * shell commands, but the question is read off the screen, which any
+ * program can fake while the shell waits behind it. A submitted answer
+ * that looks like a dangerous command therefore still asks.
+ */
+export function decidePromptAnswerPermission(
+  base: PermissionDecision,
+  submit: TerminalSubmit,
+  commandHandler: ToolHandler | undefined,
+  mode: PermissionMode,
+): PermissionDecision {
+  if (base.kind !== 'allow' || submit.kind === 'none' || mode === 'bypass' || !commandHandler) return base;
+  for (const command of submit.lines) {
+    const risky = mode === 'acceptAll'
+      ? commandHandler.isDestructive({ command })
+      : commandHandler.requiresConfirm({ command });
+    if (risky) return { kind: 'ask' };
+  }
+  return base;
 }

@@ -136,10 +136,11 @@ export function classifyError(err: Error): { category: ErrorCategory; statusCode
     lowerMsg.includes('does not support') ||
     lowerMsg.includes('not available') ||
     lowerMsg.includes('unrecognized request argument');
-  if (
-    (mentionsTooling && looksUnsupported) ||
-    lowerMsg.includes('tool_use')
-  ) {
+  // A bare mention of `tool_use` is not enough: Anthropic's history
+  // errors ("tool_use ids were found without tool_result blocks") name
+  // it too, and degrading on those turned a history bug into a session
+  // that silently stopped using tools.
+  if (mentionsTooling && looksUnsupported) {
     return { category: 'tool_unsupported', statusCode };
   }
 
