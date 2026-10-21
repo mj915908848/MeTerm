@@ -1,11 +1,11 @@
-/// vibrancy.rs — Anti-flash for macOS vibrancy (minimize + Stage Manager).
-///
-/// When NSVisualEffectView stops compositing (minimize, Stage Manager, etc.),
-/// a transparent window shows a flash. We mitigate this by:
-///   1. Setting NSWindow.backgroundColor to a theme-matching solid color as
-///      fallback when vibrancy temporarily disengages (covers Stage Manager).
-///   2. Setting alphaValue=0 after minimize, restoring on deminiaturize
-///      (covers the minimize/restore animation).
+//! vibrancy.rs — Anti-flash for macOS vibrancy (minimize + Stage Manager).
+//!
+//! When NSVisualEffectView stops compositing (minimize, Stage Manager, etc.),
+//! a transparent window shows a flash. We mitigate this by:
+//!   1. Setting NSWindow.backgroundColor to a theme-matching solid color as
+//!      fallback when vibrancy temporarily disengages (covers Stage Manager).
+//!   2. Setting alphaValue=0 after minimize, restoring on deminiaturize
+//!      (covers the minimize/restore animation).
 
 #[cfg(target_os = "macos")]
 mod inner {

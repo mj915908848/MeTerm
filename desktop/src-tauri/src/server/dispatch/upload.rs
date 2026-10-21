@@ -122,6 +122,7 @@ fn acquire_upload_lease(
     }
 }
 
+#[allow(clippy::result_large_err)]
 async fn insert_upload_state(
     session: &Session,
     key: TransferOwnerKey,

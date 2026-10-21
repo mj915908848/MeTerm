@@ -95,34 +95,6 @@ fn should_exit_after_window_destroyed<'a>(
         })
 }
 
-#[cfg(test)]
-mod lifecycle_exit_tests {
-    use super::should_exit_after_window_destroyed;
-
-    #[test]
-    fn editor_must_finish_its_close_confirmation_before_app_exit() {
-        assert!(!should_exit_after_window_destroyed(
-            "main",
-            [("editor", false)]
-        ));
-        assert!(should_exit_after_window_destroyed("editor", []));
-    }
-
-    #[test]
-    fn other_app_windows_and_short_lived_windows_keep_the_app_running() {
-        assert!(!should_exit_after_window_destroyed(
-            "main",
-            [("window-2", true)]
-        ));
-        assert!(!should_exit_after_window_destroyed(
-            "main",
-            [("window-2", false), ("editor", false)]
-        ));
-        assert!(!should_exit_after_window_destroyed("settings", []));
-        assert!(should_exit_after_window_destroyed("main", []));
-    }
-}
-
 pub struct AppLifecycleState {
     has_open_tabs: Mutex<bool>,
     is_quitting: AtomicBool,
@@ -1233,4 +1205,32 @@ pub fn run() {
                 _ => {}
             }
         });
+}
+
+#[cfg(test)]
+mod lifecycle_exit_tests {
+    use super::should_exit_after_window_destroyed;
+
+    #[test]
+    fn editor_must_finish_its_close_confirmation_before_app_exit() {
+        assert!(!should_exit_after_window_destroyed(
+            "main",
+            [("editor", false)]
+        ));
+        assert!(should_exit_after_window_destroyed("editor", []));
+    }
+
+    #[test]
+    fn other_app_windows_and_short_lived_windows_keep_the_app_running() {
+        assert!(!should_exit_after_window_destroyed(
+            "main",
+            [("window-2", true)]
+        ));
+        assert!(!should_exit_after_window_destroyed(
+            "main",
+            [("window-2", false), ("editor", false)]
+        ));
+        assert!(!should_exit_after_window_destroyed("settings", []));
+        assert!(should_exit_after_window_destroyed("main", []));
+    }
 }

@@ -35,6 +35,7 @@ fn err(status: StatusCode, msg: impl Into<String>) -> Response {
 }
 
 /// 展开 `~` 并拒绝空路径。
+#[allow(clippy::result_large_err)]
 fn resolve(path: &str) -> Result<String, Response> {
     let trimmed = path.trim();
     if trimmed.is_empty() {
@@ -346,7 +347,7 @@ async fn rename_upload_candidate(source: &Path, destination: &Path) -> std::io::
     let destination = destination.to_path_buf();
     tokio::task::spawn_blocking(move || rename_without_overwrite(&source, &destination))
         .await
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+        .map_err(std::io::Error::other)?
 }
 
 // ---------------------------------------------------------------------------

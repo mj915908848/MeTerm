@@ -115,16 +115,16 @@ impl OscFilter {
         self.token.as_deref()
     }
 
-    /// Process a chunk of terminal output.
-    ///
-    /// Returns `(clean_output, events)`:
-    /// - `clean_output`: terminal data with intercepted OSC sequences removed
-    /// - `events`: structured events extracted from intercepted OSC sequences
     /// 取走最近记录的窗口标题(feed 之后由 run-loop 调用)。
     pub fn take_title(&mut self) -> Option<String> {
         self.pending_title.take()
     }
 
+    /// Process a chunk of terminal output.
+    ///
+    /// Returns `(clean_output, events)`:
+    /// - `clean_output`: terminal data with intercepted OSC sequences removed
+    /// - `events`: structured events extracted from intercepted OSC sequences
     pub fn feed(&mut self, input: &[u8]) -> (Vec<u8>, Vec<OscEvent>) {
         let mut clean = Vec::with_capacity(input.len());
         let mut events = Vec::new();
@@ -328,8 +328,8 @@ impl OscFilter {
             }
             9 => {
                 // OSC 9: "4;state;percent" (progress) or "text" (notify)
-                if body.starts_with("4;") {
-                    let mut parts = body[2..].splitn(2, ';');
+                if let Some(progress) = body.strip_prefix("4;") {
+                    let mut parts = progress.splitn(2, ';');
                     let state = parts.next().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
                     let percent = parts.next().and_then(|s| s.parse::<u8>().ok()).unwrap_or(0);
                     Some(OscEvent::Progress { state, percent })

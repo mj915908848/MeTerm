@@ -18,7 +18,7 @@ pub async fn jumpserver_migrate_credentials(
         credential_broker::LegacyMigrationPreparation::RequiresConfirmation(snapshot) => {
             let reason = legacy_binding_reason(snapshot.binding());
             super::user_presence::confirm_for_credential_binding(&window, reason).await?;
-            credential_broker::commit_legacy_migration(snapshot)
+            credential_broker::commit_legacy_migration(*snapshot)
         }
     }
 }

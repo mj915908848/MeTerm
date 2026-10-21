@@ -117,7 +117,9 @@ pub enum AgentEvent {
     /// - `context_tokens` = 最近 assistant 消息 usage 的 input + cache_read + cache_creation
     ///   (= 本轮请求 prompt 大小,ccstatusline/ccusage 同款口径;窗口大小由手机按模型判定);
     /// - `effort` 来自 hook 子进程继承的 `CLAUDE_EFFORT` env(经转发脚本 header 回报)。
+    ///
     /// 多源异步,字段独立可选,手机侧按非空字段合并归约。
+    ///
     /// **冻结契约**:wire `{"type":"agent_meta","model":…,"effort":…,"contextTokens":…,
     /// "gitBranch":…,"cwd":…}`(None 字段省略)。
     #[serde(rename_all = "camelCase")]

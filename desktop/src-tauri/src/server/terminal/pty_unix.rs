@@ -280,7 +280,7 @@ impl Terminal for PtyTerminal {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            .map_err(|e| io::Error::other(e.to_string()))
     }
 
     /// 向 PTY 前台进程组补发 SIGWINCH,强制 TUI 按当前尺寸全量重绘。

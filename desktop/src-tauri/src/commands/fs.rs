@@ -700,7 +700,7 @@ pub fn agent_write_file(app: AppHandle, path: String, content: String) -> Result
 
     std::fs::write(p, content.as_bytes()).map_err(|e| format!("write failed: {}", e))?;
 
-    Ok(content.as_bytes().len() as u64)
+    Ok(content.len() as u64)
 }
 
 /// Save user-dropped/picked attachment bytes to a stable location in
@@ -1142,18 +1142,18 @@ fn is_sensitive_agent_grep_path(path: &std::path::Path, is_dir: bool) -> bool {
         .components()
         .map(|component| component.as_os_str().to_string_lossy().to_ascii_lowercase())
         .collect();
-    if components.iter().any(|component| {
-        CREDENTIAL_DIRS
-            .iter()
-            .any(|sensitive_dir| component.as_str() == *sensitive_dir)
-    }) || CREDENTIAL_PATHS.iter().any(|sequence| {
-        components.windows(sequence.len()).any(|window| {
-            window
-                .iter()
-                .zip(sequence.iter())
-                .all(|(component, expected)| component.as_str() == *expected)
+    if components
+        .iter()
+        .any(|component| CREDENTIAL_DIRS.contains(&component.as_str()))
+        || CREDENTIAL_PATHS.iter().any(|sequence| {
+            components.windows(sequence.len()).any(|window| {
+                window
+                    .iter()
+                    .zip(sequence.iter())
+                    .all(|(component, expected)| component.as_str() == *expected)
+            })
         })
-    }) {
+    {
         return true;
     }
 

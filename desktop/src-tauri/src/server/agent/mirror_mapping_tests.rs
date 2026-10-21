@@ -595,7 +595,7 @@ async fn invalid_json_and_duplicate_uuid_lines_skipped() {
     let (mut state, mut rx) = test_state();
     let line = user_string_line("e1", "只该出现一次");
     let mut batch = vec![b"{ not valid json".to_vec()];
-    batch.extend(to_batch(&[line.clone()]));
+    batch.extend(to_batch(std::slice::from_ref(&line)));
     assert!(state.process_batch(batch).await);
     // 同 uuid 行再喂一批(模拟防御性从头重读)→ 去重集拦截。
     assert!(state.process_batch(to_batch(&[line])).await);

@@ -184,6 +184,9 @@ impl AdaptivePipeline {
     }
 }
 
+/// Callback for [`Session::on_shell_prompt`]; receives the prompt's exit code.
+pub(crate) type ShellPromptCallback = Arc<dyn Fn(i32) + Send + Sync>;
+
 /// A terminal session.
 pub struct Session {
     pub id: String,
@@ -270,7 +273,7 @@ pub struct Session {
     /// exit code(`$?`)传给本槽回调(FIX-4:挂起/退出的判别在回调侧,见 agent/hook.rs;
     /// agent/hook.rs 升格时设置、清理时置 None;Arc 便于 clone 后锁外调用,守卫忽略的
     /// 调用不消耗回调)。非镜像态恒 None。
-    pub(crate) on_shell_prompt: Mutex<Option<Arc<dyn Fn(i32) + Send + Sync>>>,
+    pub(crate) on_shell_prompt: Mutex<Option<ShellPromptCallback>>,
 
     /// OSC filter — intercepts MeTerm OSC sequences from terminal output.
     osc_filter: Mutex<crate::server::osc_filter::OscFilter>,
@@ -378,10 +381,10 @@ impl Session {
                 }
                 // OSC 7(file://host/path)同样上报 cwd(无 7768 集成的 shell 兜底)。
                 // 有 hook token 的会话只信带 token 的 7768:OSC 7 无 token,任何输出都能伪造。
-                crate::server::osc_filter::OscEvent::Cwd { cwd } => {
-                    if !cwd.is_empty() && self.osc_token().is_none() {
-                        *self.current_cwd.lock().unwrap() = Some(cwd.clone());
-                    }
+                crate::server::osc_filter::OscEvent::Cwd { cwd }
+                    if !cwd.is_empty() && self.osc_token().is_none() =>
+                {
+                    *self.current_cwd.lock().unwrap() = Some(cwd.clone());
                 }
                 _ => {}
             }

@@ -102,7 +102,7 @@ impl LegacyMigrationSnapshot {
 
 pub(crate) enum LegacyMigrationPreparation {
     NotRequired(JumpServerCredentialStatus),
-    RequiresConfirmation(LegacyMigrationSnapshot),
+    RequiresConfirmation(Box<LegacyMigrationSnapshot>),
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -404,14 +404,14 @@ pub(crate) fn prepare_legacy_migration(
         )));
     };
     let consent_digest = migration_digest(&binding, &legacy.service, &legacy.account, &legacy.raw)?;
-    Ok(LegacyMigrationPreparation::RequiresConfirmation(
+    Ok(LegacyMigrationPreparation::RequiresConfirmation(Box::new(
         LegacyMigrationSnapshot {
             binding,
             source_service: legacy.service,
             source_account: legacy.account,
             consent_digest,
         },
-    ))
+    )))
 }
 
 /// Commit exactly the authority and credential bytes shown at the native

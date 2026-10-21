@@ -18,13 +18,12 @@ pub(super) async fn establish_connection(
     };
 
     match tokio::time::timeout(timeout, operation).await {
-        Ok(result) => result.map(|stream| {
+        Ok(result) => result.inspect(|stream| {
             // Interactive keystrokes are tiny writes; Nagle would hold them
             // back behind delayed ACKs (OpenSSH sets TCP_NODELAY too).
             if let Err(error) = stream.set_nodelay(true) {
                 eprintln!("[ssh] set_nodelay failed: {}", error);
             }
-            stream
         }),
         Err(_) => Err(format!(
             "connection timed out ({}s): host {} unreachable",

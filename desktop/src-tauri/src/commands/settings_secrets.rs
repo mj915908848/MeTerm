@@ -325,7 +325,7 @@ fn parse_vault(raw: Option<&str>) -> Result<SettingsVault, String> {
         });
     };
     let vault: SettingsVault =
-        serde_json::from_str(&raw).map_err(|_| "invalid settings credential record".to_string())?;
+        serde_json::from_str(raw).map_err(|_| "invalid settings credential record".to_string())?;
     if vault.version != 3 {
         return Err("unsupported settings credential record".to_string());
     }
