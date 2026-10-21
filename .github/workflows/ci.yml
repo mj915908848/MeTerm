@@ -51,12 +51,21 @@ jobs:
 
   frontend:
     name: Frontend (test + tsc)
-    # 放在 macOS 上跑：shell hook 测试会调用系统的 `sh`，结果与本地 macOS 开发环境保持一致
-    # Runs on macOS so the shell-hook tests see the same `sh` as local development.
-    runs-on: macos-latest
+    # 前端检查与平台无关，放 ubuntu：不用排 macOS runner 的队。Ubuntu 的 `sh` 是 dash，
+    # shell hook 测试因此还会验证 hook 能被纯 POSIX sh 解析。
+    # Platform-neutral, so it runs on ubuntu and never waits for a macOS runner. Ubuntu's
+    # `sh` is dash, so the shell-hook tests also check the hooks parse under plain POSIX sh.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+
+      # shell hook 测试会对每个可用的 shell 做语法检查和实跑；ubuntu 默认没有 zsh
+      # The shell-hook tests check every shell they find; ubuntu has no zsh by default.
+      - name: Install zsh
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends zsh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
