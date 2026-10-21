@@ -451,7 +451,8 @@ fn rename_without_overwrite(source: &Path, destination: &Path) -> std::io::Resul
         .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
     let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())
         .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
-    let result = unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
+    let result =
+        unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
     if result == 0 {
         Ok(())
     } else {

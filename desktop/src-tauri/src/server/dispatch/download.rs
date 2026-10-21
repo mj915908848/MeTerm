@@ -22,31 +22,29 @@ pub async fn wait_download_ctrl<ShouldCancel>(
 where
     ShouldCancel: Fn() -> bool,
 {
-    loop {
-        if cancellation.is_cancelled() || should_cancel() {
-            return true;
-        }
-        match ctrl.try_recv() {
-            Ok(DownloadSignal::Cancel) => return true,
-            Ok(DownloadSignal::Pause) => loop {
-                tokio::select! {
-                    _ = cancellation.cancelled() => return true,
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                        if should_cancel() {
-                            return true;
-                        }
-                    }
-                    signal = ctrl.recv() => match signal {
-                        Some(DownloadSignal::Continue) => return false,
-                        Some(DownloadSignal::Cancel) | None => return true,
-                        _ => {}
+    if cancellation.is_cancelled() || should_cancel() {
+        return true;
+    }
+    match ctrl.try_recv() {
+        Ok(DownloadSignal::Cancel) => true,
+        Ok(DownloadSignal::Pause) => loop {
+            tokio::select! {
+                _ = cancellation.cancelled() => return true,
+                _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+                    if should_cancel() {
+                        return true;
                     }
                 }
-            },
-            Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => return true,
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty) => return false,
-            Ok(DownloadSignal::Continue) => return false,
-        }
+                signal = ctrl.recv() => match signal {
+                    Some(DownloadSignal::Continue) => return false,
+                    Some(DownloadSignal::Cancel) | None => return true,
+                    _ => {}
+                }
+            }
+        },
+        Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => true,
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty) => false,
+        Ok(DownloadSignal::Continue) => false,
     }
 }
 

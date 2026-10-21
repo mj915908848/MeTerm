@@ -157,26 +157,8 @@ impl WslPtyTerminal {
         let done_token = CancellationToken::new();
         let _done_clone = done_token.clone();
 
-        // Monitor child exit
-        let _child_id = child.id();
-        tokio::spawn(async move {
-            // Wait a bit then start polling
-            loop {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                // Check if process still exists
-                #[cfg(target_os = "windows")]
-                {
-                    // On Windows, we can't easily poll without the Child handle
-                    // The done_token will be cancelled when read returns 0
-                    break;
-                }
-                #[cfg(not(target_os = "windows"))]
-                {
-                    let _ = _child_id;
-                    break;
-                }
-            }
-        });
+        // Child exit is not polled here (no Child handle in a task); the
+        // done_token is cancelled when read returns 0.
 
         Ok(Self {
             child: Mutex::new(Some(child)),

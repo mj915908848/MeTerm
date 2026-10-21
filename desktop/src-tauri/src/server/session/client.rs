@@ -390,7 +390,9 @@ impl Client {
             }
             match guard.as_ref() {
                 Some(DownStream::Mpsc(ws)) => Some(ws.priority_tx.clone()),
-                Some(DownStream::IpcChannel(ch)) => return ch.send(tauri::ipc::InvokeResponseBody::Raw(data)).is_ok(),
+                Some(DownStream::IpcChannel(ch)) => {
+                    return ch.send(tauri::ipc::InvokeResponseBody::Raw(data)).is_ok()
+                }
                 None => return false,
             }
         };
@@ -430,7 +432,9 @@ impl Client {
             }
             match guard.as_ref() {
                 Some(DownStream::Mpsc(ws)) => Some(ws.bulk_tx.clone()),
-                Some(DownStream::IpcChannel(ch)) => return ch.send(tauri::ipc::InvokeResponseBody::Raw(data)).is_ok(),
+                Some(DownStream::IpcChannel(ch)) => {
+                    return ch.send(tauri::ipc::InvokeResponseBody::Raw(data)).is_ok()
+                }
                 None => return false,
             }
         };
@@ -449,10 +453,7 @@ impl Client {
 
     /// Rebind the same native IPC identity to a replacement WebView channel.
     /// The caller holds the session's clients lock through the generation read.
-    pub(crate) fn reconnect_ipc(
-        &self,
-        channel: tauri::ipc::Channel,
-    ) -> Result<u64, String> {
+    pub(crate) fn reconnect_ipc(&self, channel: tauri::ipc::Channel) -> Result<u64, String> {
         if !self.is_ipc || !self.is_trusted_local_owner() {
             return Err("not a local IPC client".to_string());
         }

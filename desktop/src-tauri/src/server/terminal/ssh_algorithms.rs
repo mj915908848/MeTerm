@@ -201,9 +201,7 @@ mod tests {
         let first_sha1 = preferred
             .mac
             .iter()
-            .position(|name| {
-                *name == russh::mac::HMAC_SHA1_ETM || *name == russh::mac::HMAC_SHA1
-            })
+            .position(|name| *name == russh::mac::HMAC_SHA1_ETM || *name == russh::mac::HMAC_SHA1)
             .expect("asserted present above");
 
         assert!(
