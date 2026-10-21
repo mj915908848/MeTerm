@@ -14,6 +14,7 @@ import { getAllLeaves } from './split-pane';
 import { AICapsuleManager } from './ai-capsule';
 import { loadSettings } from './themes';
 import { hydrateSettingsSecretPresenceFromStorage } from './settings-secrets';
+import { changedSettingKeys, isLiveAppearanceOnly } from './settings-sync';
 import { applyWindowOpacity, applyAiBarOpacity, applyVibrancy, resolveThemeAttr, applyColorScheme, applyBackgroundImage } from './appearance';
 import { applyUiFont } from './fonts';
 import { setHomeViewSettings } from './home';
@@ -729,7 +730,18 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     // versioned presence flags. Other windows must not re-open Keychain.
     hydrateSettingsSecretPresenceFromStorage();
     const terminalPanelEl = getTerminalPanelEl();
+    const previous = settings;
     setSettings(loadSettings());
+    // Dragging an opacity or PiP slider sends a stream of these. Reloading fonts,
+    // re-theming every terminal and rebuilding the home view for each one made
+    // the drag stutter, so purely visual changes take the short path.
+    if (isLiveAppearanceOnly(changedSettingKeys(previous, settings))) {
+      applyWindowOpacity(settings.opacity);
+      applyAiBarOpacity(settings.aiBarOpacity);
+      applyBackgroundImage(settings, terminalPanelEl);
+      void applyVibrancy(settings.enableVibrancy);
+      return;
+    }
     setLanguage(settings.language);
     applyColorScheme(settings);
     setHomeViewSettings(settings);

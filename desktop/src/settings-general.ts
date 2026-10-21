@@ -14,7 +14,6 @@ export function createGeneralTab(
   current: AppSettings,
   update: (patch: Partial<AppSettings>) => void,
   onLanguageChange: () => void,
-  getRateLabel: (rate: number, lang: 'en' | 'zh') => string,
 ): HTMLDivElement {
   const tabGeneral = document.createElement('div');
 
@@ -547,10 +546,10 @@ export function createGeneralTab(
   // --- File Manager Mode (drawer / sidebar) ---
   const fmModeSection = document.createElement('div');
   fmModeSection.className = 'settings-section';
-  fmModeSection.innerHTML = `<label>${current.language === 'zh' ? '文件管理器位置' : 'File Manager Position'}</label>`;
+  fmModeSection.innerHTML = `<label>${t('fileManagerPosition')}</label>`;
   const fmModeSelect = createSettingsSelect([
-    { value: 'drawer', label: current.language === 'zh' ? '底部抽屉' : 'Bottom Drawer', selected: current.fileManagerMode === 'drawer' },
-    { value: 'sidebar', label: current.language === 'zh' ? '左侧边栏 (树形视图)' : 'Left Sidebar (Tree View)', selected: current.fileManagerMode === 'sidebar' },
+    { value: 'drawer', label: t('fileManagerPositionDrawer'), selected: current.fileManagerMode === 'drawer' },
+    { value: 'sidebar', label: t('fileManagerPositionSidebar'), selected: current.fileManagerMode === 'sidebar' },
   ]);
   fmModeSection.appendChild(fmModeSelect.el);
   fmModeSelect.onchange = () => {
@@ -573,11 +572,11 @@ export function createGeneralTab(
   rateSection.className = 'settings-section';
   rateSection.innerHTML = `<label>${t('previewRefreshRate')}</label>`;
   const rateSelect = createSettingsSelect([
-    { value: '100', label: getRateLabel(100, current.language), selected: current.previewRefreshRate === 100 },
-    { value: '500', label: getRateLabel(500, current.language), selected: current.previewRefreshRate === 500 },
-    { value: '1000', label: getRateLabel(1000, current.language), selected: current.previewRefreshRate === 1000 },
-    { value: '2000', label: getRateLabel(2000, current.language), selected: current.previewRefreshRate === 2000 },
-    { value: '5000', label: getRateLabel(5000, current.language), selected: current.previewRefreshRate === 5000 },
+    { value: '100', label: t('previewRate100'), selected: current.previewRefreshRate === 100 },
+    { value: '500', label: t('previewRate500'), selected: current.previewRefreshRate === 500 },
+    { value: '1000', label: t('previewRate1000'), selected: current.previewRefreshRate === 1000 },
+    { value: '2000', label: t('previewRate2000'), selected: current.previewRefreshRate === 2000 },
+    { value: '5000', label: t('previewRate5000'), selected: current.previewRefreshRate === 5000 },
   ]);
   rateSection.appendChild(rateSelect.el);
   rateSelect.onchange = () => {
