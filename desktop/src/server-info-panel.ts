@@ -4,8 +4,8 @@
  * The server info used to live inside the file drawer's sidebar. It is now its
  * own panel so:
  *   - the drawer is purely files + processes, and
- *   - the left dock can be given to server info (the connection list moved to
- *     its own window — see connections-window.ts).
+ *   - the left dock can be given to server info (the connection list floats
+ *     over the terminal as a drawer — see connections-drawer.ts).
  *
  * Like the old docked connection sidebar, it mounts as the leftmost child of
  * #main-content and pushes the terminal aside rather than covering it.

@@ -49,7 +49,6 @@ const UTILITY_WINDOW_URLS: Readonly<Record<string, RegExp>> = {
   'jumpserver-browser': /^\?window=jumpserver-browser$/,
   editor: /^\?window=editor$/,
   settings: /^\?window=settings(?:&tab=[A-Za-z0-9_-]{1,64})?$/,
-  connections: /^\?window=connections$/,
 };
 
 function validateUtilityWindowOptions(opts: UtilityWindowOptions): void {

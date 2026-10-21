@@ -38,7 +38,6 @@ commands.allow = [
   "restart_app_via_open",
   "reveal_window",
   "export_ssh_connections",
-  "connections_dispatch",
   "sync_get_connections",
   "sync_import_named_connection",
   "sync_upsert_connection",

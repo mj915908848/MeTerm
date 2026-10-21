@@ -17,6 +17,8 @@ import {
   setCardWidth,
 } from './home-card-width';
 import { sortGroupConnections } from './connection-sort';
+import { attachConnectionDrag, UNGROUPED_DROP_GROUP } from './connection-drag';
+import { pruneSelection, resolveRowClick } from './connection-selection';
 import {
   type SSHConnectionConfig,
   loadSavedConnections,
@@ -177,6 +179,130 @@ function setupScrollFade(el: HTMLElement): void {
   requestAnimationFrame(update);
 }
 
+// ─── Multi-select (saved connections) ───
+//
+// ⌘/Ctrl-click adds a row to the selection, Shift-click takes a range, a plain
+// click still connects (rules in connection-selection.ts). The selection can be
+// moved to a group (selection bar, row menu, or dragging onto a card) or deleted
+// in one go. It survives re-renders, so it lives here rather than in the DOM.
+
+const homePicked = new Set<string>();
+let homeAnchor: string | null = null;
+let homeDragDispose: (() => void) | null = null;
+
+/** Bilingual text for strings that carry a live count (t() takes no args). */
+const L = (zh: string, en: string): string => (settings?.language === 'zh' ? zh : en);
+
+function setHomeSelection(keys: readonly string[], anchor: string | null): void {
+  homePicked.clear();
+  for (const key of keys) homePicked.add(key);
+  homeAnchor = anchor;
+}
+
+export function clearHomeSelection(): void {
+  setHomeSelection([], null);
+  syncHomeSelection();
+}
+
+/** Rows on screen, in reading order; a shift-click ranges over these only. */
+function visibleHomeKeys(): string[] {
+  return Array.from(document.querySelectorAll<HTMLElement>(
+    '#home-groups-section .home-dash-group-card:not(.collapsed) .home-dash-conn-row[data-key]',
+  )).map((row) => row.dataset.key!);
+}
+
+/** Repaint the picked rows and the selection bar in place (no re-render). */
+function syncHomeSelection(): void {
+  for (const row of Array.from(document.querySelectorAll<HTMLElement>('#home-groups-section .home-dash-conn-row[data-key]'))) {
+    row.classList.toggle('picked', homePicked.has(row.dataset.key!));
+  }
+  const bar = document.querySelector<HTMLElement>('#home-groups-section .home-dash-selbar');
+  if (!bar) return;
+  bar.hidden = homePicked.size === 0;
+  const count = bar.querySelector<HTMLElement>('.home-dash-selbar-count');
+  if (count) count.textContent = L(`已选 ${homePicked.size} 项`, `${homePicked.size} selected`);
+}
+
+/** Move connections to a group; a move that changes nothing writes nothing. */
+function moveHomeKeys(keys: readonly string[], group: string | null, refreshView: () => void): void {
+  if (keys.length === 0) return;
+  const map = loadGroupMap();
+  if (!keys.some((key) => visibleGroupName(map[key]) !== group)) return;
+  assignConnectionsToGroup(keys, group);
+  setHomeSelection([], null);
+  refreshView();
+}
+
+function createSelectionBar(refreshView: () => void): HTMLElement {
+  const bar = document.createElement('div');
+  bar.className = 'home-dash-selbar';
+  bar.hidden = true;
+
+  const count = document.createElement('span');
+  count.className = 'home-dash-selbar-count';
+  bar.appendChild(count);
+
+  const moveBtn = document.createElement('button');
+  moveBtn.type = 'button';
+  moveBtn.className = 'home-dash-selbar-btn';
+  moveBtn.textContent = t('connectionMoveToGroup');
+  moveBtn.onclick = (event) => {
+    event.stopPropagation();
+    showMoveMenu(moveBtn, loadGroupOrder(), (group) => moveHomeKeys([...homePicked], group, refreshView));
+  };
+  bar.appendChild(moveBtn);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'home-dash-selbar-btn danger';
+  deleteBtn.textContent = t('sshDeleteConnection');
+  deleteBtn.onclick = () => {
+    void handleDeleteConnections([...homePicked], () => {
+      setHomeSelection([], null);
+      refreshView();
+    });
+  };
+  bar.appendChild(deleteBtn);
+
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'home-dash-selbar-btn';
+  clearBtn.textContent = t('connectionClearSelection');
+  clearBtn.onclick = () => clearHomeSelection();
+  bar.appendChild(clearBtn);
+
+  return bar;
+}
+
+/**
+ * Popup listing every group, for moving a selection without dragging. Closes on
+ * the first pointer press outside — including the press that opens it again.
+ */
+function showMoveMenu(anchorEl: HTMLElement, groups: string[], onPick: (group: string | null) => void): void {
+  removeContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'home-card-menu';
+  menu.setAttribute('role', 'menu');
+  const entries: [string, string | null][] = [
+    ...groups.map((g): [string, string | null] => [g, g]),
+    [t('homeGroupUngrouped'), null],
+  ];
+  for (const [label, value] of entries) {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'home-card-menu-item';
+    item.textContent = `→ ${label}`;
+    item.onclick = () => { menu.remove(); onPick(value); };
+    menu.appendChild(item);
+  }
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.left = `${rect.left}px`;
+  menu.style.top = `${rect.bottom + 4}px`;
+  document.body.appendChild(menu);
+  clampMenu(menu);
+  autoCloseMenu(menu);
+}
+
 // ─── Connection Groups Section ───
 
 /** refreshView callback is injected to avoid circular imports */
@@ -187,6 +313,8 @@ export function renderGroupsSection(query: string, refreshView: () => void): voi
 
   const allItems = collectAllConnections();
   const filteredItems = filterConnections(allItems, query);
+  // A picked row that was deleted or is hidden by the search must not be acted on.
+  setHomeSelection(pruneSelection([...homePicked], filteredItems.map((i) => i.key)), homeAnchor);
   const groupMap = loadGroupMap();
   const groupOrder = loadGroupOrder();
   const groupColors = loadGroupColors();
@@ -232,6 +360,7 @@ export function renderGroupsSection(query: string, refreshView: () => void): voi
   };
   titleRow.appendChild(newGroupBtn);
   section.appendChild(titleRow);
+  section.appendChild(createSelectionBar(refreshView));
 
   if (filteredItems.length === 0 && !query) {
     const empty = document.createElement('div');
@@ -248,9 +377,9 @@ export function renderGroupsSection(query: string, refreshView: () => void): voi
 
   // Build all cards: named groups + type groups
   const namedCards = new Map<string, HTMLDivElement>();
-  // Rows inside a card are sorted exactly the way the connection window sorts
+  // Rows inside a card are sorted exactly the way the connections drawer sorts
   // them (same per-group mode, same store). Without this the card keeps the
-  // stored insertion order, so a sort picked in the connection window looks like
+  // stored insertion order, so a sort picked in the drawer looks like
   // it was ignored here.
   for (const groupName of groupOrder) {
     const items = sortGroupConnections(grouped.get(groupName) || [], groupName, settings.language);
@@ -296,6 +425,18 @@ export function renderGroupsSection(query: string, refreshView: () => void): voi
 
   section.appendChild(groupsGrid);
   setupScrollFade(groupsGrid);
+
+  // Rows drag onto a group card; a drag from a picked row carries the selection.
+  homeDragDispose?.();
+  homeDragDispose = attachConnectionDrag(groupsGrid, {
+    getSelection: () => [...homePicked],
+    dragLabel: (count) => L(`${count} 个连接`, `${count} connection${count === 1 ? '' : 's'}`),
+    onDrop: (group, keys) => moveHomeKeys(keys, group, refreshView),
+    rowSelector: '.home-dash-conn-row[data-key]',
+    targetSelector: '.home-dash-group-card',
+    ignoreSelector: '.home-dash-asset-row',
+  });
+  syncHomeSelection();
 }
 
 // ─── Card width (right-edge drag) ───
@@ -383,6 +524,7 @@ function createGroupCard(
   const card = document.createElement('div');
   card.className = 'home-dash-group-card';
   card.dataset.groupName = groupName || '';
+  card.dataset.group = groupName ?? UNGROUPED_DROP_GROUP;
 
   if (color) {
     card.setAttribute('data-color', color);
@@ -474,6 +616,8 @@ function createTypeGroupCard(type: 'ssh' | 'jumpserver', items: ConnectionItem[]
   const card = document.createElement('div');
   card.className = `home-dash-group-card home-dash-group-type-${type}`;
   card.dataset.groupName = `__type:${type}`;
+  // The per-type cards are the ungrouped bucket, so a drop there ungroups.
+  card.dataset.group = UNGROUPED_DROP_GROUP;
 
   const header = document.createElement('div');
   header.className = 'home-dash-group-header';
@@ -533,11 +677,31 @@ function createConnectionRow(item: ConnectionItem, currentGroup: string | null, 
   row.className = `home-dash-conn-row home-dash-conn-${item.type}`;
   row.innerHTML = `<span class="home-dash-conn-name">${escapeHtml(item.name)}</span><span class="home-dash-conn-detail">${escapeHtml(item.detail)}</span>`;
 
-  row.onclick = () => handleConnectionClick(item, row);
+  row.dataset.key = item.key;
+  row.dataset.group = currentGroup ?? UNGROUPED_DROP_GROUP;
+  if (homePicked.has(item.key)) row.classList.add('picked');
+
+  row.onclick = (event) => {
+    const outcome = resolveRowClick(
+      visibleHomeKeys(),
+      { selection: [...homePicked], anchor: homeAnchor },
+      item.key,
+      { toggle: event.metaKey || event.ctrlKey, range: event.shiftKey },
+    );
+    setHomeSelection(outcome.selection, outcome.anchor);
+    syncHomeSelection();
+    if (outcome.connect) handleConnectionClick(item, row);
+  };
   row.oncontextmenu = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    showConnectionContextMenu(e, item, currentGroup, refreshView);
+    // Only a selection that contains this row acts for it; right-clicking a row
+    // outside the selection means "just this row".
+    const selection = homePicked.has(item.key) ? [...homePicked] : undefined;
+    showConnectionContextMenu(e, item, currentGroup, () => {
+      if (selection) setHomeSelection([], null);
+      refreshView();
+    }, undefined, selection);
   };
 
   return row;
@@ -575,9 +739,9 @@ export function handleConnectionClick(item: ConnectionItem, anchor?: HTMLElement
 /**
  * Group management menu: collapse, rename, colour, duplicate, delete.
  *
- * Shared with the standalone connections window, which renders the same group
- * headers — a group you can create in a window has to be renameable and
- * deletable in that same window, or the feature is a dead end.
+ * Shared with the connections drawer, which renders the same group headers — a
+ * group you can create in the drawer has to be renameable and deletable there
+ * too, or the feature is a dead end.
  */
 export function showGroupContextMenu(event: MouseEvent, groupName: string, refreshView: () => void): void {
   removeContextMenu();
@@ -713,10 +877,7 @@ export function findConnectionItem(
 /**
  * Run the edit flow for one connection.
  *
- * Runs in whichever window rendered the row. The standalone connections window
- * shows the same dialogs in place on purpose: the window that owns it is often
- * full-screen, i.e. on its own macOS Space, so raising it there made the
- * connections window disappear entirely.
+ * Runs in whichever window rendered the row.
  *
  * Every branch has to run `refreshView` once the dialog has saved: the store is
  * shared between windows but the DOM is not, so the list the user is looking at
@@ -762,10 +923,10 @@ export function editConnection(item: ConnectionItem, refreshView: () => void = (
 /**
  * Connection context menu.
  *
- * `onEdit` is for a window that wants the plain edit item instead of the
- * window-specific extras `appendSshConnectionMenuItems` attaches (a dev-only
- * credential-recovery entry whose backend command the connections window is not
- * granted). It still runs `editConnection` — in that window, not elsewhere.
+ * `onEdit` is for a list that wants the plain edit item instead of the extras
+ * `appendSshConnectionMenuItems` attaches (a dev-only credential-recovery entry).
+ * With several rows selected (`moveKeys`) the menu offers only what applies to
+ * all of them: move and delete.
  */
 export function showConnectionContextMenu(
   event: MouseEvent,
@@ -786,7 +947,15 @@ export function showConnectionContextMenu(
   menu.style.left = `${event.clientX}px`;
   menu.style.top = `${event.clientY}px`;
 
-  if (onEdit) {
+  const moving = moveKeys && moveKeys.length > 0 ? [...moveKeys] : [item.key];
+  const batch = moving.length > 1;
+  const suffix = batch ? ` (${moving.length})` : '';
+
+  // Editing is a one-connection action: with several rows picked the menu only
+  // offers what applies to all of them (move, delete).
+  if (batch) {
+    // No edit entry.
+  } else if (onEdit) {
     const editItem = document.createElement('button');
     editItem.className = 'home-card-menu-item';
     editItem.textContent = t('homeEditConnection');
@@ -805,9 +974,6 @@ export function showConnectionContextMenu(
     menu.appendChild(editItem);
   }
 
-  const moving = moveKeys && moveKeys.length > 0 ? [...moveKeys] : [item.key];
-  const suffix = moving.length > 1 ? ` (${moving.length})` : '';
-
   /**
    * Would this destination change nothing at all?
    *
@@ -824,9 +990,11 @@ export function showConnectionContextMenu(
 
   const groups = loadGroupOrder();
   if (groups.length > 0 || currentGroup) {
-    const divider = document.createElement('div');
-    divider.className = 'custom-context-menu-divider';
-    menu.appendChild(divider);
+    if (!batch) {
+      const divider = document.createElement('div');
+      divider.className = 'custom-context-menu-divider';
+      menu.appendChild(divider);
+    }
 
     for (const g of groups) {
       if (targetsNothing(g)) continue;
@@ -854,15 +1022,21 @@ export function showConnectionContextMenu(
     }
   }
 
-  const divider2 = document.createElement('div');
-  divider2.className = 'custom-context-menu-divider';
-  menu.appendChild(divider2);
+  if (menu.childElementCount > 0) {
+    const divider2 = document.createElement('div');
+    divider2.className = 'custom-context-menu-divider';
+    menu.appendChild(divider2);
+  }
 
   const deleteItem = document.createElement('button');
   deleteItem.className = 'home-card-menu-item danger';
-  deleteItem.textContent = t('sshDeleteConnection');
+  deleteItem.textContent = `${t('sshDeleteConnection')}${suffix}`;
   deleteItem.onclick = () => {
     menu.remove();
+    if (batch) {
+      void handleDeleteConnections(moving, refreshView);
+      return;
+    }
     void handleDeleteConnection(item, refreshView).catch((error) => {
       console.error('[connections] Unable to delete credential:', error);
     });
@@ -884,7 +1058,7 @@ async function handleDeleteConnection(item: ConnectionItem, refreshView: () => v
   } catch (error) {
     // The credential is still there, so nothing changed. Tell the user (a
     // silent console.error makes a failed delete look like a dead button — the
-    // standalone connections window has no visible console), then re-throw:
+    // app has no visible console), then re-throw:
     // listeners must not hear about a mutation that never happened. The caller
     // logs the error.
     showToast({
@@ -900,6 +1074,50 @@ async function handleDeleteConnection(item: ConnectionItem, refreshView: () => v
   } finally {
     refreshView();
   }
+}
+
+/**
+ * Delete every connection in a multi-row selection.
+ *
+ * A single delete runs without a prompt, as it always has; several at once is
+ * easy to trigger by accident, so it asks first. Each connection is removed on
+ * its own: one that fails (its credential could not be deleted) stays, the rest
+ * go, and the user hears about the failures once rather than once per row.
+ */
+async function handleDeleteConnections(keys: readonly string[], refreshView: () => void): Promise<void> {
+  const items = collectAllConnections().filter((i) => keys.includes(i.key));
+  if (items.length === 0) return;
+  const zh = settings?.language === 'zh';
+  const { confirm: tauriConfirm } = await import('@tauri-apps/plugin-dialog');
+  const confirmed = await tauriConfirm(
+    zh ? `删除选中的 ${items.length} 个连接？此操作无法撤销。` : `Delete ${items.length} selected connections? This cannot be undone.`,
+    { title: t('sshDeleteConnection'), kind: 'warning' },
+  );
+  if (!confirmed) return;
+
+  let failed = 0;
+  for (const target of items) {
+    try {
+      if (target.type === 'ssh') {
+        await removeSSHConnection((target.raw as SSHConnectionConfig).name);
+      } else if (target.type === 'jumpserver') {
+        await removeJumpServerConfig((target.raw as JumpServerConfig).name);
+      }
+    } catch (error) {
+      failed += 1;
+      console.error('[connections] Unable to delete credential:', error);
+      continue;
+    }
+    try {
+      removeConnectionGroup(target.key);
+    } catch (error) {
+      console.error('[connections] Unable to clear group for deleted connection:', error);
+    }
+  }
+  if (failed > 0) {
+    showToast({ title: t('connectionDeleteFailedTitle'), body: t('connectionDeleteFailedBody') });
+  }
+  refreshView();
 }
 
 // ─── Helpers ───

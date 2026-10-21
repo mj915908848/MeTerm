@@ -12,7 +12,7 @@ import './styles/ssh-modal.css';
 import './styles/drawer.css';
 import './styles/drawer-sidebar.css';
 import './styles/server-info-panel.css';
-import './styles/connections-window.css';
+import './styles/connections-drawer.css';
 import './styles/file-sidebar.css';
 import './styles/ai-bar.css';
 import './styles/split-pane.css';
@@ -47,7 +47,7 @@ import { initUpdaterWindow } from './updater-window';
 import { initAboutWindow } from './about-window';
 import { initJumpServerBrowserWindow } from './jumpserver-browser-window';
 import { initEditorWindowShell } from './file-editor-init';
-import { initConnectionsWindow, setupConnectionsWindowBridge } from './connections-window';
+import { setupConnectionsDrawerSync } from './connections-drawer';
 import { initPip } from './pip';
 import { initMacFullscreen } from './fullscreen-mac';
 import { initLanguage, setLanguage } from './i18n';
@@ -130,10 +130,6 @@ async function init(): Promise<void> {
     initEditorWindowShell();
     // Load CodeMirror + editor content async
     import('./file-editor').then(m => m.initEditorContent());
-    return;
-  }
-  if (params.get('window') === 'connections') {
-    initConnectionsWindow();
     return;
   }
 
@@ -239,10 +235,9 @@ async function init(): Promise<void> {
   // Register all DOM and Tauri event listeners
   setupDomEventListeners();
   setupTauriEventListeners(currentWindowLabel);
-  // Every app window, not just the first one: the connections launcher is a
-  // singleton, and sessions belong to whichever window opened it last — a session
-  // request names its target, and only that window acts on it.
-  setupConnectionsWindowBridge();
+  // Every app window keeps its connections drawer and home view in step with
+  // edits made in the others.
+  setupConnectionsDrawerSync();
   setupKeyboardShortcuts();
   setupToolbarDrag();
   initPip();

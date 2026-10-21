@@ -22,14 +22,14 @@ import { showHomeView, showGalleryView, openSettings } from './view-manager';
 import { createNewSession, closeAllSessions, createNewWindowNearCurrent } from './session-actions';
 import { renderTabs } from './tab-renderer';
 import { pendingUpdateVersion, openUpdaterWindow } from './updater';
-import { settings, isHomeView, isGalleryView, isWindowsPlatform, isLinuxPlatform, activeJumpServers } from './app-state';
+import { settings, isHomeView, isGalleryView, isWindowsPlatform, isLinuxPlatform, isMacPlatform, activeJumpServers } from './app-state';
 import { toggleJumpServerPanel, isJumpServerPanelOpen, showJsConnectionContextMenu } from './jumpserver-panel';
 import { isPipActive, togglePip } from './pip';
 import { DrawerManager } from './drawer';
 import { AICapsuleManager } from './ai-capsule';
 import { toggleFileManager, isFileManagerOpen } from './file-manager-toggle';
 import { ServerInfoPanel, hasRemoteServerInfo } from './server-info-panel';
-import { openConnectionsWindow } from './connections-window';
+import { isConnectionsDrawerOpen, toggleConnectionsDrawer } from './connections-drawer';
 import appIconUrl from '../src-tauri/icons/icon.svg';
 
 /** Platforms that need custom window controls (no native overlay titlebar). */
@@ -285,17 +285,16 @@ export function renderToolbarActions(): void {
   };
   toolbarLeftEl.appendChild(homeViewBtn);
 
-  // Connection list in its own window — second in the row, directly after the
-  // home button (asked for in v0.2.18): both are "take me somewhere else in the
-  // app" entries, so they stay adjacent. Session-scoped tools follow; the main
-  // window's left dock belongs to the server-info panel, hence a window of its
-  // own for the list.
+  // Connection drawer — second in the row, directly after the home button (asked
+  // for in v0.2.18): both are "take me somewhere else in the app" entries, so
+  // they stay adjacent. Session-scoped tools follow. The drawer floats over the
+  // terminal because the left dock belongs to the server-info panel.
   const connBtn = document.createElement('button');
-  connBtn.className = 'toolbar-action-btn conn-toggle-btn';
+  connBtn.className = `toolbar-action-btn conn-toggle-btn${isConnectionsDrawerOpen() ? ' active' : ''}`;
   connBtn.type = 'button';
-  connBtn.title = t('connectionsWindowTitle');
+  connBtn.title = `${t('connectionsWindowTitle')} (${isMacPlatform ? '⌘⇧O' : 'Ctrl+Shift+O'})`;
   connBtn.innerHTML = `<span class="tab-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg></span>`;
-  connBtn.onclick = () => { void openConnectionsWindow(); };
+  connBtn.onclick = () => { toggleConnectionsDrawer(); };
   toolbarLeftEl.appendChild(connBtn);
 
   // Session-scoped buttons: the server-info panel and the file manager both need

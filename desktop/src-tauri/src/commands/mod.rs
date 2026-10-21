@@ -1,7 +1,6 @@
 pub mod ai;
 pub mod connection_export;
 pub mod connection_sync;
-pub mod connections_dispatch;
 pub mod context_menu;
 pub mod fs;
 pub mod ipc_terminal;

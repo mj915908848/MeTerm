@@ -23,6 +23,7 @@ import {
 } from './app-state';
 import { showQuickHelp } from './tldr-card';
 import { togglePip, isPipActive } from './pip';
+import { toggleConnectionsDrawer } from './connections-drawer';
 import { loadSettings, updateSettings } from './themes';
 
 export function setupKeyboardShortcuts(): void {
@@ -64,6 +65,17 @@ export function setupKeyboardShortcuts(): void {
       event.stopPropagation();
       event.stopImmediatePropagation();
       void togglePip();
+      return;
+    }
+
+    // Connections drawer (Cmd/Ctrl+Shift+O). Before the Windows terminal-focus
+    // guard for the same reason as PiP: the shortcut is meant to work from the
+    // terminal. Plain Ctrl+O (no Shift) still reaches the terminal.
+    if (key === 'o' && event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      toggleConnectionsDrawer();
       return;
     }
 

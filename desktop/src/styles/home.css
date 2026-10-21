@@ -1281,6 +1281,87 @@ html[data-theme="light"] .home-dash-group-chevron:hover {
   background: rgba(var(--bg-button), 0.25);
 }
 
+/* ── Multi-select + drag into groups (saved connections) ── */
+
+/* A picked row tints and gets a left rule, so a multi-row selection reads as one
+   block. Same treatment the connection list used before it moved here. */
+.home-dash-conn-row.picked {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.22);
+  box-shadow: inset 2px 0 0 rgba(var(--accent-rgb, 106, 164, 255), 0.9);
+}
+.home-dash-conn-row.picked .home-dash-conn-name { font-weight: 600; }
+
+.home-dash-selbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.1);
+}
+/* `display: flex` above would otherwise beat the `hidden` attribute. */
+.home-dash-selbar[hidden] { display: none; }
+
+.home-dash-selbar-count {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+
+.home-dash-selbar-btn {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  background: rgba(var(--bg-button, 50, 50, 52), 0.5);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.home-dash-selbar-btn:hover {
+  background: rgba(var(--bg-button-hover, 60, 60, 63), var(--app-window-opacity, 1));
+}
+.home-dash-selbar-btn.danger { color: var(--error-text); }
+
+body.is-connection-dragging,
+body.is-connection-dragging .home-dash-conn-row,
+body.is-connection-dragging .home-dash-group-card { cursor: grabbing; }
+
+.home-dash-groups-grid.is-dragging .home-dash-group-card {
+  outline: 1px dashed rgba(var(--accent-rgb, 106, 164, 255), 0.5);
+  outline-offset: -2px;
+}
+/* Must out-specify the dashed-outline rule above. */
+.home-dash-groups-grid.is-dragging .home-dash-group-card.drop-target {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.12);
+  outline: 1px solid rgba(var(--accent-rgb, 106, 164, 255), 0.9);
+}
+
+/* Follows the pointer; `pointer-events: none` is load-bearing — the drop target
+   is found with elementFromPoint, and the ghost sits under the cursor. */
+.cn-drag-ghost {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  padding: 4px 9px;
+  border: 1px solid rgba(var(--accent-rgb, 106, 164, 255), 0.6);
+  border-radius: 6px;
+  background: rgba(var(--bg-toolbar, 33, 33, 35), 0.95);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11.5px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
 .home-dash-conn-name {
   font-size: 12px;
   font-weight: 500;

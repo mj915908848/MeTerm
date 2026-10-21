@@ -17,6 +17,8 @@ import { keysToDrag } from './connection-selection';
 
 /** Group name of the "not in any group" bucket, mirroring home-side.ts. */
 const UNGROUPED = '__ungrouped__';
+/** The same bucket name, for renderers that publish `data-group` on a target. */
+export const UNGROUPED_DROP_GROUP = UNGROUPED;
 const DRAG_THRESHOLD = 4;
 const EDGE_ZONE = 26;
 const EDGE_STEP = 9;
@@ -29,6 +31,16 @@ export interface ConnectionDragOptions {
   onDrop: (group: string | null, keys: string[]) => void;
   /** Localised ghost label, e.g. "3 个连接". */
   dragLabel: (count: number) => string;
+  /** A draggable row; carries `data-key` and `data-group`. Default `.home-side-row`. */
+  rowSelector?: string;
+  /**
+   * A drop target; carries `data-group`. Default `.home-side-group` (the list's
+   * group headers). The home page passes its group cards, which contain their
+   * rows, so pointing anywhere inside a card targets that card.
+   */
+  targetSelector?: string;
+  /** Controls inside a row that must not start a drag. Default `.hsr-pin`. */
+  ignoreSelector?: string;
 }
 
 /**
@@ -49,8 +61,12 @@ export function attachConnectionDrag(
   let pointerY = 0;
   let keys: string[] = [];
   let ghost: HTMLElement | null = null;
-  let marked: HTMLElement | null = null;
+  let marked: HTMLElement[] = [];
+  let markedGroup: string | null | undefined;
   let scrollRaf = 0;
+  const rowSelector = opts.rowSelector ?? '.home-side-row';
+  const targetSelector = opts.targetSelector ?? '.home-side-group';
+  const ignoreSelector = opts.ignoreSelector ?? '.hsr-pin';
 
   const groupOfHeader = (header: HTMLElement): string | null => {
     const raw = header.dataset.group;
@@ -61,32 +77,31 @@ export function attachConnectionDrag(
   const pointedGroup = (): string | null | undefined => {
     const el = document.elementFromPoint(pointerX, pointerY) as HTMLElement | null;
     if (!el) return undefined;
-    const header = el.closest('.home-side-group') as HTMLElement | null;
+    const header = el.closest(targetSelector) as HTMLElement | null;
     if (header) return groupOfHeader(header);
     // Hovering a row counts as hovering its group, which makes the target the
     // whole row instead of a thin header line.
-    const row = el.closest('.home-side-row') as HTMLElement | null;
+    const row = el.closest(rowSelector) as HTMLElement | null;
     if (!row) return undefined;
     const raw = row.dataset.group;
     return !raw || raw === UNGROUPED ? null : raw;
   };
 
-  /** The header element for a group. Document scope: the single-group header is
-   *  hoisted out of the list into a fixed slot above it. */
-  const headerFor = (group: string | null): HTMLElement | null => {
+  /** Every target for a group. Document scope: the single-group header is
+   *  hoisted out of the list into a fixed slot above it, and the home page shows
+   *  the ungrouped bucket as one card per connection type. */
+  const targetsFor = (group: string | null): HTMLElement[] => {
     const wanted = group ?? UNGROUPED;
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>('.home-side-group'))) {
-      if ((el.dataset.group ?? '') === wanted) return el;
-    }
-    return null;
+    return Array.from(document.querySelectorAll<HTMLElement>(targetSelector))
+      .filter((el) => (el.dataset.group ?? '') === wanted);
   };
 
   const mark = (group: string | null | undefined): void => {
-    const next = group === undefined ? null : headerFor(group);
-    if (next === marked) return;
-    marked?.classList.remove(HOVER_CLASS);
-    marked = next;
-    marked?.classList.add(HOVER_CLASS);
+    if (group === markedGroup) return;
+    for (const el of marked) el.classList.remove(HOVER_CLASS);
+    markedGroup = group;
+    marked = group === undefined ? [] : targetsFor(group);
+    for (const el of marked) el.classList.add(HOVER_CLASS);
   };
 
   const beginDrag = (): void => {
@@ -144,8 +159,9 @@ export function attachConnectionDrag(
     keys = [];
     ghost?.remove();
     ghost = null;
-    marked?.classList.remove(HOVER_CLASS);
-    marked = null;
+    for (const el of marked) el.classList.remove(HOVER_CLASS);
+    marked = [];
+    markedGroup = undefined;
     cancelAnimationFrame(scrollRaf);
     scrollRaf = 0;
     listEl.classList.remove('is-dragging');
@@ -177,11 +193,11 @@ export function attachConnectionDrag(
   const onDown = (event: MouseEvent): void => {
     if (event.button !== 0 || armed) return;
     const target = event.target as HTMLElement | null;
-    const row = target?.closest('.home-side-row') as HTMLElement | null;
+    const row = target?.closest(rowSelector) as HTMLElement | null;
     if (!row) return;
     // The pin is its own control — arming a drag on it would move rows when the
     // user meant to favourite one.
-    if (target?.closest('.hsr-pin')) return;
+    if (target?.closest(ignoreSelector)) return;
     const key = row.dataset.key;
     if (!key) return;
 

@@ -168,21 +168,3 @@ test('the four commands are wired to the clipboard and to the field', () => {
     'the helper must refuse to edit a field that does not accept edits',
   );
 });
-
-// The connections window hosts the same JumpServer dialog (editing a connection
-// runs in place there). Without the clipboard permission its copy/paste entries
-// would reject.
-test('the connection window is allowed to use the clipboard for its fields', () => {
-  const capability = fs.readFileSync(
-    new URL('../src-tauri/capabilities/connections.json', import.meta.url),
-    'utf8',
-  );
-  assert.ok(
-    capability.includes('clipboard-manager:allow-read-text'),
-    'paste needs allow-read-text',
-  );
-  assert.ok(
-    capability.includes('clipboard-manager:allow-write-text'),
-    'copy needs allow-write-text',
-  );
-});

@@ -39,7 +39,6 @@ const APP_COMMANDS: &[&str] = &[
     "jumpserver_credential_status",
     "jumpserver_delete_credentials",
     "export_ssh_connections",
-    "connections_dispatch",
     "sync_get_connections",
     "sync_import_named_connection",
     "sync_upsert_connection",

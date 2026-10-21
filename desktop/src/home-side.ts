@@ -55,9 +55,8 @@ export interface SidebarListDeps {
   /**
    * Run the edit flow for a row. Optional: without it the menu builder uses the
    * full in-window menu (`appendSshConnectionMenuItems`), which attaches a
-   * dev-only credential-recovery entry this list is not granted. The standalone
-   * connections window passes its own runner — same `editConnection`, same
-   * window, just without that extra entry.
+   * dev-only credential-recovery entry. A caller that wants only the plain edit
+   * entry passes its own runner.
    */
   onEdit?: (item: ConnectionItem) => void;
   /** Multi-select: rows the owning window currently holds. */
@@ -83,6 +82,12 @@ export interface SidebarListDeps {
     mods: { toggle: boolean; range: boolean },
     visibleKeys: string[],
   ) => boolean;
+  /**
+   * Whether a row answers a right-click with the connection menu (edit, move,
+   * delete). Defaults to true. The connections drawer turns it off: it is for
+   * picking a connection, and managing them happens on the home page.
+   */
+  rowMenu?: boolean;
   /** Group header right-click. `null` addresses the ungrouped bucket. */
   onGroupContextMenu?: (event: MouseEvent, group: string | null) => void;
 }
@@ -218,6 +223,7 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
       };
       row.oncontextmenu = (e) => {
         e.preventDefault();
+        if (deps.rowMenu === false) return;
         // Only a selection that *contains* this row may act for it. Right-
         // clicking a row outside the current selection means "just this row", and
         // letting a stale selection move instead is exactly how a batch menu ends
