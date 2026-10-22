@@ -640,9 +640,14 @@ html.vibrancy-active .home-card-menu {
   cursor: default;
 }
 .home-card-menu-item .submenu-arrow {
-  font-size: 13px;
-  line-height: 1;
-  opacity: 0.5;
+  display: inline-flex;
+  align-items: center;
+  margin-right: -4px;
+  color: var(--text-muted);
+}
+.home-card-menu-item .submenu-arrow svg {
+  width: 12px;
+  height: 12px;
 }
 .home-card-submenu {
   display: none;

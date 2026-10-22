@@ -517,7 +517,7 @@ export function showConnectionContextMenu(
     moveItem.textContent = `${settings?.language === 'zh' ? '分组' : 'Group'}${suffix}`;
     const arrow = document.createElement('span');
     arrow.className = 'submenu-arrow';
-    arrow.textContent = '›';
+    arrow.innerHTML = icon('chevronRight');
     moveItem.appendChild(arrow);
 
     const submenu = document.createElement('div');
