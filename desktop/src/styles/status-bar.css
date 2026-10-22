@@ -337,7 +337,7 @@
    Styled similarly to the sessions capsule but with a distinct
    accent. */
 .capsule-pane {
-  background: rgba(106, 164, 255, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   color: rgba(180, 210, 255, 0.95);
   display: inline-flex;
   align-items: center;

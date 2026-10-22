@@ -29,77 +29,78 @@ body,
 }
 
 /* ============================================================================
-   Dark Theme
+   Dark Theme — "Graphite": cool blue-grey; panels sit one step lighter than
+   the terminal, so layers read by tone rather than by divider lines.
    ============================================================================ */
 [data-theme="dark"] {
-  --bg-primary: 30, 30, 30;
-  --bg-canvas: 24, 24, 25;             /* canvas: same family as --bg-primary (30,30,30), only ~6 steps darker so the square terminal still floats but the gap no longer reads as a near-black frame (was 13,13,14) */
-  --bg-toolbar: 33, 33, 35;
-  --bg-button: 50, 50, 52;
-  --bg-button-hover: 64, 64, 66;
-  --bg-status: 43, 43, 43;
-  --bg-card: 37, 37, 38;
-  --bg-card-hover: 42, 42, 43;
-  --bg-input: 30, 30, 30;
-  --bg-settings: 45, 45, 45;
-  --bg-context-menu: 36, 36, 38;
-  --bg-tray-tip: 35, 35, 37;
-  --bg-tray-tip-footer: 24, 24, 26;
-  --bg-tab: 45, 45, 45;
-  --bg-home-btn-hover: 61, 61, 61;
+  --bg-primary: 19, 22, 27;
+  --bg-canvas: 15, 17, 21;
+  --bg-toolbar: 21, 24, 29;
+  --bg-button: 37, 42, 51;
+  --bg-button-hover: 48, 54, 65;
+  --bg-status: 21, 24, 29;
+  --bg-card: 28, 32, 39;
+  --bg-card-hover: 35, 40, 49;
+  --bg-input: 19, 22, 27;
+  --bg-settings: 28, 32, 39;
+  --bg-context-menu: 30, 34, 42;
+  --bg-tray-tip: 28, 32, 39;
+  --bg-tray-tip-footer: 19, 22, 27;
+  --bg-tab: 35, 40, 49;
+  --bg-home-btn-hover: 48, 54, 65;
 
-  --text-primary: #d0d0d0;
-  --text-heading: #fff;
-  --text-secondary: #a8a8a8;
-  --text-muted: #888;
-  --text-dim: #666;
-  --text-faint: #555;
-  --text-button: #ddd;
-  --text-card-title: #ddd;
-  --text-disabled: #777;
+  --text-primary: #cdd3dc;
+  --text-heading: #f1f4f8;
+  --text-secondary: #a3abb8;
+  --text-muted: #7d8594;
+  --text-dim: #5c6370;
+  --text-faint: #474d58;
+  --text-button: #d6dbe3;
+  --text-card-title: #d6dbe3;
+  --text-disabled: #6b7280;
 
-  --border-primary: #444;
-  --border-subtle: #333;
-  --border-toolbar: #2f2f2f;
-  --border-context-menu: #4a4a4a;
-  --border-tray-tip-footer: #454545;
-  --border-home-btn-hover: #555;
+  --border-primary: #2f3540;
+  --border-subtle: #252a33;
+  --border-toolbar: #1f232b;
+  --border-context-menu: #343b47;
+  --border-tray-tip-footer: #343b47;
+  --border-home-btn-hover: #3f4652;
 
-  --accent: #6aa4ff;
-  --accent-rgb: 106, 164, 255;
-  --accent-bg: rgba(106, 164, 255, 0.18);
-  --accent-tray-btn-bg: rgba(64, 104, 169, 0.24);
-  --accent-tray-btn-bg-hover: rgba(64, 104, 169, 0.34);
-  --accent-tray-btn-border: #5b6e91;
-  --accent-tray-btn-text: #e7efff;
+  --accent: #7aa2f7;
+  --accent-rgb: 122, 162, 247;
+  --accent-bg: rgba(122, 162, 247, 0.18);
+  --accent-tray-btn-bg: rgba(122, 162, 247, 0.16);
+  --accent-tray-btn-bg-hover: rgba(122, 162, 247, 0.26);
+  --accent-tray-btn-border: #4b5f8f;
+  --accent-tray-btn-text: #e3ebff;
 
-  --status-connected-bg: #1a4d1a;
-  --status-connected-text: #4ade80;
-  --status-disconnected-bg: #4d1a1a;
-  --status-disconnected-text: #f87171;
-  --status-default-bg: #333;
-  --status-default-text: #888;
+  --status-connected-bg: #1d3324;
+  --status-connected-text: #9ece6a;
+  --status-disconnected-bg: #3a1d24;
+  --status-disconnected-text: #f7768e;
+  --status-default-bg: #252a33;
+  --status-default-text: #7d8594;
 
-  --error-text: #ff7b7b;
-  --close-btn-text: #999;
-  --empty-icon: #7a7a7a;
-  --kbd-bg: #333;
-  --preview-placeholder: #666;
+  --error-text: #f7768e;
+  --close-btn-text: #8b93a1;
+  --empty-icon: #5c6370;
+  --kbd-bg: #252a33;
+  --preview-placeholder: #5c6370;
 
-  --shadow-panel: rgba(0, 0, 0, 0.5);
-  --shadow-context-menu: rgba(0, 0, 0, 0.35);
-  --shadow-tray-tip: rgba(0, 0, 0, 0.4);
+  --shadow-panel: rgba(0, 0, 0, 0.55);
+  --shadow-context-menu: rgba(0, 0, 0, 0.4);
+  --shadow-tray-tip: rgba(0, 0, 0, 0.45);
 
-  --slider-thumb: #6aa4ff;
-  --tray-tip-body: #c9c9c9;
-  --tray-tip-check: #b9b9b9;
+  --slider-thumb: #7aa2f7;
+  --tray-tip-body: #c5ccd6;
+  --tray-tip-check: #aab2bf;
 
   /* Translucent fills for buttons / inputs / hovers on top of any surface. */
-  --fill: rgba(255, 255, 255, 0.08);
-  --fill-hover: rgba(255, 255, 255, 0.14);
-  --fill-input: rgba(255, 255, 255, 0.06);
-  --fill-subtle: rgba(255, 255, 255, 0.05);
-  --warning-text: #ffa726;
+  --fill: rgba(160, 180, 220, 0.08);
+  --fill-hover: rgba(160, 180, 220, 0.14);
+  --fill-input: rgba(160, 180, 220, 0.06);
+  --fill-subtle: rgba(160, 180, 220, 0.05);
+  --warning-text: #e0af68;
 }
 
 /* ============================================================================
@@ -251,77 +252,77 @@ body,
 }
 
 /* ============================================================================
-   Light Theme
+   Light Theme — "Graphite" light: cool white with a steady blue accent.
    ============================================================================ */
 [data-theme="light"] {
-  --bg-primary: 248, 248, 248;
-  --bg-canvas: 236, 236, 239;         /* closer to the light terminal (248) — still a soft seam, no harsh frame */
-  --bg-toolbar: 238, 238, 240;
-  --bg-button: 225, 225, 228;
-  --bg-button-hover: 212, 212, 216;
-  --bg-status: 232, 232, 234;
-  --bg-card: 242, 242, 243;
-  --bg-card-hover: 235, 235, 237;
-  --bg-input: 248, 248, 248;
-  --bg-settings: 245, 245, 245;
-  --bg-context-menu: 248, 248, 250;
-  --bg-tray-tip: 250, 250, 252;
-  --bg-tray-tip-footer: 238, 238, 240;
-  --bg-tab: 235, 235, 237;
-  --bg-home-btn-hover: 212, 212, 216;
+  --bg-primary: 252, 252, 253;
+  --bg-canvas: 230, 233, 238;
+  --bg-toolbar: 238, 240, 244;
+  --bg-button: 222, 226, 233;
+  --bg-button-hover: 210, 215, 224;
+  --bg-status: 238, 240, 244;
+  --bg-card: 247, 248, 250;
+  --bg-card-hover: 239, 241, 245;
+  --bg-input: 252, 252, 253;
+  --bg-settings: 247, 248, 250;
+  --bg-context-menu: 252, 252, 253;
+  --bg-tray-tip: 252, 252, 253;
+  --bg-tray-tip-footer: 238, 240, 244;
+  --bg-tab: 228, 232, 238;
+  --bg-home-btn-hover: 210, 215, 224;
 
-  --text-primary: #333;
-  --text-heading: #111;
-  --text-secondary: #666;
-  --text-muted: #999;
-  --text-dim: #aaa;
-  --text-faint: #bbb;
-  --text-button: #333;
-  --text-card-title: #333;
-  --text-disabled: #aaa;
+  --text-primary: #2f3542;
+  --text-heading: #151a23;
+  --text-secondary: #5b6372;
+  --text-muted: #8a92a0;
+  --text-dim: #a3aab5;
+  --text-faint: #b8bec8;
+  --text-button: #2f3542;
+  --text-card-title: #2f3542;
+  --text-disabled: #a3aab5;
 
-  --border-primary: #ccc;
-  --border-subtle: #ddd;
-  --border-toolbar: #d0d0d0;
-  --border-context-menu: #ccc;
-  --border-tray-tip-footer: #d0d0d0;
-  --border-home-btn-hover: #bbb;
+  --border-primary: #cfd4dc;
+  --border-subtle: #dde1e7;
+  --border-toolbar: #d5dae2;
+  --border-context-menu: #cfd4dc;
+  --border-tray-tip-footer: #d5dae2;
+  --border-home-btn-hover: #b8bec8;
 
-  --accent: #0066cc;
-  --accent-rgb: 0, 102, 204;
-  --accent-bg: rgba(0, 102, 204, 0.12);
-  --accent-tray-btn-bg: rgba(0, 102, 204, 0.12);
-  --accent-tray-btn-bg-hover: rgba(0, 102, 204, 0.2);
-  --accent-tray-btn-border: #88aed0;
-  --accent-tray-btn-text: #003366;
+  --accent: #3d6be0;
+  --accent-rgb: 61, 107, 224;
+  --accent-bg: rgba(61, 107, 224, 0.12);
+  --accent-tray-btn-bg: rgba(61, 107, 224, 0.12);
+  --accent-tray-btn-bg-hover: rgba(61, 107, 224, 0.2);
+  --accent-tray-btn-border: #9cb1e6;
+  --accent-tray-btn-text: #1e3a8a;
 
-  --status-connected-bg: #d4edda;
-  --status-connected-text: #155724;
-  --status-disconnected-bg: #f8d7da;
-  --status-disconnected-text: #721c24;
-  --status-default-bg: #e2e3e5;
-  --status-default-text: #666;
+  --status-connected-bg: #dcefd8;
+  --status-connected-text: #2f6b22;
+  --status-disconnected-bg: #f9dde2;
+  --status-disconnected-text: #a8203a;
+  --status-default-bg: #e4e7ec;
+  --status-default-text: #5b6372;
 
-  --error-text: #dc3545;
-  --close-btn-text: #999;
-  --empty-icon: #aaa;
-  --kbd-bg: #e2e3e5;
-  --preview-placeholder: #aaa;
+  --error-text: #d1344f;
+  --close-btn-text: #8a92a0;
+  --empty-icon: #a3aab5;
+  --kbd-bg: #e4e7ec;
+  --preview-placeholder: #a3aab5;
 
-  --shadow-panel: rgba(0, 0, 0, 0.15);
-  --shadow-context-menu: rgba(0, 0, 0, 0.12);
-  --shadow-tray-tip: rgba(0, 0, 0, 0.12);
+  --shadow-panel: rgba(20, 30, 50, 0.14);
+  --shadow-context-menu: rgba(20, 30, 50, 0.12);
+  --shadow-tray-tip: rgba(20, 30, 50, 0.12);
 
-  --slider-thumb: #0066cc;
-  --tray-tip-body: #444;
-  --tray-tip-check: #555;
+  --slider-thumb: #3d6be0;
+  --tray-tip-body: #3a4150;
+  --tray-tip-check: #4a5263;
 
   /* Translucent fills for buttons / inputs / hovers on top of any surface. */
-  --fill: rgba(0, 0, 0, 0.04);
-  --fill-hover: rgba(0, 0, 0, 0.07);
-  --fill-input: rgba(0, 0, 0, 0.04);
-  --fill-subtle: rgba(0, 0, 0, 0.03);
-  --warning-text: #c26a00;
+  --fill: rgba(30, 50, 90, 0.045);
+  --fill-hover: rgba(30, 50, 90, 0.08);
+  --fill-input: rgba(30, 50, 90, 0.045);
+  --fill-subtle: rgba(30, 50, 90, 0.03);
+  --warning-text: #a86f00;
 }
 
 /* On Windows, applyWindowOpacity() removes the anti-flash inline background-color
