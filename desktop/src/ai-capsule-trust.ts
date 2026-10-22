@@ -1,10 +1,15 @@
 import { escapeHtml } from './status-bar';
 import { loadSettings, updateSettings } from './themes';
 import { t } from './i18n';
-import { shieldIcon, TRUST_COLORS } from './ai-icons';
+import { permissionModeIcon } from './ai-icons';
+import { effectivePermissionMode, PERMISSION_MODES } from './ai-permission-rules';
+import { permissionModeLabel } from './ai-permission-labels';
 import type { AICapsuleInstance } from './ai-capsule-types';
 
-/** Create the trust-level quick switcher button for the AI bar. */
+/**
+ * The permission-mode quick switcher in the AI bar. It edits the same
+ * setting as the mode select in Settings › AI, so the two never disagree.
+ */
 export function createTrustSwitcher(
   capsules: Map<string, AICapsuleInstance>,
   appendSystemNotice: (inst: AICapsuleInstance, text: string) => void,
@@ -12,45 +17,39 @@ export function createTrustSwitcher(
   const wrapper = document.createElement('div');
   wrapper.className = 'ai-bar-trust-switcher';
 
-  const settings = loadSettings();
-  const level = settings.aiAgentTrustLevel ?? 0;
-
   const btn = document.createElement('button');
   btn.className = 'ai-bar-btn ai-bar-btn-trust';
-  btn.title = `Trust Level ${level}`;
-  btn.innerHTML = shieldIcon(level, 16);
-  btn.dataset.level = String(level);
 
   const dropdown = document.createElement('div');
   dropdown.className = 'ai-trust-dropdown';
   dropdown.style.display = 'none';
 
-  const labels = [
-    { value: 0, label: t('aiAgentTrustManual'), color: TRUST_COLORS[0] },
-    { value: 1, label: t('aiAgentTrustSemiAuto'), color: TRUST_COLORS[1] },
-    { value: 2, label: t('aiAgentTrustFullAuto'), color: TRUST_COLORS[2] },
-  ];
+  const syncButton = () => {
+    const mode = effectivePermissionMode(loadSettings());
+    btn.innerHTML = permissionModeIcon(mode, 16);
+    btn.title = `${t('aiPermissionMode')}: ${permissionModeLabel(mode)}`;
+    btn.dataset.mode = mode;
+  };
+
+  const close = () => {
+    dropdown.style.display = 'none';
+    wrapper.classList.remove('open');
+  };
 
   const buildDropdown = () => {
-    const currentLevel = loadSettings().aiAgentTrustLevel ?? 0;
+    const currentMode = effectivePermissionMode(loadSettings());
     dropdown.innerHTML = '';
-    for (const l of labels) {
+    for (const mode of PERMISSION_MODES) {
       const item = document.createElement('div');
-      item.className = `ai-trust-item ${l.value === currentLevel ? 'active' : ''}`;
-      item.innerHTML = `${shieldIcon(l.value, 14)} <span>${escapeHtml(l.label)}</span>`;
+      item.className = `ai-trust-item ${mode === currentMode ? 'active' : ''}`;
+      item.innerHTML = `${permissionModeIcon(mode, 14)} <span>${escapeHtml(permissionModeLabel(mode))}</span>`;
       item.addEventListener('click', (e) => {
         e.stopPropagation();
-        updateSettings({ aiAgentTrustLevel: l.value });
-        btn.innerHTML = shieldIcon(l.value, 16);
-        btn.dataset.level = String(l.value);
-        btn.title = `Trust Level ${l.value}`;
-        dropdown.style.display = 'none';
-        wrapper.classList.remove('open');
-        // Notify all open capsules
-        for (const [, inst] of capsules) {
-          appendSystemNotice(inst,
-            `── Trust level changed to Level ${l.value} ──`);
-        }
+        updateSettings({ aiPermissionMode: mode });
+        syncButton();
+        close();
+        const notice = `── ${t('aiPermissionModeChanged').replace('{mode}', permissionModeLabel(mode))} ──`;
+        for (const [, inst] of capsules) appendSystemNotice(inst, notice);
       });
       dropdown.appendChild(item);
     }
@@ -58,22 +57,26 @@ export function createTrustSwitcher(
 
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    const isOpen = dropdown.style.display !== 'none';
-    if (isOpen) {
-      dropdown.style.display = 'none';
-      wrapper.classList.remove('open');
+    if (dropdown.style.display !== 'none') {
+      close();
     } else {
+      syncButton();
       buildDropdown();
       dropdown.style.display = '';
       wrapper.classList.add('open');
     }
   });
 
-  document.addEventListener('click', () => {
-    dropdown.style.display = 'none';
-    wrapper.classList.remove('open');
-  });
+  document.addEventListener('click', close);
+  // The mode can also change in the settings window; pick it up when the
+  // user comes back to this one.
+  const onFocus = () => {
+    if (!wrapper.isConnected) { window.removeEventListener('focus', onFocus); return; }
+    syncButton();
+  };
+  window.addEventListener('focus', onFocus);
 
+  syncButton();
   wrapper.appendChild(btn);
   wrapper.appendChild(dropdown);
   return wrapper;

@@ -48,7 +48,7 @@ import { resetAgentNotificationThrottle } from './ai-notifications';
 import {
   decidePermission,
   requiresReadScopeConfirmation,
-  trustLevelToMode,
+  effectivePermissionMode,
   mergePermissionRules,
   decideTerminalSubmitPermission,
   decidePromptAnswerPermission,
@@ -943,13 +943,8 @@ export class ToolAgent {
         // above, which forwards into callbacks.onTodoUpdate.
         toolCtx.todoState = this.todoState;
         const settingsForTools = loadSettings();
-        const currentTrustLevel: number = settingsForTools.aiAgentTrustLevel ?? 0;
-        // Explicit permission mode takes precedence over the legacy
-        // trust level; both are read live each iteration so the user
-        // can toggle the mode mid-run.
-        const permMode: PermissionMode =
-          (settingsForTools.aiPermissionMode as PermissionMode | undefined)
-          ?? trustLevelToMode(currentTrustLevel);
+        // Read live each iteration so the user can switch the mode mid-run.
+        const permMode: PermissionMode = effectivePermissionMode(settingsForTools);
         const permRules: PermissionRule[] = mergePermissionRules(
           settingsForTools.aiPermissionRules as PermissionRule[] | undefined,
         );

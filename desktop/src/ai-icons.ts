@@ -2,6 +2,8 @@
 // Centralized SVG icon management for the AI Agent UI.
 // All icons are inline SVG strings — no emoji, no icon fonts, no PNGs.
 
+import type { PermissionMode } from './ai-permission-rules';
+
 // ─── Tool Color Palette ──────────────────────────────────────────
 
 export const TOOL_COLORS: Record<string, string> = {
@@ -35,10 +37,13 @@ export const STATUS_COLORS = {
   warning: '#F59E0B',   // amber
 } as const;
 
-export const TRUST_COLORS: Record<number, string> = {
-  0: '#22C55E',  // green  — manual (safest)
-  1: '#F59E0B',  // amber  — semi-auto
-  2: '#EF4444',  // red    — full-auto
+/** Shield colour per permission mode: green asks first, red runs freely. */
+export const PERMISSION_MODE_COLORS: Record<PermissionMode, string> = {
+  plan: '#3B82F6',       // blue   — read-only
+  ask: '#22C55E',        // green  — confirm everything
+  acceptSafe: '#F59E0B', // amber  — confirm risky actions
+  acceptAll: '#EF4444',  // red    — confirm only destructive
+  bypass: '#EF4444',     // red    — never asks
 };
 
 // ─── Tool Icons ──────────────────────────────────────────────────
@@ -275,15 +280,25 @@ export function thinkingIcon(size = 16): string {
   </svg>`;
 }
 
-// ─── Trust Level Shield Icons ────────────────────────────────────
+// ─── Permission Mode Shield Icons ────────────────────────────────
 
-export function shieldIcon(level: number, size = 16): string {
-  const color = TRUST_COLORS[level] ?? TRUST_COLORS[0];
-  const fillOpacity = level === 0 ? '0.2' : level === 1 ? '0.1' : '0';
+const SHIELD_PATH = 'M8 1.5L2.5 4v4c0 3.5 2.5 5.5 5.5 6.5 3-1 5.5-3 5.5-6.5V4L8 1.5z';
+
+/** The mark drawn inside the shield, so modes differ by shape as well as colour. */
+const SHIELD_MARKS: Record<PermissionMode, string> = {
+  plan: '<path d="M5 8.2c.8-1.2 1.8-1.8 3-1.8s2.2.6 3 1.8c-.8 1.2-1.8 1.8-3 1.8s-2.2-.6-3-1.8z"/><circle cx="8" cy="8.2" r=".7"/>',
+  ask: '<path d="M6.6 6.4a1.5 1.5 0 0 1 2.9.5c0 1-1.5 1.2-1.5 2.1"/><path d="M8 10.9h.01"/>',
+  acceptSafe: '<path d="M5.6 8.3l1.7 1.7 3-3.3"/>',
+  acceptAll: '<path d="M8.8 5.2L6.6 8.6h2.6l-.6 2.6"/>',
+  bypass: '<path d="M8 5.4v3.2"/><path d="M8 10.8h.01"/>',
+};
+
+export function permissionModeIcon(mode: PermissionMode, size = 16): string {
+  const color = PERMISSION_MODE_COLORS[mode];
+  const fillOpacity = mode === 'bypass' ? '0.3' : mode === 'acceptAll' ? '0' : '0.15';
   return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M8 1.5L2.5 4v4c0 3.5 2.5 5.5 5.5 6.5 3-1 5.5-3 5.5-6.5V4L8 1.5z"
-      stroke="${color}" stroke-width="1.4" fill="${color}" fill-opacity="${fillOpacity}"/>
-    <text x="8" y="10.5" text-anchor="middle" font-size="7" font-weight="600" fill="${color}">${level}</text>
+    <path d="${SHIELD_PATH}" stroke="${color}" stroke-width="1.4" fill="${color}" fill-opacity="${fillOpacity}"/>
+    <g stroke="${color}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">${SHIELD_MARKS[mode]}</g>
   </svg>`;
 }
 
