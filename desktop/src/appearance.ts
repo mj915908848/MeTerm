@@ -94,8 +94,7 @@ export function applyBackgroundImage(s: AppSettings, terminalPanelEl: HTMLElemen
     const imgPath = s.backgroundImage.replace(/\\/g, '/');
     const url = convertFileSrc(imgPath);
     bgEl.style.backgroundImage = `url("${url}")`;
-    // Opacity slider controls the image visibility when a bg image is set
-    bgEl.style.opacity = String(Math.max(20, Math.min(100, s.opacity)) / 100);
+    bgEl.style.opacity = String(Math.max(20, Math.min(100, s.backgroundImageStrength)) / 100);
     overlayEl.style.display = '';
   } else {
     if (bgEl) bgEl.style.backgroundImage = '';

@@ -7,7 +7,7 @@ const read = (file: string) => readFileSync(new URL('../src/' + file, import.met
 test('every toggle the general settings create is placed on a page', () => {
   const src = read('settings-general.ts');
   const created = [...src.matchAll(/<label><input type="checkbox" id="([\w-]+)"/g)].map(m => m[1]);
-  const placed = new Set([...src.matchAll(/check\(\w+, '([\w-]+)'\)/g)].map(m => m[1]));
+  const placed = new Set([...src.matchAll(/check\(\w+, '([\w-]+)'[,)]/g)].map(m => m[1]));
   assert.ok(created.length >= 11);
   for (const id of created) assert.ok(placed.has(id), `${id} is created but never shown`);
 });

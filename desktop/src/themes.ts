@@ -280,7 +280,16 @@ const DARK_LIGHT_PAIRS: Record<string, string> = {
 };
 
 export interface AppSettings {
+  /**
+   * Terminal theme in effect, derived from the two below and the appearance
+   * by getEffectiveTheme(). Kept as its own field because every window reads
+   * it; the settings UI edits the per-appearance choices instead.
+   */
   theme: string;
+  /** Terminal theme used while the appearance is dark. */
+  terminalThemeDark: string;
+  /** Terminal theme used while the appearance is light (Neo-Brutalism has its own). */
+  terminalThemeLight: string;
   colorScheme: ColorScheme;
   opacity: number;
   fontSize: number;
@@ -309,7 +318,8 @@ export interface AppSettings {
   rememberDrawerLayout: boolean;
   drawerHeight: number;
   backgroundImage: string;
-  backgroundImageOpacity: number;
+  /** How strongly the background image shows (20–100%). Separate from the window opacity. */
+  backgroundImageStrength: number;
   enableTerminalNotifications: boolean;
   defaultShell: string;  // '' = system default, or shell path
   // AI configuration (multi-provider)
@@ -394,8 +404,6 @@ export interface AppSettings {
   pipScaleByScreen: boolean;
   /** Auto-create a new local session on app startup */
   autoNewSession: boolean;
-  /** Custom device name for LAN sharing/pairing (empty = OS hostname) */
-  deviceName: string;
   /** Enter key sends to Agent by default (instead of terminal) */
   aiEnterSendsToAgent: boolean;
   /** CJK font family key for Chinese/Japanese/Korean characters ('' = system default) */
@@ -412,8 +420,16 @@ export interface AppSettings {
 
 const SETTINGS_KEY = SETTINGS_STORAGE_KEY;
 
+/** The UI language a fresh install starts in: the system's, when we have it. */
+function systemLanguage(): 'en' | 'zh' {
+  const lang = typeof navigator === 'undefined' ? '' : navigator.language ?? '';
+  return lang.toLowerCase().startsWith('zh') ? 'zh' : 'en';
+}
+
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'default',
+  terminalThemeDark: 'default',
+  terminalThemeLight: 'defaultLight',
   colorScheme: 'darker', // 默认纯黑主题（terminal/canvas 0,0,0）
   opacity: 92,
   fontSize: 14,
@@ -424,9 +440,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   fontWeight: 400,
   fontSharpness: false,
   encoding: 'utf-8',
-  enableThumbnail: false,
+  enableThumbnail: true,
   previewRefreshRate: 1000,
-  language: 'en',
+  language: systemLanguage(),
   // 'terminal' keeps the pre-existing tab title (the dynamic terminal title);
   // name-based titles are opt-in so the default display never changes.
   sshTabTitleMode: 'terminal',
@@ -442,7 +458,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   rememberDrawerLayout: true,
   drawerHeight: 0,
   backgroundImage: '',
-  backgroundImageOpacity: 30,
+  backgroundImageStrength: 92,
   defaultShell: '',
   enableTerminalNotifications: true,
   aiProviders: [
@@ -486,7 +502,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   pipScale: 30,
   pipScaleByScreen: false,
   autoNewSession: false,
-  deviceName: '',
   aiEnterSendsToAgent: false,
   cjkFontFamily: '',
   fileManagerMode: 'drawer',
@@ -539,6 +554,31 @@ export function loadSettings(): AppSettings {
         settings.fontWeight = parsed.enableBoldFont ? 700 : 400;
         delete (settings as unknown as Record<string, unknown>).enableBoldFont;
         needsSave = true;
+      }
+
+      // Migration: one terminal theme → one per appearance. Seed both from the
+      // theme in use so nothing changes on screen.
+      if (!('terminalThemeDark' in parsed)) {
+        const [dark, light] = splitTerminalTheme(typeof parsed.theme === 'string' ? parsed.theme : '');
+        settings.terminalThemeDark = dark;
+        settings.terminalThemeLight = light;
+        needsSave = true;
+      }
+
+      // Migration: the window opacity slider used to set the background
+      // image's opacity too. Start the image where it was.
+      if (!('backgroundImageStrength' in parsed)) {
+        settings.backgroundImageStrength = typeof parsed.opacity === 'number' ? parsed.opacity : DEFAULT_SETTINGS.backgroundImageStrength;
+        needsSave = true;
+      }
+
+      // Fields that no longer exist: a never-wired image opacity and the
+      // device name from the removed LAN sharing.
+      for (const dead of ['backgroundImageOpacity', 'deviceName']) {
+        if (dead in parsed) {
+          delete (settings as unknown as Record<string, unknown>)[dead];
+          needsSave = true;
+        }
       }
 
       settings = applySettingsSecrets(settings);
@@ -603,27 +643,32 @@ export function windowBgColor(colorScheme: string, resolvedTheme: string): [numb
 export function getEffectiveTheme(settings: AppSettings): string {
   // Neo-Brutalism has a dedicated terminal theme that should always be used
   if (settings.colorScheme === 'neo-brutalism' || settings.colorScheme === 'neo-brutalism-rounded') return 'neoBrutalism';
-
-  const isDark = resolveIsDark(settings.colorScheme);
-  const currentTheme = THEMES[settings.theme];
-
-  if (!currentTheme) return isDark ? 'default' : 'defaultLight';
-
-  // If current theme matches the scheme, use it
-  if ((isDark && currentTheme.type === 'dark') || (!isDark && currentTheme.type === 'light')) {
-    return settings.theme;
-  }
-
-  // Try to find the paired theme
-  const paired = DARK_LIGHT_PAIRS[settings.theme];
-  if (paired && THEMES[paired]) return paired;
-
-  // Fallback to default for the scheme
-  return isDark ? 'default' : 'defaultLight';
+  return resolveIsDark(settings.colorScheme)
+    ? validTerminalTheme(settings.terminalThemeDark, 'dark')
+    : validTerminalTheme(settings.terminalThemeLight, 'light');
 }
 
+/** `key` when it names a terminal theme of `type`, else that type's default. */
+function validTerminalTheme(key: string | undefined, type: ThemeType): string {
+  return key && THEMES[key]?.type === type && key !== 'neoBrutalism'
+    ? key
+    : type === 'dark' ? 'default' : 'defaultLight';
+}
+
+/**
+ * [dark, light] terminal themes to start from when all that is known is one
+ * theme: it fills its own slot and its pair (or the default) the other.
+ */
+export function splitTerminalTheme(theme: string): [string, string] {
+  const type = theme !== 'neoBrutalism' ? THEMES[theme]?.type : undefined;
+  if (type === 'dark') return [theme, validTerminalTheme(DARK_LIGHT_PAIRS[theme], 'light')];
+  if (type === 'light') return [validTerminalTheme(DARK_LIGHT_PAIRS[theme], 'dark'), theme];
+  return ['default', 'defaultLight'];
+}
+
+/** Terminal themes offered for one appearance. Neo-Brutalism's is not offered: that appearance sets it. */
 export function getThemesForType(type: ThemeType): [string, TerminalTheme][] {
-  return Object.entries(THEMES).filter(([, theme]) => theme.type === type);
+  return Object.entries(THEMES).filter(([key, theme]) => theme.type === type && key !== 'neoBrutalism');
 }
 
 export function applyTheme(terminal: { options: { theme: TerminalTheme } }, themeName: string): void {

@@ -1332,6 +1332,8 @@ html.platform-macos .settings-panel-sidebar > .settings-content {
   color: var(--text-muted);
 }
 .settings-card > .settings-row-disabled { opacity: 0.45; pointer-events: none; }
+/* A row that only matters while the row above it is on. */
+.settings-card > .settings-row-sub > :first-child { padding-left: 14px; }
 .settings-card > .settings-section > label:first-child {
   margin: 0;
   font-size: 13px;
