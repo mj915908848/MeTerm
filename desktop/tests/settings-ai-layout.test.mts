@@ -25,9 +25,12 @@ test('the agent, the AI bar shield and Settings all read the same permission mod
 
 test('the AI page is laid out as searchable card groups', () => {
   const ai = read('settings-ai.ts');
-  for (const group of ['aiGroupProviders', 'aiGroupReply', 'aiGroupAgent', 'aiGroupWebSearch', 'aiGroupAdvanced']) {
+  for (const group of ['aiGroupProviders', 'aiGroupReply', 'aiGroupAgent', 'aiGroupWebSearch']) {
     assert.match(ai, new RegExp(`createGroup\\(t\\('${group}'\\)`));
   }
+  // Advanced folds away at the end of Replies instead of being its own group.
+  assert.match(ai, /createGroup\(t\('aiGroupReply'\), \[\.\.\.createReplyRows\(current, update\), \.\.\.createAdvancedRows\(current, update\)\]\)/);
+  assert.match(read('styles/ai-settings.css'), /aria-expanded="false"\]\) > \.ai-advanced-row \{ display: none; \}/);
   assert.match(read('settings.ts'), /key: 'ai'.*createAIPage\(current, update\), searchable: true/);
 });
 

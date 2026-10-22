@@ -342,6 +342,7 @@ export interface Translations {
   aiGroupAgent: string;
   aiGroupWebSearch: string;
   aiGroupAdvanced: string;
+  aiAdvancedSummary: string;
   aiPreset: string;
   aiApiKey: string;
   aiBaseUrl: string;
@@ -1075,6 +1076,7 @@ const translations: Record<Language, Translations> = {
     aiGroupAgent: 'Agent',
     aiGroupWebSearch: 'Web Search',
     aiGroupAdvanced: 'Advanced',
+    aiAdvancedSummary: 'Temperature, conversation history limit, terminal lines',
     aiPreset: 'Quick Select',
     aiApiKey: 'API Key',
     aiBaseUrl: 'API Base URL',
@@ -1804,6 +1806,7 @@ const translations: Record<Language, Translations> = {
     aiGroupAgent: 'Agent',
     aiGroupWebSearch: '联网搜索',
     aiGroupAdvanced: '高级',
+    aiAdvancedSummary: '温度、对话历史上限、附带终端行数',
     aiPreset: '快速选择',
     aiApiKey: 'API 密钥',
     aiBaseUrl: 'API 地址',

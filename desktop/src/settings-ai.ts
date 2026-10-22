@@ -17,8 +17,9 @@ const EYE_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" st
 const CLOSE_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
 
 /**
- * Settings › AI. Four groups — model services, replies, agent, web search —
- * plus the rarely touched sampling and context knobs under Advanced.
+ * Settings › AI. Four groups — model services, replies, agent, web search.
+ * The rarely touched sampling and context knobs fold away under Advanced at
+ * the end of Replies.
  */
 export function createAIPage(
   current: AppSettings,
@@ -26,10 +27,9 @@ export function createAIPage(
 ): HTMLElement {
   return createPage(t('settingsTabAI'), [
     createGroup(t('aiGroupProviders'), [createProviderList(current, update)]),
-    createGroup(t('aiGroupReply'), createReplyRows(current, update)),
+    createGroup(t('aiGroupReply'), [...createReplyRows(current, update), ...createAdvancedRows(current, update)]),
     createGroup(t('aiGroupAgent'), createAgentRows(current, update)),
     createGroup(t('aiGroupWebSearch'), createWebSearchRows(current, update)),
-    createGroup(t('aiGroupAdvanced'), createAdvancedRows(current, update)),
   ]);
 }
 
@@ -617,13 +617,16 @@ function createWebSearchRows(
   return [enableRow, urlRow, authRow, testRow];
 }
 
-// ─── Advanced ──────────────────────────────────────────────
+// ─── Advanced (folded into Replies) ────────────────────────
+
+/** Survives panel rebuilds, so an outside settings change keeps it open. */
+let advancedOpen = false;
 
 function createAdvancedRows(
   current: AppSettings,
   update: (patch: Partial<AppSettings>) => void,
 ): HTMLElement[] {
-  return [
+  const rows = [
     mkSliderRow(t('aiTemperature'), 'ai-temp-slider', 0, 20, 1, Math.round(current.aiTemperature * 10),
       (v) => (v / 10).toFixed(1), (v) => update({ aiTemperature: v / 10 }), t('aiTemperatureHint')),
     // Input side of the context split: how much conversation history to
@@ -635,4 +638,20 @@ function createAdvancedRows(
     mkSliderRow(t('aiContextLines'), 'ai-context-slider', 10, 200, 10, current.aiContextLines,
       (v) => `${v}`, (v) => update({ aiContextLines: v }), t('aiContextLinesHint')),
   ];
+  for (const row of rows) row.classList.add('ai-advanced-row');
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'ai-advanced-toggle';
+  toggle.innerHTML = `<span class="ai-advanced-chevron" aria-hidden="true"></span><span></span><small class="settings-row-hint"></small>`;
+  toggle.children[1].textContent = t('aiGroupAdvanced');
+  toggle.children[2].textContent = t('aiAdvancedSummary');
+  // Rows stay in the card so settings search can still reach them; CSS
+  // hides them while the toggle says it is folded.
+  toggle.setAttribute('aria-expanded', String(advancedOpen));
+  toggle.onclick = () => {
+    advancedOpen = !advancedOpen;
+    toggle.setAttribute('aria-expanded', String(advancedOpen));
+  };
+  return [toggle, ...rows];
 }

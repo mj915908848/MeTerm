@@ -1013,3 +1013,36 @@ html.vibrancy-active .ai-trust-dropdown {
   box-shadow: none;
 }
 .settings-card .ai-provider-models .ai-model-checkbox input[type="checkbox"]::after { content: none; }
+
+/* Replies › Advanced: folded by default; search shows matching rows anyway. */
+.ai-advanced-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.ai-advanced-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.ai-advanced-toggle > .settings-row-hint { margin-top: 0; }
+.ai-advanced-chevron {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  align-self: center;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.ai-advanced-toggle[aria-expanded="true"] > .ai-advanced-chevron { transform: rotate(45deg); }
+.settings-card:has(> .ai-advanced-toggle[aria-expanded="false"]) > .ai-advanced-row { display: none; }
+.settings-searching .settings-card > .ai-advanced-row:not(.settings-search-miss) { display: grid; }
+.settings-searching .settings-card > .ai-advanced-toggle { display: none; }
+@media (prefers-reduced-motion: reduce) { .ai-advanced-chevron { transition: none; } }
