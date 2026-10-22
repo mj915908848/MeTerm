@@ -11,6 +11,7 @@ import './styles/settings.css';
 import './styles/ssh-modal.css';
 import './styles/drawer.css';
 import './styles/drawer-sidebar.css';
+import './styles/dock-panel.css';
 import './styles/server-info-panel.css';
 import './styles/connections-drawer.css';
 import './styles/home-connection-manager.css';

@@ -1,10 +1,11 @@
 /**
- * connections-drawer.ts — Pick a connection from a drawer over the terminal.
+ * connections-drawer.ts — Pick a connection from the left dock.
  *
- * The toolbar's connection button (and ⌘⇧O / Ctrl+Shift+O) slides this list in
- * from the left edge of the main content. It floats *over* the terminal instead
- * of docking beside it, so it never takes width from the terminal and never
- * competes with the server-info panel for the left dock.
+ * The toolbar's connection button (and ⌘⇧O / Ctrl+Shift+O) opens this list as
+ * one of the left-dock panels (dock-panel.ts): the same card, header, width and
+ * entrance as the server-info panel and the file sidebar. The dock holds one
+ * panel at a time, so opening the list closes the other two, and opening either
+ * of them closes the list.
  *
  * The drawer is for *choosing* a connection: search, click (or Enter) to open,
  * or start a new one. Managing connections — editing, deleting, groups — lives
@@ -23,7 +24,9 @@ import { renderSidebarList } from './home-side';
 import { collectAllConnections, handleConnectionClick, type ConnectionItem } from './home-dashboard-left';
 import { makeNewButtons, runNewConnectionAction } from './connection-sidebar';
 import { TabManager } from './tabs';
+import { TerminalRegistry } from './terminal';
 import { settings } from './app-state';
+import { attachDockResizer, createDockHeader, loadDockWidth, mountInDock } from './dock-panel';
 
 interface DrawerState {
   root: HTMLElement;
@@ -71,21 +74,6 @@ function overlayAboveDrawer(): boolean {
   return document.querySelector('.ssh-modal-overlay, .home-card-menu, .context-menu, [role="dialog"]') !== null;
 }
 
-/**
- * Pin the drawer to the main content area. It is `position: fixed` rather than a
- * child laid out by #main-content, because #main-content is a flex row whose
- * children are the docked panels and the terminal: anything placed in that flow
- * would push the terminal aside, which is exactly what the drawer must not do.
- */
-function placeOver(root: HTMLElement): void {
-  const host = document.getElementById('main-content');
-  const rect = host?.getBoundingClientRect();
-  root.style.top = `${rect ? rect.top : 0}px`;
-  root.style.left = `${rect ? rect.left : 0}px`;
-  root.style.width = `${rect ? rect.width : window.innerWidth}px`;
-  root.style.height = `${rect ? rect.height : window.innerHeight}px`;
-}
-
 export function openConnectionsDrawer(): void {
   if (drawer) {
     drawer.searchInput.focus();
@@ -95,20 +83,11 @@ export function openConnectionsDrawer(): void {
   const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const cleanups: Array<() => void> = [];
 
-  const root = document.createElement('div');
-  root.className = 'cn-drawer-root';
-
-  const scrim = document.createElement('div');
-  scrim.className = 'cn-drawer-scrim';
-  scrim.addEventListener('pointerdown', (event) => {
-    if (event.button === 0) closeConnectionsDrawer();
-  });
-  root.appendChild(scrim);
-
   const panel = document.createElement('aside');
-  panel.className = 'cn-drawer';
+  panel.className = 'dock-panel cn-drawer';
   panel.setAttribute('aria-label', t('connectionsWindowTitle'));
-  root.appendChild(panel);
+  panel.style.width = `${loadDockWidth()}px`;
+  panel.appendChild(createDockHeader(t('connectionsWindowTitle'), L('关闭', 'Close'), () => closeConnectionsDrawer()));
 
   const toolbar = document.createElement('div');
   toolbar.className = 'cn-toolbar';
@@ -191,10 +170,11 @@ export function openConnectionsDrawer(): void {
     }
   });
 
-  // Escape clears the search first, then closes. A dialog or menu on top handles
-  // its own Escape.
+  // Escape (with focus in the list) clears the search first, then closes. A
+  // dialog or menu on top handles its own Escape.
   const onKeyDown = (e: KeyboardEvent): void => {
     if (e.key !== 'Escape' || e.isComposing || overlayAboveDrawer()) return;
+    if (!panel.contains(document.activeElement)) return;
     e.preventDefault();
     e.stopPropagation();
     if (searchInput.value && document.activeElement === searchInput) {
@@ -207,37 +187,38 @@ export function openConnectionsDrawer(): void {
   document.addEventListener('keydown', onKeyDown, true);
   cleanups.push(() => document.removeEventListener('keydown', onKeyDown, true));
 
-  const onResize = (): void => placeOver(root);
-  window.addEventListener('resize', onResize);
-  cleanups.push(() => window.removeEventListener('resize', onResize));
-
   // A session that starts some other way while the drawer is open (a dialog's
-  // connect, a shortcut) means the drawer is done.
+  // connect, a shortcut) means the drawer is done. So does switching tabs: the
+  // tab being shown may bring its own server-info panel or file sidebar back
+  // into the dock.
   let tabCount = TabManager.tabs.length;
+  const activeTab = TabManager.activeTabId;
   cleanups.push(TabManager.subscribe(() => {
     const now = TabManager.tabs.length;
-    if (now > tabCount) closeConnectionsDrawer({ restoreFocus: false });
+    if (now > tabCount || TabManager.activeTabId !== activeTab) closeConnectionsDrawer({ restoreFocus: false });
     tabCount = now;
   }));
 
-  placeOver(root);
-  document.body.appendChild(root);
+  attachDockResizer(panel);
+  if (!mountInDock(panel)) return;
+  // One panel in the left dock: server info and the file sidebar give way.
+  void import('./server-info-panel').then((m) => { if (m.ServerInfoPanel.isOpen()) m.ServerInfoPanel.close(); });
+  void import('./file-manager-toggle').then((m) => m.closeFileSidebarForDockSwap());
   drawer = {
-    root,
+    root: panel,
     searchInput,
     refresh,
     returnFocus,
     dispose: () => {
       for (const cleanup of cleanups) cleanup();
-      root.remove();
+      panel.remove();
+      TerminalRegistry.resizeAll();
     },
   };
   syncToolbarButton();
   refresh();
-  requestAnimationFrame(() => {
-    root.classList.add('is-open');
-    searchInput.focus();
-  });
+  TerminalRegistry.resizeAll();
+  searchInput.focus();
 }
 
 /** Bilingual text for strings that are not in the i18n table. */

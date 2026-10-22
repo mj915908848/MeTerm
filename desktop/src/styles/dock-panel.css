@@ -1,0 +1,108 @@
+/* ============================================================================
+   Left-dock panels (dock-panel.ts): the connection list, server info and the
+   file sidebar take turns in one slot at the left of #main-content. They share
+   one card, one header and one entrance, so opening any of them feels the same.
+   ============================================================================ */
+
+.dock-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  color: var(--text-primary);
+  /* Toolbar tone + 3% lift, so the panel reads as window chrome, not a second terminal. */
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.03)),
+    rgba(var(--bg-toolbar, 33, 33, 35), var(--app-window-opacity, 1));
+  animation: dock-panel-in var(--dur-panel) ease-out;
+}
+
+html.vibrancy-active .dock-panel {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* The file sidebar is the same card; it only borrows the entrance (its look
+   lives in file-sidebar.css). */
+.file-sidebar.open {
+  animation: dock-panel-in var(--dur-panel) ease-out;
+}
+
+@keyframes dock-panel-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock-panel,
+  .file-sidebar.open { animation: none; }
+}
+
+/* ── Header: title + close ── */
+.dock-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 8px 8px 6px 12px;
+}
+.dock-title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dock-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.dock-close:hover {
+  background: var(--fill);
+  color: var(--text-heading);
+}
+
+/* ── Right-edge resize handle (width shared by every dock panel) ── */
+.dock-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -5px;
+  width: 10px;
+  cursor: col-resize;
+  z-index: 6;
+}
+.dock-resizer::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: 50%;
+  width: 3px;
+  border-radius: 3px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background var(--dur-fast);
+}
+.dock-resizer:hover::after,
+.dock-resizer.dragging::after {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.55);
+}

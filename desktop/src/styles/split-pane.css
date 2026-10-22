@@ -165,7 +165,7 @@ body.pane-dragging, body.pane-dragging * { cursor: grabbing !important; }
   left: auto;
   right: auto;
   flex: 0 0 auto;
-  width: 100%;
+  width: auto; /* stretch, minus the card's side margins */
   z-index: 100;
   order: 2;
 }

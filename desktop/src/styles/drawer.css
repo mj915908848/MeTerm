@@ -5,9 +5,13 @@
   left: 0;
   right: 0;
   height: 0;
-  background: rgba(var(--bg-primary), 0.98);
-  border-top: 1px solid var(--border-primary);
-  transition: height 0.3s ease;
+  /* Same card as the left-dock panels (dock-panel.css), inset from the
+     terminal panel's edges. */
+  margin: 0 6px 6px;
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.03)),
+    rgba(var(--bg-toolbar, 33, 33, 35), var(--app-window-opacity, 1));
   z-index: 100;
   overflow: visible; /* Changed from hidden to allow toggle button to show */
 }
@@ -30,6 +34,21 @@ body.drawer-resizing {
 
 .file-drawer.open {
   height: var(--drawer-height, 40vh);
+  animation: dock-drawer-in var(--dur-panel) ease-out;
+}
+
+html.vibrancy-active .file-drawer {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+@keyframes dock-drawer-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-drawer.open { animation: none; }
 }
 
 /* Closed drawer must occupy NO space and paint NO line. Its height:0 box still
