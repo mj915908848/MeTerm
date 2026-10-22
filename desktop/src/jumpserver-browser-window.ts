@@ -1014,7 +1014,7 @@ function renderAssetBrowser(config: JumpServerBrowserConfig): void {
       const result = await getAccounts(config.name, asset.id);
       if (!result.ok || !result.accounts || result.accounts.length === 0) {
         statusBar.textContent = result.error || t('jsNoAccounts');
-        statusBar.style.color = 'var(--status-red)';
+        statusBar.style.color = 'var(--error-text)';
         return;
       }
 
@@ -1046,14 +1046,14 @@ function renderAssetBrowser(config: JumpServerBrowserConfig): void {
       });
 
       statusBar.textContent = `Connected: ${asset.name || asset.address}`;
-      statusBar.style.color = 'var(--status-green)';
+      statusBar.style.color = 'var(--status-connected-text)';
     } catch (err) {
       if (isJumpServerSessionExpired(err)) {
         renderExpiredInBrowserWindow(main, config.name);
         return;
       }
       statusBar.textContent = `Error: ${String(err)}`;
-      statusBar.style.color = 'var(--status-red)';
+      statusBar.style.color = 'var(--error-text)';
     }
   };
 

@@ -438,7 +438,7 @@ html[data-theme="light"] .win-close-btn:hover {
   background: rgba(var(--bg-toolbar), 0.88);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  color: var(--tab-text);
+  color: var(--text-primary);
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;

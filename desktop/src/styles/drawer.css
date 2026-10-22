@@ -931,7 +931,7 @@ html.vibrancy-active .drawer-modal {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: rgba(var(--bg-drawer), 1);
+  background: rgba(var(--bg-toolbar), 1);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -1045,7 +1045,7 @@ html.vibrancy-active .drawer-modal {
 }
 
 .history-item {
-  background: rgba(var(--bg-drawer), 0.5);
+  background: rgba(var(--bg-toolbar), 0.5);
   border: none;
   border-radius: 6px;
   padding: 10px 12px;
@@ -1054,11 +1054,11 @@ html.vibrancy-active .drawer-modal {
 }
 
 .history-item:hover {
-  background: rgba(var(--bg-drawer), 0.7);
+  background: rgba(var(--bg-toolbar), 0.7);
 }
 
 .history-item.completed {
-  border-left: 3px solid var(--status-connected);
+  border-left: 3px solid var(--status-connected-text);
 }
 
 .history-item.failed {
@@ -1166,7 +1166,7 @@ html.vibrancy-active .drawer-modal {
 }
 
 .status-indicator.completed {
-  color: var(--status-connected);
+  color: var(--status-connected-text);
   background: rgba(var(--status-connected-rgb, 76, 175, 80), 0.15);
 }
 
@@ -1229,7 +1229,7 @@ html.vibrancy-active .drawer-modal {
   height: 22px;
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
-  background: rgba(var(--bg-drawer), 0.6);
+  background: rgba(var(--bg-toolbar), 0.6);
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
@@ -1242,19 +1242,19 @@ html.vibrancy-active .drawer-modal {
 }
 
 .transfer-btn:hover {
-  background: rgba(var(--bg-drawer), 0.9);
-  border-color: var(--border-default);
+  background: rgba(var(--bg-toolbar), 0.9);
+  border-color: var(--border-primary);
   color: var(--text-primary);
 }
 
 .transfer-btn.pause-btn:hover {
-  color: var(--warning-text, #ffa726);
-  border-color: var(--warning-text, #ffa726);
+  color: var(--warning-text);
+  border-color: var(--warning-text);
 }
 
 .transfer-btn.resume-btn:hover {
-  color: var(--status-connected);
-  border-color: var(--status-connected);
+  color: var(--status-connected-text);
+  border-color: var(--status-connected-text);
 }
 
 .transfer-btn.cancel-btn:hover,
@@ -1269,13 +1269,13 @@ html.vibrancy-active .drawer-modal {
 }
 
 .progress-fill.paused {
-  background: var(--warning-text, #ffa726);
+  background: var(--warning-text);
   animation: none;
 }
 
 /* Paused / cancelled status indicators */
 .status-indicator.paused {
-  color: var(--warning-text, #ffa726);
+  color: var(--warning-text);
   background: rgba(255, 167, 38, 0.15);
 }
 
@@ -1285,7 +1285,7 @@ html.vibrancy-active .drawer-modal {
 }
 
 .history-item.paused {
-  border-left: 3px solid var(--warning-text, #ffa726);
+  border-left: 3px solid var(--warning-text);
 }
 
 .history-item.cancelled {

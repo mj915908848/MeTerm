@@ -1079,7 +1079,7 @@ export async function showAssetBrowser(
         const result = await getAccounts(config.baseUrl, asset.id);
         if (!result.ok || !result.accounts || result.accounts.length === 0) {
           statusBar.textContent = result.error || t('jsNoAccounts');
-          statusBar.style.color = 'var(--status-red)';
+          statusBar.style.color = 'var(--error-text)';
           return;
         }
 
@@ -1101,7 +1101,7 @@ export async function showAssetBrowser(
             resolve({ asset, account });
           } catch (err) {
             statusBar.textContent = `Connection failed: ${String(err)}`;
-            statusBar.style.color = 'var(--status-red)';
+            statusBar.style.color = 'var(--error-text)';
             // Don't close — user can retry or pick a different asset
           }
         } else {
@@ -1110,7 +1110,7 @@ export async function showAssetBrowser(
         }
       } catch (err) {
         statusBar.textContent = `Error: ${String(err)}`;
-        statusBar.style.color = 'var(--status-red)';
+        statusBar.style.color = 'var(--error-text)';
       }
     };
 

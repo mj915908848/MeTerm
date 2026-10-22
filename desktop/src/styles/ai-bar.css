@@ -306,7 +306,7 @@ html.vibrancy-active .ai-bar-history-panel {
   overflow-y: hidden;
   white-space: nowrap;
   font-size: 12px;
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-mono);
   color: var(--text-primary);
   scrollbar-width: none;
 }

@@ -108,6 +108,13 @@
   --nb-info: #4ECDC4;
   --nb-danger-light: #FFB3B3;
   --nb-surface-alt: #F0F0E0;
+
+  /* Translucent fills (shared tokens; components here mostly override them). */
+  --fill: rgba(0, 0, 0, 0.04);
+  --fill-hover: rgba(0, 0, 0, 0.07);
+  --fill-input: rgba(0, 0, 0, 0.04);
+  --fill-subtle: rgba(0, 0, 0, 0.03);
+  --warning-text: #c26a00;
 }
 
 
