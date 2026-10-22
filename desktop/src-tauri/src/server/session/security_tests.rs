@@ -289,8 +289,12 @@ fn add_and_private_transition_cannot_leave_remote_client_connected() {
     let add_client = client.clone();
     let add = std::thread::spawn(move || add_session.add_client(add_client));
 
+    // 按时间等待而不是按次数：Windows CI 机器繁忙时，新线程可能一万次 yield 后还没被调度。
+    // Wait by time, not iteration count: on a busy Windows CI runner the spawned thread
+    // may not get scheduled within 10k yields.
+    let deadline = Instant::now() + Duration::from_secs(10);
     let mut observed_private_guard = false;
-    for _ in 0..10_000 {
+    while Instant::now() < deadline {
         match session.private.try_lock() {
             Err(TryLockError::WouldBlock) => {
                 observed_private_guard = true;
@@ -758,7 +762,7 @@ fn reaper_candidate_cannot_expire_a_reconnected_generation() {
     let old_conn_gen = phone.conn_gen();
     session.remove_client("phone", old_conn_gen);
 
-    let expired = session.expired_disconnected_clients(std::time::Instant::now(), Duration::ZERO);
+    let expired = session.expired_disconnected_clients(Instant::now(), Duration::ZERO);
     assert_eq!(expired, vec![("phone".to_string(), old_conn_gen)]);
 
     let _replacement_rx = session
