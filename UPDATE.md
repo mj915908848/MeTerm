@@ -1,5 +1,51 @@
 # MeTerm 更新记录
 
+## v0.3.1
+
+### 新功能 / 界面调整
+
+- **左侧停靠面板** — 连接列表、服务器信息、文件侧栏统一为同一种停靠卡片（标题 + 关闭按钮、可拖动宽度并记住）。连接列表不再浮在终端上方，而是停靠在左侧、把终端推开；连上、新建或切换标签时自动收起；只有焦点在列表里时 Esc 才会关闭它，终端里按 Esc 不受影响。底部文件抽屉改为同样的圆角卡片。
+- **服务器信息改为仪表盘** — 顶部一行显示 user@host、系统和运行时长；CPU / 内存 / 负载 / 网络四个方块显示大数字和细进度条（网络方块可选网卡并带走势图）；每块磁盘一行，交换分区放最后；下面是进程列表。占用超过 70% 变黄、超过 90% 变红，浅色主题下同样清晰。
+- **首页连接管理交互调整** — 单击只高亮一行，右侧内容不变；右键菜单「编辑」直接打开 SSH 编辑表单；原来平铺的「→ 分组」改为一个「分组」子菜单；多选后的移动 / 删除改为通过右键菜单完成。连接列表的分组标题不再显示数量。
+- **控件样式统一** — 各处按钮、输入框、对话框和右键菜单统一为同一套尺寸与圆角（Neo-Brutalism 主题保持原样）。
+
+### 问题修复 / 优化
+
+- **Claude 5.x 工具调用中保留思考过程** — 每轮回复的 thinking 块原样回传，多轮工具调用时模型不会丢失之前的推理；服务端拒绝时自动降级重试。
+- **默认模型更新** — Anthropic 默认 claude-sonnet-5-5，OpenAI 默认 gpt-6-sol。
+- **修复部分颜色不显示** — 补齐未定义的样式变量，传输记录背景、完成状态绿色、JumpServer 状态颜色、标签提示文字等恢复正常。
+- **设置页小修** — SearXNG 测试失败时显示正确样式；「Auth」标签已翻译。
+
+### 验证
+
+- 合并前均通过 CI：前端构建与测试、Rust fmt / clippy / 测试（macOS 与 Windows）。
+- 正式安装包、真实 SSH 连接以及 Windows 真机尚未完整手动验证。
+
+---
+
+## Changelog (English)
+
+### What's New / UI Changes
+
+- **Left dock panels** — Connections, Server Info and the file sidebar share one docked card (title, close button, resizable width that is remembered). The connections list now docks on the left and pushes the terminal aside instead of floating over it; it closes on connect, new tab or tab switch, and Esc closes it only while focus is in the list, so Esc in the terminal stays with the terminal. The bottom file drawer becomes the same rounded card.
+- **Server Info dashboard** — A top line with user@host, OS and uptime; CPU / memory / load / network tiles with a big number and a thin bar (NIC picker and sparkline in the network tile); one row per disk with swap last; then the process list. Bars turn amber above 70% and red above 90%, and read well on light themes.
+- **Home connection manager tweaks** — A single click only highlights a row and leaves the right pane as is; Edit in the row menu opens the SSH form directly; the flat "→ group" entries become one Group submenu; batch move/delete happens from the row menu. Group headers no longer show item counts.
+- **Unified controls** — Buttons, inputs, dialogs and context menus share one set of sizes and radii (Neo-Brutalism unchanged).
+
+### Bug Fixes
+
+- **Claude 5.x keeps its reasoning across tool calls** — Thinking blocks are sent back unchanged each turn; if the server rejects them, the request falls back and retries automatically.
+- **Updated default models** — Anthropic claude-sonnet-5-5, OpenAI gpt-6-sol.
+- **Missing colours restored** — Undefined style variables now resolve, fixing transfer-history backgrounds, completed-status green, JumpServer status colours and tab tooltip text.
+- **Settings fixes** — The SearXNG test failure uses the right style; the "Auth" label is translated.
+
+### Validation
+
+- Every merge passed CI: frontend build and tests, Rust fmt / clippy / tests on macOS and Windows.
+- The packaged release build, live SSH connections and Windows hardware have not been fully verified by hand.
+
+---
+
 ## v0.3.0
 
 ### 重要变化
