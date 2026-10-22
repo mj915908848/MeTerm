@@ -499,7 +499,7 @@ html.vibrancy-active .ssh-modal {
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--border-color, rgba(255,255,255,0.1));
+  background: var(--border-primary);
 }
 .ssh-proxy-summary::-webkit-details-marker {
   display: none;

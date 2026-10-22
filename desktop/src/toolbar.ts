@@ -287,8 +287,8 @@ export function renderToolbarActions(): void {
 
   // Connection drawer — second in the row, directly after the home button (asked
   // for in v0.2.18): both are "take me somewhere else in the app" entries, so
-  // they stay adjacent. Session-scoped tools follow. The drawer floats over the
-  // terminal because the left dock belongs to the server-info panel.
+  // they stay adjacent. Session-scoped tools follow. The list opens in the left
+  // dock, taking turns with the server-info panel and the file sidebar.
   const connBtn = document.createElement('button');
   connBtn.className = `toolbar-action-btn conn-toggle-btn${isConnectionsDrawerOpen() ? ' active' : ''}`;
   connBtn.type = 'button';

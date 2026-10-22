@@ -283,7 +283,7 @@ html.vibrancy-active .file-sidebar {
 
 .tree-node.tree-more:hover {
   opacity: 1;
-  background: var(--bg-hover, rgba(255, 255, 255, 0.05));
+  background: var(--fill-subtle);
 }
 
 .tree-more-label {
@@ -566,8 +566,8 @@ html.vibrancy-active .file-sidebar {
 .st-action:hover { background: rgba(var(--accent-rgb, 106,164,255), 0.15); color: var(--text-primary); }
 .st-action[data-action="cancel"]:hover,
 .st-action[data-action="delete"]:hover { color: var(--error-text); }
-.st-action[data-action="resume"]:hover { color: var(--status-connected); }
-.st-action[data-action="pause"]:hover { color: var(--warning-text, #ffa726); }
+.st-action[data-action="resume"]:hover { color: var(--status-connected-text); }
+.st-action[data-action="pause"]:hover { color: var(--warning-text); }
 
 .st-reveal {
   font-size: 11px;
@@ -592,7 +592,7 @@ html.vibrancy-active .file-sidebar {
 }
 
 .st-progress-fill.paused {
-  background: var(--warning-text, #ffa726);
+  background: var(--warning-text);
 }
 
 .st-footer {
@@ -604,10 +604,10 @@ html.vibrancy-active .file-sidebar {
 .st-status {
   font-size: 10px;
 }
-.st-status.completed { color: var(--status-connected); }
+.st-status.completed { color: var(--status-connected-text); }
 .st-status.failed, .st-status.cancelled { color: var(--error-text); }
 .st-status.inprogress { color: var(--accent); }
-.st-status.paused { color: var(--warning-text, #ffa726); }
+.st-status.paused { color: var(--warning-text); }
 
 .st-speed { color: var(--accent); }
 .st-elapsed { color: var(--text-secondary); }

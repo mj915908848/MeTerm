@@ -465,7 +465,7 @@ export function showHostKeyConfirmDialog(hostname: string, fingerprint: string, 
     dialog.appendChild(msg);
 
     const infoBox = document.createElement('div');
-    infoBox.style.cssText = 'background:var(--bg-secondary,#1e1e2e);padding:12px;border-radius:6px;margin-bottom:16px;font-family:monospace;font-size:12px;word-break:break-all;';
+    infoBox.style.cssText = 'background:rgba(var(--bg-card-hover),1);padding:12px;border-radius:6px;margin-bottom:16px;font-family:var(--font-mono);font-size:12px;word-break:break-all;';
     infoBox.innerHTML = `<div style="margin-bottom:4px"><strong>${t('sshHostKeyType')}:</strong> ${escapeHtml(keyType)}</div><div><strong>${t('sshHostKeyFingerprint')}:</strong> ${escapeHtml(fingerprint)}</div>`;
     dialog.appendChild(infoBox);
 

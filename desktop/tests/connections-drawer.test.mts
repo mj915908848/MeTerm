@@ -5,9 +5,11 @@
  * whose sessions it opens, so a pick is a local call — and the window, with its
  * cross-window routing, must not come back by accident. It only *picks*:
  * managing connections is the home page's job, so the drawer has no row menu,
- * no multi-select and no dragging. The rest pins how it gets out of the way: a
- * connect, a new-connection dialog, Escape, an outside click and a new tab all
- * close it.
+ * no multi-select and no dragging. It is a left-dock panel: it mounts first in
+ * #main-content (pushing the terminal), shares the dock with the server-info
+ * panel and the file sidebar, and gets out of the way on a connect, a
+ * new-connection dialog, Escape (with focus in the list), a new tab or a tab
+ * switch.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -18,6 +20,8 @@ import ts from 'typescript';
 const read = (path: string): string => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 
 type Listener = (event: any) => void;
+
+let activeEl: El | null = null;
 
 class El {
   children: El[] = [];
@@ -62,7 +66,11 @@ class El {
   removeEventListener(): void {}
   getBoundingClientRect() { return { top: 41, left: 0, width: 900, height: 600 }; }
   focused = 0;
-  focus(): void { this.focused++; }
+  focus(): void { this.focused++; activeEl = this; }
+  contains(el: El | null): boolean {
+    for (let cur = el; cur; cur = cur.parent) if (cur === this) return true;
+    return false;
+  }
   blur(): void {}
 }
 
@@ -90,16 +98,24 @@ interface Harness {
   /** Selector the drawer asks about to decide if a dialog sits above it. */
   overlayOpen: boolean;
   terminal: El;
+  main: El;
+  activeTabId: string;
+  resized: number;
+  /** Panels the drawer told to leave the dock. */
+  closedOthers: string[];
 }
 
 function boot(): Harness {
   const body = new El();
+  const main = new El();
+  body.appendChild(main);
   const terminal = new El();
-  new El().appendChild(terminal);
+  main.appendChild(terminal);
+  activeEl = terminal;
   const h: Harness = {
     mod: null, body, renderCalls: [], clicked: [], newActions: [], homeShown: 0, docListeners: {},
     newButtonsPick: null, docKeyListeners: [], tabListeners: [], tabs: [],
-    overlayOpen: false, terminal,
+    overlayOpen: false, terminal, main, activeTabId: 't1', resized: 0, closedOthers: [],
   };
   const items = [
     { type: 'ssh', key: 'ssh:a', name: 'a', detail: 'root@a:22', raw: {} },
@@ -129,6 +145,7 @@ function boot(): Harness {
     './tabs': {
       TabManager: {
         get tabs() { return h.tabs; },
+        get activeTabId() { return h.activeTabId; },
         subscribe: (fn: () => void) => {
           h.tabListeners.push(fn);
           return () => { h.tabListeners = h.tabListeners.filter((l) => l !== fn); };
@@ -136,6 +153,24 @@ function boot(): Harness {
       },
     },
     './app-state': { settings: { language: 'zh' } },
+    './terminal': { TerminalRegistry: { resizeAll: () => { h.resized++; } } },
+    './dock-panel': {
+      loadDockWidth: () => 280,
+      mountInDock: (panel: El) => { h.main.children.unshift(panel); panel.parent = h.main; return true; },
+      attachDockResizer: () => {},
+      createDockHeader: (_title: string, _label: string, onClose: () => void) => {
+        const header = new El();
+        header.className = 'dock-header';
+        const close = header.appendChild(new El());
+        close.className = 'dock-close';
+        close.onclick = onClose;
+        return header;
+      },
+    },
+    './server-info-panel': {
+      ServerInfoPanel: { isOpen: () => true, close: () => { h.closedOthers.push('server-info'); } },
+    },
+    './file-manager-toggle': { closeFileSidebarForDockSwap: () => { h.closedOthers.push('file-sidebar'); } },
   };
 
   const code = ts.transpileModule(
@@ -153,7 +188,7 @@ function boot(): Harness {
       createElement: () => new El(),
       getElementById: (id: string) => (id === 'main-content' ? new El() : null),
       body,
-      get activeElement() { return terminal; },
+      get activeElement() { return activeEl; },
       addEventListener: (type: string, fn: Listener) => {
         if (type === 'keydown') h.docKeyListeners.push(fn);
         else (h.docListeners[type] ??= []).push(fn);
@@ -175,7 +210,7 @@ function boot(): Harness {
   return h;
 }
 
-const root = (h: Harness): El | null => find(h.body, 'cn-drawer-root');
+const root = (h: Harness): El | null => find(h.body, 'cn-drawer');
 const pressEscape = (h: Harness): void => {
   for (const fn of [...h.docKeyListeners]) {
     fn({ key: 'Escape', isComposing: false, preventDefault() {}, stopPropagation() {} });
@@ -186,8 +221,10 @@ test('the toolbar button toggles the drawer open and closed', () => {
   const h = boot();
   h.mod.toggleConnectionsDrawer();
   assert.ok(root(h), 'the drawer is mounted');
-  assert.equal(root(h)!.style.top, '41px', 'it sits over the main content, below the toolbar');
-  assert.ok(root(h)!.classList.contains('is-open'));
+  assert.equal(h.main.children[0], root(h), 'it docks first in the main content, left of the terminal');
+  assert.ok(root(h)!.classList.contains('dock-panel'), 'same card as the other dock panels');
+  assert.equal(root(h)!.style.width, '280px', 'same width as the other dock panels');
+  assert.ok(h.resized > 0, 'the terminal refits to the narrower space');
   assert.equal(h.renderCalls.length, 1, 'the list renders once on open');
 
   h.mod.toggleConnectionsDrawer();
@@ -246,6 +283,10 @@ test('a new-connection button closes the drawer before its dialog opens', () => 
 test('Escape closes the drawer, unless a dialog opened from it is on top', () => {
   const h = boot();
   h.mod.openConnectionsDrawer();
+  h.terminal.focus();
+  pressEscape(h);
+  assert.ok(root(h), 'Escape typed in the terminal (vim, less…) is the terminal\'s');
+  find(h.body, 'cn-drawer')!.children.at(-1)!.focus();
   h.overlayOpen = true;
   pressEscape(h);
   assert.ok(root(h), 'Escape belongs to the edit dialog');
@@ -254,11 +295,25 @@ test('Escape closes the drawer, unless a dialog opened from it is on top', () =>
   assert.equal(root(h), null);
 });
 
-test('clicking outside the panel closes the drawer', () => {
+test('the header close button closes the drawer', () => {
   const h = boot();
   h.mod.openConnectionsDrawer();
-  const scrim = find(h.body, 'cn-drawer-scrim')!;
-  for (const fn of scrim.listeners.pointerdown) fn({ button: 0 });
+  find(h.body, 'dock-close')!.onclick!();
+  assert.equal(root(h), null);
+});
+
+test('it takes the left dock from server info and the file sidebar', async () => {
+  const h = boot();
+  h.mod.openConnectionsDrawer();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(h.closedOthers.sort(), ['file-sidebar', 'server-info']);
+});
+
+test('switching tabs closes the drawer', () => {
+  const h = boot();
+  h.mod.openConnectionsDrawer();
+  h.activeTabId = 't2';
+  for (const fn of [...h.tabListeners]) fn();
   assert.equal(root(h), null);
 });
 

@@ -32,7 +32,6 @@ import {
   showGroupContextMenu,
   showGroupModal,
   showActionMenu,
-  showMoveMenu,
   type ConnectionItem,
 } from './home-dashboard-left';
 import {
@@ -62,8 +61,13 @@ let picked: string[] = [];
 let anchor: string | null = null;
 /** "new" shows an empty SSH form (or a prefilled copy) in the right pane. */
 let draft: { prefill?: SSHConnectionConfig } | null = null;
-/** The one selected SSH connection is open in its form rather than its read-only view. */
+/** The shown SSH connection is open in its form rather than its read-only view. */
 let editing = false;
+/**
+ * The connection the right pane shows. It is separate from the selection: a
+ * click only highlights a row, and the pane changes on "edit", "new" or "back".
+ */
+let shown: string | null = null;
 
 const MORE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="18" cy="12" r="1.6" fill="currentColor"/></svg>';
 
@@ -125,7 +129,7 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
   // New connection / new group live behind one "+" so the list starts higher.
   const addBtn = iconButton(icon('plus'), L('新建', 'New'), (el) => {
     showActionMenu(el, [
-      { label: L('新建 SSH 连接', 'New SSH connection'), onPick: () => { void select([], null, {}); } },
+      { label: L('新建 SSH 连接', 'New SSH connection'), onPick: () => { void open(null, { draft: {} }); } },
       {
         label: L('新建分组', 'New group'),
         onPick: () => {
@@ -190,15 +194,29 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     handleConnectionClick(item);
   };
 
-  /** Change what is selected (and so what the right pane shows), asking first if a form has unsaved edits. */
-  const select = async (keys: string[], nextAnchor: string | null, nextDraft: typeof draft = null): Promise<void> => {
-    const same = keys.join('\n') === picked.join('\n') && nextDraft === draft;
-    if (same) { anchor = nextAnchor; return; }
-    if (!(await confirmDiscard())) return;
+  /** Change which rows are highlighted. The right pane stays as it is. */
+  const select = (keys: string[], nextAnchor: string | null): void => {
     picked = keys;
     anchor = nextAnchor;
+    renderList();
+  };
+
+  /**
+   * Change what the right pane shows (a connection, its form, a new-connection
+   * form, or the start content with `null`), asking first if a form has unsaved
+   * edits. The opened connection becomes the selection.
+   */
+  const open = async (key: string | null, opts: { edit?: boolean; draft?: typeof draft } = {}): Promise<void> => {
+    const nextDraft = opts.draft ?? null;
+    const nextEditing = !!opts.edit;
+    const same = key === shown && nextDraft === draft && nextEditing === editing;
+    if (same && (key !== null || picked.length === 0)) return;
+    if (!same && !(await confirmDiscard())) return;
+    shown = key;
     draft = nextDraft;
-    editing = false;
+    editing = nextEditing;
+    picked = key ? [key] : [];
+    anchor = key;
     render();
   };
 
@@ -230,12 +248,16 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
       getSelectedKey: () => (picked.length === 1 ? picked[0] : null),
       isRowSelected: (key) => picked.length > 1 && picked.includes(key),
       getSelection: () => [...picked],
-      // "Edit" from the row menu opens the connection here, where it is edited.
-      onEdit: (item) => { void select([item.key], item.key); },
+      // "Edit" from the row menu goes straight to the connection's form.
+      onEdit: (item) => {
+        if (item.type === 'ssh') void open(item.key, { edit: true });
+        else editConnection(item, announce);
+      },
       onRowClick: (item, mods, visibleKeys) => {
         const outcome = resolveRowClick(visibleKeys, { selection: picked, anchor }, item.key, mods);
-        // A plain click selects; it never connects on this page.
-        void select(outcome.connect ? [item.key] : outcome.selection, outcome.anchor);
+        // A plain click only highlights the row: it never connects on this page,
+        // and the right pane keeps what it shows.
+        select(outcome.connect ? [item.key] : outcome.selection, outcome.anchor);
         return false;
       },
       onRowActivate: connect,
@@ -326,6 +348,7 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
         // A rename moves the key; keep the saved connection selected.
         picked = [sshKey(saved.name)];
         anchor = picked[0];
+        shown = picked[0];
         editing = false;
         form = null;
         shownKey = '';
@@ -345,7 +368,7 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
             label: L('复制为新连接', 'Duplicate'),
             onPick: () => {
               const copy: SSHConnectionConfig = { ...config, serverConnectionId: undefined, name: `${config.name} ${L('副本', 'copy')}` };
-              void select([], null, { prefill: copy });
+              void open(null, { draft: { prefill: copy } });
             },
           },
           { label: t('sshDeleteConnection'), danger: true, onPick: () => deleteKeys([item.key]) },
@@ -376,11 +399,12 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     body.appendChild(header(
       prefill ? L('复制连接', 'Duplicate connection') : L('新建 SSH 连接', 'New SSH connection'),
       L('填写后保存，连接会出现在左侧列表里', 'Save it and it appears in the list on the left'),
-      [button(L('取消', 'Cancel'), () => { void select([], null); })],
+      [button(L('取消', 'Cancel'), () => { void open(null); })],
     ));
     const embedded = createEmbeddedSSHForm(prefill, (saved) => {
       picked = [sshKey(saved.name)];
       anchor = picked[0];
+      shown = picked[0];
       draft = null;
       form = null;
       shownKey = '';
@@ -420,29 +444,8 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     }
   };
 
-  const showBatch = (keys: string[]): void => {
-    const chosen = items().filter((i) => keys.includes(i.key));
-    const moveBtn = button(t('connectionMoveToGroup'), () => {
-      showMoveMenu(moveBtn, loadGroupOrder(), (group) => moveKeys(keys, group));
-    });
-    body.appendChild(header(L(`已选 ${chosen.length} 个连接`, `${chosen.length} connections selected`), '', [
-      moveBtn,
-      button(t('sshDeleteConnection'), () => deleteKeys(keys), 'danger'),
-      button(t('connectionClearSelection'), () => { void select([], null); }),
-    ]));
-    const names = document.createElement('ul');
-    names.className = 'hcm-batch-list';
-    for (const item of chosen) {
-      const li = document.createElement('li');
-      li.innerHTML = `<span>${escapeHtml(item.name)}</span><span class="hcm-batch-detail">${escapeHtml(item.detail)}</span>`;
-      names.appendChild(li);
-    }
-    body.appendChild(names);
-    body.appendChild(tip(L('也可以把选中的连接拖到左侧的分组上', 'You can also drag the selection onto a group on the left')));
-  };
-
   const renderDetail = (): void => {
-    const key = draft ? `draft:${draft.prefill?.name ?? ''}` : `${editing ? 'edit:' : ''}${picked.join('\n')}`;
+    const key = draft ? `draft:${draft.prefill?.name ?? ''}` : `${editing ? 'edit:' : ''}${shown ?? ''}`;
     // Re-rendering the same form would throw away what is being typed.
     if (key === shownKey && form) return;
     shownKey = key;
@@ -450,8 +453,8 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     right.replaceChildren();
     right.scrollTop = 0;
 
-    const item = picked.length === 1 ? itemFor(picked[0]) : undefined;
-    const atHome = !draft && picked.length <= 1 && !item;
+    const item = shown ? itemFor(shown) : undefined;
+    const atHome = !draft && !item;
     homeNav.classList.toggle('active', atHome);
     homeNav.setAttribute('aria-current', atHome ? 'page' : 'false');
     if (atHome) {
@@ -469,10 +472,9 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     back.type = 'button';
     back.className = 'hcm-back';
     back.innerHTML = `${icon('chevronLeft')}<span>${escapeHtml(L('返回', 'Back'))}</span>`;
-    back.onclick = () => { void select([], null); };
+    back.onclick = () => { void open(null); };
     body.appendChild(back);
     if (draft) showNewSsh(draft.prefill);
-    else if (picked.length > 1) showBatch(picked);
     else if (item?.type === 'ssh') showSsh(item);
     else if (item?.type === 'jumpserver') showJumpServer(item);
   };
@@ -480,6 +482,7 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
   const render = (): void => {
     picked = pruneSelection(picked, items().map((i) => i.key));
     if (anchor && !picked.includes(anchor) && !items().some((i) => i.key === anchor)) anchor = null;
+    if (shown && !items().some((i) => i.key === shown)) { shown = null; editing = false; }
     renderList();
     renderDetail();
   };
@@ -491,7 +494,7 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     if (e.key === 'Escape') { searchInput.value = ''; renderList(); }
     if (e.key === 'ArrowDown') { e.preventDefault(); list.focus(); moveCursor(1); }
   });
-  homeNav.onclick = () => { void select([], null); };
+  homeNav.onclick = () => { void open(null); };
 
   /** Arrow keys walk the visible rows; Enter connects the selected one. */
   const visibleRowKeys = (): string[] =>
@@ -501,9 +504,8 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     if (keys.length === 0) return;
     const current = picked.length === 1 ? keys.indexOf(picked[0]) : -1;
     const next = keys[Math.max(0, Math.min(keys.length - 1, current < 0 ? (step > 0 ? 0 : keys.length - 1) : current + step))];
-    void select([next], next).then(() => {
-      root.querySelector<HTMLElement>(`.hcm-list-pane .home-side-row[data-key="${CSS.escape(next)}"]`)?.scrollIntoView({ block: 'nearest' });
-    });
+    select([next], next);
+    root.querySelector<HTMLElement>(`.hcm-list-pane .home-side-row[data-key="${CSS.escape(next)}"]`)?.scrollIntoView({ block: 'nearest' });
   };
   list.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -513,7 +515,7 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
       const item = itemFor(picked[0]);
       if (item) { e.preventDefault(); connect(item); }
     } else if (e.key === 'Escape' && picked.length > 0) {
-      void select([], null);
+      select([], null);
     }
   });
 

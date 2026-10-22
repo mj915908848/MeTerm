@@ -11,6 +11,21 @@ body,
 :root {
   --app-window-opacity: 1;
   --ai-bar-opacity: 0.8;
+
+  /* Shared scales — the same in every theme. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-pill: 9999px;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 20px;
+  --dur-fast: 0.12s;
+  --dur-panel: 0.16s;
 }
 
 /* ============================================================================
@@ -78,6 +93,13 @@ body,
   --slider-thumb: #6aa4ff;
   --tray-tip-body: #c9c9c9;
   --tray-tip-check: #b9b9b9;
+
+  /* Translucent fills for buttons / inputs / hovers on top of any surface. */
+  --fill: rgba(255, 255, 255, 0.08);
+  --fill-hover: rgba(255, 255, 255, 0.14);
+  --fill-input: rgba(255, 255, 255, 0.06);
+  --fill-subtle: rgba(255, 255, 255, 0.05);
+  --warning-text: #ffa726;
 }
 
 /* ============================================================================
@@ -145,6 +167,13 @@ body,
   --slider-thumb: #57c7ff;
   --tray-tip-body: #b0b0b0;
   --tray-tip-check: #a0a0a0;
+
+  /* Translucent fills for buttons / inputs / hovers on top of any surface. */
+  --fill: rgba(255, 255, 255, 0.08);
+  --fill-hover: rgba(255, 255, 255, 0.14);
+  --fill-input: rgba(255, 255, 255, 0.06);
+  --fill-subtle: rgba(255, 255, 255, 0.05);
+  --warning-text: #ffa726;
 }
 
 /* ============================================================================
@@ -212,6 +241,13 @@ body,
   --slider-thumb: #5b9cf5;
   --tray-tip-body: #8094b0;
   --tray-tip-check: #7088a8;
+
+  /* Translucent fills for buttons / inputs / hovers on top of any surface. */
+  --fill: rgba(255, 255, 255, 0.08);
+  --fill-hover: rgba(255, 255, 255, 0.14);
+  --fill-input: rgba(255, 255, 255, 0.06);
+  --fill-subtle: rgba(255, 255, 255, 0.05);
+  --warning-text: #ffa726;
 }
 
 /* ============================================================================
@@ -279,6 +315,13 @@ body,
   --slider-thumb: #0066cc;
   --tray-tip-body: #444;
   --tray-tip-check: #555;
+
+  /* Translucent fills for buttons / inputs / hovers on top of any surface. */
+  --fill: rgba(0, 0, 0, 0.04);
+  --fill-hover: rgba(0, 0, 0, 0.07);
+  --fill-input: rgba(0, 0, 0, 0.04);
+  --fill-subtle: rgba(0, 0, 0, 0.03);
+  --warning-text: #c26a00;
 }
 
 /* On Windows, applyWindowOpacity() removes the anti-flash inline background-color

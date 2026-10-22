@@ -264,7 +264,7 @@ html.vibrancy-active .js-asset-browser {
 }
 
 .js-error {
-  color: var(--status-red);
+  color: var(--error-text);
 }
 
 /* Account selection list */
@@ -615,7 +615,7 @@ html.platform-linux .js-browser-container {
               0 0 0 2px rgba(var(--accent-rgb), 0.25);
 }
 .js-panel-search-input::placeholder {
-  color: var(--text-tertiary, rgba(255, 255, 255, 0.35));
+  color: var(--text-dim);
 }
 
 /* Panel body */
@@ -696,7 +696,7 @@ html.platform-linux .js-browser-container {
 }
 .js-panel-asset-addr {
   font-size: 10px;
-  color: var(--text-tertiary, rgba(255, 255, 255, 0.4));
+  color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -730,7 +730,7 @@ html.platform-linux .js-browser-container {
   display: flex;
   align-items: center;
   font-size: 11px;
-  color: var(--text-tertiary, rgba(255, 255, 255, 0.4));
+  color: var(--text-dim);
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
@@ -937,7 +937,7 @@ html.vibrancy-active .js-panel-account-dialog {
 
 .js-narrow-card-meta {
   font-size: 10.5px;
-  color: var(--text-tertiary, rgba(255, 255, 255, 0.4));
+  color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -946,7 +946,7 @@ html.vibrancy-active .js-panel-account-dialog {
 
 .js-narrow-card-comment {
   font-size: 10px;
-  color: var(--text-tertiary, rgba(255, 255, 255, 0.3));
+  color: var(--text-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1140,29 +1140,30 @@ html.vibrancy-active .js-account-dialog {
   margin-top: 4px;
 }
 .js-expired-btn {
-  padding: 6px 14px;
-  font-size: 12px;
-  border-radius: 4px;
-  border: 1px solid var(--border-color, #3a3a3a);
-  background: transparent;
-  color: var(--text-primary, #e8e8e8);
+  height: 32px;
+  padding: 0 14px;
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--fill);
+  color: var(--text-primary);
   cursor: pointer;
+  transition: background var(--dur-fast);
 }
 .js-expired-btn:hover {
-  background: var(--bg-hover, rgba(255,255,255,0.05));
+  background: var(--fill-hover);
 }
 .js-expired-btn-primary {
-  background: var(--accent-primary, rgba(59, 130, 246, 0.8));
-  border-color: var(--accent-primary, rgba(59, 130, 246, 0.8));
-  color: #fff;
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.28);
+  color: var(--accent);
 }
 .js-expired-btn-primary:hover {
-  background: var(--accent-primary, rgba(59, 130, 246, 1));
-  border-color: var(--accent-primary, rgba(59, 130, 246, 1));
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.38);
 }
 .js-expired-error {
   font-size: 12px;
-  color: var(--status-red, #e06c75);
+  color: var(--error-text);
   min-height: 16px;
   margin-top: -4px;
 }

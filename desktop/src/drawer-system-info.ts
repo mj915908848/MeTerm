@@ -79,7 +79,47 @@ export function formatRate(bytesPerSec: number): string {
   return formatBytes(bytesPerSec) + '/s';
 }
 
-export function renderNetChart(instance: SysInfoFields): string {
+/** Usage colour: amber above 70%, red above 90%. */
+function usageClass(pct: number): string {
+  return pct > 90 ? 'critical' : pct > 70 ? 'warning' : '';
+}
+
+/**
+ * A thin usage bar. `percent` is optional because CPU can be genuinely unknown
+ * for one poll: a Linux host sends raw counters, and the first sample of a
+ * session has nothing to subtract from. Painting that as 0% would read as
+ * "idle", so it renders an empty track instead.
+ */
+export function renderBar(percent: number | undefined): string {
+  if (percent === undefined || !Number.isFinite(percent)) {
+    return `<div class="si-bar"></div>`;
+  }
+  const pct = Math.max(0, Math.min(100, percent));
+  return `<div class="si-bar ${usageClass(pct)}"><i style="width:${pct}%"></i></div>`;
+}
+
+/** Big number + unit, or `—` when the value is unknown. */
+function bigPercent(percent: number | undefined): string {
+  if (percent === undefined || !Number.isFinite(percent)) return '—';
+  return `${Math.max(0, Math.min(100, percent)).toFixed(0)}<small>%</small>`;
+}
+
+/** Bytes without the space, for the tight corners of a tile (`1.2MB`). */
+function shortBytes(bytes: number): string {
+  return formatBytes(bytes).replace(' ', '');
+}
+
+/** Disk-row size: one letter unit, a decimal only below 10 (`38G`, `1.9G`). */
+function sizeShort(bytes: number): string {
+  if (bytes <= 0) return '0';
+  const units = ['B', 'K', 'M', 'G', 'T', 'P'];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)));
+  const val = bytes / Math.pow(1024, i);
+  return `${val < 10 && i > 0 ? val.toFixed(1) : val.toFixed(0)}${units[i]}`;
+}
+
+/** Network tile: NIC picker, receive/transmit sparkline and current rates. */
+export function renderNetTile(instance: SysInfoFields): string {
   const ifaces = instance.prevNetIfaces || [];
   if (ifaces.length === 0) return '';
 
@@ -98,55 +138,34 @@ export function renderNetChart(instance: SysInfoFields): string {
     lastTx = last.txRate;
   }
 
-  let chartSvg = '';
+  let chartSvg = '<div class="si-spark si-spark-empty"></div>';
   if (history.length >= 2) {
     const maxPoints = 60;
-    const W = 200;
-    const H = 50;
+    const W = 100;
+    const H = 22;
     const points = history.slice(-maxPoints);
     const maxRate = Math.max(...points.map(p => Math.max(p.rxRate, p.txRate)), 1024);
     const xStep = W / (maxPoints - 1);
     const offset = maxPoints - points.length;
 
-    const toY = (v: number) => H - (v / maxRate) * (H - 4) - 2;
+    const toY = (v: number) => H - (v / maxRate) * (H - 2) - 1;
 
     const rxPts = points.map((p, i) => `${(offset + i) * xStep},${toY(p.rxRate)}`).join(' ');
     const txPts = points.map((p, i) => `${(offset + i) * xStep},${toY(p.txRate)}`).join(' ');
 
-    chartSvg = `<svg class="net-chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
-      <polyline points="${rxPts}" fill="none" stroke="#4ade80" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
-      <polyline points="${txPts}" fill="none" stroke="#f59e0b" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+    chartSvg = `<svg class="si-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <polyline class="si-rx-line" points="${rxPts}" fill="none" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
+      <polyline class="si-tx-line" points="${txPts}" fill="none" stroke-width="1.4" vector-effect="non-scaling-stroke"/>
     </svg>`;
-  } else {
-    chartSvg = '<div class="net-chart-empty">...</div>';
   }
 
-  return `<div class="server-info-item net-chart-section" data-session="${instance.sessionId}">
-    <div class="server-info-label net-chart-header">
-      ${t('serverInfoNetwork')}
-      <select class="net-nic-select" data-session="${instance.sessionId}">${nicOptions}</select>
+  return `<div class="si-card">
+    <div class="si-card-k">${t('serverInfoNetwork')}
+      <select class="net-nic-select" data-session="${instance.sessionId}" aria-label="${t('serverInfoNetwork')}">${nicOptions}</select>
     </div>
-    <div class="net-chart-container">${chartSvg}</div>
-    <div class="net-chart-legend">
-      <span class="net-rx">↓ ${formatRate(lastRx)}</span>
-      <span class="net-tx">↑ ${formatRate(lastTx)}</span>
-    </div>
+    ${chartSvg}
+    <div class="si-card-sub"><span class="si-rx">↓${shortBytes(lastRx)}</span> <span class="si-tx">↑${shortBytes(lastTx)}</span></div>
   </div>`;
-}
-
-/**
- * `percent` is optional because CPU can be genuinely unknown for one poll: a
- * Linux host sends raw counters, and the first sample of a session has nothing
- * to subtract from. Painting that as 0% would read as "idle", so it renders a
- * placeholder bar instead.
- */
-export function renderProgressBar(percent: number | undefined): string {
-  if (percent === undefined || !Number.isFinite(percent)) {
-    return `<div class="sysinfo-progress"><div class="sysinfo-progress-fill" style="width:0%"></div><span class="sysinfo-progress-text">—</span></div>`;
-  }
-  const pct = Math.max(0, Math.min(100, percent));
-  const colorClass = pct > 90 ? 'critical' : pct > 70 ? 'warning' : '';
-  return `<div class="sysinfo-progress ${colorClass}"><div class="sysinfo-progress-fill" style="width:${pct}%"></div><span class="sysinfo-progress-text">${pct.toFixed(0)}%</span></div>`;
 }
 
 /** Compact mode breakpoint — exactly 2 columns of 44px tiles + gap + padding */
@@ -231,7 +250,14 @@ function renderCompactSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElement
   serverInfoEl.classList.remove('server-info-expanded');
 }
 
-/** Render full expanded view (wide sidebar) */
+/**
+ * Render full expanded view (wide sidebar) — the "dashboard" layout:
+ *
+ *   who line   user@host, then OS · arch · uptime
+ *   tiles      CPU, memory, load, network (2×2, the numbers people glance at)
+ *   disks      one row per mount, swap last
+ *   processes  command / CPU / memory
+ */
 function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElement): void {
   const info = instance.sysInfo;
   if (!info) return;
@@ -239,61 +265,64 @@ function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElemen
   const swapTotal = info.swap_total ?? 0;
   const swapUsed = info.swap_used ?? 0;
 
+  // The host line comes from the panel (server-info-panel.ts connBlock).
   const existingConn = serverInfoEl.querySelector('.server-info-conn');
   const connHtml = existingConn ? existingConn.outerHTML : '';
 
-  // Older remote hosts (and the local fallback) report no load average — drop
-  // the row rather than showing an empty one.
-  const loadText = formatLoadAverage(info.load_avg);
-  const loadHtml = loadText
-    ? `<div class="server-info-item">
-      <div class="server-info-label">${t('serverInfoLoad')}</div>
-      <div class="server-info-value server-info-value-small">${loadText}</div>
-    </div>`
-    : '';
+  const os = escapeHtml(String(info.os_name || info.os_type));
+  const kernel = `${escapeHtml(String(info.kernel))} ${escapeHtml(String(info.arch))}`;
+  const uptime = formatUptime(info.uptime_seconds ?? 0);
+  const whoSub = `<div class="si-who-sub" title="${kernel}">${os} · ${t('serverInfoUptime')} ${uptime}</div>`;
 
-  const disksHtml = (info.disks || []).map(d => {
-    const pct = d.total > 0 ? (d.used / d.total) * 100 : 0;
-    return `<div class="server-info-item">
-      <div class="server-info-label">${t('serverInfoDisk')} ${escapeHtml(String(d.mount))}</div>
-      <div class="server-info-value server-info-value-small">${formatBytes(d.used)} / ${formatBytes(d.total)}</div>
-      ${renderProgressBar(pct)}
+  const cpuTile = `<div class="si-card" title="${escapeHtml(String(info.cpu_model ?? ''))}">
+    <div class="si-card-k">${t('serverInfoCPU')}<span>${escapeHtml(String(info.cpu_cores ?? 0))} ${t('serverInfoCores')}</span></div>
+    <div class="si-card-big">${bigPercent(info.cpu_usage)}</div>
+    ${renderBar(info.cpu_usage)}
+  </div>`;
+
+  const memTile = `<div class="si-card">
+    <div class="si-card-k">${t('serverInfoMemory')}</div>
+    <div class="si-card-big">${bigPercent(memPercent)}</div>
+    ${renderBar(memPercent)}
+    <div class="si-card-sub">${formatBytes(info.mem_used ?? 0)} / ${formatBytes(info.mem_total ?? 0)}</div>
+  </div>`;
+
+  // Older remote hosts (and the local fallback) report no load average: the
+  // tile shows swap instead, so the grid stays 2×2.
+  const loads = formatLoadAverage(info.load_avg).split(', ').filter(Boolean);
+  const loadTile = loads.length > 0
+    ? `<div class="si-card">
+      <div class="si-card-k">${t('serverInfoLoad')}</div>
+      <div class="si-card-big">${loads[0]}</div>
+      ${loads.length >= 3 ? `<div class="si-card-sub" title="5m ${loads[1]} · 15m ${loads[2]}">${loads[1]} · ${loads[2]}</div>` : ''}
+    </div>`
+    : `<div class="si-card">
+      <div class="si-card-k">${t('serverInfoSwap')}</div>
+      <div class="si-card-big">${bigPercent(swapPercent(swapTotal, swapUsed))}</div>
+      ${renderBar(swapPercent(swapTotal, swapUsed))}
     </div>`;
-  }).join('');
+
+  const diskRow = (label: string, used: number, total: number): string => {
+    const pct = total > 0 ? (used / total) * 100 : 0;
+    return `<div class="si-row" title="${label}: ${formatBytes(used)} / ${formatBytes(total)}">
+      <span class="si-row-k">${label}</span>
+      ${renderBar(pct)}
+      <span class="si-row-v">${sizeShort(used)} / ${sizeShort(total)}</span>
+    </div>`;
+  };
+  const diskRows = (info.disks || []).map(d => diskRow(escapeHtml(String(d.mount)), d.used, d.total)).join('')
+    + (swapTotal > 0 && loads.length > 0 ? diskRow(t('serverInfoSwap'), swapUsed, swapTotal) : '');
 
   serverInfoEl.innerHTML = `
-    ${connHtml}
-    <div class="server-info-item">
-      <div class="server-info-label">${t('serverInfoOS')}</div>
-      <div class="server-info-value">${escapeHtml(String(info.os_name || info.os_type))}</div>
+    <div class="si-who">${connHtml}${whoSub}</div>
+    <div class="si-grid">
+      ${cpuTile}
+      ${memTile}
+      ${loadTile}
+      ${renderNetTile(instance)}
     </div>
-    <div class="server-info-item">
-      <div class="server-info-label">${t('serverInfoKernel')}</div>
-      <div class="server-info-value">${escapeHtml(String(info.kernel))} ${escapeHtml(String(info.arch))}</div>
-    </div>
-    <div class="server-info-item">
-      <div class="server-info-label">${t('serverInfoUptime')}</div>
-      <div class="server-info-value">${formatUptime(info.uptime_seconds ?? 0)}</div>
-    </div>
-    ${loadHtml}
-    <div class="server-info-item">
-      <div class="server-info-label">${t('serverInfoCPU')} · ${escapeHtml(String(info.cpu_cores ?? 0))} cores</div>
-      <div class="server-info-value server-info-value-small">${escapeHtml(String(info.cpu_model ?? ''))}</div>
-      ${renderProgressBar(info.cpu_usage)}
-    </div>
-    <div class="server-info-item">
-      <div class="server-info-label">${t('serverInfoMemory')}</div>
-      <div class="server-info-value server-info-value-small">${formatBytes(info.mem_used ?? 0)} / ${formatBytes(info.mem_total ?? 0)}</div>
-      ${renderProgressBar(memPercent)}
-    </div>
-    <div class="server-info-item">
-      <div class="server-info-label">${t('serverInfoSwap')}</div>
-      <div class="server-info-value server-info-value-small">${formatBytes(swapUsed)} / ${formatBytes(swapTotal)}</div>
-      ${renderProgressBar(swapPercent(swapTotal, swapUsed))}
-    </div>
+    ${diskRows ? `<div class="si-sec">${t('serverInfoDisk')}</div>${diskRows}` : ''}
     ${renderProcessBox(instance)}
-    ${renderNetChart(instance)}
-    ${disksHtml}
   `;
 
   serverInfoEl.classList.add('server-info-expanded');
@@ -325,7 +354,7 @@ function processMetric(value: number | null | undefined): { text: string; high: 
 
 /**
  * The process list used to live in the file drawer's own tab; it now renders as
- * a small box inside the panel, between the memory rows and the network chart.
+ * the last section of the panel, under the disks.
  *
  * It is rendered from `instance.processes` as part of the sysinfo template
  * rather than into its own target: the two polls (sysinfo, processes) land out
@@ -337,32 +366,25 @@ function processMetric(value: number | null | undefined): { text: string; high: 
  */
 function renderProcessBox(instance: SysInfoFields): string {
   const procs = instance.processes ?? [];
+  if (procs.length === 0) return '';
   const rows = procs.map(p => {
     const cmd = escapeHtml(String(p.command));
     const mem = processMetric(p.mem);
     const cpu = processMetric(p.cpu);
-    return `<tr>
-      <td class="sip-proc-cmd" title="${cmd}">${cmd}</td>
-      <td class="sip-proc-num${mem.high ? ' high-usage' : ''}">${mem.text}</td>
-      <td class="sip-proc-num${cpu.high ? ' high-usage' : ''}">${cpu.text}</td>
-    </tr>`;
+    return `<div class="si-proc">
+      <span class="si-proc-cmd" title="${cmd}">${cmd}</span>
+      <span class="si-proc-num${cpu.high ? ' high-usage' : ''}">${cpu.text}</span>
+      <span class="si-proc-num${mem.high ? ' high-usage' : ''}">${mem.text}</span>
+    </div>`;
   }).join('');
 
-  return `<div class="server-info-item">
-    <div class="server-info-label">${t('serverInfoProcesses')}</div>
-    <div class="sip-proc">
-      <table class="sip-proc-table">
-        <thead>
-          <tr>
-            <th class="sip-proc-cmd">${t('processColCommand')}</th>
-            <th class="sip-proc-num">${t('processColMem')}</th>
-            <th class="sip-proc-num">${t('processColCPU')}</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+  return `<div class="si-sec">${t('serverInfoProcesses')}</div>
+    <div class="si-proc si-proc-head">
+      <span class="si-proc-cmd">${t('processColCommand')}</span>
+      <span class="si-proc-num">${t('processColCPU')}</span>
+      <span class="si-proc-num">${t('processColMem')}</span>
     </div>
-  </div>`;
+    <div class="si-proc-list">${rows}</div>`;
 }
 
 export function renderSysInfo(instance: SysInfoFields): void {
@@ -384,7 +406,7 @@ export function renderSysInfo(instance: SysInfoFields): void {
   }
 
   // Tooltip on truncated text
-  serverInfoEl.querySelectorAll('.server-info-value, .server-info-value-small, .server-info-label').forEach((el) => {
+  serverInfoEl.querySelectorAll('.server-info-value, .si-who-sub, .si-row-k').forEach((el) => {
     el.addEventListener('mouseenter', () => {
       const htmlEl = el as HTMLElement;
       if (htmlEl.scrollWidth > htmlEl.clientWidth) {

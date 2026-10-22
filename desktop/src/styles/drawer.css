@@ -5,9 +5,13 @@
   left: 0;
   right: 0;
   height: 0;
-  background: rgba(var(--bg-primary), 0.98);
-  border-top: 1px solid var(--border-primary);
-  transition: height 0.3s ease;
+  /* Same card as the left-dock panels (dock-panel.css), inset from the
+     terminal panel's edges. */
+  margin: 0 6px 6px;
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.03)),
+    rgba(var(--bg-toolbar, 33, 33, 35), var(--app-window-opacity, 1));
   z-index: 100;
   overflow: visible; /* Changed from hidden to allow toggle button to show */
 }
@@ -30,6 +34,21 @@ body.drawer-resizing {
 
 .file-drawer.open {
   height: var(--drawer-height, 40vh);
+  animation: dock-drawer-in var(--dur-panel) ease-out;
+}
+
+html.vibrancy-active .file-drawer {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+@keyframes dock-drawer-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .file-drawer.open { animation: none; }
 }
 
 /* Closed drawer must occupy NO space and paint NO line. Its height:0 box still
@@ -533,8 +552,8 @@ html.vibrancy-active .path-autocomplete {
   position: fixed;
   background: rgba(var(--bg-settings), 1);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 3px 0;
+  border-radius: var(--radius-lg);
+  padding: 4px 0;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   z-index: 10001;
   /* 自适应内容宽度,不强制最小宽度。
@@ -699,20 +718,22 @@ html.vibrancy-active .drawer-modal {
 
 .drawer-modal-input {
   width: 100%;
-  padding: clamp(4px, 1%, 6px) clamp(6px, 1.5%, 8px);
-  font-size: clamp(11px, 1.4vw, 12px);
-  font-family: 'Menlo', 'Consolas', monospace;
-  background: var(--bg-input);
+  height: 34px;
+  padding: 0 12px;
+  font-size: var(--fs-md);
+  font-family: var(--font-mono);
+  background: var(--fill-input);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border: none;
+  border-radius: var(--radius-lg);
   outline: none;
   box-sizing: border-box;
   margin-bottom: clamp(6px, 2%, 12px);
+  transition: box-shadow var(--dur-fast);
 }
 
 .drawer-modal-input:focus {
-  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 106, 164, 255), 0.35);
 }
 
 .drawer-modal-buttons {
@@ -844,55 +865,46 @@ html.vibrancy-active .drawer-modal {
 }
 
 .drawer-modal-btn {
-  padding: clamp(4px, 1%, 6px) clamp(10px, 2.5%, 16px);
-  font-size: clamp(11px, 1.4vw, 12px);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  height: 32px;
+  padding: 0 14px;
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  border-radius: var(--radius-pill);
+  border: none;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--fill);
   color: var(--text-primary);
   white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--dur-fast);
 }
 
 .drawer-modal-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
+  background: var(--fill-hover);
 }
 
 .drawer-modal-btn.confirm {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.25);
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.28);
   color: var(--accent);
-  border-color: rgba(var(--accent-rgb, 106, 164, 255), 0.3);
 }
 
 .drawer-modal-btn.confirm:hover {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.35);
-  border-color: rgba(var(--accent-rgb, 106, 164, 255), 0.45);
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.38);
 }
 
 .drawer-modal-btn.confirm.danger {
   background: rgba(255, 69, 58, 0.18);
-  color: #f87171;
-  border-color: rgba(255, 69, 58, 0.25);
+  color: var(--error-text);
 }
 
 .drawer-modal-btn.confirm.danger:hover {
   background: rgba(255, 69, 58, 0.28);
-  border-color: rgba(255, 69, 58, 0.4);
 }
 
-[data-theme="light"] .drawer-modal-btn {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.1);
-  color: var(--text-primary);
-}
-[data-theme="light"] .drawer-modal-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
 [data-theme="light"] .drawer-modal-btn.confirm {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.15);
-  border-color: rgba(var(--accent-rgb, 106, 164, 255), 0.25);
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.12);
+}
+[data-theme="light"] .drawer-modal-btn.confirm:hover {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.18);
 }
 
 /* Drag and drop styles */
@@ -931,7 +943,7 @@ html.vibrancy-active .drawer-modal {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: rgba(var(--bg-drawer), 1);
+  background: rgba(var(--bg-toolbar), 1);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -1045,7 +1057,7 @@ html.vibrancy-active .drawer-modal {
 }
 
 .history-item {
-  background: rgba(var(--bg-drawer), 0.5);
+  background: rgba(var(--bg-toolbar), 0.5);
   border: none;
   border-radius: 6px;
   padding: 10px 12px;
@@ -1054,11 +1066,11 @@ html.vibrancy-active .drawer-modal {
 }
 
 .history-item:hover {
-  background: rgba(var(--bg-drawer), 0.7);
+  background: rgba(var(--bg-toolbar), 0.7);
 }
 
 .history-item.completed {
-  border-left: 3px solid var(--status-connected);
+  border-left: 3px solid var(--status-connected-text);
 }
 
 .history-item.failed {
@@ -1166,7 +1178,7 @@ html.vibrancy-active .drawer-modal {
 }
 
 .status-indicator.completed {
-  color: var(--status-connected);
+  color: var(--status-connected-text);
   background: rgba(var(--status-connected-rgb, 76, 175, 80), 0.15);
 }
 
@@ -1229,7 +1241,7 @@ html.vibrancy-active .drawer-modal {
   height: 22px;
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
-  background: rgba(var(--bg-drawer), 0.6);
+  background: rgba(var(--bg-toolbar), 0.6);
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
@@ -1242,19 +1254,19 @@ html.vibrancy-active .drawer-modal {
 }
 
 .transfer-btn:hover {
-  background: rgba(var(--bg-drawer), 0.9);
-  border-color: var(--border-default);
+  background: rgba(var(--bg-toolbar), 0.9);
+  border-color: var(--border-primary);
   color: var(--text-primary);
 }
 
 .transfer-btn.pause-btn:hover {
-  color: var(--warning-text, #ffa726);
-  border-color: var(--warning-text, #ffa726);
+  color: var(--warning-text);
+  border-color: var(--warning-text);
 }
 
 .transfer-btn.resume-btn:hover {
-  color: var(--status-connected);
-  border-color: var(--status-connected);
+  color: var(--status-connected-text);
+  border-color: var(--status-connected-text);
 }
 
 .transfer-btn.cancel-btn:hover,
@@ -1269,13 +1281,13 @@ html.vibrancy-active .drawer-modal {
 }
 
 .progress-fill.paused {
-  background: var(--warning-text, #ffa726);
+  background: var(--warning-text);
   animation: none;
 }
 
 /* Paused / cancelled status indicators */
 .status-indicator.paused {
-  color: var(--warning-text, #ffa726);
+  color: var(--warning-text);
   background: rgba(255, 167, 38, 0.15);
 }
 
@@ -1285,7 +1297,7 @@ html.vibrancy-active .drawer-modal {
 }
 
 .history-item.paused {
-  border-left: 3px solid var(--warning-text, #ffa726);
+  border-left: 3px solid var(--warning-text);
 }
 
 .history-item.cancelled {

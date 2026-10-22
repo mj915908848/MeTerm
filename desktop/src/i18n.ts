@@ -270,6 +270,7 @@ export interface Translations {
   serverInfoNetwork: string;
   serverInfoLoading: string;
   serverInfoPanelClose: string;
+  serverInfoCores: string;
   connectionsWindowTitle: string;
   connectionsWindowHint: string;
   connectionsWindowSettings: string;
@@ -990,6 +991,7 @@ const translations: Record<Language, Translations> = {
     serverInfoNetwork: 'Network',
     serverInfoLoading: 'Loading...',
     serverInfoPanelClose: 'Close',
+    serverInfoCores: 'cores',
     connectionsWindowTitle: 'Connections',
     connectionsWindowHint: 'Click a connection to open it. ⌘/Ctrl-click to select several, then drag them onto a group.',
     connectionsWindowSettings: 'Settings',
@@ -1706,6 +1708,7 @@ const translations: Record<Language, Translations> = {
     serverInfoNetwork: '网络',
     serverInfoLoading: '加载中...',
     serverInfoPanelClose: '关闭',
+    serverInfoCores: '核',
     connectionsWindowTitle: '连接',
     connectionsWindowHint: '点击连接即打开会话。⌘/Ctrl 点击可多选，再拖到分组上即可移动。',
     connectionsWindowSettings: '设置',

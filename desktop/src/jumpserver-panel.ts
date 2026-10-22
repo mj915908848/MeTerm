@@ -647,7 +647,7 @@ function renderPanelContent(container: HTMLElement, config: JumpServerConfig): v
       const result = await getAccounts(config.baseUrl, asset.id);
       if (!result.ok || !result.accounts || result.accounts.length === 0) {
         status.textContent = result.error || t('jsNoAccounts');
-        status.style.color = 'var(--status-red)';
+        status.style.color = 'var(--error-text)';
         return;
       }
 
@@ -666,10 +666,10 @@ function renderPanelContent(container: HTMLElement, config: JumpServerConfig): v
       await connectToAsset(config, asset, account);
 
       status.textContent = `✓ ${asset.name || asset.address}`;
-      status.style.color = 'var(--status-green)';
+      status.style.color = 'var(--status-connected-text)';
     } catch (err) {
       status.textContent = `Error: ${String(err)}`;
-      status.style.color = 'var(--status-red)';
+      status.style.color = 'var(--error-text)';
     }
   };
 

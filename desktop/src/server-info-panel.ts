@@ -4,11 +4,12 @@
  * The server info used to live inside the file drawer's sidebar. It is now its
  * own panel so:
  *   - the drawer is purely files + processes, and
- *   - the left dock can be given to server info (the connection list floats
- *     over the terminal as a drawer — see connections-drawer.ts).
+ *   - it can take turns with the connection list in the left dock.
  *
- * Like the old docked connection sidebar, it mounts as the leftmost child of
- * #main-content and pushes the terminal aside rather than covering it.
+ * It is one of the left-dock panels (see dock-panel.ts): it mounts as the
+ * leftmost child of #main-content, pushes the terminal aside rather than
+ * covering it, and shares the dock with the connection list and the file
+ * sidebar — opening one closes the others.
  *
  * Data path: the session's FileManager (already owned by DrawerManager) speaks
  * the same MsgServerInfo channel the drawer used, so sysinfo arrives over the
@@ -21,13 +22,10 @@ import { TerminalRegistry } from './terminal';
 import { TabManager } from './tabs';
 import { DrawerManager } from './drawer';
 import { renderSysInfo, registerSysInfoContainer, unregisterSysInfoContainer } from './drawer-system-info';
-import { loadSettings, updateSettings } from './themes';
+import { attachDockResizer, createDockHeader, loadDockWidth, mountInDock } from './dock-panel';
 import { escapeHtml } from './status-bar';
 import { isHomeView, isGalleryView } from './app-state';
 
-const MIN_WIDTH = 140;
-const MAX_WIDTH = 560;
-const DEFAULT_WIDTH = 280;
 /** Matches the compact breakpoint in drawer-system-info.ts. */
 const COMPACT_BREAKPOINT = 104;
 const SYSINFO_INTERVAL_MS = 5000;
@@ -40,16 +38,6 @@ const SYSINFO_INTERVAL_MS = 5000;
  */
 const PROCESS_INTERVAL_MS = 30000;
 const PROCESS_EVERY_TICKS = PROCESS_INTERVAL_MS / SYSINFO_INTERVAL_MS;
-
-function clampWidth(w: number): number {
-  const max = Math.min(MAX_WIDTH, Math.floor(window.innerWidth * 0.5));
-  return Math.max(MIN_WIDTH, Math.min(max, Math.round(w)));
-}
-
-function loadWidth(): number {
-  const w = loadSettings().sidebarWidth;
-  return w > 0 ? clampWidth(w) : DEFAULT_WIDTH;
-}
 
 /**
  * Server info needs a real remote exec channel, which only a plain SSH session
@@ -96,21 +84,19 @@ class ServerInfoPanelClass {
   open(): void {
     const tabId = TabManager.activeTabId;
     if (!tabId) return;
-    const mainContent = document.getElementById('main-content');
-    if (!mainContent) return;
     if (!this.panel) this.build();
     const panel = this.panel!;
+    if (!mountInDock(panel)) return;
 
-    panel.style.width = `${loadWidth()}px`;
-    if (panel.parentElement !== mainContent || mainContent.firstChild !== panel) {
-      mainContent.insertBefore(panel, mainContent.firstChild);
-    }
+    panel.style.width = `${loadDockWidth()}px`;
     panel.style.display = '';
     this.openTabs.add(tabId);
     this._open = true;
 
-    // Single left dock: the file sidebar (sidebar mode) has to give way.
+    // Single left dock: the file sidebar (sidebar mode) and the connection list
+    // have to give way.
     void import('./file-manager-toggle').then((m) => m.closeFileSidebarForDockSwap());
+    void import('./connections-drawer').then((m) => m.closeConnectionsDrawer({ restoreFocus: false }));
 
     this.syncToActiveSession();
     this.requestSysInfo();
@@ -179,6 +165,7 @@ class ServerInfoPanelClass {
     }
     if (this.panel && this.panel.style.display === 'none') {
       this.panel.style.display = '';
+      void import('./connections-drawer').then((m) => m.closeConnectionsDrawer({ restoreFocus: false }));
       TerminalRegistry.resizeAll();
     }
     // A tab can have its file sidebar open while this tab's server-info dock
@@ -246,19 +233,12 @@ class ServerInfoPanelClass {
     if (instance.sysInfo) renderSysInfo(instance);
   }
 
+  /** `user@host[:port]` — the first line of the panel. */
   private connBlock(info: { host: string; username: string; port: number } | null): string {
     if (!info) return '';
     const host = `${info.host}${info.port && info.port !== 22 ? ':' + info.port : ''}`;
-    return `<div class="server-info-conn">
-      <div class="server-info-item">
-        <div class="server-info-label">${t('serverInfoHost')}</div>
-        <div class="server-info-value">${escapeHtml(host)}</div>
-      </div>
-      <div class="server-info-item">
-        <div class="server-info-label">${t('serverInfoUser')}</div>
-        <div class="server-info-value">${escapeHtml(info.username)}</div>
-      </div>
-    </div>`;
+    const who = info.username ? `${info.username}@${host}` : host;
+    return `<div class="server-info-conn server-info-value">${escapeHtml(who)}</div>`;
   }
 
   private releaseContainer(): void {
@@ -372,25 +352,10 @@ class ServerInfoPanelClass {
 
   private build(): void {
     const panel = document.createElement('div');
-    panel.className = 'server-info-panel';
+    panel.className = 'dock-panel server-info-panel';
     panel.id = 'server-info-panel';
 
-    const header = document.createElement('div');
-    header.className = 'sip-header';
-
-    const title = document.createElement('span');
-    title.className = 'sip-header-title';
-    title.textContent = t('serverInfoToggle');
-    header.appendChild(title);
-
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'sip-close';
-    closeBtn.title = t('serverInfoPanelClose');
-    closeBtn.setAttribute('aria-label', t('serverInfoPanelClose'));
-    closeBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1 9 9M9 1 1 9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>';
-    closeBtn.onclick = () => this.close();
-    header.appendChild(closeBtn);
+    const header = createDockHeader(t('serverInfoToggle'), t('serverInfoPanelClose'), () => this.close());
     panel.appendChild(header);
 
     const body = document.createElement('div');
@@ -398,11 +363,7 @@ class ServerInfoPanelClass {
     panel.appendChild(body);
     this.bodyEl = body;
 
-    // Drag handle on the right edge — shares sidebarWidth with the file sidebar.
-    const resizer = document.createElement('div');
-    resizer.className = 'server-info-panel-resizer';
-    resizer.addEventListener('mousedown', (e) => this.startResize(e, panel, resizer));
-    panel.appendChild(resizer);
+    attachDockResizer(panel, () => this.syncCompactLayout());
 
     window.addEventListener('meterm-server-conn-updated', this.onConnUpdated);
 
@@ -415,43 +376,6 @@ class ServerInfoPanelClass {
     document.addEventListener('pointerdown', this.resumePolling, true);
 
     this.panel = panel;
-  }
-
-  /** Drag the right edge to resize; the width is persisted and shared with the
-   *  file sidebar so switching between the two keeps the same geometry. */
-  private startResize(e: MouseEvent, panel: HTMLElement, resizer: HTMLElement): void {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = panel.getBoundingClientRect().width;
-    let latestW = startW;
-    let raf = 0;
-    resizer.classList.add('dragging');
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-
-    const onMove = (ev: MouseEvent) => {
-      latestW = clampWidth(startW + (ev.clientX - startX));
-      if (!raf) {
-        raf = requestAnimationFrame(() => {
-          raf = 0;
-          panel.style.width = `${latestW}px`;
-          this.syncCompactLayout();
-        });
-      }
-    };
-    const onUp = () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      if (raf) { cancelAnimationFrame(raf); raf = 0; }
-      resizer.classList.remove('dragging');
-      panel.style.width = `${latestW}px`;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-      updateSettings({ sidebarWidth: latestW });
-      this.syncCompactLayout();
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
   }
 }
 

@@ -1,52 +1,8 @@
 /* ============================================================================
-   Connections drawer (connections-drawer.ts)
-   The connection list slides in from the left over the main content. It floats
-   above the terminal instead of docking beside it, so the terminal keeps its
-   width and the left dock stays with the server-info panel. The list itself
-   reuses the shared .home-side-* row/group styles from home.css.
+   Connections list (connections-drawer.ts)
+   A left-dock panel: card, header, width and entrance come from dock-panel.css.
+   The list itself reuses the shared .home-side-* row/group styles from home.css.
    ============================================================================ */
-
-/* Positioned over #main-content from script (top/left/width/height). Below the
-   app's dialogs (.ssh-modal-overlay is 2000) and menus, so an edit dialog or a
-   row menu opened from the drawer lands on top of it. */
-.cn-drawer-root {
-  position: fixed;
-  z-index: 1500;
-  overflow: hidden;
-}
-
-.cn-drawer-scrim {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.28);
-  opacity: 0;
-  transition: opacity 0.16s ease;
-}
-
-.cn-drawer {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: min(340px, calc(100% - 48px));
-  display: flex;
-  flex-direction: column;
-  box-sizing: border-box;
-  background: rgba(var(--bg-toolbar, 33, 33, 35), 1);
-  color: var(--text-primary);
-  border-right: 1px solid var(--border-primary);
-  box-shadow: 8px 0 28px rgba(0, 0, 0, 0.32);
-  transform: translateX(-102%);
-  transition: transform 0.18s ease;
-}
-
-.cn-drawer-root.is-open .cn-drawer-scrim { opacity: 1; }
-.cn-drawer-root.is-open .cn-drawer { transform: none; }
-
-@media (prefers-reduced-motion: reduce) {
-  .cn-drawer-scrim,
-  .cn-drawer { transition: none; }
-}
 
 /* Search row. */
 .cn-drawer .cn-toolbar {
@@ -54,7 +10,7 @@
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  padding: 10px 10px 4px;
+  padding: 0 10px 4px;
 }
 
 .cn-drawer .cn-toolbar .cn-search {

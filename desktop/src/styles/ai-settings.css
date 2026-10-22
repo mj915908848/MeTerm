@@ -696,7 +696,7 @@
 
 .ai-tool-name {
   font-weight: 500;
-  font-family: var(--mono-font);
+  font-family: var(--font-mono);
 }
 
 .ai-tool-status {
@@ -714,7 +714,7 @@
 }
 .ai-tool-args-inline code {
   font-size: 11px;
-  font-family: var(--mono-font);
+  font-family: var(--font-mono);
   color: var(--text-primary);
   opacity: 0.7;
 }
@@ -730,7 +730,7 @@
      padding 加在 <pre> 而不是 .ai-tool-result,这样不会撑大卡片外宽。 */
   padding: 4px 14px 4px 0;
   font-size: 11px;
-  font-family: var(--mono-font);
+  font-family: var(--font-mono);
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-all;
@@ -780,7 +780,7 @@
 }
 .ai-confirm-preview code {
   font-size: 12px;
-  font-family: var(--mono-font);
+  font-family: var(--font-mono);
   color: var(--text-primary);
   display: block;
   overflow-x: auto;
@@ -795,7 +795,7 @@
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.2);
   font-size: 12px;
-  font-family: var(--mono-font);
+  font-family: var(--font-mono);
   color: var(--text-primary);
   white-space: pre-wrap;
   word-break: break-all;
@@ -852,7 +852,7 @@
   border-radius: 8px;
   color: var(--text-primary);
   font-size: 12px;
-  font-family: var(--mono-font);
+  font-family: var(--font-mono);
   outline: none;
   box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.1);
   transition: background 0.15s, box-shadow 0.15s;

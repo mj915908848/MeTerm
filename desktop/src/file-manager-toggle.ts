@@ -26,11 +26,12 @@ export function isFileManagerOpen(sessionId: string): boolean {
  */
 export function toggleFileManager(sessionId: string): void {
   const mode = loadSettings().fileManagerMode;
-  // The left dock holds a single panel: opening the file sidebar gives way to
-  // the server-info panel, and vice versa.
+  // The left dock holds a single panel: opening the file sidebar closes the
+  // server-info panel and the connection list, and vice versa.
   const willOpen = mode === 'sidebar' ? !SidebarManager.isOpen(sessionId) : !DrawerManager.isOpen(sessionId);
   if (willOpen && mode === 'sidebar') {
     void import('./server-info-panel').then((m) => m.ServerInfoPanel.close());
+    void import('./connections-drawer').then((m) => m.closeConnectionsDrawer({ restoreFocus: false }));
   }
   if (mode === 'sidebar') {
     if (!SidebarManager.has(sessionId)) {

@@ -173,8 +173,7 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
     const color = isUngrouped ? '' : colors[g] ?? '';
     const dot = /^#[0-9a-f]{3,8}$/i.test(color) ? `<span class="hsg-dot" style="background:${color}"></span>` : '';
     header.innerHTML = `<span class="hsg-chevron">${icon('chevronRight')}</span>${dot}`
-      + `<span class="hsg-name">${isUngrouped ? t('homeGroupUngrouped') : escapeHtml(g)}</span>`
-      + `<span class="hsg-count">${items.length}</span>`;
+      + `<span class="hsg-name">${isUngrouped ? t('homeGroupUngrouped') : escapeHtml(g)}</span>`;
     header.onclick = () => {
       if (query) return; // can't collapse while filtering
       toggleGroupCollapsed(g);
