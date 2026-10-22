@@ -1,6 +1,44 @@
 export type Language = 'en' | 'zh';
 
 export interface Translations {
+  settingsGroupGeneral: string;
+  settingsGroupImportExport: string;
+  settingsGroupFmDisplay: string;
+  settingsGroupFmOpen: string;
+  terminalThemeDark: string;
+  terminalThemeDarkHint: string;
+  terminalThemeLight: string;
+  terminalThemeLightHint: string;
+  terminalThemeNb: string;
+  terminalThemeNbHint: string;
+  uiFontHint: string;
+  opacityHint: string;
+  vibrancyHint: string;
+  backgroundImageHint: string;
+  backgroundImageStrength: string;
+  aiBarOpacityHint: string;
+  fontSizeHint: string;
+  cjkFontHint: string;
+  fontFeatureHint: string;
+  fontSharpnessHint: string;
+  defaultShellHint: string;
+  encodingHint: string;
+  terminalNotificationsHint: string;
+  fileLinkConfirmHint: string;
+  fileManagerPositionHint: string;
+  fileOpenPreferenceSetting: string;
+  fileOpenPreferenceHint: string;
+  autoNewSessionHint: string;
+  rememberWindowSizeHint: string;
+  sshTabTitleHint: string;
+  enableThumbnailHint: string;
+  previewRefreshRateHint: string;
+  pipScaleHint: string;
+  pipScaleByScreenHint: string;
+  contextMenuIntegrationMac: string;
+  contextMenuIntegrationWin: string;
+  autoOpenAiOnConnectHint: string;
+  sshSavedConnectionsHint: string;
   appName: string;
   connectionSort: string;
   connectionSortDefault: string;
@@ -25,7 +63,6 @@ export interface Translations {
   settingsPageConnections: string;
   settingsGroupTheme: string;
   settingsGroupBackground: string;
-  settingsGroupInterface: string;
   settingsGroupFont: string;
   settingsGroupShell: string;
   settingsGroupTerminalBehavior: string;
@@ -36,7 +73,6 @@ export interface Translations {
   settingsGroupOnConnect: string;
   settingsSearchPlaceholder: string;
   settingsSearchNoResults: string;
-  theme: string;
   opacity: string;
   enableVibrancy: string;
   fontSize: string;
@@ -301,7 +337,6 @@ export interface Translations {
   processColCPU: string;
   processColMem: string;
   backgroundImage: string;
-  backgroundImageOpacity: string;
   backgroundImageSelect: string;
   backgroundImageClear: string;
   homeNewLocalSession: string;
@@ -602,8 +637,6 @@ export interface Translations {
   fileLinkConfirmOpen: string;
   fileLinkSkipConfirmSetting: string;
   autoNewSession: string;
-  deviceName: string;
-  deviceNamePlaceholder: string;
   // tldr & command completion
   tldrHelp: string;
   tldrEnable: string;
@@ -736,6 +769,44 @@ export interface Translations {
 
 const translations: Record<Language, Translations> = {
   en: {
+    settingsGroupGeneral: 'General',
+    settingsGroupImportExport: 'Import & Export',
+    settingsGroupFmDisplay: 'Display',
+    settingsGroupFmOpen: 'Opening Files',
+    terminalThemeDark: 'Dark Terminal Colors',
+    terminalThemeDarkHint: 'Used when the appearance is dark',
+    terminalThemeLight: 'Light Terminal Colors',
+    terminalThemeLightHint: 'Used when the appearance is light. With Auto, both are used',
+    terminalThemeNb: 'Terminal Colors',
+    terminalThemeNbHint: 'Set by the Neo-Brutalism appearance',
+    uiFontHint: 'Tabs, menus and windows like this one. Does not affect the terminal',
+    opacityHint: 'Below 100% the desktop shows through',
+    vibrancyHint: 'Blurs the desktop that shows through. No visible effect at 100% window opacity',
+    backgroundImageHint: 'Shown behind the terminal',
+    backgroundImageStrength: 'Image Strength',
+    aiBarOpacityHint: 'Only the AI input bar under the terminal',
+    fontSizeHint: 'Also adjustable in the terminal with ⌘/Ctrl + and −',
+    cjkFontHint: 'Used for Chinese, Japanese and Korean characters',
+    fontFeatureHint: 'Unavailable when the current font does not support it',
+    fontSharpnessHint: 'May make scrolling less smooth',
+    defaultShellHint: 'Local terminals only. SSH sessions use the server\'s shell',
+    encodingHint: 'Applies to every open session at once. Change it only when an old server shows garbled text',
+    terminalNotificationsHint: 'Alerts that programs in the terminal send with escape sequences, at most one per session every 3 seconds',
+    fileLinkConfirmHint: 'Ask before opening a file path clicked in the terminal',
+    fileManagerPositionHint: 'Bottom drawer or left sidebar. Can also be switched inside the file manager',
+    fileOpenPreferenceSetting: 'Double-clicking text and image files',
+    fileOpenPreferenceHint: 'Remote files are downloaded first when opened with a system app',
+    autoNewSessionHint: 'When off, the app opens on the home page',
+    rememberWindowSizeHint: 'Including whether it was maximized',
+    sshTabTitleHint: 'The connection name, or the title programs on the server set',
+    enableThumbnailHint: 'Adds a Session Overview button to the toolbar that shows every session as a thumbnail',
+    previewRefreshRateHint: 'Shorter is more live and uses more power',
+    pipScaleHint: 'Size of the PiP window relative to the original',
+    pipScaleByScreenHint: 'When off, relative to the main window',
+    contextMenuIntegrationMac: 'Add "Open in MeTerm" to the Finder context menu',
+    contextMenuIntegrationWin: 'Add "Open in MeTerm" to the Explorer context menu',
+    autoOpenAiOnConnectHint: 'After an SSH connection succeeds',
+    sshSavedConnectionsHint: 'Exported files contain passwords and private keys in plain text, so you are asked to verify first. Importing replaces connections with the same name',
     appName: 'MeTerm',
     settings: 'Settings',
     settingsTabAppearance: 'Appearance',
@@ -748,20 +819,18 @@ const translations: Record<Language, Translations> = {
     settingsPageConnections: 'Connections',
     settingsGroupTheme: 'Theme',
     settingsGroupBackground: 'Window Background',
-    settingsGroupInterface: 'Interface',
     settingsGroupFont: 'Font',
     settingsGroupShell: 'Shell & Encoding',
     settingsGroupTerminalBehavior: 'Behavior',
     settingsGroupTabs: 'Tabs',
-    settingsGroupWindow: 'Windows',
+    settingsGroupWindow: 'Startup & Window',
     settingsGroupPip: 'Picture in Picture',
     settingsGroupSystem: 'System Integration',
     settingsGroupOnConnect: 'After Connecting',
     settingsSearchPlaceholder: 'Search settings',
     settingsSearchNoResults: 'No matching settings',
-    theme: 'Terminal Theme',
-    opacity: 'Background Opacity',
-    enableVibrancy: 'Background Blur (Vibrancy)',
+    opacity: 'Window Opacity',
+    enableVibrancy: 'Background Blur',
     fontSize: 'Font Size',
     fontFamily: 'Font',
     uiFontFamily: 'UI Font',
@@ -770,17 +839,17 @@ const translations: Record<Language, Translations> = {
     enableNerdFont: 'Nerd Font Icons',
     enableLigatures: 'Ligatures',
     fontWeight: 'Font Weight',
-    fontSharpness: 'Text Sharpening (may reduce scroll performance)',
+    fontSharpness: 'Text Sharpening',
     encoding: 'Encoding',
-    fileManagerFontSize: 'File Manager Font Size',
-    enableThumbnail: 'Session Thumbnail Preview',
-    previewRefreshRate: 'Preview Refresh Rate',
+    fileManagerFontSize: 'Font Size',
+    enableThumbnail: 'Session Overview',
+    previewRefreshRate: 'Thumbnail Refresh Interval',
     previewRate100: '100ms (Fastest)',
     previewRate500: '500ms (Fast)',
     previewRate1000: '1s (Normal)',
     previewRate2000: '2s (Slow)',
     previewRate5000: '5s (Slowest)',
-    fileManagerPosition: 'File Manager Position',
+    fileManagerPosition: 'Position',
     fileManagerPositionDrawer: 'Bottom Drawer',
     fileManagerPositionSidebar: 'Left Sidebar (Tree View)',
     newTerminal: 'New Terminal',
@@ -868,7 +937,7 @@ const translations: Record<Language, Translations> = {
     nbPresetMatrix: '💚 Matrix',
     nbPresetStealth: '🥷 Stealth',
     nbPresetMocha: '☕ Mocha',
-    rememberWindowSize: 'Remember Window Size',
+    rememberWindowSize: 'Remember Window Position and Size',
     connectionSort: 'Sort connections',
     connectionSortDefault: 'Default order',
     connectionSortIpAsc: 'IP ascending',
@@ -876,14 +945,14 @@ const translations: Record<Language, Translations> = {
     connectionSortNameAsc: 'Name ascending',
     connectionSortNameDesc: 'Name descending',
     sshTabTitleMode: 'SSH tab title',
-    autoOpenAiOnConnect: 'Automatically open AI panel after connecting to a host',
-    autoRestoreAiHistoryOnConnect: 'Restore the latest conversation for this host when AI opens automatically',
+    autoOpenAiOnConnect: 'Open AI Panel Automatically',
+    autoRestoreAiHistoryOnConnect: 'Restore This Host\'s Latest Conversation',
     sshTabTitleConnection: 'Connection name',
     sshTabTitleTerminal: 'Dynamic terminal title',
 
-    rememberDrawerLayout: 'Remember Drawer Layout',
-    pipScale: 'PiP Window Scale',
-    pipScaleByScreen: 'Scale relative to screen size',
+    rememberDrawerLayout: 'Remember Drawer Height',
+    pipScale: 'Scale',
+    pipScaleByScreen: 'Relative to Screen Size',
     sessionsGallery: 'Sessions',
     sshConnect: 'SSH Connection',
     sshHost: 'Host',
@@ -1035,7 +1104,6 @@ const translations: Record<Language, Translations> = {
     processColCPU: 'CPU%',
     processColMem: 'MEM%',
     backgroundImage: 'Background Image',
-    backgroundImageOpacity: 'Image Opacity',
     backgroundImageSelect: 'Select Image',
     backgroundImageClear: 'Clear',
     homeNewLocalSession: 'New Local Session',
@@ -1051,7 +1119,7 @@ const translations: Record<Language, Translations> = {
     homeShowLess: 'Show Less',
     homeRecentConnections: 'Recent',
     aiCapsule: 'MeAgent',
-    aiBarOpacity: 'AI Bar Opacity',
+    aiBarOpacity: 'AI Input Bar Opacity',
     aiSendCommand: 'Send Command',
     aiSendPrompt: 'Send Prompt',
     aiModelSelect: 'Model',
@@ -1257,7 +1325,7 @@ const translations: Record<Language, Translations> = {
     closeTab: 'Close Tab',
     confirmBanIp: 'Also ban this device\'s IP address?',
     banIpYes: 'Ban IP',
-    enableTerminalNotifications: 'Terminal Notifications',
+    enableTerminalNotifications: 'Allow Programs to Send Notifications',
     jsBypassProxy: 'Bypass system proxy (for internal JumpServer)',
     remoteTypeBadge: 'Remote',
     aiChatHistory: 'Chat History',
@@ -1317,10 +1385,8 @@ const translations: Record<Language, Translations> = {
     fileLinkDontAskAgain: "Don't ask again",
     fileLinkLocalConfirmMsg: 'Open <code>{path}</code> with system default application?',
     fileLinkConfirmOpen: 'Open',
-    fileLinkSkipConfirmSetting: 'Show file link open confirmation',
-    autoNewSession: 'Auto-create local session on startup',
-    deviceName: 'Device Name',
-    deviceNamePlaceholder: 'Use OS hostname',
+    fileLinkSkipConfirmSetting: 'Confirm Before Opening File Links',
+    autoNewSession: 'Open a Local Terminal on Startup',
     // JumpServer
     jsEditServer: 'Edit JumpServer',
     jsAddServer: 'Add JumpServer',
@@ -1466,6 +1532,44 @@ const translations: Record<Language, Translations> = {
     editorFormat: 'Format',
   },
   zh: {
+    settingsGroupGeneral: '通用',
+    settingsGroupImportExport: '导入导出',
+    settingsGroupFmDisplay: '显示',
+    settingsGroupFmOpen: '打开文件',
+    terminalThemeDark: '深色终端配色',
+    terminalThemeDarkHint: '外观为深色时使用',
+    terminalThemeLight: '浅色终端配色',
+    terminalThemeLightHint: '外观为浅色时使用。外观选「自动」时两个都会用到',
+    terminalThemeNb: '终端配色',
+    terminalThemeNbHint: '由新粗野主义主题决定',
+    uiFontHint: '标签、菜单、设置窗口等界面文字，不影响终端',
+    opacityHint: '低于 100% 时能透出桌面',
+    vibrancyHint: '让透出的桌面变模糊。窗口透明度为 100% 时看不出效果',
+    backgroundImageHint: '显示在终端后面',
+    backgroundImageStrength: '图片强度',
+    aiBarOpacityHint: '只影响终端底部的 AI 输入栏',
+    fontSizeHint: '也可以在终端里用 ⌘/Ctrl 加减号调整',
+    cjkFontHint: '中日韩字符使用的字体',
+    fontFeatureHint: '当前字体不支持时无法开启',
+    fontSharpnessHint: '可能影响滚动流畅度',
+    defaultShellHint: '只影响本机终端，SSH 连接使用服务器上的 Shell',
+    encodingHint: '对所有已打开的会话立即生效。只在连接老服务器出现乱码时修改',
+    terminalNotificationsHint: '终端里的程序通过转义序列发出的提醒，同一会话 3 秒内最多一条',
+    fileLinkConfirmHint: '点击终端里的文件路径时先弹窗确认',
+    fileManagerPositionHint: '底部抽屉或左侧边栏（树形）。也可以在文件管理器里直接切换',
+    fileOpenPreferenceSetting: '双击文本和图片文件时',
+    fileOpenPreferenceHint: '远程文件用系统应用打开时会先下载',
+    autoNewSessionHint: '关闭时启动后停在首页',
+    rememberWindowSizeHint: '包括是否最大化',
+    sshTabTitleHint: '用连接名，或用服务器上程序设置的标题',
+    enableThumbnailHint: '工具栏显示「会话总览」按钮，用缩略图查看所有会话',
+    previewRefreshRateHint: '越短越实时，也越耗电',
+    pipScaleHint: '画中画窗口相对原窗口的大小',
+    pipScaleByScreenHint: '关闭时按主窗口大小计算',
+    contextMenuIntegrationMac: '在访达右键菜单中添加「在 MeTerm 中打开」',
+    contextMenuIntegrationWin: '在资源管理器右键菜单中添加「在 MeTerm 中打开」',
+    autoOpenAiOnConnectHint: '连接 SSH 主机成功后',
+    sshSavedConnectionsHint: '导出文件包含密码和私钥明文，导出前会要求验证身份。导入会覆盖同名连接',
     appName: 'MeTerm',
     settings: '设置',
     settingsTabAppearance: '外观',
@@ -1478,20 +1582,18 @@ const translations: Record<Language, Translations> = {
     settingsPageConnections: '连接',
     settingsGroupTheme: '主题',
     settingsGroupBackground: '窗口背景',
-    settingsGroupInterface: '界面',
     settingsGroupFont: '字体',
     settingsGroupShell: 'Shell 与编码',
     settingsGroupTerminalBehavior: '行为',
     settingsGroupTabs: '标签页',
-    settingsGroupWindow: '窗口',
+    settingsGroupWindow: '启动与窗口',
     settingsGroupPip: '画中画',
     settingsGroupSystem: '系统集成',
     settingsGroupOnConnect: '连接后',
     settingsSearchPlaceholder: '搜索设置',
     settingsSearchNoResults: '没有匹配的设置',
-    theme: '终端主题',
-    opacity: '背景透明度',
-    enableVibrancy: '背景模糊（毛玻璃）',
+    opacity: '窗口透明度',
+    enableVibrancy: '背景模糊',
     fontSize: '字体大小',
     fontFamily: '字体',
     uiFontFamily: '界面字体',
@@ -1500,17 +1602,17 @@ const translations: Record<Language, Translations> = {
     enableNerdFont: 'Nerd Font 图标',
     enableLigatures: '编程连字',
     fontWeight: '字重',
-    fontSharpness: '文字锐化（可能影响滚动流畅度）',
+    fontSharpness: '文字锐化',
     encoding: '字符编码',
-    fileManagerFontSize: '文件管理器字体大小',
-    enableThumbnail: '会话缩略图预览',
-    previewRefreshRate: '预览刷新频率',
+    fileManagerFontSize: '字体大小',
+    enableThumbnail: '会话总览',
+    previewRefreshRate: '缩略图刷新间隔',
     previewRate100: '100毫秒 (最快)',
     previewRate500: '500毫秒 (快)',
     previewRate1000: '1秒 (正常)',
     previewRate2000: '2秒 (慢)',
     previewRate5000: '5秒 (最慢)',
-    fileManagerPosition: '文件管理器位置',
+    fileManagerPosition: '位置',
     fileManagerPositionDrawer: '底部抽屉',
     fileManagerPositionSidebar: '左侧边栏 (树形视图)',
     newTerminal: '新建终端',
@@ -1598,7 +1700,7 @@ const translations: Record<Language, Translations> = {
     nbPresetMatrix: '💚 矩阵',
     nbPresetStealth: '🥷 隐匿',
     nbPresetMocha: '☕ 摩卡',
-    rememberWindowSize: '记住窗口大小',
+    rememberWindowSize: '记住窗口位置和大小',
     connectionSort: '组内排序',
     connectionSortDefault: '默认顺序',
     connectionSortIpAsc: 'IP 升序',
@@ -1606,14 +1708,14 @@ const translations: Record<Language, Translations> = {
     connectionSortNameAsc: '名称升序',
     connectionSortNameDesc: '名称降序',
     sshTabTitleMode: 'SSH 标签名称',
-    autoOpenAiOnConnect: '连接主机后自动打开 AI 面板',
-    autoRestoreAiHistoryOnConnect: '自动打开 AI 面板时恢复当前主机最近的对话',
+    autoOpenAiOnConnect: '自动打开 AI 面板',
+    autoRestoreAiHistoryOnConnect: '恢复这台主机最近的对话',
     sshTabTitleConnection: '连接名称',
     sshTabTitleTerminal: '终端动态标题',
 
-    rememberDrawerLayout: '记住抽屉布局',
-    pipScale: '画中画窗口缩放比例',
-    pipScaleByScreen: '根据屏幕大小比例进行缩放',
+    rememberDrawerLayout: '记住抽屉高度',
+    pipScale: '缩放比例',
+    pipScaleByScreen: '按屏幕大小计算',
     sessionsGallery: '会话总览',
     sshConnect: 'SSH 连接',
     sshHost: '主机地址',
@@ -1765,7 +1867,6 @@ const translations: Record<Language, Translations> = {
     processColCPU: 'CPU%',
     processColMem: '内存%',
     backgroundImage: '背景图片',
-    backgroundImageOpacity: '图片透明度',
     backgroundImageSelect: '选择图片',
     backgroundImageClear: '清除',
     homeNewLocalSession: '新建本地会话',
@@ -1781,7 +1882,7 @@ const translations: Record<Language, Translations> = {
     homeShowLess: '收起',
     homeRecentConnections: '最近连接',
     aiCapsule: 'MeAgent',
-    aiBarOpacity: 'AI 栏透明度',
+    aiBarOpacity: 'AI 输入栏透明度',
     aiSendCommand: '发送命令',
     aiSendPrompt: '发送提示词',
     aiModelSelect: '模型',
@@ -1987,7 +2088,7 @@ const translations: Record<Language, Translations> = {
     closeTab: '关闭标签',
     confirmBanIp: '是否同时封禁该设备的 IP 地址？',
     banIpYes: '封禁 IP',
-    enableTerminalNotifications: '终端通知',
+    enableTerminalNotifications: '允许程序发送系统通知',
     jsBypassProxy: '绕过系统代理（内网 JumpServer）',
     remoteTypeBadge: '远程',
     aiChatHistory: '对话历史',
@@ -2047,10 +2148,8 @@ const translations: Record<Language, Translations> = {
     fileLinkDontAskAgain: '不再提示',
     fileLinkLocalConfirmMsg: '是否使用系统默认程序打开 <code>{path}</code>？',
     fileLinkConfirmOpen: '打开',
-    fileLinkSkipConfirmSetting: '显示文件链接打开确认弹窗',
-    autoNewSession: '启动时自动创建本地会话',
-    deviceName: '设备名称',
-    deviceNamePlaceholder: '使用系统主机名',
+    fileLinkSkipConfirmSetting: '打开文件链接前确认',
+    autoNewSession: '启动时新建本地终端',
     // JumpServer
     jsEditServer: '编辑 JumpServer',
     jsAddServer: '添加 JumpServer',

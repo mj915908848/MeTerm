@@ -1,4 +1,4 @@
-import { THEMES, AppSettings, ColorScheme } from './themes';
+import { AppSettings, ColorScheme, getEffectiveTheme, getThemesForType, loadSettings, type ThemeType } from './themes';
 import { getAvailableLanguages, t, setLanguage } from './i18n';
 import { invoke } from '@tauri-apps/api/core';
 import { FONT_REGISTRY, UI_FONT_EXTRAS, getFontDef, getAvailableCJKFonts } from './fonts';
@@ -21,6 +21,19 @@ export function createGeneralPages(
   update: (patch: Partial<AppSettings>) => void,
   onLanguageChange: () => void,
 ): SettingsPage[] {
+
+  /** Put a line of explanation under a row's name. */
+  const hint = <T extends HTMLElement | null>(row: T, text: string): T => {
+    const target = row?.querySelector('.settings-switch-text') ?? row?.querySelector('label');
+    if (target) {
+      const small = document.createElement('small');
+      small.className = 'settings-row-hint';
+      small.textContent = text;
+      target.appendChild(small);
+    }
+    return row;
+  };
+  const show = (row: HTMLElement | null, on: boolean) => { if (row) row.style.display = on ? '' : 'none'; };
 
   // --- Language + Color Scheme ---
   const langSection = document.createElement('div');
@@ -202,22 +215,42 @@ export function createGeneralPages(
 
   nbSection.append(grid, presetRow, resetBtn);
 
+  // --- Terminal Theme: one per appearance, so switching appearance never
+  // overwrites the other choice. Neo-Brutalism brings its own. ---
+  const terminalThemeRow = (key: 'terminalThemeDark' | 'terminalThemeLight', type: ThemeType, label: string, hintText: string) => {
+    const section = document.createElement('div');
+    section.className = 'settings-section';
+    const lbl = document.createElement('label');
+    lbl.textContent = label;
+    section.appendChild(lbl);
+    const select = createSettingsSelect(
+      getThemesForType(type).map(([k, theme]) => ({ value: k, label: theme.name, selected: k === current[key] })),
+    );
+    section.appendChild(select.el);
+    select.onchange = () => {
+      const patch: Partial<AppSettings> = { [key]: select.value };
+      update({ ...patch, theme: getEffectiveTheme({ ...loadSettings(), ...patch }) });
+    };
+    return hint(section, hintText);
+  };
+  const darkThemeSection = terminalThemeRow('terminalThemeDark', 'dark', t('terminalThemeDark'), t('terminalThemeDarkHint'));
+  const lightThemeSection = terminalThemeRow('terminalThemeLight', 'light', t('terminalThemeLight'), t('terminalThemeLightHint'));
+  const nbThemeSection = document.createElement('div');
+  nbThemeSection.className = 'settings-section';
+  nbThemeSection.innerHTML = `<label>${escapeHtml(t('terminalThemeNb'))}</label>`;
+  hint(nbThemeSection, t('terminalThemeNbHint'));
+  const syncThemeRows = (scheme: string) => {
+    show(nbSection, isNB(scheme));
+    show(nbThemeSection, isNB(scheme));
+    show(darkThemeSection, !isNB(scheme));
+    show(lightThemeSection, !isNB(scheme));
+  };
+  syncThemeRows(current.colorScheme);
+
   colorSchemeSelect.onchange = () => {
     const scheme = colorSchemeSelect.value as ColorScheme;
     update({ colorScheme: scheme });
-    nbSection.style.display = isNB(scheme) ? '' : 'none';
-  };
-
-  // --- Terminal Theme ---
-  const themeSection = document.createElement('div');
-  themeSection.className = 'settings-section';
-  themeSection.innerHTML = `<label>${t('theme')}</label>`;
-  const themeSelect = createSettingsSelect(
-    Object.entries(THEMES).map(([key, theme]) => ({ value: key, label: theme.name, selected: key === current.theme })),
-  );
-  themeSection.appendChild(themeSelect.el);
-  themeSelect.onchange = () => {
-    update({ theme: themeSelect.value });
+    syncThemeRows(scheme);
   };
 
   // --- Background Image ---
@@ -249,6 +282,7 @@ export function createGeneralPages(
         bgSelectBtn.textContent = (sourcePath as string).split(/[/\\]/).pop() || t('backgroundImageSelect');
         current.backgroundImage = internalPath;
         update({ backgroundImage: internalPath });
+        show(bgStrengthSection, true);
       } catch (e) {
         console.error('Failed to copy background image:', e);
       }
@@ -266,7 +300,25 @@ export function createGeneralPages(
     bgSelectBtn.textContent = t('backgroundImageSelect');
     current.backgroundImage = '';
     update({ backgroundImage: '' });
+    show(bgStrengthSection, false);
   };
+  hint(bgImageSection, t('backgroundImageHint'));
+
+  // --- Background Image Strength (only with an image) ---
+  const bgStrengthSection = document.createElement('div');
+  bgStrengthSection.className = 'settings-section settings-inline settings-row-sub';
+  bgStrengthSection.innerHTML = `
+    <label>${t('backgroundImageStrength')}: <span id="bg-strength-value">${current.backgroundImageStrength}%</span></label>
+    <input type="range" class="settings-slider" id="bg-strength-slider" min="20" max="100" value="${current.backgroundImageStrength}">
+  `;
+  const bgStrengthSlider = bgStrengthSection.querySelector('#bg-strength-slider') as HTMLInputElement;
+  const bgStrengthValue = bgStrengthSection.querySelector('#bg-strength-value') as HTMLSpanElement;
+  bgStrengthSlider.oninput = () => {
+    const backgroundImageStrength = parseInt(bgStrengthSlider.value, 10);
+    bgStrengthValue.textContent = `${backgroundImageStrength}%`;
+    update({ backgroundImageStrength });
+  };
+  show(bgStrengthSection, !!current.backgroundImage);
 
   // --- Opacity ---
   const opacitySection = document.createElement('div');
@@ -282,6 +334,7 @@ export function createGeneralPages(
     opacityValue.textContent = `${opacity}%`;
     update({ opacity });
   };
+  hint(opacitySection, t('opacityHint'));
 
   // --- AI Bar Opacity ---
   const aiBarOpacitySection = document.createElement('div');
@@ -297,6 +350,7 @@ export function createGeneralPages(
     aiBarOpacityValue.textContent = `${val}%`;
     update({ aiBarOpacity: val });
   };
+  hint(aiBarOpacitySection, t('aiBarOpacityHint'));
 
   // --- Vibrancy (Background Blur) Toggle ---
   const vibrancySection = document.createElement('div');
@@ -312,6 +366,7 @@ export function createGeneralPages(
   vibrancyToggle.onchange = () => {
     update({ enableVibrancy: vibrancyToggle.checked });
   };
+  hint(vibrancySection, t('vibrancyHint'));
 
   // --- Font Size ---
   const fontSection = document.createElement('div');
@@ -327,6 +382,7 @@ export function createGeneralPages(
     fontValue.textContent = `${fontSize}px`;
     update({ fontSize });
   };
+  hint(fontSection, t('fontSizeHint'));
 
   // --- Font Family ---
   const fontFamilySection = document.createElement('div');
@@ -359,6 +415,7 @@ export function createGeneralPages(
     current.uiFontFamily = uiFontSelect.value;
     update({ uiFontFamily: uiFontSelect.value });
   };
+  hint(uiFontSection, t('uiFontHint'));
 
   // --- CJK Font Family ---
   const cjkFontSection = document.createElement('div');
@@ -378,6 +435,7 @@ export function createGeneralPages(
   cjkFontSelect.onchange = () => {
     update({ cjkFontFamily: cjkFontSelect.value });
   };
+  hint(cjkFontSection, t('cjkFontHint'));
 
   // --- Font Weight ---
   const fontWeightSection = document.createElement('div');
@@ -430,6 +488,7 @@ export function createGeneralPages(
   encodingSelect.onchange = () => {
     update({ encoding: encodingSelect.value });
   };
+  hint(encodingSection, t('encodingHint'));
 
   // --- Default Shell ---
   const shellSection = document.createElement('div');
@@ -455,6 +514,7 @@ export function createGeneralPages(
   shellSelect.onchange = () => {
     update({ defaultShell: shellSelect.value });
   };
+  hint(shellSection, t('defaultShellHint'));
 
   function updateFontToggles(): void {
     const def = getFontDef(current.fontFamily);
@@ -475,7 +535,7 @@ export function createGeneralPages(
   const ctxMenuSection = document.createElement('div');
   ctxMenuSection.className = 'settings-section settings-inline';
   ctxMenuSection.innerHTML = `
-    <label>${t('contextMenuIntegration')}</label>
+    <label>${t(isMacPlatform ? 'contextMenuIntegrationMac' : 'contextMenuIntegrationWin')}</label>
     <label class="settings-toggle">
       <input type="checkbox" id="context-menu-toggle">
       <span class="settings-toggle-slider"></span>
@@ -528,7 +588,22 @@ export function createGeneralPages(
   fmModeSelect.onchange = () => {
     const fileManagerMode = fmModeSelect.value as 'drawer' | 'sidebar';
     update({ fileManagerMode });
+    show(drawerLayoutRow, fileManagerMode === 'drawer');
   };
+  hint(fmModeSection, t('fileManagerPositionHint'));
+
+  // --- What double-click does with text and image files (same value as the
+  // file list's "Open With" menu) ---
+  const fileOpenSection = document.createElement('div');
+  fileOpenSection.className = 'settings-section';
+  fileOpenSection.innerHTML = `<label>${t('fileOpenPreferenceSetting')}</label>`;
+  const fileOpenSelect = createSettingsSelect([
+    { value: 'builtin', label: t('ctxMenuBuiltinEditor'), selected: current.fileOpenPreference !== 'system' },
+    { value: 'system', label: t('ctxMenuSystemDefault'), selected: current.fileOpenPreference === 'system' },
+  ]);
+  fileOpenSection.appendChild(fileOpenSelect.el);
+  fileOpenSelect.onchange = () => update({ fileOpenPreference: fileOpenSelect.value as AppSettings['fileOpenPreference'] });
+  hint(fileOpenSection, t('fileOpenPreferenceHint'));
 
   // --- Thumbnail Toggle + Preview Refresh Rate ---
   const thumbSection = document.createElement('div');
@@ -550,6 +625,8 @@ export function createGeneralPages(
     { value: '5000', label: t('previewRate5000'), selected: current.previewRefreshRate === 5000 },
   ]);
   rateSection.appendChild(rateSelect.el);
+  rateSection.classList.add('settings-row-sub');
+  hint(rateSection, t('previewRefreshRateHint'));
   rateSelect.onchange = () => {
     const previewRefreshRate = parseInt(rateSelect.value, 10);
     update({ previewRefreshRate });
@@ -575,6 +652,7 @@ export function createGeneralPages(
   titleSelect.el.setAttribute('aria-label', t('sshTabTitleMode'));
   titleSection.appendChild(titleSelect.el);
   titleSelect.onchange = () => update({ sshTabTitleMode: titleSelect.value as AppSettings['sshTabTitleMode'] });
+  hint(titleSection, t('sshTabTitleHint'));
 
   // --- Remember Options ---
   const rememberSection = document.createElement('div');
@@ -603,10 +681,9 @@ export function createGeneralPages(
   autoNewSessionToggle.onchange = () => { update({ autoNewSession: autoNewSessionToggle.checked }); };
   const autoOpenAiToggle = rememberGroup.querySelector('#auto-open-ai-toggle') as HTMLInputElement;
   const autoRestoreAiToggle = rememberGroup.querySelector('#auto-restore-ai-history-toggle') as HTMLInputElement;
-  autoRestoreAiToggle.disabled = !autoOpenAiToggle.checked;
   autoOpenAiToggle.onchange = () => {
     update({ autoOpenAiOnConnect: autoOpenAiToggle.checked });
-    autoRestoreAiToggle.disabled = !autoOpenAiToggle.checked;
+    show(autoRestoreAiRow, autoOpenAiToggle.checked);
   };
   autoRestoreAiToggle.onchange = () => update({ autoRestoreAiHistoryOnConnect: autoRestoreAiToggle.checked });
 
@@ -624,6 +701,7 @@ export function createGeneralPages(
     pipScaleValue.textContent = `${val}%`;
     update({ pipScale: val });
   };
+  hint(pipScaleSection, t('pipScaleHint'));
 
   // --- PiP Scale by Screen ---
   const pipScreenSection = document.createElement('div');
@@ -636,11 +714,13 @@ export function createGeneralPages(
   pipScreenCheckbox.onchange = () => {
     update({ pipScaleByScreen: pipScreenCheckbox.checked });
   };
+  hint(pipScreenSection, t('pipScaleByScreenHint'));
 
   // SSH Connections import/export
   const sshIoSection = document.createElement('div');
   sshIoSection.className = 'settings-section';
   sshIoSection.innerHTML = `<label>${t('sshSavedConnections')}</label>`;
+  hint(sshIoSection, t('sshSavedConnectionsHint'));
 
   const sshIoStatus = document.createElement('div');
   sshIoStatus.className = 'settings-ssh-io-status';
@@ -700,40 +780,57 @@ export function createGeneralPages(
 
   nbSection.classList.add('settings-section-block');
   sshIoSection.classList.add('settings-section-io');
-  const check = (root: HTMLElement, id: string) => switchRow(root.querySelector<HTMLInputElement>('#' + id));
+  const check = (root: HTMLElement, id: string, hintText?: string) => {
+    const row = switchRow(root.querySelector<HTMLInputElement>('#' + id));
+    return hintText ? hint(row, hintText) : row;
+  };
+  // Rows that show or hide with another setting.
+  const drawerLayoutRow = check(rememberGroup, 'remember-drawer-layout');
+  drawerLayoutRow?.classList.add('settings-row-sub');
+  show(drawerLayoutRow, current.fileManagerMode === 'drawer');
+  const autoRestoreAiRow = check(rememberGroup, 'auto-restore-ai-history-toggle');
+  autoRestoreAiRow?.classList.add('settings-row-sub');
+  show(autoRestoreAiRow, current.autoOpenAiOnConnect);
+  const fontFeatureHint = t('fontFeatureHint');
 
   const page = (key: string, label: string, icon: string, groups: HTMLElement[]): SettingsPage =>
     ({ key, label, icon, el: createPage(label, groups), searchable: true });
 
   return [
     page('appearance', t('settingsPageAppearance'), SETTINGS_ICONS.appearance, [
-      createGroup(t('settingsGroupTheme'), [langSection, colorSchemeSection, nbSection, themeSection]),
-      createGroup(t('settingsGroupBackground'), [bgImageSection, opacitySection, aiBarOpacitySection, vibrancySection]),
-      createGroup(t('settingsGroupInterface'), [uiFontSection]),
+      createGroup(t('settingsGroupGeneral'), [langSection]),
+      createGroup(t('settingsGroupTheme'), [colorSchemeSection, nbSection, darkThemeSection, lightThemeSection, nbThemeSection, uiFontSection]),
+      createGroup(t('settingsGroupBackground'), [opacitySection, vibrancySection, bgImageSection, bgStrengthSection, aiBarOpacitySection]),
     ]),
     page('terminal', t('settingsPageTerminal'), SETTINGS_ICONS.terminal, [
       createGroup(t('settingsGroupFont'), [
         fontSection, fontFamilySection, cjkFontSection, fontWeightSection,
-        check(fontOptsGroup, 'nerd-font-toggle'), check(fontOptsGroup, 'ligatures-toggle'), check(fontOptsGroup, 'sharpness-toggle'),
+        check(fontOptsGroup, 'nerd-font-toggle', fontFeatureHint), check(fontOptsGroup, 'ligatures-toggle', fontFeatureHint),
+        check(fontOptsGroup, 'sharpness-toggle', t('fontSharpnessHint')),
       ]),
       createGroup(t('settingsGroupShell'), [shellSection, encodingSection]),
       createGroup(t('settingsGroupTerminalBehavior'), [
-        check(rememberGroup, 'terminal-notifications-toggle'), check(rememberGroup, 'file-link-confirm-toggle'),
+        check(rememberGroup, 'terminal-notifications-toggle', t('terminalNotificationsHint')),
+        check(rememberGroup, 'file-link-confirm-toggle', t('fileLinkConfirmHint')),
       ]),
       createGroup(t('settingsGroupCommandAssist'), createCommandAssistRows(current, update)),
     ]),
     page('files', t('settingsPageFileManager'), SETTINGS_ICONS.files, [
-      createGroup(null, [fmModeSection, fileManagerFontSection]),
+      createGroup(t('settingsGroupFmDisplay'), [fmModeSection, drawerLayoutRow, fileManagerFontSection]),
+      createGroup(t('settingsGroupFmOpen'), [fileOpenSection]),
     ]),
     page('window', t('settingsPageTabsWindows'), SETTINGS_ICONS.window, [
-      createGroup(t('settingsGroupTabs'), [titleSection, check(thumbGroup, 'enable-thumbnail-toggle'), rateSection, check(rememberGroup, 'auto-new-session-toggle')]),
-      createGroup(t('settingsGroupWindow'), [check(rememberGroup, 'remember-window-size'), check(rememberGroup, 'remember-drawer-layout')]),
+      createGroup(t('settingsGroupWindow'), [
+        check(rememberGroup, 'auto-new-session-toggle', t('autoNewSessionHint')),
+        check(rememberGroup, 'remember-window-size', t('rememberWindowSizeHint')),
+      ]),
+      createGroup(t('settingsGroupTabs'), [titleSection, check(thumbGroup, 'enable-thumbnail-toggle', t('enableThumbnailHint')), rateSection]),
       createGroup(t('settingsGroupPip'), [pipScaleSection, pipScreenSection]),
       createGroup(t('settingsGroupSystem'), [ctxMenuSection]),
     ]),
     page('connections', t('settingsPageConnections'), SETTINGS_ICONS.connections, [
-      createGroup(t('settingsGroupOnConnect'), [check(rememberGroup, 'auto-open-ai-toggle'), check(rememberGroup, 'auto-restore-ai-history-toggle')]),
-      createGroup(null, [sshIoSection]),
+      createGroup(t('settingsGroupOnConnect'), [check(rememberGroup, 'auto-open-ai-toggle', t('autoOpenAiOnConnectHint')), autoRestoreAiRow]),
+      createGroup(t('settingsGroupImportExport'), [sshIoSection]),
     ]),
   ];
 }

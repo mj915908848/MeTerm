@@ -7,6 +7,7 @@ import type { AppSettings } from './themes';
  */
 export const LIVE_APPEARANCE_KEYS: ReadonlySet<string> = new Set([
   'opacity',
+  'backgroundImageStrength',
   'aiBarOpacity',
   'enableVibrancy',
   'pipScale',
@@ -19,17 +20,17 @@ export const LIVE_APPEARANCE_KEYS: ReadonlySet<string> = new Set([
  * must not rebuild the panel under the user.
  */
 export const SETTINGS_PANEL_KEYS: ReadonlySet<string> = new Set([
-  'theme', 'colorScheme', 'opacity', 'fontSize', 'fontFamily', 'uiFontFamily', 'cjkFontFamily',
+  'theme', 'terminalThemeDark', 'terminalThemeLight', 'colorScheme', 'opacity', 'fontSize', 'fontFamily', 'uiFontFamily', 'cjkFontFamily',
   'enableNerdFont', 'enableLigatures', 'fontWeight', 'fontSharpness', 'encoding',
   'enableThumbnail', 'previewRefreshRate', 'language', 'sshTabTitleMode',
   'autoOpenAiOnConnect', 'autoRestoreAiHistoryOnConnect', 'rememberWindowSize',
-  'fileManagerFontSize', 'fileManagerMode', 'rememberDrawerLayout', 'backgroundImage',
+  'fileManagerFontSize', 'fileManagerMode', 'rememberDrawerLayout', 'backgroundImage', 'backgroundImageStrength',
   'enableTerminalNotifications', 'defaultShell', 'aiBarOpacity', 'aiMaxTokens',
   'aiTemperature', 'aiContextLines', 'aiHistoryBudgetTokens', 'aiEnableThinking',
   'aiThinkingBudget', 'aiAgentTrustLevel', 'aiAgentMaxIterations', 'aiPermissionMode',
   'searxngUrl', 'searxngUsername', 'searxngEnabled', 'fileLinkSkipConfirm',
   'enableVibrancy', 'tldrEnabled', 'cmdCompletionEnabled', 'shellHookInjection',
-  'pipScale', 'pipScaleByScreen', 'autoNewSession', 'nbCustomColors',
+  'pipScale', 'pipScaleByScreen', 'autoNewSession', 'nbCustomColors', 'fileOpenPreference',
 ]);
 
 /** Top-level keys whose values differ between two settings snapshots. */
