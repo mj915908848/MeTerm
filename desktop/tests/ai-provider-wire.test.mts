@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { anthropicAcceptsTemperature, anthropicCacheLayout, parseToolArguments, sseData, streamPayloadError, TURN_CONTEXT_HEADING, openAICompatParams, openAIRejectsTemperature } from '../src/ai-provider-wire.ts';
+import {
+  AnthropicContentCollector, anthropicAcceptsTemperature, anthropicBindsThinking, anthropicCacheLayout,
+  hasAnthropicThinking, isThinkingBindingError, parseToolArguments, sseData, streamPayloadError,
+  stripAnthropicThinking, TURN_CONTEXT_HEADING, openAICompatParams, openAIRejectsTemperature,
+} from '../src/ai-provider-wire.ts';
 import { classifyError } from '../src/ai-agent-errors.ts';
 
 test('SSE data lines are read with or without a space after the colon', () => {
@@ -130,4 +134,68 @@ test('only OpenAI reasoning model ids drop temperature', () => {
   for (const id of ['gpt-4o', 'gpt-4.1-mini', 'gpt-3.5-turbo', 'omni-moderation', 'gpt-50x-custom']) {
     assert.equal(openAIRejectsTemperature(id), false, id);
   }
+});
+
+test('Claude stream content is rebuilt in order with thinking signatures', () => {
+  const c = new AnthropicContentCollector();
+  const events = [
+    { type: 'message_start', message: {} },
+    { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '', signature: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: '' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'sig-' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'A' } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } },
+    { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'Checking ' } },
+    { type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'disk.' } },
+    { type: 'content_block_start', index: 2, content_block: { type: 'redacted_thinking', data: 'opaque' } },
+    { type: 'content_block_start', index: 3, content_block: { type: 'tool_use', id: 'toolu_1', name: 'run', input: {} } },
+    { type: 'content_block_delta', index: 3, delta: { type: 'input_json_delta', partial_json: '{"cmd":' } },
+    { type: 'content_block_delta', index: 3, delta: { type: 'input_json_delta', partial_json: '"df -h"}' } },
+    { type: 'content_block_start', index: 4, content_block: { type: 'text', text: '' } },
+    { type: 'message_delta', delta: { stop_reason: 'tool_use' } },
+  ];
+  for (const e of events) c.feed(e);
+  assert.deepEqual(c.content(), [
+    { type: 'thinking', thinking: '', signature: 'sig-A' },
+    { type: 'text', text: 'Checking disk.' },
+    { type: 'redacted_thinking', data: 'opaque' },
+    { type: 'tool_use', id: 'toolu_1', name: 'run', input: { cmd: 'df -h' } },
+  ]);
+});
+
+test('turns without thinking keep the usual serialization', () => {
+  const c = new AnthropicContentCollector();
+  c.feed({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } });
+  c.feed({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } });
+  assert.equal(c.content(), undefined);
+});
+
+test('history binding applies to Claude 5.5-era models only', () => {
+  for (const m of ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5', 'claude-fable-5-1', 'anthropic.claude-sonnet-5-5', 'claude-opus-6']) {
+    assert.equal(anthropicBindsThinking(m), true, m);
+  }
+  for (const m of ['claude-sonnet-5', 'claude-opus-5', 'claude-fable-5', 'claude-sonnet-4-6', 'claude-opus-4-8', 'claude-haiku-4-5', 'glm-4.5', 'claude-sonnet-50']) {
+    assert.equal(anthropicBindsThinking(m), false, m);
+  }
+});
+
+test('thinking blocks can be detected and stripped from a request', () => {
+  const messages = [
+    { role: 'user', content: 'hi' },
+    { role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: 's' }, { type: 'tool_use', id: 't', name: 'x', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: 'ok' }] },
+    { role: 'assistant', content: 'plain' },
+  ];
+  assert.equal(hasAnthropicThinking(messages), true);
+  const stripped = stripAnthropicThinking(messages);
+  assert.deepEqual(stripped[1].content, [{ type: 'tool_use', id: 't', name: 'x', input: {} }]);
+  assert.equal(stripped[3], messages[3]);
+  assert.equal(hasAnthropicThinking(stripped), false);
+  assert.equal(messages[1].content.length, 2, 'the input is not mutated');
+});
+
+test('the history-binding 400 is recognized', () => {
+  assert.equal(isThinkingBindingError('HTTP 400: {"type":"error","error":{"type":"invalid_request_error","message":"messages.3.content.0: Invalid `signature` in `thinking` block. The block is bound to a different conversation. Remove the block, or set'), true);
+  assert.equal(isThinkingBindingError('HTTP 400: max_tokens: 200000 > 64000'), false);
 });

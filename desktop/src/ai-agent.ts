@@ -896,6 +896,7 @@ export class ToolAgent {
             role: 'assistant',
             content: fixed,
             ...(response.reasoning ? { reasoning_content: response.reasoning } : {}),
+            ...(response.anthropicContent ? { anthropic_content: response.anthropicContent } : {}),
           });
 
           // If user injected messages while we were streaming,
@@ -924,6 +925,7 @@ export class ToolAgent {
           content: response.text || '',
           tool_calls: response.toolCalls,
           ...(response.reasoning ? { reasoning_content: response.reasoning } : {}),
+          ...(response.anthropicContent ? { anthropic_content: response.anthropicContent } : {}),
         });
 
         // ── Execute tool calls (orchestrated: concurrent-safe run in
@@ -1520,7 +1522,7 @@ export class ToolAgent {
     tools: ToolSpec[] | undefined,
     callbacks: AgentCallbacks,
     signal: AbortSignal,
-  ): Promise<{ text: string; toolCalls?: ToolCall[]; reasoning?: string; truncated?: boolean }> {
+  ): Promise<{ text: string; toolCalls?: ToolCall[]; reasoning?: string; truncated?: boolean; anthropicContent?: unknown[] }> {
     return abortableOperation(signal, (resolve, reject) => {
       let settled = false;
 
@@ -1537,7 +1539,13 @@ export class ToolAgent {
         onComplete: (fullText, toolCalls, reasoning, info) => {
           if (settled) return;
           settled = true;
-          resolve({ text: fullText, toolCalls: toolCalls ?? undefined, reasoning, truncated: info?.truncated });
+          resolve({
+            text: fullText,
+            toolCalls: toolCalls ?? undefined,
+            reasoning,
+            truncated: info?.truncated,
+            anthropicContent: info?.anthropicContent,
+          });
         },
         onError: (error) => {
           if (settled) return;

@@ -119,6 +119,29 @@ pub struct AiProviderRequest {
     base_url: String,
     #[serde(default)]
     model: Option<String>,
+    /// Anthropic beta features the request body relies on. Only the names in
+    /// `ANTHROPIC_BETAS` are forwarded.
+    #[serde(default)]
+    anthropic_beta: Vec<String>,
+}
+
+/// Betas the frontend may turn on. `thinking-binding-controls` lets a request
+/// set `thinking.block_binding`, so replayed thinking blocks whose history
+/// changed are dropped instead of failing the request.
+const ANTHROPIC_BETAS: &[&str] = &["thinking-binding-controls-2026-08-01"];
+
+fn anthropic_beta_header(request: &AiProviderRequest) -> Result<Option<String>, String> {
+    if request.provider_type != "anthropic" || request.anthropic_beta.is_empty() {
+        return Ok(None);
+    }
+    if let Some(unknown) = request
+        .anthropic_beta
+        .iter()
+        .find(|beta| !ANTHROPIC_BETAS.contains(&beta.as_str()))
+    {
+        return Err(format!("unsupported Anthropic beta: {unknown}"));
+    }
+    Ok(Some(request.anthropic_beta.join(",")))
 }
 
 #[derive(Debug, Deserialize)]
@@ -388,7 +411,8 @@ pub async fn fetch_ai_stream(
         keyless_service_base(&base)?;
     }
     let url = stream_url(&request, &base)?;
-    let builder = add_provider_auth(
+    let beta = anthropic_beta_header(&request)?;
+    let mut builder = add_provider_auth(
         stream_client()?
             .post(url)
             .header(reqwest::header::CONTENT_TYPE, "application/json")
@@ -396,6 +420,9 @@ pub async fn fetch_ai_stream(
         &request.provider_type,
         secret.as_deref(),
     );
+    if let Some(beta) = beta {
+        builder = builder.header("anthropic-beta", beta);
+    }
 
     let cancel = stream_token(&stream_id);
     // Dropping the in-flight request when the user stops closes the provider
@@ -461,7 +488,26 @@ mod tests {
             provider_type: provider_type.to_string(),
             base_url: base_url.to_string(),
             model: Some("gemini/test model".to_string()),
+            anthropic_beta: Vec::new(),
         }
+    }
+
+    #[test]
+    fn anthropic_beta_header_forwards_only_known_betas() {
+        let mut req = request("anthropic", "https://api.anthropic.com");
+        assert_eq!(anthropic_beta_header(&req), Ok(None));
+        req.anthropic_beta = vec!["thinking-binding-controls-2026-08-01".to_string()];
+        assert_eq!(
+            anthropic_beta_header(&req),
+            Ok(Some("thinking-binding-controls-2026-08-01".to_string()))
+        );
+        req.anthropic_beta
+            .push("evil\r\nx-api-key: leak".to_string());
+        assert!(anthropic_beta_header(&req).is_err());
+
+        let mut other = request("openai", "https://api.openai.com");
+        other.anthropic_beta = vec!["anything".to_string()];
+        assert_eq!(anthropic_beta_header(&other), Ok(None));
     }
 
     #[test]
