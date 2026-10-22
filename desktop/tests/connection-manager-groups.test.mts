@@ -180,7 +180,7 @@ test('an empty named group is rendered, and says it is a drop target', () => {
   assert.deepEqual(groups, ['prod', 'staging', UNGROUPED], 'the newly created group must be visible');
 
   const staging = headers(r).find((h) => h.dataset.group === 'staging')!;
-  assert.match(staging.innerHTML, /class="hsg-count">0</, 'an empty group still reports its count');
+  assert.doesNotMatch(staging.innerHTML, /hsg-count/, 'group headers carry no item count');
 
   const hint = r.list.children.find((c) => c.className.includes('home-side-group-empty'));
   assert.ok(hint, 'an empty group must advertise itself as a drop target');

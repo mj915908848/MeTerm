@@ -1899,7 +1899,6 @@ html.vibrancy-active .conn-sidebar.conn-sidebar--flyout {
 .home-side-group .hsg-chevron svg { width: 11px; height: 11px; }
 .home-side-group:not(.collapsed) .hsg-chevron { transform: rotate(90deg); }
 .home-side-group .hsg-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.home-side-group .hsg-count { color: var(--text-dim); font-weight: 500; }
 
 .home-side-row {
   display: flex;
