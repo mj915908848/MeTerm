@@ -48,6 +48,7 @@ where
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_local_file_download(
     session: &Session,
     client_id: &str,
@@ -218,6 +219,7 @@ pub(super) async fn handle_local_file_download(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) async fn handle_sftp_file_download(
     session: &Arc<Session>,
     client_id: &str,
@@ -451,9 +453,7 @@ pub(super) async fn handle_sftp_file_download(
     });
 
     let remaining_size = total_size.saturating_sub(start_offset) as usize;
-    let max_inflight_bytes = remaining_size
-        .min(DOWNLOAD_MAX_INFLIGHT_BYTES)
-        .max(MERGE_TARGET);
+    let max_inflight_bytes = remaining_size.clamp(MERGE_TARGET, DOWNLOAD_MAX_INFLIGHT_BYTES);
     let tx_read = tx.clone();
 
     let read = file.read_pipelined_streaming_each(max_inflight_bytes, {

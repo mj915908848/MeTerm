@@ -265,7 +265,7 @@ pub fn generate_token() -> String {
 
 fn base64_url_encode(data: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut result = String::with_capacity((data.len() * 4 + 2) / 3);
+    let mut result = String::with_capacity((data.len() * 4).div_ceil(3));
     let mut i = 0;
     while i < data.len() {
         let b0 = data[i] as u32;

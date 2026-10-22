@@ -774,6 +774,7 @@ fn run_ssh2_session_download_blocking(
     Ok((DownloadOutcome::Completed { total_size }, total_size))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_ssh2_session_download(
     config: SshConfig,
     path: String,
@@ -1302,6 +1303,7 @@ async fn run_local_session_download(
     Ok(DownloadOutcome::Completed { total_size })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_sftp_session_download(
     sftp: Arc<russh_sftp::client::SftpSession>,
     path: String,
@@ -1384,7 +1386,7 @@ async fn run_sftp_session_download(
     let cancelled = Arc::new(AtomicBool::new(false));
     let ctrl = Arc::new(tokio::sync::Mutex::new(ctrl));
     let remaining_bytes = total_size.saturating_sub(start_offset) as usize;
-    let max_inflight_bytes = remaining_bytes.min(SFTP_DOWNLOAD_MAX_INFLIGHT_BYTES).max(1);
+    let max_inflight_bytes = remaining_bytes.clamp(1, SFTP_DOWNLOAD_MAX_INFLIGHT_BYTES);
 
     if total_size == 0 {
         let flush_result = tokio::select! {
@@ -1438,7 +1440,7 @@ async fn run_sftp_session_download(
                         writer.lock().await.write_all(&chunk).await
                     } => {
                         result.map_err(|e| {
-                            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                            std::io::Error::other(e.to_string())
                         })?;
                     }
                 }
@@ -1460,7 +1462,7 @@ async fn run_sftp_session_download(
                             .emit_if_needed(written_now, written_now >= total_size)
                     } => {
                         result.map_err(|e| {
-                            std::io::Error::new(std::io::ErrorKind::Other, e)
+                            std::io::Error::other(e)
                         })?;
                     }
                 }
@@ -1588,6 +1590,7 @@ fn reject_same_local_download(source: &str, destination: &str) -> Result<(), Str
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_session_download(
     session: Arc<Session>,
     path: String,
@@ -1659,6 +1662,7 @@ async fn run_session_download(
     Ok(outcome)
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_session_download_to_stage(
     session: Arc<Session>,
     path: String,

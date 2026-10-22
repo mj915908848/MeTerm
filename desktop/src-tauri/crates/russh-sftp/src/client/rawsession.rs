@@ -280,6 +280,9 @@ impl RawSftpSession {
         into_with_status!(result, Handle)
     }
 
+    // `fetch_update` 在新版 Rust 改名为 `try_update`；旧工具链没有新名字，先保留旧名
+    // `fetch_update` was renamed `try_update` in newer Rust; keep the old name for older toolchains
+    #[allow(deprecated)]
     pub async fn close<H: Into<String>>(&self, handle: H) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self

@@ -687,13 +687,13 @@ impl JumpServerClient {
                                 Ok(re_token) if valid_bearer_token(&re_token) => {
                                     self.token = Some(re_token.clone());
                                     self.clear_saved_credentials();
-                                    return AuthResponse {
+                                    AuthResponse {
                                         ok: true,
                                         token: Some(re_token),
                                         mfa_required: None,
                                         mfa_choices: None,
                                         error: None,
-                                    };
+                                    }
                                 }
                                 _ => {
                                     eprintln!(
@@ -701,25 +701,25 @@ impl JumpServerClient {
                                     );
                                     self.activate_session_auth("MFA-fallback");
                                     self.clear_saved_credentials();
-                                    return AuthResponse {
+                                    AuthResponse {
                                         ok: true,
                                         token: None,
                                         mfa_required: None,
                                         mfa_choices: None,
                                         error: None,
-                                    };
+                                    }
                                 }
                             }
                         } else {
                             self.activate_session_auth("MFA-fallback");
                             self.clear_saved_credentials();
-                            return AuthResponse {
+                            AuthResponse {
                                 ok: true,
                                 token: None,
                                 mfa_required: None,
                                 mfa_choices: None,
                                 error: None,
-                            };
+                            }
                         }
                     }
                     Err(e) => AuthResponse {

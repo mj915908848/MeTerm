@@ -261,8 +261,10 @@ fn decode_localstorage_value(
             if bytes.len() <= MAX_LEGACY_PREFERENCE_BYTES && bytes.len() % 2 == 0 =>
         {
             let utf16 = bytes
-                .chunks_exact(2)
-                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|pair| u16::from_le_bytes(*pair))
                 .collect::<Vec<_>>();
             String::from_utf16(&utf16).map_err(|_| ())
         }

@@ -17,6 +17,7 @@ fn auth_used_str(used: SshAuthUsed) -> &'static str {
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn create_ssh_session(
     state: State<'_, Arc<ServerState>>,
     host: String,
@@ -176,6 +177,7 @@ pub async fn create_ssh_session(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn test_ssh_connection(
     host: String,
     port: u16,

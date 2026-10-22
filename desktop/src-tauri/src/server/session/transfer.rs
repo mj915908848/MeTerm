@@ -241,7 +241,7 @@ fn backup_path(final_path: &str) -> String {
 /// where replacing an existing destination is not supported directly.
 pub async fn finalize_local_upload(part_path: &str, final_path: &str) -> Result<(), String> {
     match tokio::fs::rename(part_path, final_path).await {
-        Ok(()) => return Ok(()),
+        Ok(()) => Ok(()),
         Err(first_error) => {
             match tokio::fs::symlink_metadata(final_path).await {
                 Ok(metadata)

@@ -29,6 +29,7 @@
 //!   fan-out 投递;但 E 已进历史(`seq < pushed_T`),被回放送达**一次**、且按 seq 落在有序位置。
 //! - E 的 fan-out 若在**之后**执行(`seq ≥ pushed_T`)→ client 已在 attached → 只经 fan-out 投递
 //!   **一次**;回放边界止于 `pushed_T`,不含 E → 不重复。
+//!
 //! 于是无漏发、无重发、有序——不依赖 `session.broadcast` 的注册时机。
 //!
 //! **背压回放(消除手机重连溢出/永久环)**:回放用 [`Client::send_async`] 等通道容量而非旧的非阻塞
@@ -236,6 +237,7 @@ impl AgentEntry {
 ///   T 之前完成(T 的持锁发生在最后一批发送返回之后)。
 /// - `seq ≥ pushed_T` 的帧:由 [`fan_out_one`] 投递;但它只投给 attached 集合里的 id,而本
 ///   client 在 T 之前不在 attached,故这些 live 帧入通道必然在 T 之后(fan_out 需持锁见到已 attach)。
+///
 /// 两集合不相交、并集为全部;通道 FIFO ⇒ 先回放帧(`seq<pushed_T`)后 live 帧(`seq≥pushed_T`),
 /// 各恰一次、全局有序——不依赖 broadcast 的注册时机。回放中途 client 掉线(`send_async` 返回
 /// false)则**不**插入 attached(fan-out 自然不再投递),直接返回,不留死 id。

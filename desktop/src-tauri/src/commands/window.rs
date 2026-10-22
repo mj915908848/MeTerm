@@ -548,7 +548,7 @@ pub fn restart_app_via_open(app: AppHandle) {
                 .and_then(|p| p.parent())
             // MeTerm.app
             {
-                if bundle.extension().map_or(false, |e| e == "app") {
+                if bundle.extension().is_some_and(|e| e == "app") {
                     let bundle_path = bundle.display().to_string();
                     // Spawn a detached shell that waits for us to exit, then re-opens the app.
                     // sleep is generous (2s) because sidecar shutdown + tab cleanup on exit

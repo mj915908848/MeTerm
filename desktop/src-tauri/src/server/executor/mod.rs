@@ -20,6 +20,8 @@ pub struct ExecutorInfo {
 }
 
 /// Trait for creating terminals.
+// async-trait 生成的方法自带 #[must_use] / async-trait marks generated methods #[must_use]
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait Executor: Send + Sync {
     /// Start the executor and return a Terminal.

@@ -138,3 +138,76 @@ jobs:
       - name: cargo test
         working-directory: desktop/src-tauri
         run: cargo test
+
+  # Windows 专属代码（ConPTY、WSL 等）平时只在发版构建时编译；这里在 PR 上做 clippy + test。
+  # macOS 专属代码仍由上面的 rust job 覆盖，两者并行。
+  # Windows-only code (ConPTY, WSL, ...) otherwise only compiles in release builds; lint and
+  # test it on PRs too. macOS-only code stays covered by the rust job above; both run in parallel.
+  rust-windows:
+    name: Rust Windows (clippy + test)
+    needs: changes
+    if: ${{ needs.changes.outputs.rust == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    # 首次在 Windows 上跑测试就有 18 个失败（此前从未在 Windows 上跑过），修完前先不阻塞。
+    # The first Windows test run had 18 pre-existing failures; non-blocking until they're fixed.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      # tauri.windows.conf.json 把 conpty.dll / OpenConsole.exe 列为资源，tauri-build 要求文件存在；
+      # 版本与 build-windows.yml 保持一致。
+      # tauri.windows.conf.json lists conpty.dll / OpenConsole.exe as resources and tauri-build
+      # requires them to exist; versions match build-windows.yml.
+      - name: Download ConPTY
+        shell: cmd
+        run: |
+          set "NUGET_URL=https://www.nuget.org/api/v2/package/CI.Microsoft.Windows.Console.ConPTY/1.22.250314001"
+          set "WT_VERSION=1.23.20211.0"
+          set "WT_URL=https://github.com/microsoft/terminal/releases/download/v%WT_VERSION%/Microsoft.WindowsTerminal_%WT_VERSION%_x64.zip"
+          mkdir desktop\src-tauri\binaries\conpty
+          mkdir %TEMP%\nuget_pkg
+          mkdir %TEMP%\wt_pkg
+          curl -fSL -o %TEMP%\nuget_pkg\conpty.nupkg "%NUGET_URL%" || exit /b 1
+          tar -xf %TEMP%\nuget_pkg\conpty.nupkg -C %TEMP%\nuget_pkg || exit /b 1
+          for /r %TEMP%\nuget_pkg %%F in (conpty.dll) do if "%%~nxF"=="conpty.dll" copy "%%F" desktop\src-tauri\binaries\conpty\conpty.dll
+          curl -fSL -o %TEMP%\wt_pkg\wt.zip "%WT_URL%" || exit /b 1
+          tar -xf %TEMP%\wt_pkg\wt.zip -C %TEMP%\wt_pkg || exit /b 1
+          for /r %TEMP%\wt_pkg %%F in (OpenConsole.exe) do if "%%~nxF"=="OpenConsole.exe" copy "%%F" desktop\src-tauri\binaries\conpty\OpenConsole.exe
+          if not exist desktop\src-tauri\binaries\conpty\conpty.dll exit /b 1
+          if not exist desktop\src-tauri\binaries\conpty\OpenConsole.exe exit /b 1
+          dir desktop\src-tauri\binaries\conpty
+
+      # tauri::generate_context! 需要 desktop/dist/
+      # generate_context! needs desktop/dist/
+      - name: Build desktop frontend
+        shell: bash
+        run: |
+          (cd desktop && npm ci && npm run build)
+
+      # 先不加 -D warnings：Windows 专属代码的警告从未清理过。
+      # No -D warnings yet: Windows-only code has never been cleaned up.
+      - name: cargo clippy
+        working-directory: desktop/src-tauri
+        run: cargo clippy --all-targets
+
+      - name: cargo test
+        working-directory: desktop/src-tauri
+        run: cargo test

@@ -52,6 +52,7 @@ fn is_junk_dir(name: &str) -> bool {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn send_batch(
     session: &Session,
     client_id: &str,

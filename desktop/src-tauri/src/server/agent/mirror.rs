@@ -368,16 +368,15 @@ impl TailerState {
     /// 返回 `false` = event_tx 已断。
     fn flush_turn_end(&mut self, pending: &mut Option<(String, String)>) -> bool {
         if let Some((message_id, reason)) = pending.take() {
-            if self.completed_turns.insert(message_id) {
-                if self
+            if self.completed_turns.insert(message_id)
+                && self
                     .event_tx
                     .send(AgentEvent::TurnComplete {
                         stop_reason: Some(reason),
                     })
                     .is_err()
-                {
-                    return false;
-                }
+            {
+                return false;
             }
             // 无论 insert 成败都关轮:去重命中 = 该轮的 TurnComplete 已发过(同消息的行
             // 被切进两批的实证场景),迟到的同消息内容行不应重新开轮——否则 Stop hook 的

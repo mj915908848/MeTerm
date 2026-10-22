@@ -28,17 +28,12 @@ use super::Terminal;
 /// `SshConfig` because we no longer infer the method from `private_key`
 /// being empty — empty + `Key` now means "use ssh-agent / default keys"
 /// (the OpenSSH ladder) rather than silently falling back to password.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SshAuthMethod {
+    #[default]
     Password,
     Key,
-}
-
-impl Default for SshAuthMethod {
-    fn default() -> Self {
-        SshAuthMethod::Password
-    }
 }
 
 impl SshAuthMethod {
@@ -620,7 +615,7 @@ impl SshTerminal {
         let (session, auth_used) =
             connect_authenticated_session(config, terminal_client_config()).await?;
 
-        let mut channel = operation_with_timeout(
+        let channel = operation_with_timeout(
             "terminal channel open",
             SSH_CHANNEL_TIMEOUT,
             session.channel_open_session(),

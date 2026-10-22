@@ -189,6 +189,7 @@ impl MirrorRegistry {
     ///   用同一通道的 tx clone + 新 child_token 起新 tailer → 更新状态。**不动 entry、
     ///   不重 register**。
     /// - **同会话重入**(compact 等,两者都没变):只 `poke_catch_up`。
+    #[allow(clippy::too_many_arguments)]
     fn handle_session_start(
         &self,
         pty_sid: &str,

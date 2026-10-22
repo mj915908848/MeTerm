@@ -602,11 +602,13 @@ pub async fn sync_import_production_credential_for_development(
         return Err("development SSH credential import is main-window only".to_string());
     }
 
+    // `return` 让两个互斥的 cfg 块都能作为函数体结尾 / keeps either cfg block valid as the tail
     #[cfg(not(all(
         debug_assertions,
         feature = "development-credential-recovery",
         target_os = "macos"
     )))]
+    #[allow(clippy::needless_return)]
     {
         let _ = (state, id);
         return Ok(None);

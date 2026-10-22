@@ -256,16 +256,13 @@ fn current_service_destination_rejects_orphan_unbound_and_tombstoned_items() {
     };
     assert!(validate_store_destination(None, Some(&unbound)).is_err());
     assert!(validate_store_destination(Some(&connection), Some(&unbound)).is_err());
-    assert_eq!(validate_store_destination(None, None).unwrap(), true);
+    assert!(validate_store_destination(None, None).unwrap());
 
     let bound = SshSecrets {
         authority_binding: Some(authority_binding(&connection).unwrap()),
         ..SshSecrets::default()
     };
-    assert_eq!(
-        validate_store_destination(Some(&connection), Some(&bound)).unwrap(),
-        false
-    );
+    assert!(!validate_store_destination(Some(&connection), Some(&bound)).unwrap());
 
     let mut tombstone = connection.clone();
     tombstone.deleted_at = Some(2);

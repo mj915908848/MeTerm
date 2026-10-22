@@ -25,6 +25,7 @@ fn no_store(status: StatusCode, body: serde_json::Value) -> Response {
     response
 }
 
+#[allow(clippy::result_large_err)]
 fn owner_generation(principal: &AuthPrincipal) -> Result<uuid::Uuid, Response> {
     principal.owner_generation().ok_or_else(|| {
         no_store(

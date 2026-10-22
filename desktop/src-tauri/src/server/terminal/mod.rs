@@ -32,6 +32,8 @@ use tokio_util::sync::CancellationToken;
 /// - `ConPtyTerminal` (Windows via xpty ConPTY)
 /// - `WslPtyTerminal` (Windows WSL via Python PTY helper)
 /// - `SshTerminal` (remote via russh)
+// async-trait 生成的方法自带 #[must_use] / async-trait marks generated methods #[must_use]
+#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait Terminal: Send + Sync {
     /// Read output from the terminal. Returns 0 bytes when the PTY is closed.
