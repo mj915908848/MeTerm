@@ -169,12 +169,17 @@ function openMenu(opts: MenuOptions): string[] {
 
   const menu = body.children[body.children.length - 1];
   assert.ok(menu, 'the menu must be attached to the body');
+  const isA = (el: El, name: string): boolean => el.className.split(' ').includes(name);
+  // The destinations live in the "分组" entry's submenu; list them after it,
+  // marked with an arrow so `targets` can pick them out.
   return menu.children
-    .filter((child) => child.className.split(' ').includes('home-card-menu-item'))
-    .map((child) => child.textContent);
+    .filter((child) => isA(child, 'home-card-menu-item'))
+    .flatMap((child) => isA(child, 'has-submenu')
+      ? [child.textContent, ...child.children.filter((c) => isA(c, 'home-card-submenu')).flatMap((sub) => sub.children.map((c) => `→ ${c.textContent}`))]
+      : [child.textContent]);
 }
 
-/** Only the "move to" entries, which are the ones with the arrow prefix. */
+/** Only the "move to" entries (the "分组" submenu), marked with an arrow above. */
 const targets = (entries: string[]): string[] => entries.filter((e) => e.startsWith('→ '));
 
 test("a batch spanning two groups can still be moved into the cursor row's own group", () => {
@@ -188,10 +193,11 @@ test("a batch spanning two groups can still be moved into the cursor row's own g
 
   assert.deepEqual(
     targets(entries),
-    ['→ prod (3)', '→ staging (3)', '→ homeGroupUngrouped (3)'],
+    ['→ prod', '→ staging', '→ homeGroupUngrouped'],
     'the cursor row is in `prod`, but `ssh:b` and `ssh:c` are not — so `prod` is the one destination '
     + 'that has to stay on the menu, and dropping it was the whole bug',
   );
+  assert.ok(entries.includes('分组 (3)'), 'the submenu entry says how many rows it moves');
 });
 
 test('a destination the whole batch already sits in is not offered', () => {
@@ -205,7 +211,7 @@ test('a destination the whole batch already sits in is not offered', () => {
 
   assert.deepEqual(
     targets(entries),
-    ['→ staging (2)', '→ homeGroupUngrouped (2)'],
+    ['→ staging', '→ homeGroupUngrouped'],
     'the per-batch rule still suppresses a no-op destination — otherwise every menu grows an entry '
     + 'that does nothing',
   );
@@ -225,6 +231,7 @@ test('a single row keeps the menu it always had', () => {
     "a row's own group and the ungrouped bucket are both no-ops for one row in `prod`",
   );
   assert.equal(entries[0], 'sshConnectBtn', '"connect" heads a single row\'s menu');
+  assert.ok(entries.includes('分组'), 'the destinations sit under one "分组" entry');
 });
 
 test('a batch menu has no "connect"', () => {
@@ -247,7 +254,7 @@ test('a batch that is already ungrouped is not offered the ungrouped bucket', ()
     moveKeys: ['ssh:a', 'ssh:b'],
   });
 
-  assert.deepEqual(targets(entries), ['→ prod (2)'], 'moving ungrouped rows to "ungrouped" changes nothing');
+  assert.deepEqual(targets(entries), ['→ prod'], 'moving ungrouped rows to "ungrouped" changes nothing');
 });
 
 test('a row left under a reserved name is read as ungrouped, so the menu agrees with the list', () => {

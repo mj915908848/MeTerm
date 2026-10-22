@@ -150,37 +150,6 @@ export function renderRecentActivity(query: string): void {
   section.appendChild(track);
 }
 
-// ─── Move menu ───
-
-/**
- * Popup listing every group, for moving a selection without dragging. Closes on
- * the first pointer press outside — including the press that opens it again.
- */
-export function showMoveMenu(anchorEl: HTMLElement, groups: string[], onPick: (group: string | null) => void): void {
-  removeContextMenu();
-  const menu = document.createElement('div');
-  menu.className = 'home-card-menu';
-  menu.setAttribute('role', 'menu');
-  const entries: [string, string | null][] = [
-    ...groups.map((g): [string, string | null] => [g, g]),
-    [t('homeGroupUngrouped'), null],
-  ];
-  for (const [label, value] of entries) {
-    const item = document.createElement('button');
-    item.type = 'button';
-    item.className = 'home-card-menu-item';
-    item.textContent = `→ ${label}`;
-    item.onclick = () => { menu.remove(); onPick(value); };
-    menu.appendChild(item);
-  }
-  const rect = anchorEl.getBoundingClientRect();
-  menu.style.left = `${rect.left}px`;
-  menu.style.top = `${rect.bottom + 4}px`;
-  document.body.appendChild(menu);
-  clampMenu(menu);
-  autoCloseMenu(menu);
-}
-
 /** A short menu of actions under a button, such as the manager's "+" and "⋯". */
 export function showActionMenu(
   anchorEl: HTMLElement,
@@ -528,38 +497,52 @@ export function showConnectionContextMenu(
   const targetsNothing = (target: string | null): boolean =>
     moving.every((key) => (getConnectionGroup(key) ?? null) === target);
 
-  const groups = loadGroupOrder();
-  if (groups.length > 0 || currentGroup) {
+  // Destinations sit in a "分组" submenu, so a long group list doesn't
+  // push "delete" off the bottom of the menu.
+  const destinations: [string, string | null][] = [
+    ...loadGroupOrder().filter((g) => !targetsNothing(g)).map((g): [string, string | null] => [g, g]),
+    ...(targetsNothing(null) ? [] : [[t('homeGroupUngrouped'), null] as [string, string | null]]),
+  ];
+  if (destinations.length > 0) {
     if (!batch) {
       const divider = document.createElement('div');
       divider.className = 'custom-context-menu-divider';
       menu.appendChild(divider);
     }
 
-    for (const g of groups) {
-      if (targetsNothing(g)) continue;
-      const moveItem = document.createElement('button');
-      moveItem.className = 'home-card-menu-item';
-      moveItem.textContent = `→ ${g}${suffix}`;
-      moveItem.onclick = () => {
-        menu.remove();
-        assignConnectionsToGroup(moving, g);
-        refreshView();
-      };
-      menu.appendChild(moveItem);
-    }
+    const moveItem = document.createElement('div');
+    moveItem.className = 'home-card-menu-item has-submenu';
+    moveItem.setAttribute('role', 'menuitem');
+    moveItem.setAttribute('aria-haspopup', 'menu');
+    moveItem.textContent = `${settings?.language === 'zh' ? '分组' : 'Group'}${suffix}`;
+    const arrow = document.createElement('span');
+    arrow.className = 'submenu-arrow';
+    arrow.textContent = '›';
+    moveItem.appendChild(arrow);
 
-    if (!targetsNothing(null)) {
-      const ungroup = document.createElement('button');
-      ungroup.className = 'home-card-menu-item';
-      ungroup.textContent = `→ ${t('homeGroupUngrouped')}${suffix}`;
-      ungroup.onclick = () => {
+    const submenu = document.createElement('div');
+    submenu.className = 'home-card-menu home-card-submenu';
+    submenu.setAttribute('role', 'menu');
+    for (const [label, group] of destinations) {
+      const target = document.createElement('button');
+      target.type = 'button';
+      target.className = 'home-card-menu-item';
+      target.setAttribute('role', 'menuitem');
+      target.textContent = label;
+      target.onclick = () => {
         menu.remove();
-        assignConnectionsToGroup(moving, null);
+        assignConnectionsToGroup(moving, group);
         refreshView();
       };
-      menu.appendChild(ungroup);
+      submenu.appendChild(target);
     }
+    moveItem.appendChild(submenu);
+    // Open towards whichever side has room.
+    moveItem.addEventListener('mouseenter', () => {
+      const rect = moveItem.getBoundingClientRect();
+      submenu.classList.toggle('flip', rect.right + 180 > window.innerWidth);
+    });
+    menu.appendChild(moveItem);
   }
 
   if (menu.childElementCount > 0) {
@@ -676,7 +659,13 @@ function clampMenu(menu: HTMLElement): void {
 }
 
 function autoCloseMenu(menu: HTMLElement): void {
-  const cleanup = () => { menu.remove(); document.removeEventListener('click', cleanup, true); };
+  const cleanup = (event?: Event) => {
+    // A click on a submenu's own entry ("分组") only opens the submenu.
+    const target = event?.target as Element | null;
+    if (target?.closest?.('.has-submenu') && !target.closest('.home-card-submenu')) return;
+    menu.remove();
+    document.removeEventListener('click', cleanup, true);
+  };
   document.addEventListener('click', cleanup, true);
 }
 
