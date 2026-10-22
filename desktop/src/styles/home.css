@@ -611,6 +611,7 @@ html.vibrancy-active .home-card-menu {
 .home-card-menu-item {
   display: block;
   width: 100%;
+  box-sizing: border-box;
   padding: 6px 12px;
   font-size: 12px;
   font-family: inherit;
