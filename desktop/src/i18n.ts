@@ -442,6 +442,7 @@ export interface Translations {
   aiSearxng: string;
   aiSearxngUrl: string;
   aiSearxngUrlPlaceholder: string;
+  aiSearxngAuth: string;
   aiSearxngUsername: string;
   aiSearxngPassword: string;
   aiSearxngEnable: string;
@@ -1161,6 +1162,7 @@ const translations: Record<Language, Translations> = {
     aiSearxng: 'Web Search (SearXNG)',
     aiSearxngUrl: 'SearXNG URL',
     aiSearxngUrlPlaceholder: 'https://searx.example.org',
+    aiSearxngAuth: 'Auth',
     aiSearxngUsername: 'Username (optional)',
     aiSearxngPassword: 'Password (optional)',
     aiSearxngEnable: 'Enable web search tool for MeAgent',
@@ -1876,6 +1878,7 @@ const translations: Record<Language, Translations> = {
     aiSearxng: '网络搜索 (SearXNG)',
     aiSearxngUrl: 'SearXNG 地址',
     aiSearxngUrlPlaceholder: 'https://searx.example.org',
+    aiSearxngAuth: '认证',
     aiSearxngUsername: '用户名（可选）',
     aiSearxngPassword: '密码（可选）',
     aiSearxngEnable: '为 MeAgent 启用网络搜索工具',

@@ -178,3 +178,92 @@ export function openAICompatParams(opts: {
   if (!(isOpenAI && openAIRejectsTemperature(opts.model))) params.temperature = opts.temperature;
   return params;
 }
+
+// ─── Anthropic: replaying thinking blocks ──────────────────────
+
+/** Beta that lets a request set `thinking.block_binding`. */
+export const ANTHROPIC_BINDING_BETA = 'thinking-binding-controls-2026-08-01';
+
+/**
+ * Claude models whose thinking blocks are bound to the conversation that
+ * produced them (preserved thinking): Fable 5.1+, Opus / Sonnet / Haiku
+ * 5.5 and later. Replaying one of their blocks after an earlier message
+ * changed is a 400 on accounts created on/after 2026-08-31, unless the
+ * request asks for such blocks to be dropped.
+ */
+export function anthropicBindsThinking(model: string): boolean {
+  const id = model.trim().toLowerCase().replace(/^anthropic\./, '');
+  return /^claude-fable-5-[1-9]/.test(id)
+    || /^claude-(fable|opus|sonnet|haiku|mythos)-([6-9]|5-[5-9])([-.@]|$)/.test(id);
+}
+
+/** The 400 Claude returns when a replayed thinking block no longer matches its history. */
+export function isThinkingBindingError(message: string): boolean {
+  return /bound to a different conversation/i.test(message);
+}
+
+const THINKING_TYPES = new Set(['thinking', 'redacted_thinking']);
+
+/** Whether any assistant message in an Anthropic request replays a thinking block. */
+export function hasAnthropicThinking(messages: Record<string, unknown>[]): boolean {
+  return messages.some((m) => m.role === 'assistant' && Array.isArray(m.content)
+    && m.content.some((b) => THINKING_TYPES.has((b as { type?: string })?.type ?? '')));
+}
+
+/**
+ * The same messages with every thinking block removed — the documented
+ * fallback when the binding beta is unavailable. The model then answers
+ * without that reasoning, which is what MeTerm did before it replayed it.
+ */
+export function stripAnthropicThinking(messages: Record<string, unknown>[]): Record<string, unknown>[] {
+  return messages.map((m) => {
+    if (m.role !== 'assistant' || !Array.isArray(m.content)) return m;
+    const content = m.content.filter((b) => !THINKING_TYPES.has((b as { type?: string })?.type ?? ''));
+    return content.length === m.content.length ? m : { ...m, content };
+  });
+}
+
+/**
+ * Rebuilds the assistant content blocks of an Anthropic stream in order,
+ * thinking blocks (with their signatures) included, so the turn can be sent
+ * back exactly as Claude wrote it. `content()` returns undefined when the
+ * turn had no thinking, so callers keep their usual serialization.
+ */
+export class AnthropicContentCollector {
+  private blocks = new Map<number, Record<string, unknown>>();
+  private json = new Map<number, string>();
+
+  feed(event: unknown): void {
+    const ev = event as { type?: string; index?: number; content_block?: Record<string, unknown>; delta?: Record<string, unknown> };
+    if (typeof ev?.index !== 'number') return;
+    if (ev.type === 'content_block_start' && ev.content_block) {
+      const block = { ...ev.content_block };
+      if (block.type === 'tool_use') this.json.set(ev.index, '');
+      this.blocks.set(ev.index, block);
+      return;
+    }
+    const block = this.blocks.get(ev.index);
+    if (ev.type !== 'content_block_delta' || !block || !ev.delta) return;
+    const d = ev.delta;
+    if (d.type === 'text_delta') block.text = String(block.text ?? '') + String(d.text ?? '');
+    else if (d.type === 'thinking_delta') block.thinking = String(block.thinking ?? '') + String(d.thinking ?? '');
+    else if (d.type === 'signature_delta') block.signature = String(block.signature ?? '') + String(d.signature ?? '');
+    else if (d.type === 'input_json_delta') this.json.set(ev.index, (this.json.get(ev.index) ?? '') + String(d.partial_json ?? ''));
+  }
+
+  content(): unknown[] | undefined {
+    const ordered = [...this.blocks.entries()].sort((a, b) => a[0] - b[0]);
+    if (!ordered.some(([, b]) => THINKING_TYPES.has(String(b.type)))) return undefined;
+    const out: unknown[] = [];
+    for (const [index, block] of ordered) {
+      if (block.type === 'text' && !block.text) continue; // the API rejects empty text blocks
+      if (block.type === 'tool_use') {
+        const parsed = parseToolArguments(this.json.get(index) ?? '');
+        out.push({ ...block, input: parsed.ok ? parsed.args : {} });
+      } else {
+        out.push(block);
+      }
+    }
+    return out;
+  }
+}

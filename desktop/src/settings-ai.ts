@@ -445,7 +445,7 @@ export function createAITab(
   // Auth — inline (label + user + pass + eye)
   const searxAuthRow = document.createElement('div');
   searxAuthRow.className = 'ai-provider-row ai-row-inline';
-  searxAuthRow.innerHTML = `<label>Auth</label>`;
+  searxAuthRow.innerHTML = `<label>${t('aiSearxngAuth')}</label>`;
   const searxAuthGroup = document.createElement('div');
   searxAuthGroup.className = 'settings-input-group';
   searxAuthGroup.style.cssText = 'flex:1;min-width:0';
@@ -525,7 +525,7 @@ export function createAITab(
       });
       if (!resp.ok) {
         searxTestStatus.textContent = `${t('aiSearxngTestFail')} (HTTP ${resp.status})`;
-        searxTestStatus.className = 'settings-test-result test-fail';
+        searxTestStatus.className = 'settings-test-result test-failed';
         searxTestBtn.disabled = false;
         return;
       }
@@ -538,7 +538,7 @@ export function createAITab(
         searxTestStatus.textContent = isHtml
           ? `${t('aiSearxngTestFail')}: JSON API not enabled in SearXNG settings.yml (search.formats)`
           : `${t('aiSearxngTestFail')}: invalid JSON response`;
-        searxTestStatus.className = 'settings-test-result test-fail';
+        searxTestStatus.className = 'settings-test-result test-failed';
         searxTestBtn.disabled = false;
         return;
       }
@@ -547,11 +547,11 @@ export function createAITab(
         searxTestStatus.className = 'settings-test-result test-success';
       } else {
         searxTestStatus.textContent = `${t('aiSearxngTestFail')}: response missing "results" field`;
-        searxTestStatus.className = 'settings-test-result test-fail';
+        searxTestStatus.className = 'settings-test-result test-failed';
       }
     } catch (e) {
       searxTestStatus.textContent = `${t('aiSearxngTestFail')}: ${e instanceof Error ? e.message : String(e)}`;
-      searxTestStatus.className = 'settings-test-result test-fail';
+      searxTestStatus.className = 'settings-test-result test-failed';
     }
     searxTestBtn.disabled = false;
   });
@@ -607,7 +607,7 @@ export function createAITab(
       tldrStatusSpan.className = 'settings-test-result test-success';
     } catch (e) {
       tldrStatusSpan.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
-      tldrStatusSpan.className = 'settings-test-result test-fail';
+      tldrStatusSpan.className = 'settings-test-result test-failed';
     }
     tldrUpdateBtn.disabled = false;
   });

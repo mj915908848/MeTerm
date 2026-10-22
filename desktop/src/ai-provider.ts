@@ -4,7 +4,11 @@
 
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { thinkingFieldsFor } from './ai-thinking-budget';
-import { anthropicAcceptsTemperature, anthropicCacheLayout, openAICompatParams, sseData, streamPayloadError } from './ai-provider-wire';
+import {
+  ANTHROPIC_BINDING_BETA, AnthropicContentCollector, anthropicAcceptsTemperature, anthropicBindsThinking,
+  anthropicCacheLayout, hasAnthropicThinking, isThinkingBindingError, openAICompatParams, sseData,
+  stripAnthropicThinking, streamPayloadError,
+} from './ai-provider-wire';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -64,6 +68,14 @@ export interface ChatMessage {
    */
   reasoning_content?: string;
   /**
+   * Anthropic assistant turns that included thinking: the content blocks
+   * exactly as Claude streamed them (thinking signatures included). Claude
+   * 5.x reads its earlier reasoning only when these are sent back
+   * unchanged, so the Anthropic serializer prefers them over rebuilding
+   * the turn from `content` / `tool_calls`.
+   */
+  anthropic_content?: unknown[];
+  /**
    * System messages only: length of the leading part of `content` that stays
    * identical across agent iterations. The rest is per-turn context
    * (terminal output, plan, attachments). Anthropic caches only the stable
@@ -101,6 +113,8 @@ export interface StreamCallbacks {
 export interface StreamCompleteInfo {
   /** The provider stopped because the output-token limit was reached. */
   truncated?: boolean;
+  /** Anthropic only: the turn's content blocks when it included thinking (see ChatMessage.anthropic_content). */
+  anthropicContent?: unknown[];
 }
 
 export type ProviderType = 'openai' | 'anthropic' | 'gemini';
@@ -173,8 +187,8 @@ export interface ProviderPreset {
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
-  { id: 'openai',    label: 'OpenAI',    type: 'openai',    baseUrl: 'https://api.openai.com',                      model: 'gpt-4o' },
-  { id: 'anthropic', label: 'Anthropic', type: 'anthropic', baseUrl: 'https://api.anthropic.com',                   model: 'claude-sonnet-4-6' },
+  { id: 'openai',    label: 'OpenAI',    type: 'openai',    baseUrl: 'https://api.openai.com',                      model: 'gpt-6-sol' },
+  { id: 'anthropic', label: 'Anthropic', type: 'anthropic', baseUrl: 'https://api.anthropic.com',                   model: 'claude-sonnet-5-5' },
   { id: 'gemini',    label: 'Gemini',    type: 'gemini',    baseUrl: 'https://generativelanguage.googleapis.com',   model: 'gemini-3.8-flash' },
   { id: 'zhipu',     label: 'Z.ai',      type: 'openai',    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',       model: 'glm-4.5' },
   { id: 'ollama',    label: 'Ollama',    type: 'openai',    baseUrl: 'http://localhost:11434',                      model: 'llama3.1' },
@@ -183,15 +197,13 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
 
 // ─── Model Fetching ─────────────────────────────────────────────
 
-// Shown when the model list cannot be fetched. The 4.6 / 4.5 models come
-// first: the 5.x models always think, and MeTerm does not pass their
-// thinking blocks back across tool-use turns yet (untested against them).
+// Shown when the model list cannot be fetched.
 const ANTHROPIC_FALLBACK_MODELS = [
-  'claude-sonnet-4-6',
-  'claude-opus-4-6',
-  'claude-haiku-4-5',
   'claude-sonnet-5-5',
   'claude-opus-5-5',
+  'claude-haiku-5-5',
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
 ];
 
 
@@ -224,6 +236,7 @@ async function nativeStreamPost(
   body: object,
   onData: (data: string) => void,
   signal?: AbortSignal,
+  anthropicBeta: string[] = [],
 ): Promise<void> {
   if (signal?.aborted) throw Object.assign(new Error('AbortError'), { name: 'AbortError' });
 
@@ -257,6 +270,7 @@ async function nativeStreamPost(
         providerType: provider.type,
         baseUrl: provider.baseUrl,
         model: provider.model,
+        ...(anthropicBeta.length > 0 ? { anthropicBeta } : {}),
       },
       body: JSON.stringify(body),
       streamId,
@@ -557,6 +571,11 @@ class OpenAIProvider implements AIProvider {
 
 // ─── Anthropic Provider ─────────────────────────────────────────
 
+// Anthropic endpoints that answered a replayed thinking block with the
+// history-binding 400 (accounts created on/after 2026-08-31). Later requests
+// to them go straight to the fallback instead of failing first.
+const thinkingBindingEnforced = new Set<string>();
+
 class AnthropicProvider implements AIProvider {
   constructor(private config: AIProviderConfig) {}
 
@@ -583,7 +602,10 @@ class AnthropicProvider implements AIProvider {
     for (let i = 0; i < conversationMessages.length; i++) {
       const m = conversationMessages[i];
 
-      if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+      if (m.role === 'assistant' && m.anthropic_content && sameToolUses(m.anthropic_content, m.tool_calls)) {
+        // Claude's own blocks, thinking included, sent back unchanged.
+        anthropicMessages.push({ role: 'assistant', content: m.anthropic_content });
+      } else if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
         // Assistant message with tool_use content blocks
         const content: unknown[] = [];
         if (typeof m.content === 'string') {
@@ -676,7 +698,31 @@ class AnthropicProvider implements AIProvider {
       body.tools = toolsArr;
     }
 
-    this.doStream(body, callbacks, signal);
+    // MeTerm changes earlier turns between requests (per-turn context,
+    // microCompact), which invalidates replayed Claude 5.x thinking. Older
+    // accounts still get the reasoning; newer ones answer with a 400, so
+    // retry by having the API drop the stale blocks (official endpoint) or
+    // by not sending thinking at all (anything else).
+    const messagesOut = body.messages as Record<string, unknown>[];
+    let fallback: { body: Record<string, unknown>; beta: string[] } | undefined;
+    if (anthropicBindsThinking(this.config.model) && hasAnthropicThinking(messagesOut)) {
+      fallback = isOfficialAnthropic(this.config.baseUrl)
+        ? {
+          body: { ...body, thinking: { type: 'adaptive', block_binding: { prefix_mismatch_behavior: 'drop_block' } } },
+          beta: [ANTHROPIC_BINDING_BETA],
+        }
+        : { body: { ...body, messages: stripAnthropicThinking(messagesOut) }, beta: [] };
+    }
+    const endpoint = `${this.config.providerId}|${this.config.baseUrl}`;
+    if (fallback && thinkingBindingEnforced.has(endpoint)) {
+      this.doStream(fallback.body, callbacks, signal, fallback.beta);
+      return;
+    }
+    const retry = fallback;
+    this.doStream(body, callbacks, signal, [], retry && (() => {
+      thinkingBindingEnforced.add(endpoint);
+      this.doStream(retry.body, callbacks, signal, retry.beta);
+    }));
   }
 
   async validateConfig(): Promise<{ ok: boolean; error?: string }> {
@@ -692,14 +738,18 @@ class AnthropicProvider implements AIProvider {
   /**
    * Stream Anthropic messages.
    * Tool calls arrive as: content_block_start (type=tool_use) → content_block_delta
-   * (type=input_json_delta) → content_block_stop.
+   * (type=input_json_delta) → content_block_stop. Thinking blocks are kept
+   * whole so the turn can be replayed (see AnthropicContentCollector).
    */
   private async doStream(
     body: object,
     callbacks: StreamCallbacks,
     signal?: AbortSignal,
+    anthropicBeta: string[] = [],
+    onBindingError?: () => void,
   ): Promise<void> {
     let fullText = '';
+    const content = new AnthropicContentCollector();
     const toolCalls: ToolCall[] = [];
     let currentTC: { id: string; name: string; arguments: string } | null = null;
     let streamError: Error | null = null;
@@ -710,6 +760,7 @@ class AnthropicProvider implements AIProvider {
         try {
           const parsed = JSON.parse(data);
           streamError ??= streamPayloadError('anthropic', parsed);
+          content.feed(parsed);
 
           if (parsed.type === 'message_delta') {
             if (parsed.delta?.stop_reason === 'max_tokens') truncated = true;
@@ -727,6 +778,9 @@ class AnthropicProvider implements AIProvider {
               }
             } else if (parsed.delta?.type === 'input_json_delta' && currentTC) {
               currentTC.arguments += parsed.delta.partial_json || '';
+            } else if (parsed.delta?.type === 'thinking_delta' && parsed.delta.thinking) {
+              // Empty unless the request asks for summarized thinking.
+              callbacks.onReasoning?.(parsed.delta.thinking);
             }
           } else if (parsed.type === 'content_block_stop') {
             if (currentTC) {
@@ -741,7 +795,7 @@ class AnthropicProvider implements AIProvider {
             }
           }
         } catch { /* skip malformed chunks */ }
-      }, signal);
+      }, signal, anthropicBeta);
 
       if (streamError) throw streamError;
       // A tool_use block cut off by the token limit never got its
@@ -751,12 +805,36 @@ class AnthropicProvider implements AIProvider {
         const { id, name, arguments: args } = currentTC as { id: string; name: string; arguments: string };
         toolCalls.push({ id, type: 'function', function: { name, arguments: args } });
       }
-      callbacks.onComplete(fullText, toolCalls.length > 0 ? toolCalls : undefined, undefined, { truncated });
+      callbacks.onComplete(fullText, toolCalls.length > 0 ? toolCalls : undefined, undefined, {
+        truncated,
+        anthropicContent: content.content(),
+      });
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
+      if (onBindingError && isThinkingBindingError((e as Error).message)) {
+        onBindingError();
+        return;
+      }
       callbacks.onError(e as Error);
     }
   }
+}
+
+function isOfficialAnthropic(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname.toLowerCase() === 'api.anthropic.com';
+  } catch {
+    return false;
+  }
+}
+
+/** Stored Claude blocks still describe this turn: same tool_use ids, same order. */
+function sameToolUses(blocks: unknown[], toolCalls: ToolCall[] | undefined): boolean {
+  const ids = blocks
+    .filter((b) => (b as { type?: string })?.type === 'tool_use')
+    .map((b) => (b as { id?: string }).id);
+  const expected = (toolCalls ?? []).map((tc) => tc.id);
+  return ids.length === expected.length && ids.every((id, i) => id === expected[i]);
 }
 
 // ─── Google Gemini Provider ─────────────────────────────────────
@@ -936,15 +1014,15 @@ class GeminiProvider implements AIProvider {
 // ─── Auto Model Resolution ──────────────────────────────────────
 
 const AUTO_MODEL_DEFAULTS: Record<ProviderType, string> = {
-  openai: 'gpt-4o',
-  anthropic: 'claude-sonnet-4-6',
+  openai: 'gpt-6-sol',
+  anthropic: 'claude-sonnet-5-5',
   gemini: 'gemini-3.8-flash',
 };
 
 /** Resolve 'auto' model to the default model for the given provider type. */
 export function resolveModel(providerType: ProviderType, model: string): string {
   if (model !== 'auto') return model;
-  return AUTO_MODEL_DEFAULTS[providerType] || 'gpt-4o';
+  return AUTO_MODEL_DEFAULTS[providerType] || 'gpt-6-sol';
 }
 
 /** Get the default base URL for a provider type. */
