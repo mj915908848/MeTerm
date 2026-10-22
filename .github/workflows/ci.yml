@@ -129,11 +129,11 @@ jobs:
         working-directory: desktop/src-tauri
         run: cargo fmt --all -- --check
 
-      # 只拦截 error 级别的 lint；现有的 warning 尚未清理，暂不加 -D warnings。
-      # Blocks on error-level lints only; existing warnings aren't cleaned up yet, so no -D warnings.
+      # 警告也算失败，防止新的 warning 慢慢攒起来。
+      # Warnings fail the job too, so new ones don't pile up again.
       - name: cargo clippy
         working-directory: desktop/src-tauri
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: cargo test
         working-directory: desktop/src-tauri
@@ -199,11 +199,11 @@ jobs:
         run: |
           (cd desktop && npm ci && npm run build)
 
-      # 先不加 -D warnings：Windows 专属代码的警告从未清理过。
-      # No -D warnings yet: Windows-only code has never been cleaned up.
+      # 同上，Windows 专属代码的警告也算失败。
+      # As above: warnings in Windows-only code fail the job too.
       - name: cargo clippy
         working-directory: desktop/src-tauri
-        run: cargo clippy --all-targets
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: cargo test
         working-directory: desktop/src-tauri
