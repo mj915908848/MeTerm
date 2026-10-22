@@ -513,8 +513,8 @@
   padding: 2px 4px 2px 8px;
   border-radius: 10px;
   font-size: 11px;
-  background: rgba(var(--accent-rgb), 0.15);
-  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  background: rgba(106, 164, 255, 0.15);
+  border: 1px solid rgba(106, 164, 255, 0.35);
   color: var(--text-primary);
   max-width: 120px;
 }

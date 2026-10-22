@@ -140,14 +140,14 @@ body.pane-dragging, body.pane-dragging * { cursor: grabbing !important; }
   position: absolute;
   inset: 0;
   border-radius: 6px;
-  background: rgba(var(--accent-rgb), 0.18);
-  border: 2px solid rgba(var(--accent-rgb), 0.7);
+  background: rgba(106, 164, 255, 0.18);
+  border: 2px solid rgba(106, 164, 255, 0.7);
   pointer-events: none;
   z-index: 105;
   transition: inset 0.08s ease;
 }
 /* Center = replace (whole pane, a touch more opaque); edges = insert (half). */
-.split-pane.pane-drop-target[data-drop-edge="center"]::after { inset: 0; background: rgba(var(--accent-rgb), 0.26); }
+.split-pane.pane-drop-target[data-drop-edge="center"]::after { inset: 0; background: rgba(106, 164, 255, 0.26); }
 .split-pane.pane-drop-target[data-drop-edge="left"]::after { inset: 0 50% 0 0; }
 .split-pane.pane-drop-target[data-drop-edge="right"]::after { inset: 0 0 0 50%; }
 .split-pane.pane-drop-target[data-drop-edge="top"]::after { inset: 0 0 50% 0; }

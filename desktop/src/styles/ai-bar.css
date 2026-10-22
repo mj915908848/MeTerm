@@ -296,7 +296,7 @@ html.vibrancy-active .ai-bar-history-panel {
 }
 
 .ai-history-row:hover {
-  background: rgba(var(--accent-rgb), 0.1);
+  background: rgba(106, 164, 255, 0.1);
 }
 
 .ai-history-cmd {
@@ -343,7 +343,7 @@ html.vibrancy-active .ai-bar-history-panel {
 }
 
 .ai-history-copy:hover {
-  background: rgba(var(--accent-rgb), 0.15);
+  background: rgba(106, 164, 255, 0.15);
   color: var(--text-primary);
 }
 
@@ -466,7 +466,7 @@ html.vibrancy-active .ai-bar-chat-history-panel {
 }
 
 .ai-chat-hist-back:hover {
-  background: rgba(var(--accent-rgb), 0.12);
+  background: rgba(106, 164, 255, 0.12);
   color: var(--text-primary);
 }
 
@@ -493,7 +493,7 @@ html.vibrancy-active .ai-bar-chat-history-panel {
 }
 
 .ai-chat-hist-row:hover {
-  background: rgba(var(--accent-rgb), 0.1);
+  background: rgba(106, 164, 255, 0.1);
 }
 
 .ai-chat-hist-info {

@@ -309,13 +309,13 @@ html.vibrancy-active .path-autocomplete {
   font-size: 11px;
   color: var(--accent, #6aa4ff);
   background: transparent;
-  border: 1px solid rgba(var(--accent-rgb), 0.4);
+  border: 1px solid rgba(106, 164, 255, 0.4);
   border-radius: 3px;
   cursor: pointer;
 }
 
 .file-list-trunc-btn:hover {
-  background: rgba(var(--accent-rgb), 0.15);
+  background: rgba(106, 164, 255, 0.15);
   border-color: var(--accent, #6aa4ff);
 }
 

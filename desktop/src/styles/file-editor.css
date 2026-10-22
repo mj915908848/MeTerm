@@ -441,7 +441,7 @@ html.platform-linux .editor-tabs-area {
   min-width: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background: rgb(var(--bg-primary, 30, 30, 30));
+  background: var(--bg-primary, #1e1e1e);
 }
 
 .editor-md-content {
@@ -580,7 +580,7 @@ html.platform-linux .editor-tabs-area {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: rgb(var(--bg-primary, 30, 30, 30));
+  background: var(--bg-primary, #1e1e1e);
   overflow: auto;
   padding: 20px;
   box-sizing: border-box;
