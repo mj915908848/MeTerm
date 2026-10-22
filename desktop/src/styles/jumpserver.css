@@ -1140,25 +1140,26 @@ html.vibrancy-active .js-account-dialog {
   margin-top: 4px;
 }
 .js-expired-btn {
-  padding: 6px 14px;
-  font-size: 12px;
-  border-radius: 4px;
-  border: 1px solid var(--border-primary);
-  background: transparent;
-  color: var(--text-primary, #e8e8e8);
+  height: 32px;
+  padding: 0 14px;
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--fill);
+  color: var(--text-primary);
   cursor: pointer;
+  transition: background var(--dur-fast);
 }
 .js-expired-btn:hover {
-  background: var(--fill-subtle);
+  background: var(--fill-hover);
 }
 .js-expired-btn-primary {
-  background: var(--accent-primary, rgba(59, 130, 246, 0.8));
-  border-color: var(--accent-primary, rgba(59, 130, 246, 0.8));
-  color: #fff;
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.28);
+  color: var(--accent);
 }
 .js-expired-btn-primary:hover {
-  background: var(--accent-primary, rgba(59, 130, 246, 1));
-  border-color: var(--accent-primary, rgba(59, 130, 246, 1));
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.38);
 }
 .js-expired-error {
   font-size: 12px;

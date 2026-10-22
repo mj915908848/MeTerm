@@ -443,31 +443,28 @@ html.vibrancy-active .ai-danger-dialog {
   justify-content: flex-end;
 }
 .ai-danger-btn {
-  padding: 6px 16px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 500;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-sm);
+  font-family: inherit;
   cursor: pointer;
-  border: 1px solid transparent;
-  transition: all 0.15s ease;
+  border: none;
+  transition: background var(--dur-fast);
 }
 .ai-danger-btn-cancel {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
-  color: var(--text-secondary);
-}
-.ai-danger-btn-cancel:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--fill);
   color: var(--text-primary);
 }
+.ai-danger-btn-cancel:hover {
+  background: var(--fill-hover);
+}
 .ai-danger-btn-run {
-  background: rgba(255, 107, 107, 0.15);
-  border-color: rgba(255, 107, 107, 0.3);
-  color: #ff6b6b;
+  background: rgba(255, 69, 58, 0.18);
+  color: var(--error-text);
 }
 .ai-danger-btn-run:hover {
-  background: rgba(255, 107, 107, 0.25);
-  color: #ff8a8a;
+  background: rgba(255, 69, 58, 0.28);
 }
 
 [data-theme="light"] .ai-danger-dialog {

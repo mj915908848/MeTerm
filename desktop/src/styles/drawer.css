@@ -552,8 +552,8 @@ html.vibrancy-active .path-autocomplete {
   position: fixed;
   background: rgba(var(--bg-settings), 1);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  padding: 3px 0;
+  border-radius: var(--radius-lg);
+  padding: 4px 0;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   z-index: 10001;
   /* 自适应内容宽度,不强制最小宽度。
@@ -718,20 +718,22 @@ html.vibrancy-active .drawer-modal {
 
 .drawer-modal-input {
   width: 100%;
-  padding: clamp(4px, 1%, 6px) clamp(6px, 1.5%, 8px);
-  font-size: clamp(11px, 1.4vw, 12px);
-  font-family: 'Menlo', 'Consolas', monospace;
-  background: var(--bg-input);
+  height: 34px;
+  padding: 0 12px;
+  font-size: var(--fs-md);
+  font-family: var(--font-mono);
+  background: var(--fill-input);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border: none;
+  border-radius: var(--radius-lg);
   outline: none;
   box-sizing: border-box;
   margin-bottom: clamp(6px, 2%, 12px);
+  transition: box-shadow var(--dur-fast);
 }
 
 .drawer-modal-input:focus {
-  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 106, 164, 255), 0.35);
 }
 
 .drawer-modal-buttons {
@@ -863,55 +865,46 @@ html.vibrancy-active .drawer-modal {
 }
 
 .drawer-modal-btn {
-  padding: clamp(4px, 1%, 6px) clamp(10px, 2.5%, 16px);
-  font-size: clamp(11px, 1.4vw, 12px);
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  height: 32px;
+  padding: 0 14px;
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  border-radius: var(--radius-pill);
+  border: none;
   cursor: pointer;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--fill);
   color: var(--text-primary);
   white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background var(--dur-fast);
 }
 
 .drawer-modal-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
+  background: var(--fill-hover);
 }
 
 .drawer-modal-btn.confirm {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.25);
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.28);
   color: var(--accent);
-  border-color: rgba(var(--accent-rgb, 106, 164, 255), 0.3);
 }
 
 .drawer-modal-btn.confirm:hover {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.35);
-  border-color: rgba(var(--accent-rgb, 106, 164, 255), 0.45);
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.38);
 }
 
 .drawer-modal-btn.confirm.danger {
   background: rgba(255, 69, 58, 0.18);
-  color: #f87171;
-  border-color: rgba(255, 69, 58, 0.25);
+  color: var(--error-text);
 }
 
 .drawer-modal-btn.confirm.danger:hover {
   background: rgba(255, 69, 58, 0.28);
-  border-color: rgba(255, 69, 58, 0.4);
 }
 
-[data-theme="light"] .drawer-modal-btn {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.1);
-  color: var(--text-primary);
-}
-[data-theme="light"] .drawer-modal-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
 [data-theme="light"] .drawer-modal-btn.confirm {
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.15);
-  border-color: rgba(var(--accent-rgb, 106, 164, 255), 0.25);
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.12);
+}
+[data-theme="light"] .drawer-modal-btn.confirm:hover {
+  background: rgba(var(--accent-rgb, 106, 164, 255), 0.18);
 }
 
 /* Drag and drop styles */
