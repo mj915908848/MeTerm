@@ -233,19 +233,12 @@ class ServerInfoPanelClass {
     if (instance.sysInfo) renderSysInfo(instance);
   }
 
+  /** `user@host[:port]` — the first line of the panel. */
   private connBlock(info: { host: string; username: string; port: number } | null): string {
     if (!info) return '';
     const host = `${info.host}${info.port && info.port !== 22 ? ':' + info.port : ''}`;
-    return `<div class="server-info-conn">
-      <div class="server-info-item">
-        <div class="server-info-label">${t('serverInfoHost')}</div>
-        <div class="server-info-value">${escapeHtml(host)}</div>
-      </div>
-      <div class="server-info-item">
-        <div class="server-info-label">${t('serverInfoUser')}</div>
-        <div class="server-info-value">${escapeHtml(info.username)}</div>
-      </div>
-    </div>`;
+    const who = info.username ? `${info.username}@${host}` : host;
+    return `<div class="server-info-conn server-info-value">${escapeHtml(who)}</div>`;
   }
 
   private releaseContainer(): void {

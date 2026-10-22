@@ -93,13 +93,13 @@ test('swap above the reported total is clamped to 100%', () => {
 
 // ── Wiring ──
 //
-// The rows are built as one template, so their order in it is the layout:
-// uptime, load, CPU, memory, swap, processes, network, disks.
-test('the panel renders load, swap and the process box in that order', () => {
+// The sections are built as one template, so their order in it is the layout
+// (the "dashboard" Jie picked): who line, CPU / memory / load / network tiles,
+// disks, then processes.
+test('the panel renders the dashboard sections in order', () => {
   const src = read('drawer-system-info.ts');
   // Only the expanded template counts: renderCompactSysInfo assigns the same
-  // property earlier in the file, and the load row is precomputed above the
-  // template so a plain search would compare an unrelated position.
+  // property earlier in the file.
   const fn = src.indexOf('function renderExpandedSysInfo');
   assert.ok(fn >= 0, 'renderExpandedSysInfo was not found');
   const start = src.indexOf('serverInfoEl.innerHTML = `', fn);
@@ -113,16 +113,16 @@ test('the panel renders load, swap and the process box in that order', () => {
     assert.ok(i >= 0, `not found in the sysinfo template: ${needle}`);
     return i;
   };
-  const uptime = at("t('serverInfoUptime')");
-  const load = at('${loadHtml}');
-  const cpu = at("t('serverInfoCPU')");
-  const mem = at("t('serverInfoMemory')");
-  const swap = at("t('serverInfoSwap')");
+  const who = at('${whoSub}');
+  const cpu = at('${cpuTile}');
+  const mem = at('${memTile}');
+  const load = at('${loadTile}');
+  const net = at('${renderNetTile(instance)}');
+  const disks = at('${diskRows');
   const procs = at('${renderProcessBox(instance)}');
-  const net = at('${renderNetChart(instance)}');
   assert.ok(
-    uptime < load && load < cpu && cpu < mem && mem < swap && swap < procs && procs < net,
-    'load goes under uptime, swap under memory, and the process box between memory and the network chart',
+    who < cpu && cpu < mem && mem < load && load < net && net < disks && disks < procs,
+    'who line, then the four tiles, then disks, then processes',
   );
 });
 
