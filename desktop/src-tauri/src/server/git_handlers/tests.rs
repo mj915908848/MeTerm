@@ -35,6 +35,11 @@ fn rejects_bad_rel_paths() {
     assert!(rel_path_ok("src/a.rs"));
     assert!(rel_path_ok("a b/c.txt"));
     assert!(!rel_path_ok("/etc/passwd"));
+    #[cfg(windows)]
+    {
+        assert!(!rel_path_ok(r"\etc\passwd"));
+        assert!(!rel_path_ok("C:outside.txt"));
+    }
     assert!(!rel_path_ok("../outside.txt"));
     assert!(!rel_path_ok("a/../../b"));
     assert!(!rel_path_ok(""));
@@ -57,7 +62,8 @@ async fn git_subprocess_rejects_output_above_limit() {
             "after.txt".into(),
         ],
         128,
-        128,
+        // stderr 留足空间:Windows 上 git 可能先输出换行符相关的警告 / room for Windows line-ending warnings
+        64 * 1024,
         Duration::from_secs(5),
     )
     .await
@@ -90,6 +96,8 @@ async fn git_roundtrip_in_temp_repo() {
         );
     };
     git(&["init", "-b", "main"]);
+    // Windows 上 git 默认 autocrlf=true,会把检出内容改成 CRLF / git on Windows defaults to autocrlf
+    git(&["config", "core.autocrlf", "false"]);
     std::fs::write(dir.join("a.txt"), "hello\n").unwrap();
 
     let (ok, stdout, _) = run_git(

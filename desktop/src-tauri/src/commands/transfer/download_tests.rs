@@ -218,9 +218,9 @@ async fn download_invalid_resume_preserves_destination() {
 
 #[tokio::test]
 async fn download_sftp_success_and_preopen_failure_preserve_destination() {
-    use crate::server::file_handler::operation_tests::{sftp_pair, SftpTestConfig};
+    use crate::server::file_handler::operation_tests::{remote_path, sftp_pair, SftpTestConfig};
     let fixture = Fixture::new();
-    let source = fixture.file("source", b"remote contents");
+    let source = remote_path(Path::new(&fixture.file("source", b"remote contents")));
     let dest = fixture.file("destination", b"keep original");
     let session = Arc::new(Session::new(
         "sftp-download-test".into(),
@@ -237,7 +237,7 @@ async fn download_sftp_success_and_preopen_failure_preserve_destination() {
     let (_tx, rx) = tokio::sync::mpsc::channel(8);
     assert!(run_session_download(
         session.clone(),
-        fixture.0.join("missing").to_str().unwrap().into(),
+        remote_path(&fixture.0.join("missing")),
         dest.clone(),
         0,
         rx,

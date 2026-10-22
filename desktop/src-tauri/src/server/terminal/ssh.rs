@@ -441,7 +441,6 @@ async fn try_default_key_ladder(
     }
     #[cfg(not(unix))]
     {
-        let _ = session;
         diagnostics.push("ssh-agent: not supported on this platform".to_string());
     }
 

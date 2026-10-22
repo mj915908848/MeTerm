@@ -129,6 +129,22 @@ async fn remove_partial_file(save_path: &str) {
     let _ = tokio::fs::remove_file(save_path).await;
 }
 
+/// 本机路径校验:在 `validate_path` 之外,Windows 还接受 `C:\...` 这类带盘符的绝对路径
+/// (`validate_path` 是给远端 POSIX 路径用的,只认 `/` 开头)。
+/// Local-path check: like `validate_path`, but on Windows also accepts drive-letter
+/// absolute paths such as `C:\...` (`validate_path` targets remote POSIX paths).
+fn validate_local_path(path: &str) -> Result<(), &'static str> {
+    #[cfg(windows)]
+    if Path::new(path).is_absolute() {
+        return if path.len() > 4096 {
+            Err("path too long")
+        } else {
+            Ok(())
+        };
+    }
+    validate_path(path)
+}
+
 fn ensure_save_path(save_path: &str) -> Result<(), String> {
     if save_path.is_empty() {
         return Err("save path is required".to_string());
@@ -1199,7 +1215,7 @@ async fn run_local_session_download(
     on_event: &tauri::ipc::Channel<SessionDownloadEvent>,
     cancellation: CancellationToken,
 ) -> Result<DownloadOutcome, String> {
-    validate_path(&path).map_err(|e| e.to_string())?;
+    validate_local_path(&path).map_err(|e| e.to_string())?;
     ensure_save_path(&save_path)?;
 
     if path == save_path {

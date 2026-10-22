@@ -25,6 +25,28 @@ impl Drop for TestDir {
     }
 }
 
+/// 被测代码按远端 POSIX 路径处理 SFTP 路径。Windows 上把本地 `C:\a\b` 映射成 `/C:/a/b`
+/// 交给被测代码,假服务器再映射回本地路径;其他平台原样使用。
+/// The code under test treats SFTP paths as remote POSIX paths. On Windows, local
+/// `C:\a\b` is presented as `/C:/a/b` and the fake server maps it back; other
+/// platforms use the path as is.
+pub fn remote_path(path: &Path) -> String {
+    let path = path.to_str().unwrap();
+    if cfg!(windows) {
+        let path = path.strip_prefix(r"\\?\").unwrap_or(path);
+        format!("/{}", path.replace('\\', "/"))
+    } else {
+        path.to_owned()
+    }
+}
+fn local_path(remote: String) -> String {
+    if cfg!(windows) && remote.as_bytes().get(2) == Some(&b':') {
+        remote[1..].to_owned()
+    } else {
+        remote
+    }
+}
+
 #[derive(Default)]
 pub struct SftpTestConfig {
     pub reject_existing: bool,
@@ -65,6 +87,7 @@ impl FsServer {
         new: String,
         posix: bool,
     ) -> Result<Status, StatusCode> {
+        let (old, new) = (local_path(old), local_path(new));
         self.renames += 1;
         if self.config.rename_failures.contains(&self.renames)
             || (!posix && self.config.reject_existing && std::fs::symlink_metadata(&new).is_ok())
@@ -96,6 +119,7 @@ impl russh_sftp::server::Handler for FsServer {
         flags: OpenFlags,
         _: FileAttributes,
     ) -> Result<Handle, StatusCode> {
+        let filename = local_path(filename);
         if self.config.occupy_stage_on_open
             && (filename.contains(".meterm.edit.tmp") || filename.contains(".meterm.copy-"))
         {
@@ -149,6 +173,7 @@ impl russh_sftp::server::Handler for FsServer {
         Ok(ok(id))
     }
     async fn stat(&mut self, id: u32, path: String) -> Result<Attrs, StatusCode> {
+        let path = local_path(path);
         let mut attrs = FileAttributes::from(&std::fs::metadata(path).map_err(io_status)?);
         if let Some((uid, gid)) = self.config.reported_uid_gid {
             attrs.uid = Some(uid);
@@ -157,6 +182,7 @@ impl russh_sftp::server::Handler for FsServer {
         Ok(Attrs { id, attrs })
     }
     async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, StatusCode> {
+        let path = local_path(path);
         let mut attrs = FileAttributes::from(&std::fs::symlink_metadata(path).map_err(io_status)?);
         if let Some((uid, gid)) = self.config.reported_uid_gid {
             attrs.uid = Some(uid);
@@ -170,6 +196,7 @@ impl russh_sftp::server::Handler for FsServer {
         path: String,
         attrs: FileAttributes,
     ) -> Result<Status, StatusCode> {
+        let path = local_path(path);
         if self.config.reject_ownership_changes && (attrs.uid.is_some() || attrs.gid.is_some()) {
             return Err(StatusCode::PermissionDenied);
         }
@@ -184,27 +211,26 @@ impl russh_sftp::server::Handler for FsServer {
         Ok(ok(id))
     }
     async fn realpath(&mut self, id: u32, path: String) -> Result<Name, StatusCode> {
-        let path = std::fs::canonicalize(path)
-            .map_err(io_status)?
-            .to_string_lossy()
-            .into_owned();
+        let path = remote_path(&std::fs::canonicalize(local_path(path)).map_err(io_status)?);
         Ok(Name {
             id,
             files: vec![File::dummy(path)],
         })
     }
     async fn readlink(&mut self, id: u32, path: String) -> Result<Name, StatusCode> {
-        let target = std::fs::read_link(path)
-            .map_err(io_status)?
-            .to_string_lossy()
-            .into_owned();
+        let target = std::fs::read_link(local_path(path)).map_err(io_status)?;
+        let target = if target.is_absolute() {
+            remote_path(&target)
+        } else {
+            target.to_string_lossy().into_owned()
+        };
         Ok(Name {
             id,
             files: vec![File::dummy(target)],
         })
     }
     async fn remove(&mut self, id: u32, path: String) -> Result<Status, StatusCode> {
-        std::fs::remove_file(path).map_err(io_status)?;
+        std::fs::remove_file(local_path(path)).map_err(io_status)?;
         Ok(ok(id))
     }
     async fn rename(&mut self, id: u32, old: String, new: String) -> Result<Status, StatusCode> {
@@ -257,6 +283,14 @@ fn request(operation: &str, source: &Path, destination: &Path) -> Vec<u8> {
     serde_json::to_vec(
         &serde_json::json!({ "operation": operation, "path": source, "new_path": destination }),
     )
+    .unwrap()
+}
+fn sftp_request(operation: &str, source: &Path, destination: &Path) -> Vec<u8> {
+    serde_json::to_vec(&serde_json::json!({
+        "operation": operation,
+        "path": remote_path(source),
+        "new_path": remote_path(destination),
+    }))
     .unwrap()
 }
 fn success(response: &[u8]) -> bool {
@@ -313,7 +347,7 @@ async fn sftp_copy_rejects_same_and_normalized_paths() {
     let sftp = sftp_pair(Default::default()).await;
     for destination in [source.clone(), dir.path.join("./source")] {
         assert!(!success(
-            &super::handle_sftp_file_operation(&request("copy", &source, &destination), &sftp)
+            &super::handle_sftp_file_operation(&sftp_request("copy", &source, &destination), &sftp)
                 .await
         ));
         assert_eq!(std::fs::read(&source).unwrap(), b"keep source");
@@ -331,12 +365,12 @@ async fn sftp_copy_preserves_source_through_symlink_and_hardlink_aliases() {
     std::fs::hard_link(&source, &hard).unwrap();
     let sftp = sftp_pair(Default::default()).await;
     assert!(!success(
-        &super::handle_sftp_file_operation(&request("copy", &source, &link), &sftp).await
+        &super::handle_sftp_file_operation(&sftp_request("copy", &source, &link), &sftp).await
     ));
     assert_eq!(std::fs::read(&source).unwrap(), b"keep source");
     // SFTP has no inode identity. An undetected hardlink must still be copied safely.
     assert!(success(
-        &super::handle_sftp_file_operation(&request("copy", &source, &hard), &sftp).await
+        &super::handle_sftp_file_operation(&sftp_request("copy", &source, &hard), &sftp).await
     ));
     assert_eq!(std::fs::read(&source).unwrap(), b"keep source");
     assert_eq!(std::fs::read(&hard).unwrap(), b"keep source");
@@ -354,7 +388,7 @@ async fn sftp_copy_distinct_file_still_overwrites_destination() {
     })
     .await;
     assert!(success(
-        &super::handle_sftp_file_operation(&request("copy", &source, &target), &sftp).await
+        &super::handle_sftp_file_operation(&sftp_request("copy", &source, &target), &sftp).await
     ));
     assert_eq!(std::fs::read(&source).unwrap(), b"complete source");
     assert_eq!(std::fs::read(&target).unwrap(), b"complete source");
@@ -372,11 +406,12 @@ async fn sftp_touch_rejects_existing_without_truncation_and_creates_new() {
     std::fs::write(&existing, b"original content").unwrap();
     let sftp = sftp_pair(Default::default()).await;
     assert!(!success(
-        &super::handle_sftp_file_operation(&request("touch", &existing, &existing), &sftp).await
+        &super::handle_sftp_file_operation(&sftp_request("touch", &existing, &existing), &sftp)
+            .await
     ));
     assert_eq!(std::fs::read(&existing).unwrap(), b"original content");
     assert!(success(
-        &super::handle_sftp_file_operation(&request("touch", &new, &new), &sftp).await
+        &super::handle_sftp_file_operation(&sftp_request("touch", &new, &new), &sftp).await
     ));
     assert_eq!(std::fs::read(&new).unwrap(), b"");
 }
@@ -394,7 +429,7 @@ async fn sftp_copy_write_failure_preserves_existing_destination() {
     })
     .await;
     assert!(!success(
-        &super::handle_sftp_file_operation(&request("copy", &source, &target), &sftp).await
+        &super::handle_sftp_file_operation(&sftp_request("copy", &source, &target), &sftp).await
     ));
     assert_eq!(std::fs::read(&source).unwrap(), b"complete source");
     assert_eq!(std::fs::read(&target).unwrap(), b"original destination");
@@ -414,7 +449,7 @@ async fn sftp_copy_commit_failure_rolls_back_existing_destination() {
     })
     .await;
     assert!(!success(
-        &super::handle_sftp_file_operation(&request("copy", &source, &target), &sftp).await
+        &super::handle_sftp_file_operation(&sftp_request("copy", &source, &target), &sftp).await
     ));
     assert_eq!(std::fs::read(&source).unwrap(), b"complete source");
     assert_eq!(std::fs::read(&target).unwrap(), b"original destination");
@@ -434,7 +469,7 @@ async fn sftp_copy_exclusive_staging_preserves_colliding_file() {
     })
     .await;
     assert!(!success(
-        &super::handle_sftp_file_operation(&request("copy", &source, &target), &sftp).await
+        &super::handle_sftp_file_operation(&sftp_request("copy", &source, &target), &sftp).await
     ));
     assert_eq!(std::fs::read(&target).unwrap(), b"original destination");
     let staged = std::fs::read_dir(&dir.path)
@@ -463,7 +498,8 @@ async fn sftp_copy_long_basename_uses_short_sibling_staging_and_backup() {
     })
     .await;
     assert!(success(
-        &super::handle_sftp_file_operation(&request("copy", &source, &destination), &sftp).await
+        &super::handle_sftp_file_operation(&sftp_request("copy", &source, &destination), &sftp)
+            .await
     ));
     assert_eq!(std::fs::read(&source).unwrap(), b"complete source");
     assert_eq!(std::fs::read(&destination).unwrap(), b"complete source");
