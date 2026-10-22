@@ -7,12 +7,15 @@ import { AppSettings } from './themes';
 import { t } from './i18n';
 import { createSettingsSelect } from './custom-select';
 import {
+  effectivePermissionMode,
+  PERMISSION_MODES,
   validatePermissionRule,
   type PermissionMode,
   type PermissionRule,
 } from './ai-permission-rules';
 import { getAuditLogPath } from './ai-audit-log';
 import { invoke } from '@tauri-apps/api/core';
+import { permissionModeLabel } from './ai-permission-labels';
 
 // ─── Permission Mode Selector ──────────────────────────────
 
@@ -21,42 +24,33 @@ export function createPermissionModeRow(
   update: (patch: Partial<AppSettings>) => void,
 ): HTMLDivElement {
   const row = document.createElement('div');
-  row.className = 'ai-provider-row ai-row-inline';
-  row.innerHTML = `<label>${t('aiPermissionMode')}</label>`;
+  row.className = 'settings-section';
+  row.appendChild(settingLabel(t('aiPermissionMode'), t('aiPermissionModeHint')));
 
-  const modeOptions: { value: PermissionMode | ''; label: string }[] = [
-    { value: '',           label: `(${t('aiAgentTrustLevel')})` },
-    { value: 'ask',        label: t('aiPermissionModeAsk') },
-    { value: 'acceptSafe', label: t('aiPermissionModeAcceptSafe') },
-    { value: 'acceptAll',  label: t('aiPermissionModeAcceptAll') },
-    { value: 'plan',       label: t('aiPermissionModePlan') },
-    { value: 'bypass',     label: t('aiPermissionModeBypass') },
-  ];
-  const currentMode = current.aiPermissionMode ?? '';
+  const currentMode = effectivePermissionMode(current);
   const select = createSettingsSelect(
-    modeOptions.map(opt => ({
-      value: opt.value,
-      label: opt.label,
-      selected: currentMode === opt.value,
+    PERMISSION_MODES.map(mode => ({
+      value: mode,
+      label: permissionModeLabel(mode),
+      selected: currentMode === mode,
     })),
   );
-  select.el.style.flex = '1';
-  select.onchange = () => {
-    const v = select.value as PermissionMode | '';
-    update({ aiPermissionMode: v === '' ? undefined : v });
-  };
+  select.onchange = () => update({ aiPermissionMode: select.value as PermissionMode });
   row.appendChild(select.el);
+  return row;
+}
 
-  const hint = document.createElement('div');
-  hint.className = 'settings-hint';
-  hint.style.cssText = 'font-size:11px;opacity:0.7;margin-top:4px;grid-column:1/-1;';
-  hint.textContent = t('aiPermissionModeHint');
-
-  const wrapper = document.createElement('div');
-  wrapper.className = 'ai-permission-mode-wrapper';
-  wrapper.appendChild(row);
-  wrapper.appendChild(hint);
-  return wrapper;
+/** A row's name, with an optional line of explanation under it. */
+export function settingLabel(text: string, hint?: string): HTMLLabelElement {
+  const label = document.createElement('label');
+  label.textContent = text;
+  if (hint) {
+    const small = document.createElement('small');
+    small.className = 'settings-row-hint';
+    small.textContent = hint;
+    label.appendChild(small);
+  }
+  return label;
 }
 
 // ─── Permission Rules Editor ───────────────────────────────
@@ -69,13 +63,11 @@ export function createPermissionRulesEditor(
   container.className = 'ai-permission-rules';
 
   const header = document.createElement('div');
-  header.className = 'ai-provider-row ai-row-inline';
-  header.style.justifyContent = 'space-between';
-  header.innerHTML = `<label class="settings-section-title" style="margin:0">${t('aiPermissionRules')}</label>`;
+  header.className = 'ai-permission-rules-header';
+  header.innerHTML = `<label>${t('aiPermissionRules')}</label>`;
 
   const addBtn = document.createElement('button');
-  addBtn.className = 'settings-select';
-  addBtn.style.cssText = 'padding:4px 10px;font-size:12px;';
+  addBtn.className = 'settings-select settings-test-btn';
   addBtn.textContent = `+ ${t('aiPermissionRulesAdd')}`;
   header.appendChild(addBtn);
   container.appendChild(header);
@@ -305,12 +297,12 @@ export function createPermissionRulesEditor(
 
 export function createAuditLogRow(): HTMLDivElement {
   const row = document.createElement('div');
-  row.className = 'ai-provider-row ai-row-inline';
-  row.style.justifyContent = 'space-between';
-  row.innerHTML = `<label class="settings-section-title" style="margin:0">${t('aiAuditLog')}</label>`;
+  row.className = 'settings-section';
+  row.appendChild(settingLabel(t('aiAuditLog')));
 
   const openBtn = document.createElement('button');
   openBtn.className = 'settings-select settings-test-btn';
+  openBtn.style.justifySelf = 'end';
   openBtn.textContent = t('aiAuditLogOpen');
   openBtn.onclick = () => { void openAuditLogInSystemEditor(); };
   row.appendChild(openBtn);

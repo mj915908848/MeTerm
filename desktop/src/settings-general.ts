@@ -9,6 +9,7 @@ import { exportConnectionsToFile, formatSSHExportResult, importConnectionsFromJS
 import { createSettingsSelect } from './custom-select';
 import { escapeHtml } from './status-bar';
 import { createGroup, createPage, switchRow, SETTINGS_ICONS, type SettingsPage } from './settings-layout';
+import { createCommandAssistRows } from './settings-command-assist';
 // emit removed — palette now syncs through update() → saveSettings → settings-changed
 
 /**
@@ -719,6 +720,7 @@ export function createGeneralPages(
       createGroup(t('settingsGroupTerminalBehavior'), [
         check(rememberGroup, 'terminal-notifications-toggle'), check(rememberGroup, 'file-link-confirm-toggle'),
       ]),
+      createGroup(t('settingsGroupCommandAssist'), createCommandAssistRows(current, update)),
     ]),
     page('files', t('settingsPageFileManager'), SETTINGS_ICONS.files, [
       createGroup(null, [fmModeSection, fileManagerFontSection]),

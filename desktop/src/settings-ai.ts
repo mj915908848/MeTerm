@@ -5,329 +5,409 @@ import { PROVIDER_PRESETS, fetchModels, type ProviderType, type AIProviderEntry 
 import { flushSettingsSecrets } from './settings-secrets';
 import { createSettingsSelect } from './custom-select';
 import { THINKING_BUDGET_TIERS } from './ai-thinking-budget';
+import { createGroup, createPage } from './settings-layout';
 import {
   createPermissionModeRow,
   createPermissionRulesEditor,
   createAuditLogRow,
+  settingLabel,
 } from './settings-ai-permission';
 
-export function createAITab(
+const EYE_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.5"/></svg>`;
+const CLOSE_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
+
+/**
+ * Settings › AI. Four groups — model services, replies, agent, web search.
+ * The rarely touched sampling and context knobs fold away under Advanced at
+ * the end of Replies.
+ */
+export function createAIPage(
+  current: AppSettings,
+  update: (patch: Partial<AppSettings>) => void,
+): HTMLElement {
+  return createPage(t('settingsTabAI'), [
+    createGroup(t('aiGroupProviders'), [createProviderList(current, update)]),
+    createGroup(t('aiGroupReply'), [...createReplyRows(current, update), ...createAdvancedRows(current, update)]),
+    createGroup(t('aiGroupAgent'), createAgentRows(current, update)),
+    createGroup(t('aiGroupWebSearch'), createWebSearchRows(current, update)),
+  ]);
+}
+
+function stopKeyPropagation(el: HTMLInputElement | HTMLSelectElement): void {
+  el.addEventListener('keydown', (e) => e.stopPropagation());
+  el.addEventListener('keyup', (e) => e.stopPropagation());
+  el.addEventListener('keypress', (e) => e.stopPropagation());
+}
+
+/** A card row: name (with optional hint) on the left, `control` on the right. */
+function settingRow(text: string, control: HTMLElement, hint?: string): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'settings-section';
+  row.appendChild(settingLabel(text, hint));
+  row.appendChild(control);
+  return row;
+}
+
+/** A card row ending in a switch. */
+function switchRow(id: string, text: string, checked: boolean, onChange: (on: boolean) => void, hint?: string): HTMLLabelElement {
+  const row = document.createElement('label');
+  row.className = 'settings-switch-row';
+  const label = settingLabel(text, hint);
+  const span = document.createElement('span');
+  span.className = 'settings-switch-text';
+  span.append(...label.childNodes);
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.id = id;
+  input.checked = checked;
+  input.onchange = () => onChange(input.checked);
+  row.append(span, input);
+  return row;
+}
+
+/** A slider row whose current value is shown after its name. */
+function mkSliderRow(
+  label: string, id: string, min: number, max: number, step: number, value: number,
+  fmt: (v: number) => string, onChange: (v: number) => void, hint?: string,
+): HTMLDivElement {
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.className = 'settings-slider';
+  slider.id = id;
+  slider.min = String(min);
+  slider.max = String(max);
+  slider.step = String(step);
+  slider.value = String(value);
+  const row = settingRow(label, slider, hint);
+  const valSpan = document.createElement('span');
+  valSpan.className = 'ai-slider-value';
+  valSpan.textContent = fmt(value);
+  const name = row.querySelector('label')!;
+  name.insertBefore(valSpan, name.firstChild!.nextSibling);
+  name.insertBefore(document.createTextNode(': '), valSpan);
+  slider.oninput = () => {
+    const v = parseFloat(slider.value);
+    valSpan.textContent = fmt(v);
+    onChange(v);
+  };
+  return row;
+}
+
+// ─── Model services ────────────────────────────────────────
+
+function createProviderList(
   current: AppSettings,
   update: (patch: Partial<AppSettings>) => void,
 ): HTMLDivElement {
-  const tabAI = document.createElement('div');
+  const wrap = document.createElement('div');
+  wrap.className = 'ai-provider-list';
+  // Providers are listed collapsed; only the ones being edited show their form.
+  const expanded = new Set<string>();
 
-  // Provider cards container
-  const providerList = document.createElement('div');
-  providerList.className = 'ai-provider-list';
-  tabAI.appendChild(providerList);
-
-  function syncProviderInput(el: HTMLInputElement | HTMLSelectElement): void {
-    el.addEventListener('keydown', (e) => e.stopPropagation());
-    el.addEventListener('keyup', (e) => e.stopPropagation());
-    el.addEventListener('keypress', (e) => e.stopPropagation());
+  function summaryText(entry: AIProviderEntry): string {
+    const key = entry.hasApiKey || entry.apiKey ? t('aiProviderKeySaved') : t('aiProviderNoKey');
+    const models = entry.enabledModels.length > 0
+      ? t('aiProviderModelsEnabled').replace('{count}', String(entry.enabledModels.length))
+      : t('aiProviderNoModelsEnabled');
+    return `${key} · ${models}`;
   }
 
-  function renderProviderCards(): void {
-    providerList.innerHTML = '';
+  function render(): void {
+    wrap.innerHTML = '';
     const providers = current.aiProviders;
+    providers.forEach((entry, idx) => wrap.appendChild(renderProvider(providers, entry, idx)));
+    wrap.appendChild(renderAddRow());
+  }
 
-    for (let idx = 0; idx < providers.length; idx++) {
-      const entry = providers[idx];
-      const card = document.createElement('div');
-      card.className = 'ai-provider-card';
+  function renderProvider(providers: AIProviderEntry[], entry: AIProviderEntry, idx: number): HTMLDivElement {
+    const isOpen = expanded.has(entry.id);
+    const item = document.createElement('div');
+    item.className = 'ai-provider-item' + (isOpen ? ' open' : '');
 
-      // Card header
-      const header = document.createElement('div');
-      header.className = 'ai-provider-card-header';
-
-      const labelInput = document.createElement('input');
-      labelInput.type = 'text';
-      labelInput.className = 'ai-provider-label-input';
-      labelInput.value = entry.label;
-      syncProviderInput(labelInput);
-      labelInput.onchange = () => {
-        entry.label = labelInput.value.trim() || entry.label;
-        update({ aiProviders: [...providers] });
-      };
-
+    // Summary line: status dot, name, key/model state, edit toggle.
+    const summary = document.createElement('div');
+    summary.className = 'ai-provider-summary';
+    const dot = document.createElement('span');
+    dot.className = 'ai-provider-dot' + (entry.enabledModels.length > 0 ? ' ready' : '');
+    const text = document.createElement('div');
+    text.className = 'ai-provider-summary-text';
+    const name = document.createElement('span');
+    name.className = 'ai-provider-name';
+    name.textContent = entry.label;
+    const state = document.createElement('small');
+    state.className = 'settings-row-hint';
+    state.textContent = summaryText(entry);
+    text.append(name, state);
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'settings-select settings-test-btn';
+    toggle.textContent = isOpen ? t('aiProviderDone') : t('aiProviderEdit');
+    toggle.onclick = () => {
+      if (isOpen) expanded.delete(entry.id); else expanded.add(entry.id);
+      render();
+    };
+    summary.append(dot, text);
+    if (isOpen && providers.length > 1) {
       const deleteBtn = document.createElement('button');
+      deleteBtn.type = 'button';
       deleteBtn.className = 'ai-provider-delete-btn';
-      deleteBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
+      deleteBtn.innerHTML = CLOSE_ICON;
       deleteBtn.title = t('aiDeleteProvider');
       deleteBtn.onclick = () => {
         providers.splice(idx, 1);
+        expanded.delete(entry.id);
         update({ aiProviders: [...providers] });
-        renderProviderCards();
+        render();
       };
-
-      header.appendChild(labelInput);
-      if (providers.length > 1) header.appendChild(deleteBtn);
-
-      // Card body
-      const body = document.createElement('div');
-      body.className = 'ai-provider-card-body';
-
-      // Protocol + Base URL (two-column row)
-      const protoUrlRow = document.createElement('div');
-      protoUrlRow.className = 'ai-provider-row ai-row-inline';
-      const protoSelect = createSettingsSelect([
-        { value: 'openai', label: 'OpenAI', selected: entry.type === 'openai' },
-        { value: 'anthropic', label: 'Anthropic', selected: entry.type === 'anthropic' },
-        { value: 'gemini', label: 'Gemini', selected: entry.type === 'gemini' },
-      ]);
-      protoSelect.el.style.width = 'auto';
-      protoSelect.el.style.flex = 'none';
-      protoSelect.onchange = () => {
-        entry.type = protoSelect.value as ProviderType;
-        entry.models = [];
-        entry.enabledModels = [];
-        update({ aiProviders: [...providers] });
-        renderProviderCards();
-      };
-      const urlInput = document.createElement('input');
-      urlInput.type = 'text';
-      urlInput.className = 'settings-input';
-      urlInput.style.flex = '1';
-      urlInput.value = entry.baseUrl;
-      urlInput.placeholder = 'https://api.openai.com';
-      syncProviderInput(urlInput);
-      urlInput.onchange = () => {
-        entry.baseUrl = urlInput.value.trim();
-        update({ aiProviders: [...providers] });
-      };
-      protoUrlRow.appendChild(protoSelect.el);
-      protoUrlRow.appendChild(urlInput);
-      body.appendChild(protoUrlRow);
-
-      // API Key + Fetch Models (single row: key input + eye + fetch btn + status)
-      const keyFetchRow = document.createElement('div');
-      keyFetchRow.className = 'ai-provider-row ai-row-inline';
-      const keyGroup = document.createElement('div');
-      keyGroup.className = 'settings-input-group';
-      keyGroup.style.flex = '1';
-      const keyInput = document.createElement('input');
-      keyInput.type = 'password';
-      keyInput.className = 'settings-input';
-      keyInput.style.flex = '1';
-      keyInput.value = '';
-      keyInput.placeholder = entry.hasApiKey
-        ? (current.language === 'zh' ? 'API Key（已保存，输入新值替换）' : 'API Key (saved; enter to replace)')
-        : 'API Key';
-      syncProviderInput(keyInput);
-      keyInput.onchange = () => {
-        entry.apiKey = keyInput.value.trim();
-        entry.clearApiKey = false;
-        update({ aiProviders: [...providers] });
-      };
-      const keyToggle = document.createElement('button');
-      keyToggle.className = 'settings-toggle-btn';
-      keyToggle.title = 'Show/Hide';
-      keyToggle.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.5"/></svg>`;
-      keyToggle.onclick = () => { keyInput.type = keyInput.type === 'password' ? 'text' : 'password'; };
-      keyGroup.appendChild(keyInput);
-      keyGroup.appendChild(keyToggle);
-      if (entry.hasApiKey) {
-        const clearKeyBtn = document.createElement('button');
-        clearKeyBtn.className = 'settings-toggle-btn';
-        clearKeyBtn.textContent = '×';
-        clearKeyBtn.title = current.language === 'zh' ? '删除已保存的 API Key' : 'Delete saved API Key';
-        clearKeyBtn.onclick = () => {
-          entry.apiKey = '';
-          entry.hasApiKey = false;
-          entry.clearApiKey = true;
-          keyInput.value = '';
-          update({ aiProviders: [...providers] });
-          renderProviderCards();
-        };
-        keyGroup.appendChild(clearKeyBtn);
-      }
-      const fetchBtn = document.createElement('button');
-      fetchBtn.className = 'settings-select settings-test-btn';
-      fetchBtn.textContent = t('aiFetchModels');
-      const fetchStatus = document.createElement('span');
-      fetchStatus.className = 'settings-test-result';
-      if (entry.models.length > 0) {
-        fetchStatus.textContent = `${entry.models.length} ${t('aiModelsCount')}`;
-        fetchStatus.className = 'settings-test-result test-success';
-      }
-      fetchBtn.onclick = async () => {
-        entry.apiKey = keyInput.value.trim();
-        entry.clearApiKey = false;
-        entry.baseUrl = urlInput.value.trim();
-        fetchBtn.disabled = true;
-        fetchStatus.textContent = t('aiFetching');
-        fetchStatus.className = 'settings-test-result';
-        try {
-          // Persist a newly typed replacement before asking the opaque broker
-          // to use it. Existing saved keys never enter this input.
-          update({ aiProviders: [...providers] });
-          await flushSettingsSecrets();
-          const models = await fetchModels(entry);
-          entry.models = models;
-          entry.enabledModels = entry.enabledModels.filter((m) => models.includes(m));
-          update({ aiProviders: [...providers] });
-          fetchStatus.textContent = `${models.length} ${t('aiFetchSuccess')}`;
-          fetchStatus.className = 'settings-test-result test-success';
-          renderModelCheckboxes();
-        } catch (e) {
-          fetchStatus.textContent = `${t('aiFetchFailed')}: ${(e as Error).message}`;
-          fetchStatus.className = 'settings-test-result test-failed';
-        }
-        fetchBtn.disabled = false;
-      };
-      keyFetchRow.appendChild(keyGroup);
-      keyFetchRow.appendChild(fetchBtn);
-      keyFetchRow.appendChild(fetchStatus);
-      body.appendChild(keyFetchRow);
-
-      // Model checkboxes
-      const modelArea = document.createElement('div');
-      modelArea.className = 'ai-provider-models';
-
-      function renderModelCheckboxes(): void {
-        modelArea.innerHTML = '';
-        if (entry.models.length === 0) {
-          const hint = document.createElement('div');
-          hint.className = 'ai-provider-models-hint';
-          hint.textContent = t('aiNoModels');
-          modelArea.appendChild(hint);
-          return;
-        }
-
-        const modelsLabel = document.createElement('label');
-        modelsLabel.className = 'ai-provider-models-label';
-        modelsLabel.textContent = t('aiSelectModels');
-        modelArea.appendChild(modelsLabel);
-
-        const grid = document.createElement('div');
-        grid.className = 'ai-provider-models-grid';
-        for (const model of entry.models) {
-          const label = document.createElement('label');
-          label.className = 'ai-model-checkbox';
-          const cb = document.createElement('input');
-          cb.type = 'checkbox';
-          cb.checked = entry.enabledModels.includes(model);
-          cb.onchange = () => {
-            if (cb.checked) {
-              if (!entry.enabledModels.includes(model)) entry.enabledModels.push(model);
-            } else {
-              entry.enabledModels = entry.enabledModels.filter((m) => m !== model);
-            }
-            update({ aiProviders: [...providers] });
-          };
-          const span = document.createElement('span');
-          span.textContent = model;
-          span.title = model;
-          label.appendChild(cb);
-          label.appendChild(span);
-          grid.appendChild(label);
-        }
-        modelArea.appendChild(grid);
-      }
-      renderModelCheckboxes();
-      body.appendChild(modelArea);
-
-      card.appendChild(header);
-      card.appendChild(body);
-      providerList.appendChild(card);
+      summary.appendChild(deleteBtn);
     }
+    summary.appendChild(toggle);
+    item.appendChild(summary);
+    if (isOpen) item.appendChild(renderProviderForm(providers, entry, state));
+    return item;
   }
 
-  renderProviderCards();
-
-  // Add provider button
-  const addProviderSection = document.createElement('div');
-  addProviderSection.className = 'settings-section ai-add-provider-section';
-  const addBtnContainer = document.createElement('div');
-  addBtnContainer.className = 'settings-preset-buttons';
-
-  // Presets for adding (only show ones not already added by default id)
-  const addPresets = [...PROVIDER_PRESETS, { id: 'custom', label: t('aiCustomProvider'), type: 'openai' as ProviderType, baseUrl: '', model: '' }];
-  for (const preset of addPresets) {
-    const btn = document.createElement('button');
-    btn.className = 'settings-preset-btn';
-    btn.textContent = `+ ${preset.label}`;
-    btn.addEventListener('click', () => {
-      const newId = `${preset.id}-${Date.now().toString(36)}`;
-      const newEntry: AIProviderEntry = {
-        id: newId,
-        type: preset.type,
-        label: preset.label,
-        apiKey: '',
-        hasApiKey: false,
-        baseUrl: preset.baseUrl,
-        models: [],
-        enabledModels: [],
-      };
-      current.aiProviders.push(newEntry);
-      update({ aiProviders: [...current.aiProviders] });
-      renderProviderCards();
-    });
-    addBtnContainer.appendChild(btn);
-  }
-  addProviderSection.innerHTML = `<label>${t('aiAddProvider')}</label>`;
-  addProviderSection.appendChild(addBtnContainer);
-  tabAI.appendChild(addProviderSection);
-
-  // --- Common AI Settings (compact inline layout) ---
-  const aiSettingsWrap = document.createElement('div');
-  aiSettingsWrap.className = 'ai-settings-compact';
-
-  // Helper: create an inline slider row
-  const mkSliderRow = (label: string, id: string, min: number, max: number, step: number, value: number, fmt: (v: number) => string, onChange: (v: number) => void) => {
-    const row = document.createElement('div');
-    row.className = 'ai-slider-row';
-    row.innerHTML = `
-      <label>${label}</label>
-      <input type="range" class="settings-slider" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">
-      <span class="ai-slider-value">${fmt(value)}</span>
-    `;
-    const slider = row.querySelector(`#${id}`) as HTMLInputElement;
-    const valSpan = row.querySelector('.ai-slider-value') as HTMLSpanElement;
-    slider.oninput = () => {
-      const v = parseFloat(slider.value);
-      valSpan.textContent = fmt(v);
-      onChange(v);
+  function renderProviderForm(providers: AIProviderEntry[], entry: AIProviderEntry, state: HTMLElement): HTMLDivElement {
+    const body = document.createElement('div');
+    body.className = 'ai-provider-card-body';
+    const commit = () => {
+      update({ aiProviders: [...providers] });
+      state.textContent = summaryText(entry);
     };
-    return row;
-  };
 
-  aiSettingsWrap.appendChild(mkSliderRow(t('aiTemperature'), 'ai-temp-slider', 0, 20, 1, Math.round(current.aiTemperature * 10),
-    (v) => (v / 10).toFixed(1), (v) => update({ aiTemperature: v / 10 })));
-  aiSettingsWrap.appendChild(mkSliderRow(t('aiMaxTokens'), 'ai-tokens-slider', 256, 16384, 256, current.aiMaxTokens,
-    (v) => `${v}`, (v) => update({ aiMaxTokens: v })));
-  // Input side of the context split: how much conversation history to
-  // carry before compaction. Paired with aiMaxTokens (the output
-  // reservation) — both feed shouldAutoCompact. Step is 32k, so the
-  // default 128k sits exactly 4 steps up from the floor.
-  aiSettingsWrap.appendChild(mkSliderRow(t('aiHistoryBudget'), 'ai-history-budget-slider', 32 * 1024, 1024 * 1024, 32 * 1024, current.aiHistoryBudgetTokens,
-    (v) => `${Math.round(v / 1024)}k`, (v) => update({ aiHistoryBudgetTokens: v })));
-  aiSettingsWrap.appendChild(mkSliderRow(t('aiContextLines'), 'ai-context-slider', 10, 200, 10, current.aiContextLines,
-    (v) => `${v}`, (v) => update({ aiContextLines: v })));
+    // Name
+    const nameRow = document.createElement('div');
+    nameRow.className = 'ai-provider-row ai-row-inline';
+    nameRow.innerHTML = `<label>${t('aiProviderLabel')}</label>`;
+    const labelInput = document.createElement('input');
+    labelInput.type = 'text';
+    labelInput.className = 'settings-input';
+    labelInput.value = entry.label;
+    stopKeyPropagation(labelInput);
+    labelInput.onchange = () => {
+      entry.label = labelInput.value.trim() || entry.label;
+      update({ aiProviders: [...providers] });
+      render();
+    };
+    nameRow.appendChild(labelInput);
+    body.appendChild(nameRow);
 
-  // Thinking-mode toggle — applies to thinking-mode providers
-  // (DeepSeek V4, Qwen3, GLM, MiMo). Plain OpenAI / Anthropic /
-  // Gemini ignore the flag.
-  const thinkRow = document.createElement('div');
-  thinkRow.className = 'ai-slider-row';
-  thinkRow.innerHTML = `<label title="${t('aiEnableThinkingHint')}">${t('aiEnableThinking')}</label>`;
-  const thinkToggle = document.createElement('label');
-  thinkToggle.className = 'ai-unlimited-label';
-  thinkToggle.style.marginLeft = 'auto';
-  thinkToggle.title = t('aiEnableThinkingHint');
-  thinkToggle.innerHTML = `<input type="checkbox" id="ai-enable-thinking" ${current.aiEnableThinking ? 'checked' : ''}>`;
-  const thinkCb = thinkToggle.querySelector('#ai-enable-thinking') as HTMLInputElement;
-  thinkCb.onchange = () => update({ aiEnableThinking: thinkCb.checked });
-  thinkRow.appendChild(thinkToggle);
-  aiSettingsWrap.appendChild(thinkRow);
+    // Protocol + Base URL
+    const protoUrlRow = document.createElement('div');
+    protoUrlRow.className = 'ai-provider-row ai-row-inline';
+    protoUrlRow.innerHTML = `<label>${t('aiBaseUrl')}</label>`;
+    const protoSelect = createSettingsSelect([
+      { value: 'openai', label: 'OpenAI', selected: entry.type === 'openai' },
+      { value: 'anthropic', label: 'Anthropic', selected: entry.type === 'anthropic' },
+      { value: 'gemini', label: 'Gemini', selected: entry.type === 'gemini' },
+    ]);
+    protoSelect.el.style.width = 'auto';
+    protoSelect.el.style.flex = 'none';
+    protoSelect.onchange = () => {
+      entry.type = protoSelect.value as ProviderType;
+      entry.models = [];
+      entry.enabledModels = [];
+      update({ aiProviders: [...providers] });
+      render();
+    };
+    const urlInput = document.createElement('input');
+    urlInput.type = 'text';
+    urlInput.className = 'settings-input';
+    urlInput.style.flex = '1';
+    urlInput.value = entry.baseUrl;
+    urlInput.placeholder = 'https://api.openai.com';
+    stopKeyPropagation(urlInput);
+    urlInput.onchange = () => {
+      entry.baseUrl = urlInput.value.trim();
+      update({ aiProviders: [...providers] });
+    };
+    protoUrlRow.appendChild(protoSelect.el);
+    protoUrlRow.appendChild(urlInput);
+    body.appendChild(protoUrlRow);
 
-  // Reasoning-token cap, paired with the toggle above. Sent as a
+    // API Key + Fetch Models
+    const keyFetchRow = document.createElement('div');
+    keyFetchRow.className = 'ai-provider-row ai-row-inline';
+    keyFetchRow.innerHTML = `<label>${t('aiApiKey')}</label>`;
+    const keyGroup = document.createElement('div');
+    keyGroup.className = 'settings-input-group';
+    keyGroup.style.flex = '1';
+    const keyInput = document.createElement('input');
+    keyInput.type = 'password';
+    keyInput.className = 'settings-input';
+    keyInput.style.flex = '1';
+    keyInput.value = '';
+    keyInput.placeholder = entry.hasApiKey
+      ? (current.language === 'zh' ? 'API Key（已保存，输入新值替换）' : 'API Key (saved; enter to replace)')
+      : 'API Key';
+    stopKeyPropagation(keyInput);
+    keyInput.onchange = () => {
+      entry.apiKey = keyInput.value.trim();
+      entry.clearApiKey = false;
+      commit();
+    };
+    const keyToggle = document.createElement('button');
+    keyToggle.className = 'settings-toggle-btn';
+    keyToggle.title = 'Show/Hide';
+    keyToggle.innerHTML = EYE_ICON;
+    keyToggle.onclick = () => { keyInput.type = keyInput.type === 'password' ? 'text' : 'password'; };
+    keyGroup.appendChild(keyInput);
+    keyGroup.appendChild(keyToggle);
+    if (entry.hasApiKey) {
+      const clearKeyBtn = document.createElement('button');
+      clearKeyBtn.className = 'settings-toggle-btn';
+      clearKeyBtn.textContent = '×';
+      clearKeyBtn.title = current.language === 'zh' ? '删除已保存的 API Key' : 'Delete saved API Key';
+      clearKeyBtn.onclick = () => {
+        entry.apiKey = '';
+        entry.hasApiKey = false;
+        entry.clearApiKey = true;
+        keyInput.value = '';
+        update({ aiProviders: [...providers] });
+        render();
+      };
+      keyGroup.appendChild(clearKeyBtn);
+    }
+    const fetchBtn = document.createElement('button');
+    fetchBtn.className = 'settings-select settings-test-btn';
+    fetchBtn.textContent = t('aiFetchModels');
+    const fetchStatus = document.createElement('span');
+    fetchStatus.className = 'settings-test-result';
+    if (entry.models.length > 0) {
+      fetchStatus.textContent = `${entry.models.length} ${t('aiModelsCount')}`;
+      fetchStatus.className = 'settings-test-result test-success';
+    }
+    fetchBtn.onclick = async () => {
+      entry.apiKey = keyInput.value.trim();
+      entry.clearApiKey = false;
+      entry.baseUrl = urlInput.value.trim();
+      fetchBtn.disabled = true;
+      fetchStatus.textContent = t('aiFetching');
+      fetchStatus.className = 'settings-test-result';
+      try {
+        // Persist a newly typed replacement before asking the opaque broker
+        // to use it. Existing saved keys never enter this input.
+        update({ aiProviders: [...providers] });
+        await flushSettingsSecrets();
+        const models = await fetchModels(entry);
+        entry.models = models;
+        entry.enabledModels = entry.enabledModels.filter((m) => models.includes(m));
+        commit();
+        fetchStatus.textContent = `${models.length} ${t('aiFetchSuccess')}`;
+        fetchStatus.className = 'settings-test-result test-success';
+        renderModelCheckboxes();
+      } catch (e) {
+        fetchStatus.textContent = `${t('aiFetchFailed')}: ${(e as Error).message}`;
+        fetchStatus.className = 'settings-test-result test-failed';
+      }
+      fetchBtn.disabled = false;
+    };
+    keyFetchRow.appendChild(keyGroup);
+    keyFetchRow.appendChild(fetchBtn);
+    body.appendChild(keyFetchRow);
+    const statusRow = document.createElement('div');
+    statusRow.className = 'ai-provider-row';
+    statusRow.appendChild(fetchStatus);
+    body.appendChild(statusRow);
+
+    // Model checkboxes
+    const modelArea = document.createElement('div');
+    modelArea.className = 'ai-provider-models';
+
+    function renderModelCheckboxes(): void {
+      modelArea.innerHTML = '';
+      if (entry.models.length === 0) {
+        const hint = document.createElement('div');
+        hint.className = 'ai-provider-models-hint';
+        hint.textContent = t('aiNoModels');
+        modelArea.appendChild(hint);
+        return;
+      }
+
+      const modelsLabel = document.createElement('label');
+      modelsLabel.className = 'ai-provider-models-label';
+      modelsLabel.textContent = t('aiSelectModels');
+      modelArea.appendChild(modelsLabel);
+
+      const grid = document.createElement('div');
+      grid.className = 'ai-provider-models-grid';
+      for (const model of entry.models) {
+        const label = document.createElement('label');
+        label.className = 'ai-model-checkbox';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = entry.enabledModels.includes(model);
+        cb.onchange = () => {
+          if (cb.checked) {
+            if (!entry.enabledModels.includes(model)) entry.enabledModels.push(model);
+          } else {
+            entry.enabledModels = entry.enabledModels.filter((m) => m !== model);
+          }
+          commit();
+        };
+        const span = document.createElement('span');
+        span.textContent = model;
+        span.title = model;
+        label.appendChild(cb);
+        label.appendChild(span);
+        grid.appendChild(label);
+      }
+      modelArea.appendChild(grid);
+    }
+    renderModelCheckboxes();
+    body.appendChild(modelArea);
+    return body;
+  }
+
+  function renderAddRow(): HTMLDivElement {
+    const addRow = document.createElement('div');
+    addRow.className = 'ai-add-provider-section';
+    addRow.innerHTML = `<label>${t('aiAddProvider')}</label>`;
+    const buttons = document.createElement('div');
+    buttons.className = 'settings-preset-buttons';
+    const presets = [...PROVIDER_PRESETS, { id: 'custom', label: t('aiCustomProvider'), type: 'openai' as ProviderType, baseUrl: '', model: '' }];
+    for (const preset of presets) {
+      const btn = document.createElement('button');
+      btn.className = 'settings-preset-btn';
+      btn.textContent = `+ ${preset.label}`;
+      btn.addEventListener('click', () => {
+        const newEntry: AIProviderEntry = {
+          id: `${preset.id}-${Date.now().toString(36)}`,
+          type: preset.type,
+          label: preset.label,
+          apiKey: '',
+          hasApiKey: false,
+          baseUrl: preset.baseUrl,
+          models: [],
+          enabledModels: [],
+        };
+        current.aiProviders.push(newEntry);
+        expanded.add(newEntry.id);
+        update({ aiProviders: [...current.aiProviders] });
+        render();
+      });
+      buttons.appendChild(btn);
+    }
+    addRow.appendChild(buttons);
+    return addRow;
+  }
+
+  render();
+  return wrap;
+}
+
+// ─── Replies ───────────────────────────────────────────────
+
+function createReplyRows(
+  current: AppSettings,
+  update: (patch: Partial<AppSettings>) => void,
+): HTMLElement[] {
+  const maxTokensRow = mkSliderRow(t('aiMaxTokens'), 'ai-tokens-slider', 256, 16384, 256, current.aiMaxTokens,
+    (v) => `${v}`, (v) => update({ aiMaxTokens: v }), t('aiMaxTokensHint'));
+
+  // Reasoning-token cap, paired with the thinking toggle. Sent as a
   // top-level `thinking_budget` field; "Model default" (0) sends nothing
   // so the provider keeps its own value.
-  const thinkBudgetRow = document.createElement('div');
-  thinkBudgetRow.className = 'ai-slider-row';
-  thinkBudgetRow.innerHTML = `<label title="${t('aiThinkingBudgetHint')}">${t('aiThinkingBudget')}</label>`;
   const thinkBudgetSel = createSettingsSelect(
     THINKING_BUDGET_TIERS.map((tier) => ({
       value: String(tier.value),
@@ -335,44 +415,27 @@ export function createAITab(
       selected: current.aiThinkingBudget === tier.value,
     })),
   );
-  thinkBudgetSel.el.style.marginLeft = 'auto';
   thinkBudgetSel.onchange = () => update({ aiThinkingBudget: Number(thinkBudgetSel.value) });
-  thinkBudgetRow.appendChild(thinkBudgetSel.el);
-  aiSettingsWrap.appendChild(thinkBudgetRow);
+  const thinkBudgetRow = settingRow(t('aiThinkingBudget'), thinkBudgetSel.el, t('aiThinkingBudgetHint'));
+  thinkBudgetRow.classList.toggle('settings-row-disabled', !current.aiEnableThinking);
 
-  // Agent divider
-  const agentDivider = document.createElement('hr');
-  agentDivider.className = 'settings-divider';
-  aiSettingsWrap.appendChild(agentDivider);
+  // Thinking mode only reaches OpenAI-compatible third parties
+  // (DeepSeek, Qwen, GLM, MiMo); the hint says so.
+  const thinkRow = switchRow('ai-enable-thinking', t('aiEnableThinking'), current.aiEnableThinking, (on) => {
+    update({ aiEnableThinking: on });
+    thinkBudgetRow.classList.toggle('settings-row-disabled', !on);
+  }, t('aiEnableThinkingHint'));
 
-  // Agent Trust Level (icon buttons) — inline
-  const trustSection = document.createElement('div');
-  trustSection.className = 'ai-slider-row';
-  const trustLevels = [
-    { value: 0, label: t('aiAgentTrustManual'), icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5L2.5 4v4c0 3.5 2.3 5.5 5.5 7 3.2-1.5 5.5-3.5 5.5-7V4L8 1.5z"/><rect x="6" y="6.5" width="4" height="3.5" rx="0.5"/><path d="M7 6.5V5.5a1 1 0 0 1 2 0v1"/></svg>` },
-    { value: 1, label: t('aiAgentTrustSemiAuto'), icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5L2.5 4v4c0 3.5 2.3 5.5 5.5 7 3.2-1.5 5.5-3.5 5.5-7V4L8 1.5z"/><path d="M5.5 8.5l2 2 3-3.5"/></svg>` },
-    { value: 2, label: t('aiAgentTrustFullAuto'), icon: `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5L2.5 4v4c0 3.5 2.3 5.5 5.5 7 3.2-1.5 5.5-3.5 5.5-7V4L8 1.5z"/><path d="M9 5L6.5 9H9l-.5 3"/></svg>` },
-  ];
-  trustSection.innerHTML = `<label>${t('aiAgentTrustLevel')}</label>`;
-  const trustGroup = document.createElement('div');
-  trustGroup.className = 'ai-trust-group';
-  for (const lvl of trustLevels) {
-    const btn = document.createElement('button');
-    btn.className = 'ai-trust-btn' + (current.aiAgentTrustLevel === lvl.value ? ' active' : '');
-    btn.title = lvl.label;
-    btn.innerHTML = lvl.icon;
-    btn.dataset.value = String(lvl.value);
-    btn.addEventListener('click', () => {
-      trustGroup.querySelectorAll('.ai-trust-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      update({ aiAgentTrustLevel: lvl.value });
-    });
-    trustGroup.appendChild(btn);
-  }
-  trustSection.appendChild(trustGroup);
-  aiSettingsWrap.appendChild(trustSection);
+  return [maxTokensRow, thinkRow, thinkBudgetRow];
+}
 
-  // Agent Max Iterations slider + Unlimited checkbox
+// ─── Agent ─────────────────────────────────────────────────
+
+function createAgentRows(
+  current: AppSettings,
+  update: (patch: Partial<AppSettings>) => void,
+): HTMLElement[] {
+  // Max steps slider + Unlimited checkbox
   const isUnlimited = current.aiAgentMaxIterations === 0;
   const iterRow = mkSliderRow(t('aiAgentMaxIterations'), 'ai-iter-slider', 1, 30, 1,
     isUnlimited ? 15 : current.aiAgentMaxIterations,
@@ -380,10 +443,14 @@ export function createAITab(
   const iterSlider = iterRow.querySelector('#ai-iter-slider') as HTMLInputElement;
   const iterValSpan = iterRow.querySelector('.ai-slider-value') as HTMLSpanElement;
 
+  const iterControl = document.createElement('div');
+  iterControl.className = 'ai-iter-control';
+  iterSlider.replaceWith(iterControl);
+  iterControl.appendChild(iterSlider);
   const unlimitedLabel = document.createElement('label');
   unlimitedLabel.className = 'ai-unlimited-label';
   unlimitedLabel.innerHTML = `<input type="checkbox" id="ai-iter-unlimited" ${isUnlimited ? 'checked' : ''}> ${t('aiAgentUnlimited')}`;
-  iterRow.appendChild(unlimitedLabel);
+  iterControl.appendChild(unlimitedLabel);
 
   const unlimitedCb = unlimitedLabel.querySelector('#ai-iter-unlimited') as HTMLInputElement;
   if (isUnlimited) {
@@ -402,70 +469,63 @@ export function createAITab(
       update({ aiAgentMaxIterations: v });
     }
   };
-  aiSettingsWrap.appendChild(iterRow);
 
-  // Permission mode selector (overrides trust level).
-  aiSettingsWrap.appendChild(createPermissionModeRow(current, update));
+  return [
+    createPermissionModeRow(current, update),
+    createPermissionRulesEditor(current, update),
+    iterRow,
+    createAuditLogRow(),
+  ];
+}
 
-  // Permission rules editor.
-  aiSettingsWrap.appendChild(createPermissionRulesEditor(current, update));
+// ─── Web search (SearXNG) ──────────────────────────────────
 
-  // Audit log viewer.
-  aiSettingsWrap.appendChild(createAuditLogRow());
+function createWebSearchRows(
+  current: AppSettings,
+  update: (patch: Partial<AppSettings>) => void,
+): HTMLElement[] {
+  const enableRow = switchRow('searxng-enable', t('aiSearxngEnable'), current.searxngEnabled,
+    (on) => update({ searxngEnabled: on }), t('aiSearxngEnableHint'));
 
-  tabAI.appendChild(aiSettingsWrap);
-
-  // --- SearXNG Web Search ---
-  const searxDivider = document.createElement('hr');
-  searxDivider.className = 'settings-divider';
-  tabAI.appendChild(searxDivider);
-
-  const searxngSection = document.createElement('div');
-  searxngSection.className = 'ai-settings-compact';
-  searxngSection.innerHTML = `<label class="settings-section-title">${t('aiSearxng')}</label>`;
-
-  // URL — inline
-  const searxUrlRow = document.createElement('div');
-  searxUrlRow.className = 'ai-provider-row ai-row-inline';
-  searxUrlRow.innerHTML = `<label>${t('aiSearxngUrl')}</label>`;
   const searxUrlInput = document.createElement('input');
   searxUrlInput.type = 'text';
   searxUrlInput.className = 'settings-input';
   searxUrlInput.value = current.searxngUrl;
   searxUrlInput.placeholder = t('aiSearxngUrlPlaceholder');
+  stopKeyPropagation(searxUrlInput);
   searxUrlInput.addEventListener('change', () => {
     let val = searxUrlInput.value.trim();
     if (val.endsWith('/')) val = val.slice(0, -1);
     searxUrlInput.value = val;
     update({ searxngUrl: val });
   });
-  searxUrlRow.appendChild(searxUrlInput);
-  searxngSection.appendChild(searxUrlRow);
+  const urlRow = settingRow(t('aiSearxngUrl'), searxUrlInput);
 
-  // Auth — inline (label + user + pass + eye)
-  const searxAuthRow = document.createElement('div');
-  searxAuthRow.className = 'ai-provider-row ai-row-inline';
-  searxAuthRow.innerHTML = `<label>${t('aiSearxngAuth')}</label>`;
+  // Auth: user + pass + eye (+ clear when a password is saved)
   const searxAuthGroup = document.createElement('div');
   searxAuthGroup.className = 'settings-input-group';
-  searxAuthGroup.style.cssText = 'flex:1;min-width:0';
+  searxAuthGroup.style.minWidth = '0';
   const searxUserInput = document.createElement('input');
   searxUserInput.type = 'text';
   searxUserInput.className = 'settings-input';
   searxUserInput.style.flex = '1';
+  searxUserInput.style.minWidth = '0';
   searxUserInput.value = current.searxngUsername;
   searxUserInput.placeholder = t('aiSearxngUsername');
   searxUserInput.autocomplete = 'off';
+  stopKeyPropagation(searxUserInput);
   searxUserInput.addEventListener('change', () => update({ searxngUsername: searxUserInput.value.trim() }));
   const searxPassInput = document.createElement('input');
   searxPassInput.type = 'password';
   searxPassInput.className = 'settings-input';
   searxPassInput.style.flex = '1';
+  searxPassInput.style.minWidth = '0';
   searxPassInput.value = '';
   searxPassInput.placeholder = current.searxngHasPassword
     ? (current.language === 'zh' ? '密码已保存，输入新值替换' : 'Password saved; enter to replace')
     : t('aiSearxngPassword');
   searxPassInput.autocomplete = 'off';
+  stopKeyPropagation(searxPassInput);
   searxPassInput.addEventListener('change', () => update({
     searxngPassword: searxPassInput.value,
     searxngClearPassword: false,
@@ -473,7 +533,7 @@ export function createAITab(
   const searxPassToggle = document.createElement('button');
   searxPassToggle.className = 'settings-toggle-btn';
   searxPassToggle.title = 'Show/Hide';
-  searxPassToggle.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z"/><circle cx="8" cy="8" r="2.5"/></svg>`;
+  searxPassToggle.innerHTML = EYE_ICON;
   searxPassToggle.onclick = () => { searxPassInput.type = searxPassInput.type === 'password' ? 'text' : 'password'; };
   searxAuthGroup.appendChild(searxUserInput);
   searxAuthGroup.appendChild(searxPassInput);
@@ -493,24 +553,27 @@ export function createAITab(
     };
     searxAuthGroup.appendChild(clearSearxPassword);
   }
-  searxAuthRow.appendChild(searxAuthGroup);
-  searxngSection.appendChild(searxAuthRow);
+  const authRow = settingRow(t('aiSearxngAuth'), searxAuthGroup);
 
-  // Test + Enable — single row
-  const searxActionRow = document.createElement('div');
-  searxActionRow.className = 'ai-provider-row ai-row-inline';
-  searxActionRow.style.justifyContent = 'space-between';
+  // Test: result on the left, button on the right
   const searxTestBtn = document.createElement('button');
   searxTestBtn.className = 'settings-select settings-test-btn';
+  searxTestBtn.style.justifySelf = 'end';
   searxTestBtn.textContent = t('aiSearxngTest');
-  const searxTestStatus = document.createElement('span');
+  const testRow = document.createElement('div');
+  testRow.className = 'settings-section';
+  const searxTestStatus = document.createElement('label');
   searxTestStatus.className = 'settings-test-result';
+  testRow.append(searxTestStatus, searxTestBtn);
+  const setStatus = (text: string, cls = '') => {
+    searxTestStatus.textContent = text;
+    searxTestStatus.className = `settings-test-result ${cls}`.trim();
+  };
   searxTestBtn.addEventListener('click', async () => {
-    let url = searxUrlInput.value.trim().replace(/\/+$/, '');
+    const url = searxUrlInput.value.trim().replace(/\/+$/, '');
     if (!url) return;
     searxTestBtn.disabled = true;
-    searxTestStatus.textContent = t('aiTesting');
-    searxTestStatus.className = 'settings-test-result';
+    setStatus(t('aiTesting'));
     try {
       const user = searxUserInput.value.trim();
       const pass = searxPassInput.value;
@@ -524,8 +587,7 @@ export function createAITab(
         request: { baseUrl: url, username: user, query: 'test', page: 1 },
       });
       if (!resp.ok) {
-        searxTestStatus.textContent = `${t('aiSearxngTestFail')} (HTTP ${resp.status})`;
-        searxTestStatus.className = 'settings-test-result test-failed';
+        setStatus(`${t('aiSearxngTestFail')} (HTTP ${resp.status})`, 'test-failed');
         searxTestBtn.disabled = false;
         return;
       }
@@ -535,144 +597,61 @@ export function createAITab(
       } catch {
         // Response is not JSON — SearXNG may not have JSON format enabled
         const isHtml = resp.body.trimStart().startsWith('<');
-        searxTestStatus.textContent = isHtml
+        setStatus(isHtml
           ? `${t('aiSearxngTestFail')}: JSON API not enabled in SearXNG settings.yml (search.formats)`
-          : `${t('aiSearxngTestFail')}: invalid JSON response`;
-        searxTestStatus.className = 'settings-test-result test-failed';
+          : `${t('aiSearxngTestFail')}: invalid JSON response`, 'test-failed');
         searxTestBtn.disabled = false;
         return;
       }
       if (data.results !== undefined) {
-        searxTestStatus.textContent = t('aiSearxngTestOk');
-        searxTestStatus.className = 'settings-test-result test-success';
+        setStatus(t('aiSearxngTestOk'), 'test-success');
       } else {
-        searxTestStatus.textContent = `${t('aiSearxngTestFail')}: response missing "results" field`;
-        searxTestStatus.className = 'settings-test-result test-failed';
+        setStatus(`${t('aiSearxngTestFail')}: response missing "results" field`, 'test-failed');
       }
     } catch (e) {
-      searxTestStatus.textContent = `${t('aiSearxngTestFail')}: ${e instanceof Error ? e.message : String(e)}`;
-      searxTestStatus.className = 'settings-test-result test-failed';
+      setStatus(`${t('aiSearxngTestFail')}: ${e instanceof Error ? e.message : String(e)}`, 'test-failed');
     }
     searxTestBtn.disabled = false;
   });
-  const searxTestGroup = document.createElement('div');
-  searxTestGroup.className = 'settings-input-group';
-  searxTestGroup.appendChild(searxTestBtn);
-  searxTestGroup.appendChild(searxTestStatus);
-  searxActionRow.appendChild(searxTestGroup);
 
-  // Enable checkbox (right side of same row)
-  const searxEnableLabel = document.createElement('label');
-  searxEnableLabel.className = 'settings-radio-label';
-  searxEnableLabel.innerHTML = `<input type="checkbox" id="searxng-enable" ${current.searxngEnabled ? 'checked' : ''}> ${t('aiSearxngEnable')}`;
-  searxActionRow.appendChild(searxEnableLabel);
+  return [enableRow, urlRow, authRow, testRow];
+}
 
-  const searxEnableCheck = searxEnableLabel.querySelector('#searxng-enable') as HTMLInputElement;
-  searxEnableCheck.addEventListener('change', () => update({ searxngEnabled: searxEnableCheck.checked }));
+// ─── Advanced (folded into Replies) ────────────────────────
 
-  searxngSection.appendChild(searxActionRow);
-  tabAI.appendChild(searxngSection);
+/** Survives panel rebuilds, so an outside settings change keeps it open. */
+let advancedOpen = false;
 
-  // --- tldr & Command Completion ---
-  const tldrDivider = document.createElement('hr');
-  tldrDivider.className = 'settings-divider';
-  tabAI.appendChild(tldrDivider);
+function createAdvancedRows(
+  current: AppSettings,
+  update: (patch: Partial<AppSettings>) => void,
+): HTMLElement[] {
+  const rows = [
+    mkSliderRow(t('aiTemperature'), 'ai-temp-slider', 0, 20, 1, Math.round(current.aiTemperature * 10),
+      (v) => (v / 10).toFixed(1), (v) => update({ aiTemperature: v / 10 }), t('aiTemperatureHint')),
+    // Input side of the context split: how much conversation history to
+    // carry before compaction. Paired with aiMaxTokens (the output
+    // reservation) — both feed shouldAutoCompact. Step is 32k, so the
+    // default 128k sits exactly 4 steps up from the floor.
+    mkSliderRow(t('aiHistoryBudget'), 'ai-history-budget-slider', 32 * 1024, 1024 * 1024, 32 * 1024, current.aiHistoryBudgetTokens,
+      (v) => `${Math.round(v / 1024)}k`, (v) => update({ aiHistoryBudgetTokens: v }), t('aiHistoryBudgetHint')),
+    mkSliderRow(t('aiContextLines'), 'ai-context-slider', 10, 200, 10, current.aiContextLines,
+      (v) => `${v}`, (v) => update({ aiContextLines: v }), t('aiContextLinesHint')),
+  ];
+  for (const row of rows) row.classList.add('ai-advanced-row');
 
-  const tldrSection = document.createElement('div');
-  tldrSection.className = 'ai-settings-compact';
-  tldrSection.innerHTML = `<label class="settings-section-title">${t('tldrHelp')}</label>`;
-
-  // Enable tldr checkbox + status
-  const tldrEnableRow = document.createElement('div');
-  tldrEnableRow.className = 'ai-provider-row ai-row-inline';
-  const tldrEnableLabel = document.createElement('label');
-  tldrEnableLabel.className = 'settings-radio-label';
-  tldrEnableLabel.innerHTML = `<input type="checkbox" id="tldr-enable" ${current.tldrEnabled ? 'checked' : ''}> ${t('tldrEnable')}`;
-  tldrEnableRow.appendChild(tldrEnableLabel);
-
-  const tldrStatusSpan = document.createElement('span');
-  tldrStatusSpan.className = 'settings-test-result';
-  tldrEnableRow.appendChild(tldrStatusSpan);
-
-  const tldrUpdateBtn = document.createElement('button');
-  tldrUpdateBtn.className = 'settings-select settings-test-btn';
-  tldrUpdateBtn.textContent = t('tldrUpdateNow');
-  tldrUpdateBtn.addEventListener('click', async () => {
-    tldrUpdateBtn.disabled = true;
-    tldrStatusSpan.textContent = t('tldrUpdating');
-    tldrStatusSpan.className = 'settings-test-result';
-    try {
-      const status = await invoke<{ initialized: boolean; page_count: number; last_updated: number | null }>('tldr_init', { language: 'en', forceUpdate: true });
-      tldrStatusSpan.textContent = t('tldrPageCount').replace('{count}', String(status.page_count));
-      tldrStatusSpan.className = 'settings-test-result test-success';
-    } catch (e) {
-      tldrStatusSpan.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
-      tldrStatusSpan.className = 'settings-test-result test-failed';
-    }
-    tldrUpdateBtn.disabled = false;
-  });
-  tldrEnableRow.appendChild(tldrUpdateBtn);
-  tldrSection.appendChild(tldrEnableRow);
-
-  const tldrEnableCheck = tldrEnableLabel.querySelector('#tldr-enable') as HTMLInputElement;
-  tldrEnableCheck.addEventListener('change', () => update({ tldrEnabled: tldrEnableCheck.checked }));
-
-  // Fetch current tldr status
-  invoke<{ initialized: boolean; page_count: number; last_updated: number | null }>('tldr_status').then((status) => {
-    if (status.initialized && status.page_count > 0) {
-      tldrStatusSpan.textContent = t('tldrPageCount').replace('{count}', String(status.page_count));
-      tldrStatusSpan.className = 'settings-test-result test-success';
-    } else {
-      tldrStatusSpan.textContent = t('tldrNoData');
-      tldrStatusSpan.className = 'settings-test-result';
-    }
-  }).catch(() => { /* ignore */ });
-
-  // Enable command completion checkbox
-  const completionRow = document.createElement('div');
-  completionRow.className = 'ai-provider-row ai-row-inline';
-  const completionLabel = document.createElement('label');
-  completionLabel.className = 'settings-radio-label';
-  completionLabel.innerHTML = `<input type="checkbox" id="cmd-completion-enable" ${current.cmdCompletionEnabled ? 'checked' : ''}> ${t('cmdCompletionEnable')}`;
-  completionRow.appendChild(completionLabel);
-  tldrSection.appendChild(completionRow);
-
-  const completionHintRow = document.createElement('div');
-  completionHintRow.className = 'ai-provider-row';
-  completionHintRow.innerHTML = `<span class="settings-hint">${t('cmdCompletionHint')}<br>${t('cmdCompletionHistoryHint')}</span>`;
-  tldrSection.appendChild(completionHintRow);
-
-  const completionCheck = completionLabel.querySelector('#cmd-completion-enable') as HTMLInputElement;
-  completionCheck.addEventListener('change', () => update({ cmdCompletionEnabled: completionCheck.checked }));
-
-  tabAI.appendChild(tldrSection);
-
-  // ── Shell Hook Injection ── (same compact style as tldr section)
-  const hookDivider = document.createElement('hr');
-  hookDivider.className = 'settings-divider';
-  tabAI.appendChild(hookDivider);
-
-  const hookSection = document.createElement('div');
-  hookSection.className = 'ai-settings-compact';
-  hookSection.innerHTML = `<label class="settings-section-title">${t('shellHookInjection')}</label>`;
-
-  const hookRow = document.createElement('div');
-  hookRow.className = 'ai-provider-row ai-row-inline';
-  const hookLabel = document.createElement('label');
-  hookLabel.className = 'settings-radio-label';
-  hookLabel.innerHTML = `<input type="checkbox" id="shell-hook-enable" ${current.shellHookInjection ? 'checked' : ''}> ${t('shellHookEnable')}`;
-  hookRow.appendChild(hookLabel);
-  hookSection.appendChild(hookRow);
-
-  const hookHintRow = document.createElement('div');
-  hookHintRow.className = 'ai-provider-row';
-  hookHintRow.innerHTML = `<span class="settings-hint">${t('shellHookHint').replace(/\n/g, '<br>')}</span>`;
-  hookSection.appendChild(hookHintRow);
-
-  const hookCheck = hookLabel.querySelector('#shell-hook-enable') as HTMLInputElement;
-  hookCheck.addEventListener('change', () => update({ shellHookInjection: hookCheck.checked }));
-
-  tabAI.appendChild(hookSection);
-
-  return tabAI;
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'ai-advanced-toggle';
+  toggle.innerHTML = `<span class="ai-advanced-chevron" aria-hidden="true"></span><span></span><small class="settings-row-hint"></small>`;
+  toggle.children[1].textContent = t('aiGroupAdvanced');
+  toggle.children[2].textContent = t('aiAdvancedSummary');
+  // Rows stay in the card so settings search can still reach them; CSS
+  // hides them while the toggle says it is folded.
+  toggle.setAttribute('aria-expanded', String(advancedOpen));
+  toggle.onclick = () => {
+    advancedOpen = !advancedOpen;
+    toggle.setAttribute('aria-expanded', String(advancedOpen));
+  };
+  return [toggle, ...rows];
 }

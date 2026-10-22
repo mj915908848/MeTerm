@@ -337,14 +337,24 @@ export interface Translations {
   aiCopyCommand: string;
   settingsTabAI: string;
   aiProvider: string;
+  aiGroupProviders: string;
+  aiGroupReply: string;
+  aiGroupAgent: string;
+  aiGroupWebSearch: string;
+  aiGroupAdvanced: string;
+  aiAdvancedSummary: string;
   aiPreset: string;
   aiApiKey: string;
   aiBaseUrl: string;
   aiModelName: string;
   aiTemperature: string;
+  aiTemperatureHint: string;
   aiMaxTokens: string;
+  aiMaxTokensHint: string;
   aiContextLines: string;
+  aiContextLinesHint: string;
   aiHistoryBudget: string;
+  aiHistoryBudgetHint: string;
   aiEnableThinking: string;
   aiEnableThinkingHint: string;
   aiThinkingBudget: string;
@@ -355,10 +365,6 @@ export interface Translations {
   aiThinkingBudgetHigh: string;
   aiThinkingOn: string;
   aiThinkingOff: string;
-  aiAgentTrustLevel: string;
-  aiAgentTrustManual: string;
-  aiAgentTrustSemiAuto: string;
-  aiAgentTrustFullAuto: string;
   aiAgentMaxIterations: string;
   aiAgentUnlimited: string;
   aiPermissionMode: string;
@@ -368,6 +374,7 @@ export interface Translations {
   aiPermissionModePlan: string;
   aiPermissionModeBypass: string;
   aiPermissionModeHint: string;
+  aiPermissionModeChanged: string;
   aiPermissionRules: string;
   aiPermissionRulesAdd: string;
   aiPermissionRulesNone: string;
@@ -440,6 +447,12 @@ export interface Translations {
   aiSelectModels: string;
   aiProviderLabel: string;
   aiCustomProvider: string;
+  aiProviderKeySaved: string;
+  aiProviderNoKey: string;
+  aiProviderModelsEnabled: string;
+  aiProviderNoModelsEnabled: string;
+  aiProviderEdit: string;
+  aiProviderDone: string;
   aiSearxng: string;
   aiSearxngUrl: string;
   aiSearxngUrlPlaceholder: string;
@@ -447,6 +460,7 @@ export interface Translations {
   aiSearxngUsername: string;
   aiSearxngPassword: string;
   aiSearxngEnable: string;
+  aiSearxngEnableHint: string;
   aiSearxngTest: string;
   aiSearxngTestOk: string;
   aiSearxngTestFail: string;
@@ -601,11 +615,10 @@ export interface Translations {
   tldrExamples: string;
   cmdCompletionEnable: string;
   cmdCompletionHint: string;
-  cmdCompletionHistoryHint: string;
   // Shell hook injection
-  shellHookInjection: string;
   shellHookEnable: string;
   shellHookHint: string;
+  settingsGroupCommandAssist: string;
   // JumpServer
   jsEditServer: string;
   jsAddServer: string;
@@ -1058,32 +1071,43 @@ const translations: Record<Language, Translations> = {
     aiCopyCommand: 'Copy command',
     settingsTabAI: 'AI',
     aiProvider: 'Provider',
+    aiGroupProviders: 'Model Services',
+    aiGroupReply: 'Replies',
+    aiGroupAgent: 'Agent',
+    aiGroupWebSearch: 'Web Search',
+    aiGroupAdvanced: 'Advanced',
+    aiAdvancedSummary: 'Temperature, conversation history limit, terminal lines',
     aiPreset: 'Quick Select',
     aiApiKey: 'API Key',
     aiBaseUrl: 'API Base URL',
     aiModelName: 'Model',
     aiTemperature: 'Temperature',
-    aiMaxTokens: 'Max Tokens',
-    aiContextLines: 'Context Lines',
-    aiHistoryBudget: 'History Budget',
-    aiEnableThinking: 'Thinking Mode',
-    aiEnableThinkingHint: 'Ask thinking-mode models (DeepSeek V4, Qwen3, GLM, MiMo, etc.) to reason before answering. Ignored by plain OpenAI / Anthropic / Gemini.',
-    aiThinkingBudget: 'Thinking Budget',
-    aiThinkingBudgetHint: 'Caps the tokens spent reasoning before the answer. Thinking tokens share the max-tokens budget with the reply, so an uncapped model can crowd the answer out. "Model default" sends no cap at all.',
+    aiTemperatureHint: 'Higher values give more varied answers. Ignored by Claude Opus 4.7 and later and by OpenAI reasoning models.',
+    aiMaxTokens: 'Max reply length',
+    aiMaxTokensHint: 'The most tokens the model may write in one reply, thinking included.',
+    aiContextLines: 'Terminal lines to include',
+    aiContextLinesHint: 'How many recent lines of the current terminal are sent with each question.',
+    aiHistoryBudget: 'Conversation history limit',
+    aiHistoryBudgetHint: 'Older messages are summarized once the conversation grows past this.',
+    aiEnableThinking: 'Thinking mode',
+    aiEnableThinkingHint: 'Only affects OpenAI-compatible services such as DeepSeek, Qwen (Alibaba Cloud), GLM and MiMo. Claude, OpenAI and Gemini ignore it.',
+    aiThinkingBudget: 'Thinking budget',
+    aiThinkingBudgetHint: 'Caps the tokens spent thinking before the answer, so thinking cannot use up the reply limit. Applies while thinking mode is on.',
     aiThinkingBudgetDefault: 'Model default',
     aiThinkingBudgetLow: 'Low (4k)',
     aiThinkingBudgetMedium: 'Medium (16k)',
     aiThinkingBudgetHigh: 'High (32k)',
     aiThinkingOn: 'Thinking on',
     aiThinkingOff: 'Thinking off',
-    aiPermissionMode: 'Permission Mode',
+    aiPermissionMode: 'Permission mode',
     aiPermissionModeAsk: 'Ask every time',
-    aiPermissionModeAcceptSafe: 'Accept safe',
-    aiPermissionModeAcceptAll: 'Accept all',
+    aiPermissionModeAcceptSafe: 'Auto-run safe actions',
+    aiPermissionModeAcceptAll: 'Auto-run all but dangerous',
     aiPermissionModePlan: 'Plan (read-only)',
-    aiPermissionModeBypass: 'Bypass (no prompts)',
-    aiPermissionModeHint: 'Overrides the trust level. Plan mode denies writes; sensitive or out-of-workspace reads require confirmation.',
-    aiPermissionRules: 'Permission Rules',
+    aiPermissionModeBypass: 'Bypass (never ask)',
+    aiPermissionModeHint: 'Whether the agent asks before using a tool. The shield button in the AI bar switches the same setting. Plan mode never changes anything; reading sensitive files or files outside the working directory always asks.',
+    aiPermissionModeChanged: 'Permission mode: {mode}',
+    aiPermissionRules: 'Permission rules',
     aiPermissionRulesAdd: 'Add rule',
     aiPermissionRulesNone: 'No custom rules. Sensitive or out-of-workspace reads require confirmation; Accept safe asks before commands flagged as dangerous.',
     aiPermissionActionAllow: 'Allow',
@@ -1096,8 +1120,8 @@ const translations: Record<Language, Translations> = {
     aiPermissionRuleSave: 'Save',
     aiPermissionRuleCancel: 'Cancel',
     aiPermissionRuleToolRequired: 'Enter a tool name (* matches all tools).',
-    aiAuditLog: 'Agent Audit Log',
-    aiAuditLogOpen: 'Open audit log',
+    aiAuditLog: 'Activity log',
+    aiAuditLogOpen: 'Open',
     aiAuditLogEmpty: '(No audit entries yet)',
     aiAuditLogClose: 'Close',
     aiAuditLogClear: 'Clear log',
@@ -1108,11 +1132,7 @@ const translations: Record<Language, Translations> = {
     aiNotifyCompleteBody: 'The agent turn completed.',
     aiNotifyErrorTitle: 'AI agent stopped with an error',
     aiNotifyErrorBody: 'The agent encountered an unrecoverable error.',
-    aiAgentTrustLevel: 'Agent Trust Level',
-    aiAgentTrustManual: 'Manual — confirm all actions',
-    aiAgentTrustSemiAuto: 'Semi-Auto — confirm risky actions',
-    aiAgentTrustFullAuto: 'Full-Auto — only confirm destructive',
-    aiAgentMaxIterations: 'Max Agent Steps',
+    aiAgentMaxIterations: 'Max steps per run',
     aiAgentUnlimited: 'Unlimited',
     aiTestConnection: 'Test Connection',
     aiTestSuccess: 'Connection successful!',
@@ -1161,13 +1181,20 @@ const translations: Record<Language, Translations> = {
     aiSelectModels: 'Select Models',
     aiProviderLabel: 'Name',
     aiCustomProvider: 'Custom',
+    aiProviderKeySaved: 'API key saved',
+    aiProviderNoKey: 'No API key',
+    aiProviderModelsEnabled: '{count} models enabled',
+    aiProviderNoModelsEnabled: 'No models enabled',
+    aiProviderEdit: 'Edit',
+    aiProviderDone: 'Done',
     aiSearxng: 'Web Search (SearXNG)',
     aiSearxngUrl: 'SearXNG URL',
     aiSearxngUrlPlaceholder: 'https://searx.example.org',
-    aiSearxngAuth: 'Auth',
+    aiSearxngAuth: 'Sign-in',
     aiSearxngUsername: 'Username (optional)',
     aiSearxngPassword: 'Password (optional)',
-    aiSearxngEnable: 'Enable web search tool for MeAgent',
+    aiSearxngEnable: 'Let the agent search the web',
+    aiSearxngEnableHint: 'Uses your own SearXNG instance.',
     aiSearxngTest: 'Test',
     aiSearxngTestOk: 'SearXNG connected!',
     aiSearxngTestFail: 'SearXNG connection failed',
@@ -1414,11 +1441,10 @@ const translations: Record<Language, Translations> = {
     tldrPageCount: '{count} commands indexed',
     tldrExamples: 'Examples',
     cmdCompletionEnable: 'Enable command completion (inline ghost text)',
-    cmdCompletionHint: 'Shows gray suggestion text in terminal, press → to accept',
-    cmdCompletionHistoryHint: 'Based on command history (priority) and tldr command index',
-    shellHookInjection: 'Shell Hook Injection',
-    shellHookEnable: 'Auto-inject shell hook on SSH/remote sessions',
-    shellHookHint: 'Injects a shell hook via PTY command on SSH sessions for full command history (including Tab completions). Without this, history is recorded from keyboard input only.\n\u26A0\uFE0F Windows: NOT recommended — may cause window freeze or console flash due to ConPTY/WebView2 limitations.\n\u2705 macOS/Linux: Safe to enable.',
+    cmdCompletionHint: 'Shows grey suggestions in the terminal; press → to accept. Suggestions come from your command history first, then the tldr index.',
+    shellHookEnable: 'Inject shell hook into SSH sessions',
+    shellHookHint: 'Records full command history (including Tab completions) and lets the AI agent see exactly when a command finishes, its exit code and the current directory. When off, history comes from keyboard input only and the agent has to guess when commands finish.',
+    settingsGroupCommandAssist: 'Command Assist',
     editorLargeFileWarning: 'This file is {size} MB. Opening large files may cause lag or crashes. Continue?',
     editorLargeFileTitle: 'Large File Warning',
     editorUnsavedChanges: 'You have unsaved changes. Discard and close?',
@@ -1775,18 +1801,28 @@ const translations: Record<Language, Translations> = {
     aiCopyCommand: '复制命令',
     settingsTabAI: 'AI',
     aiProvider: '服务商',
+    aiGroupProviders: '模型服务',
+    aiGroupReply: '回复',
+    aiGroupAgent: 'Agent',
+    aiGroupWebSearch: '联网搜索',
+    aiGroupAdvanced: '高级',
+    aiAdvancedSummary: '温度、对话历史上限、附带终端行数',
     aiPreset: '快速选择',
     aiApiKey: 'API 密钥',
     aiBaseUrl: 'API 地址',
     aiModelName: '模型',
     aiTemperature: '温度',
-    aiMaxTokens: '最大 Token',
-    aiContextLines: '上下文行数',
-    aiHistoryBudget: '历史预算',
+    aiTemperatureHint: '越高回答越发散。Claude Opus 4.7 及以后的模型和 OpenAI 推理模型会忽略这一项。',
+    aiMaxTokens: '单次回复上限',
+    aiMaxTokensHint: '模型一次最多输出多少 token，思考内容也算在内。',
+    aiContextLines: '附带终端行数',
+    aiContextLinesHint: '每次提问时附上当前终端最近多少行输出。',
+    aiHistoryBudget: '对话历史上限',
+    aiHistoryBudgetHint: '对话超过这个长度后，较早的消息会被自动压缩成摘要。',
     aiEnableThinking: '思考模式',
-    aiEnableThinkingHint: '启用后会让支持思考模式的模型（DeepSeek V4、Qwen3、GLM、MiMo 等）先推理再回答。OpenAI / Anthropic / Gemini 等不支持此参数的厂商会忽略。',
+    aiEnableThinkingHint: '仅对 DeepSeek、Qwen（阿里百炼）、GLM、MiMo 等 OpenAI 兼容接口生效，Claude、OpenAI、Gemini 会忽略。',
     aiThinkingBudget: '思考预算',
-    aiThinkingBudgetHint: '限制模型在作答前花在推理上的 token 数。思考 token 与答案共用「最大 Token」预算，不设上限时可能把答案挤没。选「跟随模型」则完全不发该参数。',
+    aiThinkingBudgetHint: '限制回答前用于思考的 token，避免思考把单次回复上限用光。开启思考模式后生效。',
     aiThinkingBudgetDefault: '跟随模型',
     aiThinkingBudgetLow: '低（4k）',
     aiThinkingBudgetMedium: '中（16k）',
@@ -1795,11 +1831,12 @@ const translations: Record<Language, Translations> = {
     aiThinkingOff: '思考已关闭',
     aiPermissionMode: '权限模式',
     aiPermissionModeAsk: '每次询问',
-    aiPermissionModeAcceptSafe: '接受安全操作',
-    aiPermissionModeAcceptAll: '全部接受',
-    aiPermissionModePlan: '计划模式(只读)',
-    aiPermissionModeBypass: '绕过(不提示)',
-    aiPermissionModeHint: '覆盖信任级别。计划模式拒绝写入；读取敏感路径或工作目录外的文件需要确认。',
+    aiPermissionModeAcceptSafe: '安全操作自动执行',
+    aiPermissionModeAcceptAll: '除危险操作外自动执行',
+    aiPermissionModePlan: '只读计划',
+    aiPermissionModeBypass: '全部放行（不再询问）',
+    aiPermissionModeHint: 'Agent 使用工具前要不要先问你，AI 输入栏上的盾牌按钮切换的也是这一项。只读计划不会做任何修改；读取敏感文件或工作目录外的文件时总会询问。',
+    aiPermissionModeChanged: '权限模式：{mode}',
     aiPermissionRules: '权限规则',
     aiPermissionRulesAdd: '添加规则',
     aiPermissionRulesNone: '无自定义规则。读取敏感路径或工作目录外的文件需要确认；Accept safe 模式仅对识别为危险的命令要求确认。',
@@ -1813,8 +1850,8 @@ const translations: Record<Language, Translations> = {
     aiPermissionRuleSave: '保存',
     aiPermissionRuleCancel: '取消',
     aiPermissionRuleToolRequired: '请输入工具名（* 匹配所有工具）。',
-    aiAuditLog: 'Agent 审计日志',
-    aiAuditLogOpen: '查看审计日志',
+    aiAuditLog: '操作记录',
+    aiAuditLogOpen: '打开',
     aiAuditLogEmpty: '(暂无审计记录)',
     aiAuditLogClose: '关闭',
     aiAuditLogClear: '清空日志',
@@ -1825,11 +1862,7 @@ const translations: Record<Language, Translations> = {
     aiNotifyCompleteBody: 'Agent 已完成当前任务。',
     aiNotifyErrorTitle: 'AI Agent 遇到错误',
     aiNotifyErrorBody: 'Agent 执行中止,请查看详情。',
-    aiAgentTrustLevel: 'Agent 信任级别',
-    aiAgentTrustManual: '手动 — 所有操作均需确认',
-    aiAgentTrustSemiAuto: '半自动 — 仅危险操作需确认',
-    aiAgentTrustFullAuto: '全自动 — 仅极端危险操作需确认',
-    aiAgentMaxIterations: '最大执行步数',
+    aiAgentMaxIterations: '最多连续执行步数',
     aiAgentUnlimited: '无限制',
     aiTestConnection: '测试连接',
     aiTestSuccess: '连接成功！',
@@ -1866,7 +1899,7 @@ const translations: Record<Language, Translations> = {
     aiCtxDelete: '删除',
     aiModelAuto: '自动',
     aiModelAutoDesc: '使用当前服务商的默认模型',
-    aiAddProvider: '添加供应商',
+    aiAddProvider: '添加提供商',
     aiDeleteProvider: '删除',
     aiProviderProtocol: '协议',
     aiFetchModels: '拉取模型',
@@ -1878,13 +1911,20 @@ const translations: Record<Language, Translations> = {
     aiSelectModels: '选择模型',
     aiProviderLabel: '名称',
     aiCustomProvider: '自定义',
+    aiProviderKeySaved: '已保存 Key',
+    aiProviderNoKey: '未设置 Key',
+    aiProviderModelsEnabled: '已启用 {count} 个模型',
+    aiProviderNoModelsEnabled: '未启用模型',
+    aiProviderEdit: '编辑',
+    aiProviderDone: '完成',
     aiSearxng: '网络搜索 (SearXNG)',
     aiSearxngUrl: 'SearXNG 地址',
     aiSearxngUrlPlaceholder: 'https://searx.example.org',
     aiSearxngAuth: '认证',
     aiSearxngUsername: '用户名（可选）',
     aiSearxngPassword: '密码（可选）',
-    aiSearxngEnable: '为 MeAgent 启用网络搜索工具',
+    aiSearxngEnable: '允许 Agent 联网搜索',
+    aiSearxngEnableHint: '使用你自己的 SearXNG 实例。',
     aiSearxngTest: '测试',
     aiSearxngTestOk: 'SearXNG 连接成功！',
     aiSearxngTestFail: 'SearXNG 连接失败',
@@ -2131,11 +2171,10 @@ const translations: Record<Language, Translations> = {
     tldrPageCount: '已索引 {count} 个命令',
     tldrExamples: '示例',
     cmdCompletionEnable: '启用命令补全（行内提示文字）',
-    cmdCompletionHint: '在终端中自动显示灰色建议文字，按 → 接受',
-    cmdCompletionHistoryHint: '基于历史命令（优先）和 tldr 命令索引',
-    shellHookInjection: 'Shell Hook 注入',
-    shellHookEnable: 'SSH/远程会话自动注入 Shell Hook',
-    shellHookHint: '通过 PTY 命令在 SSH 会话中注入 Shell Hook，实现完整命令历史记录（含 Tab 补全）。关闭时仅通过键盘输入记录历史。\n⚠️ Windows：不建议开启 — ConPTY/WebView2 限制可能导致窗口冻结或控制台窗口闪现。\n✅ macOS/Linux：可以安全开启。',
+    cmdCompletionHint: '在终端里显示灰色建议，按 → 接受。优先来自你的历史命令，其次是 tldr 命令索引。',
+    shellHookEnable: '在 SSH 会话中注入 Shell Hook',
+    shellHookHint: '用于记录完整的命令历史（包括 Tab 补全的命令），也让 AI Agent 准确知道命令何时结束、退出码和当前目录。关闭后命令历史只能从键盘输入记录，Agent 只能靠猜测判断命令是否结束。',
+    settingsGroupCommandAssist: '命令辅助',
     editorLargeFileWarning: '该文件大小为 {size} MB，打开大文件可能导致卡顿或崩溃。是否继续？',
     editorLargeFileTitle: '大文件警告',
     editorUnsavedChanges: '有未保存的更改，是否丢弃并关闭？',

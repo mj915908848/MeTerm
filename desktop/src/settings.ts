@@ -2,7 +2,7 @@ import { AppSettings, updateSettings } from './themes';
 import { createOverlayScrollbar } from './overlay-scrollbar';
 import { t } from './i18n';
 import { createGeneralPages } from './settings-general';
-import { createAITab } from './settings-ai';
+import { createAIPage } from './settings-ai';
 import { createAboutTab } from './settings-about';
 import { SETTINGS_ICONS, type SettingsPage } from './settings-layout';
 
@@ -39,7 +39,7 @@ export function createSettingsPanel(options: SettingsPanelOptions): HTMLDivEleme
 
   const pages: SettingsPage[] = [
     ...createGeneralPages(current, update, onLanguageChange),
-    { key: 'ai', label: t('settingsTabAI'), icon: SETTINGS_ICONS.ai, el: wrapPage(t('settingsTabAI'), createAITab(current, update)), searchable: false },
+    { key: 'ai', label: t('settingsTabAI'), icon: SETTINGS_ICONS.ai, el: createAIPage(current, update), searchable: true },
     { key: 'about', label: t('settingsTabAbout'), icon: SETTINGS_ICONS.about, el: wrapPage(null, createAboutTab()), searchable: false },
   ];
 
@@ -102,8 +102,8 @@ export function createSettingsPanel(options: SettingsPanelOptions): HTMLDivEleme
     if (btn?.dataset.tab) activateTab(btn.dataset.tab);
   });
 
-  // Search filters the card rows of every page at once. AI and About are not
-  // laid out as rows, so they only show up when their own name matches.
+  // Search filters the card rows of every page at once. About is not laid
+  // out as rows, so it only shows up when its own name matches.
   function applySearch(): void {
     const q = search.value.trim().toLowerCase();
     panel.classList.toggle('settings-searching', !!q);

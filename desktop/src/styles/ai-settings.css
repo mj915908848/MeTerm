@@ -1,43 +1,37 @@
-/* ─── AI Provider Cards (Settings) ─── */
-.ai-provider-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* ─── Settings › AI › Model services ─── */
+/* One collapsed line per provider; "Edit" opens its form underneath. */
+.settings-card > .ai-provider-list { padding: 0; }
+.ai-provider-item + .ai-provider-item,
+.ai-provider-list > .ai-add-provider-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
-
-.ai-provider-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: none;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.08);
-}
-
-.ai-provider-card-header {
+.ai-provider-summary {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  gap: 10px;
+  padding: 8px 0;
+  min-height: 34px;
+  box-sizing: content-box;
 }
-
-.ai-provider-label-input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
+.ai-provider-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.ai-provider-dot.ready { background: #5af78e; }
+.ai-provider-summary-text { flex: 1; min-width: 0; }
+.ai-provider-name {
+  font-size: 13px;
   color: var(--text-primary);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 2px 6px;
-  outline: none;
-  transition: background 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.ai-provider-label-input:focus {
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.1),
-              0 0 0 2px rgba(var(--accent-rgb), 0.25);
-}
+.ai-provider-summary .settings-row-hint { margin-top: 0; }
+.ai-add-provider-section { padding: 8px 0 10px; }
+.ai-add-provider-section > label { font-size: 13px; color: var(--text-primary); }
 
 .ai-provider-delete-btn {
   background: transparent;
@@ -58,7 +52,7 @@
 }
 
 .ai-provider-card-body {
-  padding: 6px 10px;
+  padding: 0 0 12px 17px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -109,38 +103,6 @@
 }
 
 /* Compact AI settings below provider cards */
-.ai-settings-compact {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.ai-settings-compact .settings-section {
-  margin-bottom: 0;
-}
-.ai-settings-compact .ai-slider-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.ai-settings-compact .ai-slider-row > label {
-  font-size: 12px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  flex-shrink: 0;
-  min-width: 100px;
-  margin-bottom: 0;
-}
-.ai-settings-compact .ai-slider-row > .settings-slider {
-  flex: 1;
-  min-width: 0;
-}
-.ai-settings-compact .ai-slider-row > .ai-slider-value {
-  font-size: 11px;
-  color: var(--text-muted);
-  min-width: 36px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
 
 .ai-unlimited-label {
   display: flex;
@@ -154,20 +116,6 @@
 .ai-unlimited-label input[type="checkbox"] {
   margin: 0;
   cursor: pointer;
-}
-.ai-settings-compact .ai-slider-row > .settings-slider:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.ai-provider-fetch-row {
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-}
-.ai-provider-fetch-row .settings-select {
-  width: auto;
-  flex: none;
 }
 
 .ai-provider-models {
@@ -232,16 +180,6 @@
 }
 
 /* ─── Light theme overrides ─── */
-[data-theme="light"] .ai-provider-card {
-  background: rgba(0, 0, 0, 0.02);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.4);
-}
-[data-theme="light"] .ai-provider-card-header {
-  border-bottom-color: rgba(0, 0, 0, 0.06);
-}
-[data-theme="light"] .ai-provider-label-input:focus {
-  background: rgba(0, 0, 0, 0.03);
-}
 [data-theme="light"] .ai-model-checkbox {
   background: rgba(0, 0, 0, 0.03);
   box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.4);
@@ -249,7 +187,6 @@
 [data-theme="light"] .ai-model-checkbox:hover {
   background: rgba(0, 0, 0, 0.06);
 }
-
 
 /* ─── Agent Tool Call Cards ────────────────────────────────────── */
 
@@ -991,46 +928,6 @@
 }
 
 /* ─── AI Trust Level Icon Buttons (Settings) ──────────────────── */
-.ai-trust-group {
-  display: flex;
-  gap: 4px;
-  flex: 1;
-}
-.ai-trust-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 28px;
-  border-radius: 8px;
-  border: none;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-muted);
-  cursor: pointer;
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.1);
-  transition: all 0.15s ease;
-}
-.ai-trust-btn:hover {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.15);
-}
-.ai-trust-btn.active {
-  color: var(--accent);
-  background: rgba(var(--accent-rgb, 106, 164, 255), 0.15);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.12);
-}
-[data-theme="light"] .ai-trust-btn {
-  background: rgba(0, 0, 0, 0.04);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.5);
-}
-[data-theme="light"] .ai-trust-btn:hover {
-  background: rgba(0, 0, 0, 0.07);
-}
-[data-theme="light"] .ai-trust-btn.active {
-  background: rgba(var(--accent-rgb, 0, 102, 204), 0.1);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.5);
-}
 
 /* ─── Light Theme Overrides for Agent UI ───────────────────────── */
 
@@ -1080,3 +977,72 @@ html.vibrancy-active .ai-trust-dropdown {
   border-left-color: rgba(139, 92, 246, 0.25);
 }
 
+
+/* ─── Settings › AI: rows ─── */
+.settings-card .ai-slider-value {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.settings-card > .ai-permission-rules { padding: 8px 0; }
+.ai-permission-rules-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+}
+.ai-permission-rules-header > label { font-size: 13px; color: var(--text-primary); }
+.ai-iter-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.ai-iter-control > .settings-slider { flex: 1; min-width: 0; }
+.ai-iter-control > .settings-slider:disabled { opacity: 0.4; cursor: not-allowed; }
+.settings-card > .settings-section > .settings-test-result { min-width: 0; overflow-wrap: anywhere; }
+/* Model picks are a grid of plain checkboxes, not the card's switches. */
+.settings-card .ai-provider-models .ai-model-checkbox input[type="checkbox"] {
+  -webkit-appearance: checkbox;
+  appearance: auto;
+  width: auto;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.settings-card .ai-provider-models .ai-model-checkbox input[type="checkbox"]::after { content: none; }
+
+/* Replies › Advanced: folded by default; search shows matching rows anyway. */
+.ai-advanced-toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.ai-advanced-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 4px; }
+.ai-advanced-toggle > .settings-row-hint { margin-top: 0; }
+.ai-advanced-chevron {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  align-self: center;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.ai-advanced-toggle[aria-expanded="true"] > .ai-advanced-chevron { transform: rotate(45deg); }
+.settings-card:has(> .ai-advanced-toggle[aria-expanded="false"]) > .ai-advanced-row { display: none; }
+.settings-searching .settings-card > .ai-advanced-row:not(.settings-search-miss) { display: grid; }
+.settings-searching .settings-card > .ai-advanced-toggle { display: none; }
+@media (prefers-reduced-motion: reduce) { .ai-advanced-chevron { transition: none; } }

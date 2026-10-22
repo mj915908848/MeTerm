@@ -42,6 +42,20 @@ export function trustLevelToMode(level: number): PermissionMode {
   }
 }
 
+/** Every mode, in the order the settings page and the AI bar list them. */
+export const PERMISSION_MODES: readonly PermissionMode[] = ['plan', 'ask', 'acceptSafe', 'acceptAll', 'bypass'];
+
+/**
+ * The mode the agent runs under. Users who never picked a mode keep the
+ * behaviour of their old trust level; once a mode is stored it wins.
+ */
+export function effectivePermissionMode(settings: {
+  aiPermissionMode?: PermissionMode;
+  aiAgentTrustLevel?: number;
+}): PermissionMode {
+  return settings.aiPermissionMode ?? trustLevelToMode(settings.aiAgentTrustLevel ?? 0);
+}
+
 // ─── Permission Rules ──────────────────────────────────────
 
 export interface PermissionRuleMatch {
