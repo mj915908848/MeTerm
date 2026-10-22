@@ -1,5 +1,72 @@
 # MeTerm 更新记录
 
+## v0.3.0
+
+### 重要变化
+
+- **移除分享功能** — 局域网访问、手机配对、远程共享会话、中继/推送、内嵌网页客户端全部移除；内置服务器只监听本机 127.0.0.1，启动时不再读取 TLS 私钥（少一次钥匙串访问）。设置里的「分享」页、工具栏分享按钮、托盘「局域网连接」/「新建私有终端」、标签页「锁定会话」随之移除。
+- **不再提供 Linux 版本** — 之后只发布 macOS 与 Windows 版本。
+
+### 新功能
+
+- **首页连接管理改为列表 + 详情** — 左侧是分组列表，右侧是连接详情（只读信息 + 连接 / 编辑 / ⋯）。单击选中，双击、回车或「连接」按钮才连接；支持 ⌘/Ctrl、Shift 多选后批量移动或删除、拖到分组；分组右键可排序，分组颜色显示为标题前的圆点。
+- **连接入口改为左侧抽屉** — 工具栏「连接」按钮和 ⌘⇧O / Ctrl+Shift+O 从左侧滑出抽屉，搜索后回车即连接，连上后自动收起；连接管理统一在首页，不再弹出独立的连接窗口。
+- **设置窗口重新设计** — 左侧按「外观 / 终端 / 文件管理器 / 标签与窗口 / 连接 / AI / 关于」分类，每类分组显示；侧栏搜索可跨分类查找设置项；开关统一为滑动开关；窗口可调整大小（默认 720×520）。
+- **AI 确认卡片更完整** — write_file 确认时显示要写入的内容，其他工具显示完整参数；命令编辑框支持多行（Shift+Enter 换行）。
+
+### 问题修复 / 优化
+
+- **终端更稳更快** — 输入不再被大量输出阻塞；SSH 读写分离并加入 keepalive 与 TCP_NODELAY；本地连接被回收后自动重连；拖动窗口大小时总是应用最新尺寸；文件搜索等耗时操作移出主线程。
+- **远端为 sh/dash/ash 时输入不再不可见** — SSH shell 集成脚本此前在这类远端解析失败，回显一直处于关闭状态。
+- **最近连接卡片点击不再报「连接不存在」** — 已保存连接被重建后，按主机/端口/用户名找回对应连接。
+- **设置调整更顺滑** — 拖动透明度等滑块时其他窗口不再整页重绘；用快捷键改字号等外部修改会同步到已打开的设置窗口。
+- **AI 安全性** — AI 通过按键在终端提交命令时，同样按危险命令规则审核；终端输出不再能伪造「命令已完成」信号；补充更多危险命令规则（如 curl | sh、find -delete、git push -f、Remove-Item -Recurse）；Agent 不能写入 MeTerm 自己的配置与数据目录；全自动模式写凭据类文件需要确认；web_search 在计划与半自动模式下需要确认。
+- **AI 可靠性** — 中文等多字节字符不再在流式输出里变成乱码；点「停止」会真正中断请求和正在执行的命令；流内错误与输出截断会提示，不再当作成功；长回复不再被 300 秒总超时切断；修复回答里「运行」按钮点一次可能执行两次。
+- **AI 服务商兼容** — 默认模型更新（Gemini、Groq 旧模型已下线）；OpenAI 新模型与 Groq 使用 max_completion_tokens；不带密钥时允许用 HTTP 访问局域网内的服务（如另一台机器上的 Ollama）；Anthropic 提示词缓存命中率提高。
+- **Windows 修复** — 本地会话下载支持 `C:\...` 盘符路径；Git 面板路径检查拒绝根路径和盘符前缀，防止越出仓库目录。
+- **依赖安全更新** — 前端依赖漏洞清零（vite、postcss 等）。
+
+### 验证
+
+- 每次合并都通过 CI：前端构建与测试、Rust fmt / clippy / 测试（macOS 与 Windows）。
+- 正式安装包、真实 SSH/SFTP 连接以及 Windows 真机尚未完整手动验证。
+
+---
+
+## Changelog (English)
+
+### Breaking Changes
+
+- **Sharing removed** — LAN access, phone pairing, remote shared sessions, relay/push and the embedded web client are gone. The built-in server listens on 127.0.0.1 only, and startup no longer reads the TLS private key (one fewer keychain access). The Sharing settings page, toolbar share button, tray "LAN connection" / "New private terminal" items and the tab "Lock session" menu are removed.
+- **Linux builds discontinued** — Releases now ship for macOS and Windows only.
+
+### What's New
+
+- **Home page connection manager: list + detail** — Grouped list on the left, connection detail on the right (read-only facts plus Connect / Edit / ⋯). A click selects; double-click, Enter or Connect connects. Cmd/Ctrl and Shift multi-select for batch move or delete, drag onto a group, sort from a group's right-click menu, and group colours shown as a dot before the group name.
+- **Connection picker drawer** — The toolbar Connect button and Cmd/Ctrl+Shift+O slide in a drawer from the left: search, press Enter to connect, and it closes once connected. Management lives on the home page; the separate connections window is gone.
+- **Redesigned settings window** — Sidebar categories (Appearance / Terminal / File Manager / Tabs & Windows / Connections / AI / About) with grouped cards, a sidebar search across categories, slide toggles throughout, and a resizable window (720×520 by default).
+- **Fuller AI approval card** — write_file approvals show the content to be written, other tools show full arguments, and the command editor is multi-line (Shift+Enter for a new line).
+
+### Bug Fixes
+
+- **Steadier, faster terminal** — Heavy output no longer blocks input; SSH reads and writes run separately with keepalive and TCP_NODELAY; local connections reconnect after being reclaimed; resize always applies the latest size; file search and other slow work moved off the main thread.
+- **Typing stays visible on sh/dash/ash remotes** — The SSH shell-integration hook failed to parse there and left echo off.
+- **Recent-connection cards no longer fail with "connection not found"** — A recreated saved connection is matched by host, port and user.
+- **Smoother settings changes** — Dragging opacity sliders no longer fully repaints other windows, and outside changes (e.g. font size shortcuts) update an open settings window.
+- **AI safety** — Commands the AI submits by typing into the terminal go through the same danger rules; terminal output can no longer fake a "command finished" signal; more danger patterns (curl | sh, find -delete, git push -f, Remove-Item -Recurse, …); the agent cannot write into MeTerm's own config and data folders; writing credential files in full-auto asks first; web_search asks in plan and semi-auto modes.
+- **AI reliability** — Multi-byte text no longer garbles in streams; Stop really cancels the request and a running command; in-stream errors and truncation are reported instead of treated as success; long replies are no longer cut off by a 300 s total timeout; the answer's Run button no longer runs twice.
+- **AI provider compatibility** — Updated default models (retired Gemini and Groq models replaced); new OpenAI models and Groq get max_completion_tokens; keyless requests may use HTTP to LAN hosts (e.g. Ollama on another machine); better Anthropic prompt-cache hits.
+- **Windows fixes** — Local-session downloads accept `C:\...` paths; the Git panel path check rejects root and drive prefixes so it cannot escape the repository.
+- **Dependency security updates** — Frontend audit findings cleared (vite, postcss, …).
+
+### Validation
+
+- Every merge passed CI: frontend build and tests, Rust fmt / clippy / tests on macOS and Windows.
+- The packaged release build, live SSH/SFTP connections and Windows hardware have not been fully verified by hand.
+
+---
+
+
 ## v0.2.20
 
 ### 问题修复 / 优化
