@@ -6,9 +6,10 @@ import { invoke, Channel } from '@tauri-apps/api/core';
 import { thinkingFieldsFor } from './ai-thinking-budget';
 import {
   ANTHROPIC_BINDING_BETA, AnthropicContentCollector, anthropicAcceptsTemperature, anthropicBindsThinking,
-  anthropicCacheLayout, hasAnthropicThinking, isThinkingBindingError, openAICompatParams, sseData,
+  anthropicCacheLayout, hasAnthropicThinking, isThinkingBindingError, moveTurnContextToEnd, openAICompatParams, openAIStreamOptions, sseData,
   stripAnthropicThinking, streamPayloadError,
 } from './ai-provider-wire';
+import { anthropicUsage, geminiUsage, openAIUsage, type TokenUsage } from './ai-token-usage';
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -78,9 +79,9 @@ export interface ChatMessage {
   /**
    * System messages only: length of the leading part of `content` that stays
    * identical across agent iterations. The rest is per-turn context
-   * (terminal output, plan, attachments). Anthropic caches only the stable
-   * part and sends the context after the conversation; other providers
-   * ignore this and send `content` as is.
+   * (terminal output, plan, attachments). Every provider sends only the
+   * stable part as the system prompt and moves the context after the
+   * conversation, so prompt caches cover the history too.
    */
   stablePrefixChars?: number;
 }
@@ -115,6 +116,8 @@ export interface StreamCompleteInfo {
   truncated?: boolean;
   /** Anthropic only: the turn's content blocks when it included thinking (see ChatMessage.anthropic_content). */
   anthropicContent?: unknown[];
+  /** Token counts the provider reported for this request, when it did. */
+  usage?: TokenUsage;
 }
 
 export type ProviderType = 'openai' | 'anthropic' | 'gemini';
@@ -400,6 +403,8 @@ class OpenAIProvider implements AIProvider {
   constructor(private config: AIProviderConfig) {}
 
   chat(messages: ChatMessage[], callbacks: StreamCallbacks, signal?: AbortSignal, tools?: ToolSpec[]): void {
+    // Keep the prefix the server caches free of per-turn context.
+    messages = moveTurnContextToEnd(messages);
     // Convert a ContentPart[] (multimodal) payload into OpenAI's
     // content-parts shape. OpenAI uses `image_url` with data URIs.
     const toOpenAIParts = (parts: ContentPart[]): unknown[] => parts.map((p) => {
@@ -462,6 +467,7 @@ class OpenAIProvider implements AIProvider {
       model: this.config.model,
       messages: apiMessages,
       stream: true,
+      ...openAIStreamOptions(this.config.baseUrl),
       // Token limit, temperature and the thinking-mode toggle, shaped for
       // the server (see openAICompatParams). The thinking field names, the
       // tier list and the "only cap it while thinking is on" rule live in
@@ -518,12 +524,14 @@ class OpenAIProvider implements AIProvider {
     const tcMap = new Map<number, { id: string; name: string; arguments: string }>();
     let streamError: Error | null = null;
     let truncated = false;
+    let usage: TokenUsage | undefined;
 
     try {
       await nativeStreamPost(this.config, body, (data) => {
         try {
           const parsed = JSON.parse(data);
           streamError ??= streamPayloadError('openai', parsed);
+          usage = openAIUsage(parsed.usage) ?? usage;
           const choice = parsed.choices?.[0];
           if (!choice) return;
           if (choice.finish_reason === 'length') truncated = true;
@@ -584,7 +592,7 @@ class OpenAIProvider implements AIProvider {
         fullText,
         toolCalls.length > 0 ? toolCalls : undefined,
         fullReasoning || undefined,
-        { truncated },
+        { truncated, usage },
       );
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
@@ -778,11 +786,15 @@ class AnthropicProvider implements AIProvider {
     let currentTC: { id: string; name: string; arguments: string } | null = null;
     let streamError: Error | null = null;
     let truncated = false;
+    let startUsage: unknown;
+    let deltaUsage: unknown;
 
     try {
       await nativeStreamPost(this.config, body, (data) => {
         try {
           const parsed = JSON.parse(data);
+          if (parsed.type === 'message_start') startUsage = parsed.message?.usage;
+          else if (parsed.type === 'message_delta' && parsed.usage) deltaUsage = parsed.usage;
           streamError ??= streamPayloadError('anthropic', parsed);
           content.feed(parsed);
 
@@ -833,6 +845,7 @@ class AnthropicProvider implements AIProvider {
       callbacks.onComplete(fullText, toolCalls.length > 0 ? toolCalls : undefined, undefined, {
         truncated,
         anthropicContent: content.content(),
+        usage: anthropicUsage(startUsage, deltaUsage) ?? undefined,
       });
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
@@ -868,6 +881,8 @@ class GeminiProvider implements AIProvider {
   constructor(private config: AIProviderConfig) {}
 
   chat(messages: ChatMessage[], callbacks: StreamCallbacks, signal?: AbortSignal, tools?: ToolSpec[]): void {
+    // Keep the prefix Gemini's implicit cache matches free of per-turn context.
+    messages = moveTurnContextToEnd(messages);
     const systemMessages = messages.filter((m) => m.role === 'system');
     const conversationMessages = messages.filter((m) => m.role !== 'system');
 
@@ -995,12 +1010,14 @@ class GeminiProvider implements AIProvider {
     const toolCalls: ToolCall[] = [];
     let streamError: Error | null = null;
     let truncated = false;
+    let usage: TokenUsage | undefined;
 
     try {
       await nativeStreamPost(this.config, body, (data) => {
         try {
           const parsed = JSON.parse(data);
           streamError ??= streamPayloadError('gemini', parsed);
+          usage = geminiUsage(parsed.usageMetadata) ?? usage;
           if (parsed.candidates?.[0]?.finishReason === 'MAX_TOKENS') truncated = true;
           const parts = parsed.candidates?.[0]?.content?.parts;
           if (!parts) return;
@@ -1028,7 +1045,7 @@ class GeminiProvider implements AIProvider {
       }, signal);
 
       if (streamError) throw streamError;
-      callbacks.onComplete(fullText, toolCalls.length > 0 ? toolCalls : undefined, undefined, { truncated });
+      callbacks.onComplete(fullText, toolCalls.length > 0 ? toolCalls : undefined, undefined, { truncated, usage });
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;
       callbacks.onError(e as Error);

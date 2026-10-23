@@ -5,6 +5,7 @@ import {
   AnthropicContentCollector, anthropicAcceptsTemperature, anthropicBindsThinking, anthropicCacheLayout,
   hasAnthropicThinking, isThinkingBindingError, parseToolArguments, sseData, streamPayloadError,
   stripAnthropicThinking, TURN_CONTEXT_HEADING, openAICompatParams, openAIRejectsTemperature,
+  moveTurnContextToEnd, openAIStreamOptions,
 } from '../src/ai-provider-wire.ts';
 import { classifyError } from '../src/ai-agent-errors.ts';
 
@@ -198,4 +199,51 @@ test('thinking blocks can be detected and stripped from a request', () => {
 test('the history-binding 400 is recognized', () => {
   assert.equal(isThinkingBindingError('HTTP 400: {"type":"error","error":{"type":"invalid_request_error","message":"messages.3.content.0: Invalid `signature` in `thinking` block. The block is bound to a different conversation. Remove the block, or set'), true);
   assert.equal(isThinkingBindingError('HTTP 400: max_tokens: 200000 > 64000'), false);
+});
+
+test('per-turn context moves after the conversation so prefix caches cover the history', () => {
+  const system = 'INSTRUCTIONS\n\nPANE OUTPUT';
+  const stable = 'INSTRUCTIONS\n\n'.length;
+  const messages: any[] = [
+    { role: 'system', content: system, stablePrefixChars: stable },
+    { role: 'user', content: 'deploy it' },
+    { role: 'assistant', content: '', tool_calls: [{ id: 't1', type: 'function', function: { name: 'run_command', arguments: '{}' } }] },
+    { role: 'tool', tool_call_id: 't1', content: 'done' },
+  ];
+  const out = moveTurnContextToEnd(messages);
+  assert.equal(out[0].content, 'INSTRUCTIONS');
+  assert.equal(out[0].stablePrefixChars, undefined);
+  assert.equal(out[3].content, `done\n\n${TURN_CONTEXT_HEADING}\n\nPANE OUTPUT`);
+  assert.equal(out[3].role, 'tool');
+  assert.equal(out[3].tool_call_id, 't1');
+  // Earlier messages are shared, the caller's array is untouched.
+  assert.equal(out[1], messages[1]);
+  assert.equal(messages[3].content, 'done');
+  assert.equal(messages[0].content, system);
+
+  const parts = moveTurnContextToEnd([
+    { role: 'system', content: system, stablePrefixChars: stable },
+    { role: 'user', content: [{ type: 'text', text: 'look' }] },
+  ]);
+  assert.deepEqual(parts[1].content, [
+    { type: 'text', text: 'look' },
+    { type: 'text', text: `${TURN_CONTEXT_HEADING}\n\nPANE OUTPUT` },
+  ]);
+});
+
+test('turn context stays in the system prompt when it cannot be moved', () => {
+  const noSplit: any[] = [{ role: 'system', content: 'ALL' }, { role: 'user', content: 'hi' }];
+  assert.equal(moveTurnContextToEnd(noSplit), noSplit);
+  const endsWithAssistant: any[] = [
+    { role: 'system', content: 'A\nB', stablePrefixChars: 2 },
+    { role: 'assistant', content: 'x' },
+  ];
+  assert.equal(moveTurnContextToEnd(endsWithAssistant), endsWithAssistant);
+});
+
+test('usage is only requested from servers known to accept stream_options', () => {
+  assert.deepEqual(openAIStreamOptions('https://api.deepseek.com/v1'), { stream_options: { include_usage: true } });
+  assert.deepEqual(openAIStreamOptions('https://api.openai.com/v1'), { stream_options: { include_usage: true } });
+  assert.deepEqual(openAIStreamOptions('http://localhost:11434/v1'), {});
+  assert.deepEqual(openAIStreamOptions('not a url'), {});
 });

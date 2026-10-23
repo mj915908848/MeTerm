@@ -231,6 +231,14 @@ body.ai-chat-resizing * {
 }
 .ai-msg-assistant .ai-msg-content p { margin: 0 0 6px 0; }
 .ai-msg-assistant .ai-msg-content p:last-child { margin-bottom: 0; }
+.ai-msg-usage {
+  margin-top: 4px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  user-select: text;
+}
 
 .ai-msg-system .ai-msg-content {
   text-align: center;

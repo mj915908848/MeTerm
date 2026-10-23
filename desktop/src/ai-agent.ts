@@ -59,6 +59,7 @@ import {
 import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit';
 import { emptyReplyNotice, outputTruncatedNotice } from './ai-tool-i18n';
 import { parseToolArguments } from './ai-provider-wire';
+import { addUsage, type TokenUsage } from './ai-token-usage';
 import { readShellInputState } from './ai-tools-command';
 
 // Re-exports for backward compatibility
@@ -300,6 +301,8 @@ export class ToolAgent {
   private compactController: AbortController | null = null;
   /** Estimated size of the last system prompt sent, for the compaction threshold. */
   private lastSystemPromptTokens = 0;
+  /** Tokens the provider reported for the current (or last) run. */
+  private runUsage: TokenUsage | null = null;
   private aborted = false;
   private toolRegistry: ToolRegistry;
   /** Once set to false (e.g. after a 400 from a non-tool model),
@@ -609,6 +612,11 @@ export class ToolAgent {
     }
   }
 
+  /** Token usage the provider reported for the current or most recent run, if any. */
+  getRunUsage(): TokenUsage | null {
+    return this.runUsage;
+  }
+
   // ─── Pull-based async generator API ───────────────────────
   //
   // `run()` wraps the existing `runLoop()` and yields a typed stream
@@ -640,6 +648,7 @@ export class ToolAgent {
     sessionId: string,
     callbacks: AgentCallbacks,
   ): Promise<void> {
+    this.runUsage = null;
     const settings = loadSettings();
     const resolved = resolveActiveModel(settings.aiProviders, settings.aiActiveModel);
     if (!resolved) {
@@ -875,6 +884,8 @@ export class ToolAgent {
           callbacks,
           this.abortController.signal,
         );
+
+        this.runUsage = addUsage(this.runUsage, response.usage);
 
         // Reset retry counter on success
         llmRetryCount = 0;
@@ -1522,7 +1533,7 @@ export class ToolAgent {
     tools: ToolSpec[] | undefined,
     callbacks: AgentCallbacks,
     signal: AbortSignal,
-  ): Promise<{ text: string; toolCalls?: ToolCall[]; reasoning?: string; truncated?: boolean; anthropicContent?: unknown[] }> {
+  ): Promise<{ text: string; toolCalls?: ToolCall[]; reasoning?: string; truncated?: boolean; anthropicContent?: unknown[]; usage?: TokenUsage }> {
     return abortableOperation(signal, (resolve, reject) => {
       let settled = false;
 
@@ -1545,6 +1556,7 @@ export class ToolAgent {
             reasoning,
             truncated: info?.truncated,
             anthropicContent: info?.anthropicContent,
+            usage: info?.usage,
           });
         },
         onError: (error) => {
