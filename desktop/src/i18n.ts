@@ -598,6 +598,26 @@ export interface Translations {
   aiChatHostMismatchTitle: string;
   aiChatHostMismatch: string;
   aiChatOpenElsewhereTitle: string;
+  transferStatusPending: string;
+  transferStatusInProgress: string;
+  transferStatusCompleted: string;
+  transferStatusFailed: string;
+  transferStatusPaused: string;
+  transferStatusCancelled: string;
+  transferPause: string;
+  transferResume: string;
+  transferCancel: string;
+  transferDeleteRecord: string;
+  transferRevealIn: string;
+  transferEmpty: string;
+  transferNoMatch: string;
+  transferInterrupted: string;
+  transferList: string;
+  transferFilterUpload: string;
+  transferFilterDownload: string;
+  transferFilterActive: string;
+  transferClearHistory: string;
+  transferNotConnected: string;
   aiChatHistoryLoadFailed: string;
   aiChatMessageCount: string;
   aiChatOpenElsewhere: string;
@@ -1358,6 +1378,26 @@ const translations: Record<Language, Translations> = {
     aiChatHostMismatchTitle: 'Host mismatch',
     aiChatHostMismatch: 'Host mismatch. Switch to the conversation host or start a new conversation.',
     aiChatOpenElsewhereTitle: 'Already open',
+    transferStatusPending: 'Waiting',
+    transferStatusInProgress: 'Transferring',
+    transferStatusCompleted: 'Completed',
+    transferStatusFailed: 'Failed',
+    transferStatusPaused: 'Paused',
+    transferStatusCancelled: 'Cancelled',
+    transferPause: 'Pause',
+    transferResume: 'Resume',
+    transferCancel: 'Cancel',
+    transferDeleteRecord: 'Delete record',
+    transferRevealIn: 'Show in file manager',
+    transferEmpty: 'No transfers yet',
+    transferNoMatch: 'No matching transfers',
+    transferInterrupted: 'Interrupted: the app or window was closed',
+    transferList: 'Transfers',
+    transferFilterUpload: 'Uploads',
+    transferFilterDownload: 'Downloads',
+    transferFilterActive: 'In progress',
+    transferClearHistory: 'Clear history',
+    transferNotConnected: 'Not connected',
     aiChatHistoryLoadFailed: 'This conversation could not be read. It may have been deleted.',
     aiChatMessageCount: '{n} msgs',
     aiChatOpenElsewhere: 'This conversation is open in another tab. Continue it there, or close it there first.',
@@ -2131,6 +2171,26 @@ const translations: Record<Language, Translations> = {
     aiChatHostMismatchTitle: '主机不匹配',
     aiChatHostMismatch: '当前主机与对话归属不匹配，请切换到对应主机或新建对话。',
     aiChatOpenElsewhereTitle: '对话已打开',
+    transferStatusPending: '等待中',
+    transferStatusInProgress: '传输中',
+    transferStatusCompleted: '已完成',
+    transferStatusFailed: '失败',
+    transferStatusPaused: '已暂停',
+    transferStatusCancelled: '已取消',
+    transferPause: '暂停',
+    transferResume: '继续',
+    transferCancel: '取消',
+    transferDeleteRecord: '删除记录',
+    transferRevealIn: '在文件管理器中打开',
+    transferEmpty: '暂无传输记录',
+    transferNoMatch: '无匹配记录',
+    transferInterrupted: '传输中断：应用或窗口已关闭',
+    transferList: '传输列表',
+    transferFilterUpload: '上传',
+    transferFilterDownload: '下载',
+    transferFilterActive: '进行中',
+    transferClearHistory: '清空历史',
+    transferNotConnected: '未连接',
     aiChatHistoryLoadFailed: '无法读取这条对话，它可能已被删除。',
     aiChatMessageCount: '{n} 条',
     aiChatOpenElsewhere: '这条对话已在另一个标签中打开，请在那边继续，或先在那边关闭。',

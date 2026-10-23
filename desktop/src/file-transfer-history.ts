@@ -2,6 +2,8 @@
 
 import { escapeHtml } from './status-bar';
 import { formatSize, formatSpeed, formatElapsed } from './file-utils';
+import { t, getLanguage } from './i18n';
+import { TransferStore, TRANSFER_STORAGE_KEY, HEARTBEAT_MS, isActiveTransfer } from './file-transfer-store';
 
 /** 传输记录类型 */
 export interface TransferRecord {
@@ -19,6 +21,8 @@ export interface TransferRecord {
   endTime?: number;
   /** Server label (e.g. "user@host" or "local") for display and search */
   serverLabel?: string;
+  /** Last save while active; a stale one elsewhere means its window is gone. */
+  heartbeat?: number;
 }
 
 /** 传输控制委托：由 FileManager 实现 */
@@ -32,14 +36,36 @@ export interface TransferControlDelegate {
   revealInFileManager(savePath: string): Promise<void>;
 }
 
-const STORAGE_KEY = 'meterm-transfer-history';
+let sharedStore: TransferStore | null = null;
+
+/** One store per window, shared by every session's manager. */
+function transferStore(): TransferStore {
+  if (!sharedStore) {
+    const store = new TransferStore(localStorage, () => t('transferInterrupted'));
+    // Another window saved: re-read on the next render.
+    window.addEventListener('storage', (event) => {
+      if (event.key === TRANSFER_STORAGE_KEY || event.key === null) store.invalidate();
+    });
+    sharedStore = store;
+  }
+  return sharedStore;
+}
+
+/** Status labels shared with the file sidebar's transfer list. */
+export function transferStatusText(status: TransferRecord['status']): string {
+  const keys = {
+    pending: 'transferStatusPending', inprogress: 'transferStatusInProgress', completed: 'transferStatusCompleted',
+    failed: 'transferStatusFailed', paused: 'transferStatusPaused', cancelled: 'transferStatusCancelled',
+  } as const;
+  return keys[status] ? t(keys[status]) : status;
+}
 
 export class TransferHistoryManager {
   private sessionId: string;
   /** Server label for new records (e.g. "user@host:22" or "local") */
   serverLabel: string = 'local';
-  private transferHistory: TransferRecord[] = [];
-  private maxHistoryLength = 200;
+  private get transferHistory(): TransferRecord[] { return transferStore().list(); }
+  private lastHeartbeatSave = 0;
   private speedTracker: Map<string, { lastBytes: number; lastTime: number; speed: number }> = new Map();
   private delegate: TransferControlDelegate | null = null;
 
@@ -57,7 +83,6 @@ export class TransferHistoryManager {
 
   constructor(sessionId: string) {
     this.sessionId = sessionId;
-    this.loadTransferHistory();
   }
 
   setDelegate(delegate: TransferControlDelegate): void {
@@ -114,45 +139,15 @@ export class TransferHistoryManager {
     this.renderTransferHistory();
   }
 
-  // 从 localStorage 恢复传输历史
-  private loadTransferHistory(): void {
-    try {
-      const data = localStorage.getItem(STORAGE_KEY);
-      if (data) {
-        this.transferHistory = JSON.parse(data);
-        for (const record of this.transferHistory) {
-          if (record.status === 'inprogress' || record.status === 'pending' || record.status === 'paused') {
-            record.status = 'failed';
-            record.error = '应用重启，传输中断';
-          }
-        }
-        this.saveTransferHistory();
-      }
-    } catch (err) {
-      console.error('Failed to load transfer history:', err);
-    }
-  }
-
   private saveTransferHistory(): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.transferHistory));
-    } catch (err) {
-      console.error('Failed to save transfer history:', err);
-    }
+    transferStore().save();
   }
 
   clearTransferHistory(): void {
-    const isActive = (r: TransferRecord) => r.status === 'inprogress' || r.status === 'paused' || r.status === 'pending';
+    // 有筛选时只清空当前筛选结果；任何时候都保留活跃记录
     const hasFilter = this.filterType || this.filterStatus || this.searchQuery;
-    if (hasFilter) {
-      // 有筛选时，获取当前筛选结果的 id 集合，只清空这些非活跃记录
-      const filteredIds = new Set(this.getFilteredHistory().filter(r => !isActive(r)).map(r => r.id));
-      this.transferHistory = this.transferHistory.filter(r => !filteredIds.has(r.id));
-    } else {
-      // 全部模式下，保留活跃记录
-      this.transferHistory = this.transferHistory.filter(isActive);
-    }
-    this.saveTransferHistory();
+    const scope = hasFilter ? this.getFilteredHistory() : this.transferHistory;
+    transferStore().remove(scope.filter(r => !isActiveTransfer(r)).map(r => r.id));
     this.lastVirtualRange = null;
     this.renderTransferHistory();
   }
@@ -172,12 +167,7 @@ export class TransferHistoryManager {
       serverLabel: this.serverLabel,
     };
 
-    this.transferHistory.unshift(record);
-    if (this.transferHistory.length > this.maxHistoryLength) {
-      this.transferHistory = this.transferHistory.slice(0, this.maxHistoryLength);
-    }
-
-    this.saveTransferHistory();
+    transferStore().add(record);
     document.dispatchEvent(new CustomEvent('status-bar-transfer', {
       detail: { sessionId: this.sessionId, id, type, progress: 0, status: 'pending' }
     }));
@@ -185,7 +175,9 @@ export class TransferHistoryManager {
   }
 
   updateTransferProgress(id: string, progress: number, status: TransferRecord['status'], error?: string): void {
-    const record = this.transferHistory.find(r => r.id === id);
+    // Only this window's records are live objects; a copy of another window's would not persist.
+    if (!transferStore().isOwned(id)) return;
+    const record = transferStore().find(id);
     if (record) {
       const statusChanged = record.status !== status;
       record.progress = progress;
@@ -237,7 +229,11 @@ export class TransferHistoryManager {
         }
       }
 
-      if (statusChanged) {
+      // Status changes persist at once; a running transfer also refreshes its
+      // heartbeat so other windows do not take it for an abandoned one.
+      const now = Date.now();
+      if (statusChanged || (isActiveTransfer(record) && now - this.lastHeartbeatSave >= HEARTBEAT_MS)) {
+        this.lastHeartbeatSave = now;
         this.saveTransferHistory();
       }
       const historyContainer = document.getElementById(`transfer-history-${this.sessionId}`);
@@ -265,14 +261,14 @@ export class TransferHistoryManager {
 
   /** 更新传输记录的文件大小（下载首个 chunk 到达时调用） */
   updateTransferSize(id: string, size: number): void {
-    const record = this.transferHistory.find(r => r.id === id);
+    const record = transferStore().find(id);
     if (record && record.size === 0 && size > 0) {
       record.size = size;
     }
   }
 
   findRecord(id: string): TransferRecord | undefined {
-    return this.transferHistory.find(r => r.id === id);
+    return transferStore().find(id);
   }
 
   /** Get all records, optionally filtered */
@@ -297,13 +293,10 @@ export class TransferHistoryManager {
 
   /** 删除单条传输记录（仅已完成/失败/取消的记录可删除） */
   deleteRecord(id: string): void {
-    const idx = this.transferHistory.findIndex(r => r.id === id);
-    if (idx === -1) return;
-    const record = this.transferHistory[idx];
-    if (record.status === 'inprogress' || record.status === 'paused' || record.status === 'pending') return;
-    this.transferHistory.splice(idx, 1);
+    const record = transferStore().find(id);
+    if (!record || isActiveTransfer(record)) return;
     this.speedTracker.delete(id);
-    this.saveTransferHistory();
+    transferStore().remove([id]);
     this.lastVirtualRange = null;
     this.renderTransferHistory();
   }
@@ -351,16 +344,7 @@ export class TransferHistoryManager {
   private renderTransferItem(record: TransferRecord): string {
     const typeIcon = record.type === 'upload' ? '↑' : '↓';
     const statusClass = record.status;
-    const statusText: Record<string, string> = {
-      'pending': '等待中',
-      'inprogress': '进行中',
-      'completed': '已完成',
-      'failed': '失败',
-      'paused': '已暂停',
-      'cancelled': '已取消'
-    };
-
-    const date = new Date(record.timestamp).toLocaleString('zh-CN', {
+    const date = new Date(record.timestamp).toLocaleString(getLanguage() === 'zh' ? 'zh-CN' : 'en-US', {
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
@@ -377,22 +361,22 @@ export class TransferHistoryManager {
     let actionButtons = '';
     if (record.status === 'inprogress') {
       actionButtons = `<div class="transfer-actions">
-        <button class="transfer-btn pause-btn" data-id="${record.id}" title="暂停">⏸</button>
-        <button class="transfer-btn cancel-btn" data-id="${record.id}" title="取消">✕</button>
+        <button class="transfer-btn pause-btn" data-id="${record.id}" title="${t('transferPause')}">⏸</button>
+        <button class="transfer-btn cancel-btn" data-id="${record.id}" title="${t('transferCancel')}">✕</button>
       </div>`;
     } else if (record.status === 'paused') {
       actionButtons = `<div class="transfer-actions">
-        <button class="transfer-btn resume-btn" data-id="${record.id}" title="继续">▶</button>
-        <button class="transfer-btn cancel-btn" data-id="${record.id}" title="取消">✕</button>
+        <button class="transfer-btn resume-btn" data-id="${record.id}" title="${t('transferResume')}">▶</button>
+        <button class="transfer-btn cancel-btn" data-id="${record.id}" title="${t('transferCancel')}">✕</button>
       </div>`;
     } else if (record.status === 'pending') {
       actionButtons = `<div class="transfer-actions">
-        <button class="transfer-btn cancel-btn" data-id="${record.id}" title="取消">✕</button>
+        <button class="transfer-btn cancel-btn" data-id="${record.id}" title="${t('transferCancel')}">✕</button>
       </div>`;
     } else {
       // completed / failed / cancelled — 显示删除按钮
       actionButtons = `<div class="transfer-actions">
-        <button class="transfer-btn delete-btn" data-id="${record.id}" title="删除记录">✕</button>
+        <button class="transfer-btn delete-btn" data-id="${record.id}" title="${t('transferDeleteRecord')}">✕</button>
       </div>`;
     }
 
@@ -413,7 +397,7 @@ export class TransferHistoryManager {
     }
 
     const localPathHtml = (record.type === 'download' && record.savePath && record.status === 'completed')
-      ? `<span class="save-path clickable" data-save-path="${escapeHtml(record.savePath)}" title="在文件管理器中打开: ${escapeHtml(record.savePath)}"><svg class="save-path-icon" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h3.879a1.5 1.5 0 0 1 1.06.44L8.562 3.5H13.5A1.5 1.5 0 0 1 15 5v7.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z" fill="currentColor"/></svg> ${escapeHtml(record.savePath)}</span>`
+      ? `<span class="save-path clickable" data-save-path="${escapeHtml(record.savePath)}" title="${escapeHtml(t('transferRevealIn'))}: ${escapeHtml(record.savePath)}"><svg class="save-path-icon" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h3.879a1.5 1.5 0 0 1 1.06.44L8.562 3.5H13.5A1.5 1.5 0 0 1 15 5v7.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z" fill="currentColor"/></svg> ${escapeHtml(record.savePath)}</span>`
       : '';
 
     const errorMsg = record.error
@@ -438,7 +422,7 @@ export class TransferHistoryManager {
         </div>
         ${progressBar}
         <div class="history-footer">
-          <span class="status-indicator ${statusClass}">${statusText[record.status] || record.status}</span>
+          <span class="status-indicator ${statusClass}">${transferStatusText(record.status)}</span>
           ${speedHtml}${elapsedHtml}
           ${localPathHtml}
         </div>
@@ -456,12 +440,9 @@ export class TransferHistoryManager {
 
     const filtered = this.getFilteredHistory();
     if (filtered.length === 0) {
-      let emptyText = '暂无上传下载记录';
-      if (this.searchQuery) {
-        emptyText = '无匹配结果';
-      } else if (this.filterType || this.filterStatus) {
-        emptyText = '无匹配记录';
-      }
+      const emptyText = this.searchQuery || this.filterType || this.filterStatus
+        ? t('transferNoMatch')
+        : t('transferEmpty');
       historyList.innerHTML = `
         <div class="empty-history">
           <p>${emptyText}</p>

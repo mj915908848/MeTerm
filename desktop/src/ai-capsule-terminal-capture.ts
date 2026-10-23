@@ -9,6 +9,7 @@ import { loadSettings } from './themes';
 import { injectShellHook } from './ai-tools';
 import { jumpServerConfigMap, sshConfigMap } from './app-state';
 import type { AICapsuleInstance } from './ai-capsule-types';
+import { shouldRecordTypedLine } from './terminal-history-filter';
 
 export function startTerminalCapture(
   instance: AICapsuleInstance,
@@ -48,11 +49,16 @@ export function startTerminalCapture(
 
       if (ch === '\r' || ch === '\n') {
         // Fallback history: when hook is not installed (SSH without injection),
-        // record from lineBuffer.
+        // record from lineBuffer — but not at password prompts, inside
+        // full-screen programs, or for a line that starts with a space.
         const mt = TerminalRegistry.get(instance.sessionId);
-        if (!mt?.shellState.hookInjected && instance.lineBuffer.trim()) {
-          addHistory(instance, instance.lineBuffer.trim(), 'manual');
-          globalCompletionIndex.addHistoryEntry(instance.lineBuffer.trim());
+        if (mt && !mt.shellState.hookInjected && instance.lineBuffer.trim()) {
+          const buffer = mt.terminal.buffer.active;
+          const cursorLine = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true) ?? '';
+          if (shouldRecordTypedLine(instance.lineBuffer, cursorLine, buffer.type === 'alternate')) {
+            addHistory(instance, instance.lineBuffer.trim(), 'manual');
+            globalCompletionIndex.addHistoryEntry(instance.lineBuffer.trim());
+          }
         }
         instance.lineBuffer = '';
       } else if (ch === '\x7f' || ch === '\b') {

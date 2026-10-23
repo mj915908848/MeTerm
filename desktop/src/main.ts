@@ -97,6 +97,7 @@ import {
 import { setupDomEventListeners, setupTauriEventListeners, setupPostReadyEventListeners } from './event-listeners';
 import { initTldr, getTldrCommands } from './tldr-help';
 import { globalCompletionIndex } from './cmd-completion-data';
+import { HISTORY_STORAGE_KEY } from './ai-capsule-types';
 
 // Prevent unhandled promise rejections from crashing the Tauri webview.
 // On macOS, unhandled rejections in WKWebView can silently kill the window.
@@ -277,19 +278,17 @@ async function init(): Promise<void> {
   }
   // Load history into completion index
   if (settings.cmdCompletionEnabled) {
-    try {
-      const raw = localStorage.getItem('meterm-ai-history');
-      if (raw) {
-        const allHistory: Record<string, { command: string }[]> = JSON.parse(raw);
-        const commands: string[] = [];
-        for (const entries of Object.values(allHistory)) {
-          for (const e of entries) {
-            if (e.command) commands.push(e.command);
-          }
-        }
-        globalCompletionIndex.loadHistory(commands);
-      }
-    } catch { /* ignore */ }
+    // History is stored per host under `meterm-ai-history:<host>`.
+    const commands: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key?.startsWith(`${HISTORY_STORAGE_KEY}:`)) continue;
+      try {
+        const entries = JSON.parse(localStorage.getItem(key) ?? '[]') as { command?: string }[];
+        for (const e of entries) if (e?.command) commands.push(e.command);
+      } catch { /* ignore a corrupt entry */ }
+    }
+    if (commands.length) globalCompletionIndex.loadHistory(commands);
   }
 
   // Check if app was launched with a directory path (e.g., from Finder/Explorer context menu)

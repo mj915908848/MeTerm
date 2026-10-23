@@ -13,8 +13,8 @@ import { setupContextMenu } from './drawer-context-menu';
 import { loadSettings, updateSettings } from './themes';
 import { escapeHtml } from './status-bar';
 import { formatSize, formatSpeed, formatElapsed, quotePosixShellArg } from './file-utils';
-import { t } from './i18n';
-import type { TransferRecord } from './file-transfer-history';
+import { t, getLanguage } from './i18n';
+import { transferStatusText, type TransferRecord } from './file-transfer-history';
 import { isEditableFile } from './icons';
 import { openFileInEditor } from './file-editor-bridge';
 import { isImageFile } from './file-editor-md';
@@ -444,7 +444,7 @@ class SidebarManagerClass {
           <button class="btn-sidebar-switch-mode" title="${t('sidebarSwitchView')}">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="2" width="14" height="12" rx="2"/><line x1="1" y1="10.5" x2="15" y2="10.5"/></svg>
           </button>
-          <button class="btn-sidebar-transfers" title="传输列表">
+          <button class="btn-sidebar-transfers" title="${t('transferList')}">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 12V4M1.5 6.5L4 4l2.5 2.5"/><path d="M12 4v8M9.5 9.5L12 12l2.5-2.5"/>
             </svg>
@@ -470,11 +470,11 @@ class SidebarManagerClass {
       <div class="sidebar-transfer-panel" style="display:none">
         <div class="sidebar-transfer-toolbar">
           <div class="sidebar-transfer-filters">
-            <button class="stf-btn" data-filter="upload" title="上传">↑</button>
-            <button class="stf-btn" data-filter="download" title="下载">↓</button>
-            <button class="stf-btn" data-filter="active" title="进行中">●</button>
+            <button class="stf-btn" data-filter="upload" title="${t('transferFilterUpload')}">↑</button>
+            <button class="stf-btn" data-filter="download" title="${t('transferFilterDownload')}">↓</button>
+            <button class="stf-btn" data-filter="active" title="${t('transferFilterActive')}">●</button>
           </div>
-          <button class="stf-clear" title="清空历史">
+          <button class="stf-clear" title="${t('transferClearHistory')}">
             <svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M5 2V1h6v1h4v1H1V2h4zm1 3v8h1V5H6zm3 0v8h1V5H9zM2 4l1 11h10l1-11H2z" fill="currentColor"/></svg>
           </button>
         </div>
@@ -941,11 +941,11 @@ class SidebarManagerClass {
     if (!listEl) return;
     const drawerInst = this.getDrawerInstance(instance.sessionId);
     const fm = drawerInst?.fileManager;
-    if (!fm) { listEl.innerHTML = '<div class="st-empty">未连接</div>'; return; }
+    if (!fm) { listEl.innerHTML = `<div class="st-empty">${t('transferNotConnected')}</div>`; return; }
 
     const records = fm.getTransferRecords(typeFilter, statusFilter);
     if (records.length === 0) {
-      listEl.innerHTML = '<div class="st-empty">暂无传输记录</div>';
+      listEl.innerHTML = `<div class="st-empty">${t('transferEmpty')}</div>`;
       return;
     }
 
@@ -978,22 +978,18 @@ class SidebarManagerClass {
 
   private renderTransferItem(r: TransferRecord, fm: import('./file-manager').FileManager): string {
     const icon = r.type === 'upload' ? '↑' : '↓';
-    const statusMap: Record<string, string> = {
-      pending: '等待中', inprogress: '传输中', completed: '已完成',
-      failed: '失败', paused: '已暂停', cancelled: '已取消',
-    };
 
     let actions = '';
     if (r.status === 'inprogress') {
-      actions = `<button class="st-action" data-action="pause" data-id="${r.id}" title="暂停">⏸</button>`
-        + `<button class="st-action" data-action="cancel" data-id="${r.id}" title="取消">✕</button>`;
+      actions = `<button class="st-action" data-action="pause" data-id="${r.id}" title="${t('transferPause')}">⏸</button>`
+        + `<button class="st-action" data-action="cancel" data-id="${r.id}" title="${t('transferCancel')}">✕</button>`;
     } else if (r.status === 'paused') {
-      actions = `<button class="st-action" data-action="resume" data-id="${r.id}" title="继续">▶</button>`
-        + `<button class="st-action" data-action="cancel" data-id="${r.id}" title="取消">✕</button>`;
+      actions = `<button class="st-action" data-action="resume" data-id="${r.id}" title="${t('transferResume')}">▶</button>`
+        + `<button class="st-action" data-action="cancel" data-id="${r.id}" title="${t('transferCancel')}">✕</button>`;
     } else if (r.status === 'pending') {
-      actions = `<button class="st-action" data-action="cancel" data-id="${r.id}" title="取消">✕</button>`;
+      actions = `<button class="st-action" data-action="cancel" data-id="${r.id}" title="${t('transferCancel')}">✕</button>`;
     } else {
-      actions = `<button class="st-action" data-action="delete" data-id="${r.id}" title="删除记录">✕</button>`;
+      actions = `<button class="st-action" data-action="delete" data-id="${r.id}" title="${t('transferDeleteRecord')}">✕</button>`;
     }
 
     const isActive = r.status === 'inprogress' || r.status === 'paused';
@@ -1018,7 +1014,7 @@ class SidebarManagerClass {
       revealHtml = `<button class="st-action st-reveal" data-action="reveal" data-id="${r.id}" data-save-path="${escapeHtml(r.savePath)}" title="${escapeHtml(r.savePath)}"><svg width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h3.879a1.5 1.5 0 0 1 1.06.44L8.562 3.5H13.5A1.5 1.5 0 0 1 15 5v7.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z" fill="currentColor"/></svg></button>`;
     }
 
-    const date = new Date(r.timestamp).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const date = new Date(r.timestamp).toLocaleString(getLanguage() === 'zh' ? 'zh-CN' : 'en-US', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 
     return `<div class="st-item ${r.status}" data-transfer-id="${r.id}">
       <div class="st-row">
@@ -1029,7 +1025,7 @@ class SidebarManagerClass {
       </div>
       ${progressHtml}
       <div class="st-row st-footer">
-        <span class="st-status ${r.status}">${statusMap[r.status] || r.status}</span>
+        <span class="st-status ${r.status}">${transferStatusText(r.status)}</span>
         ${isActive ? `<span class="st-pct">${Math.round(r.progress)}%</span>` : ''}
         ${meta}
         ${r.serverLabel && r.serverLabel !== 'local' ? `<span class="st-server" title="${escapeHtml(r.serverLabel)}">${escapeHtml(r.serverLabel.replace(/^[^@]*@/, '').replace(/:\d+$/, ''))}</span>` : ''}
