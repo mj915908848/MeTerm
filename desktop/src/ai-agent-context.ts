@@ -336,6 +336,8 @@ export function buildSystemPrompt(
     contextLines?: number;
     /** The run used up its steps: ask for a summary, no more tool calls. */
     stepLimitReached?: boolean;
+    /** Several steps in with no plan: ask for one now. */
+    planOverdue?: boolean;
   },
 ): SystemPrompt {
   const lang = getLanguage();
@@ -373,7 +375,7 @@ export function buildSystemPrompt(
    • A result starting with \`[WARNING: You have called … times …]\` means you are looping: stop, call read_screen to see the real state, and rethink (for an unknown program, web_search how to control it).
    • VERIFY BEFORE SAYING DONE — after the last change, prove it worked with a read-only check (config test, \`systemctl status\`, \`curl -I\`, re-run the command that failed, read back the edited lines) and mention what you checked in the final reply. Never report success you did not observe; if the check fails, keep fixing.
 4. TERMINAL STATE — run_command and watch_terminal results start with \`[status: …]\`, sometimes followed by \`[prompt_info: {…}]\` describing the prompt. Any status other than completed (waiting_password, waiting_confirm, waiting_input, tui, idle_no_signal, timeout) must be resolved before you run another command; the \`[hint]\` in that result says how. Every run_command / type_text / press_keys result ends with a \`[Terminal: …]\` line that authoritatively reports the TUI state — trust it: once it says "TUI just exited", you are back at the shell, so stop sending exit keys. In a full-screen TUI (vim, less, htop, top, k9s, lazygit, fzf, ncurses dialogs, …) look with read_screen; NEVER read_terminal / watch_terminal, which return raw cursor-positioning escapes, not what the user sees.
-5. KEYBOARD — type_text(text) sends literal text verbatim (answers, paths, code, Chinese); press_keys(keys) presses named keys ("Enter", "Tab", "Esc", arrows, "Ctrl-C", …). The usual pattern is type_text(…) then press_keys("Enter"). Use them to answer a prompt or drive a program after a non-completed status — not to run shell commands (use run_command), not to wait (use watch_terminal), and never put "\\n" inside type_text.
+5. KEYBOARD — type_text(text) sends literal text verbatim (answers, paths, code, Chinese); press_keys(keys) presses named keys ("Enter", "Tab", "Esc", arrows, "Ctrl-C", …). The usual pattern is type_text(…) then press_keys("Enter") — when typed text only takes effect on Enter (vim's \`:q\`, an answer to a prompt), send the Enter in the same step; never end your turn or ask the user in between. Use them to answer a prompt or drive a program after a non-completed status — not to run shell commands (use run_command), not to wait (use watch_terminal), and never put "\\n" inside type_text.
 6. SECRETS AND QUESTIONS — NEVER ask for a password, token, API key, passphrase, OTP or key material in chat. On waiting_password, or any prompt for a secret, call wait_for_user_input so the user types it directly into the terminal (type_text / press_keys are refused on password prompts; what the user types never reaches you). When you are blocked on something that is NOT a secret (ambiguous requirements, a choice between alternatives), ask in plain text without calling more tools; the app notifies the user.
 7. FILES — prefer the structured tools to scraping ls/find/grep output: \`list_directory\` (name, kind, size, mtime), \`glob_search\` (by name pattern, e.g. \`**/*.{ts,tsx}\`), \`grep_search\` (content by regex). They work on local and SSH panes and skip .git/node_modules/target/dist.
    • FILE EDITING — read the relevant part with \`read_file\` (200 lines by default; offset/limit for other ranges), then call \`edit_file\` with an exact old_string → new_string replacement. Prefer edit_file over \`sed -i\` / \`perl -pi\`: the user reviews the exact change, and nothing is typed into their terminal. Use \`write_file\` only to create a file or replace ALL of a file you have read in full — rewriting a partly read file deletes the rest. On SSH these go over SFTP as the login user; for files that need root (/etc, system service configs) pass sudo=true instead of using \`sudo sed -i\` or \`sudo tee\`. If the tool reports that sudo needs a password, run_command \`sudo -v\`, call wait_for_user_input, then retry. Validate a changed config (\`nginx -t\`, \`sshd -t\`) before reloading the service.
@@ -381,7 +383,7 @@ export function buildSystemPrompt(
 8. PANES — the pane list below shows every pane of this tab with its number and environment; trust those facts and do not run uname / cat /etc/os-release / date to learn them.
    • Tools act on the pane marked [DEFAULT TARGET] (focused when the user hit Send; it does not follow later focus changes). Pass \`pane: <number>\` to any terminal or transfer tool to use another pane of THIS tab — e.g. run curl in pane 2 while pane 1 runs a dev server. Reading other panes is free; write to them deliberately (the user sees the pane badge on the card).
    • Panes listed in a "System notice — panes closed" section are gone: do not mention them or pass their numbers again. An unknown pane number returns an error; fall back to the default target.
-9. PLANNING — for a request with MORE than ~3 distinct steps (deployments, environment setup, end-to-end debugging, multi-file changes), your FIRST tool call is \`todo_write\` with the plan; keep exactly one item in_progress and mark items completed as soon as they are done. The plan is shown in this context every iteration. Skip it for 1–2 step requests.
+9. PLANNING — for a request with MORE than ~3 distinct steps (deployments, environment setup, end-to-end debugging, health checks or investigations that cover several areas, multi-file changes), your FIRST tool call MUST be \`todo_write\` with the plan; keep exactly one item in_progress and mark items completed as soon as they are done. The plan is shown in this context every iteration. Skip it for 1–2 step requests.
 10. LOOKUPS — web_search (if available) only when the user asks, for an unknown error or command, or for real-time information; not for basic knowledge. command_help (if available) recalls exact syntax and flags from the tldr database.
 11. HOST NOTES — the context may list notes saved for a host. Use them, but check anything you act on (paths and services change). When a task teaches you a durable fact about a host that would save time next time — where an app or its config lives, how it is deployed or restarted, ports, versions, a quirk you had to work around — save it with \`save_host_note\` near the end of the task: one short line per fact (several facts = several lines), never one long paragraph. If a note turned out to be wrong, rewrite the notes with mode "replace". Never save secrets (passwords, tokens, keys), and do not save one-off state such as current load or a temporary error.
 12. SAFETY — you MUST follow these rules without exception:
@@ -405,6 +407,9 @@ export function buildSystemPrompt(
     ? `\nSTEP LIMIT REACHED — this run has used all of its steps. Do NOT call any tool; any tool call will be ignored. Reply to the user now, briefly: what you did, where things stand (what works, what is still broken or unfinished), and the exact next step. Mention they can send "continue" to let you carry on.\n`
     : '';
   const attachmentsSection = attachmentsBlock ? `\n${attachmentsBlock}\n` : '';
+  const planSection = opts?.planOverdue && !opts?.stepLimitReached
+    ? `\nNO PLAN YET — this task has already taken several steps. Before your next command, call todo_write with the plan, marking the steps already done as completed.\n`
+    : '';
 
   // Instructions first, per-turn context last: the instructions are
   // identical on every iteration, so providers with prompt caching can
@@ -418,7 +423,7 @@ ${toolInstructions}
 `;
   return {
     text: `${stable}${topology}
-${hostNotesSection}${attachmentsSection}${todoSection}${stepLimitSection}`,
+${hostNotesSection}${attachmentsSection}${todoSection}${planSection}${stepLimitSection}`,
     stablePrefixChars: stable.length,
   };
 }

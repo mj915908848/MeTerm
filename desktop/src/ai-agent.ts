@@ -59,6 +59,9 @@ import {
 import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit';
 import { emptyReplyNotice, outputTruncatedNotice, stepLimitNotice } from './ai-tool-i18n';
 import { newSelfCheckState, noteToolCall, selfCheckNote } from './ai-self-check';
+
+/** Tool rounds after which a run without a plan is asked to write one. */
+const PLAN_OVERDUE_AFTER_ROUNDS = 3;
 import { parseToolArguments } from './ai-provider-wire';
 import { addUsage, type TokenUsage } from './ai-token-usage';
 import { readShellInputState } from './ai-tools-command';
@@ -874,6 +877,9 @@ export class ToolAgent {
         todoBlock: this.todoState.renderForSystemPrompt(),
         attachmentsBlock: this.renderAttachmentsBlock(),
         contextLines,
+        // Models skip todo_write on tasks that look like a series of
+        // lookups; after three tool rounds without a plan, ask for one.
+        planOverdue: hasTools && iteration > PLAN_OVERDUE_AFTER_ROUNDS && !this.todoState.renderForSystemPrompt(),
       });
 
       this.lastSystemPromptTokens = estimateTextTokens(systemPrompt.text);
