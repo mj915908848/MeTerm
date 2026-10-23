@@ -853,6 +853,54 @@ export interface Translations {
   editorSave: string;
   editorCloseTab: string;
   editorFormat: string;
+  terminalSearchPlaceholder: string;
+  terminalSearchCase: string;
+  terminalSearchRegex: string;
+  terminalSearchPrev: string;
+  terminalSearchNext: string;
+  terminalSearchClose: string;
+  terminalSearchNoResults: string;
+  terminalSearchCount: string;
+  terminalSearchCountMany: string;
+  contextMenuFind: string;
+  contextMenuSnippets: string;
+  broadcastInput: string;
+  broadcastInputBadge: string;
+  settingsGroupSnippets: string;
+  snippetPaletteSearch: string;
+  snippetPaletteHint: string;
+  snippetPaletteHintMac: string;
+  snippetManage: string;
+  snippetEmpty: string;
+  snippetNoMatch: string;
+  snippetInsertOnlyTag: string;
+  snippetNamePlaceholder: string;
+  snippetCommandPlaceholder: string;
+  snippetRunOnSend: string;
+  snippetCancel: string;
+  snippetSave: string;
+  snippetSettingsHint: string;
+  snippetSettingsHintMac: string;
+  snippetMoveUp: string;
+  snippetEdit: string;
+  snippetDelete: string;
+  snippetDeleteConfirm: string;
+  snippetAdd: string;
+  terminalScrollback: string;
+  terminalScrollbackHint: string;
+  terminalCursorStyle: string;
+  terminalCursorBlock: string;
+  terminalCursorBar: string;
+  terminalCursorUnderline: string;
+  terminalCursorBlink: string;
+  copyOnSelect: string;
+  copyOnSelectHint: string;
+  terminalRightClick: string;
+  terminalRightClickMenu: string;
+  terminalRightClickPaste: string;
+  terminalRightClickHint: string;
+  macOptionIsMeta: string;
+  macOptionIsMetaHint: string;
 }
 
 const translations: Record<Language, Translations> = {
@@ -1706,6 +1754,54 @@ const translations: Record<Language, Translations> = {
     editorSave: 'Save',
     editorCloseTab: 'Close Tab',
     editorFormat: 'Format',
+    terminalSearchPlaceholder: 'Find',
+    terminalSearchCase: 'Match case',
+    terminalSearchRegex: 'Regular expression',
+    terminalSearchPrev: 'Previous match (Shift+Enter)',
+    terminalSearchNext: 'Next match (Enter)',
+    terminalSearchClose: 'Close (Esc)',
+    terminalSearchNoResults: 'No results',
+    terminalSearchCount: '{index}/{total}',
+    terminalSearchCountMany: '{total}+ matches',
+    contextMenuFind: 'Find…',
+    contextMenuSnippets: 'Snippets…',
+    broadcastInput: 'Send Input to All Panes',
+    broadcastInputBadge: 'Broadcast',
+    settingsGroupSnippets: 'Snippets',
+    snippetPaletteSearch: 'Search snippets',
+    snippetPaletteHint: 'Enter send · Alt+Enter insert without running · Esc close',
+    snippetPaletteHintMac: 'Enter send · ⌥Enter insert without running · Esc close',
+    snippetManage: 'Manage…',
+    snippetEmpty: 'No snippets yet. Add them under Settings › Terminal › Snippets.',
+    snippetNoMatch: 'No matching snippet',
+    snippetInsertOnlyTag: 'insert only',
+    snippetNamePlaceholder: 'Name (optional)',
+    snippetCommandPlaceholder: 'Command — several lines are sent as one paste',
+    snippetRunOnSend: 'Run (press Enter)',
+    snippetCancel: 'Cancel',
+    snippetSave: 'Save',
+    snippetSettingsHint: 'Send with Ctrl+Shift+S or the terminal right-click menu. With broadcast on, a snippet goes to every pane of the tab.',
+    snippetSettingsHintMac: 'Send with ⌘⇧S or the terminal right-click menu. With broadcast on, a snippet goes to every pane of the tab.',
+    snippetMoveUp: 'Move up',
+    snippetEdit: 'Edit',
+    snippetDelete: 'Delete',
+    snippetDeleteConfirm: 'Click again to delete',
+    snippetAdd: 'Add Snippet',
+    terminalScrollback: 'Scrollback lines',
+    terminalScrollbackHint: 'Lines kept above the screen in each terminal; more lines use more memory',
+    terminalCursorStyle: 'Cursor style',
+    terminalCursorBlock: 'Block',
+    terminalCursorBar: 'Bar',
+    terminalCursorUnderline: 'Underline',
+    terminalCursorBlink: 'Blinking cursor',
+    copyOnSelect: 'Copy on select',
+    copyOnSelectHint: 'Text selected with the mouse goes to the clipboard right away',
+    terminalRightClick: 'Right click',
+    terminalRightClickMenu: 'Show menu',
+    terminalRightClickPaste: 'Copy selection / paste',
+    terminalRightClickHint: 'Copy / paste: copies the selection if there is one, otherwise pastes. Shift+right-click still opens the menu.',
+    macOptionIsMeta: 'Use Option as Meta key',
+    macOptionIsMetaHint: 'Option+B / Option+F jump by word in the shell; Option can no longer type special characters',
   },
   zh: {
     settingsGroupGeneral: '通用',
@@ -2557,6 +2653,54 @@ const translations: Record<Language, Translations> = {
     editorSave: '保存',
     editorCloseTab: '关闭标签',
     editorFormat: '格式化',
+    terminalSearchPlaceholder: '查找',
+    terminalSearchCase: '区分大小写',
+    terminalSearchRegex: '正则表达式',
+    terminalSearchPrev: '上一个 (Shift+Enter)',
+    terminalSearchNext: '下一个 (Enter)',
+    terminalSearchClose: '关闭 (Esc)',
+    terminalSearchNoResults: '无结果',
+    terminalSearchCount: '{index}/{total}',
+    terminalSearchCountMany: '{total}+ 处',
+    contextMenuFind: '查找…',
+    contextMenuSnippets: '命令片段…',
+    broadcastInput: '同步输入到所有窗格',
+    broadcastInputBadge: '同步输入',
+    settingsGroupSnippets: '命令片段',
+    snippetPaletteSearch: '搜索命令片段',
+    snippetPaletteHint: 'Enter 发送 · Alt+Enter 只插入不执行 · Esc 关闭',
+    snippetPaletteHintMac: 'Enter 发送 · ⌥Enter 只插入不执行 · Esc 关闭',
+    snippetManage: '管理…',
+    snippetEmpty: '还没有命令片段，可以在 设置 › 终端 › 命令片段 里添加。',
+    snippetNoMatch: '没有匹配的命令片段',
+    snippetInsertOnlyTag: '只插入',
+    snippetNamePlaceholder: '名称（可选）',
+    snippetCommandPlaceholder: '命令，多行会作为一次粘贴发送',
+    snippetRunOnSend: '发送后直接执行',
+    snippetCancel: '取消',
+    snippetSave: '保存',
+    snippetSettingsHint: '用 Ctrl+Shift+S 或终端右键菜单发送。开启同步输入时，会发到当前标签的所有窗格。',
+    snippetSettingsHintMac: '用 ⌘⇧S 或终端右键菜单发送。开启同步输入时，会发到当前标签的所有窗格。',
+    snippetMoveUp: '上移',
+    snippetEdit: '编辑',
+    snippetDelete: '删除',
+    snippetDeleteConfirm: '再点一次删除',
+    snippetAdd: '添加命令片段',
+    terminalScrollback: '回滚行数',
+    terminalScrollbackHint: '每个终端保留的历史行数，越多越占内存',
+    terminalCursorStyle: '光标样式',
+    terminalCursorBlock: '方块',
+    terminalCursorBar: '竖线',
+    terminalCursorUnderline: '下划线',
+    terminalCursorBlink: '光标闪烁',
+    copyOnSelect: '选中即复制',
+    copyOnSelectHint: '用鼠标选中的文字立即复制到剪贴板',
+    terminalRightClick: '右键',
+    terminalRightClickMenu: '显示菜单',
+    terminalRightClickPaste: '复制选中 / 粘贴',
+    terminalRightClickHint: '复制 / 粘贴：有选中内容时复制，否则粘贴。按住 Shift 右键仍显示菜单。',
+    macOptionIsMeta: 'Option 键作为 Meta 键',
+    macOptionIsMetaHint: '可用 Option+B / Option+F 按词移动；开启后 Option 无法再输入特殊字符',
   },
 };
 

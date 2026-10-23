@@ -12,6 +12,25 @@ import { sendToTerminal } from './terminal-transport';
 import type { ManagedTerminal } from './terminal-types';
 import { registerWebglContextLossFallback } from './terminal-render-recovery';
 
+const SCROLLBACK_MIN = 1000;
+const SCROLLBACK_MAX = 100_000;
+
+/** Terminal options that follow Settings › Terminal › Behavior. */
+export function terminalBehaviorOptions(settings: AppSettings | null | undefined): {
+  scrollback: number;
+  cursorStyle: 'block' | 'bar' | 'underline';
+  cursorBlink: boolean;
+  macOptionIsMeta: boolean;
+} {
+  const lines = Number(settings?.terminalScrollback) || 5000;
+  return {
+    scrollback: Math.max(SCROLLBACK_MIN, Math.min(SCROLLBACK_MAX, Math.round(lines))),
+    cursorStyle: settings?.terminalCursorStyle ?? 'block',
+    cursorBlink: settings?.terminalCursorBlink ?? true,
+    macOptionIsMeta: isMacPlatform && !!settings?.macOptionIsMeta,
+  };
+}
+
 export function applySettingsToTerminal(mt: ManagedTerminal, settings: AppSettings): void {
   const theme = getTheme(settings.theme);
   const fontFamily = getFontFamily(settings.fontFamily, settings.enableNerdFont, settings.fontWeight, settings.cjkFontFamily);
@@ -58,6 +77,7 @@ export function applySettingsToTerminal(mt: ManagedTerminal, settings: AppSettin
   mt.terminal.options.fontFamily = fontFamily;
   mt.terminal.options.fontWeight = fontWeight;
   mt.terminal.options.fontWeightBold = 'bold';
+  Object.assign(mt.terminal.options, terminalBehaviorOptions(settings));
 
   // Manage WebGL addon based on transparency
   if (needsTransparency && mt.webglAddon) {

@@ -32,6 +32,8 @@ export const SETTINGS_PANEL_KEYS: ReadonlySet<string> = new Set([
   'searxngUrl', 'searxngUsername', 'searxngEnabled', 'fileLinkSkipConfirm',
   'enableVibrancy', 'tldrEnabled', 'cmdCompletionEnabled', 'shellHookInjection',
   'pipScale', 'pipScaleByScreen', 'autoNewSession', 'nbCustomColors', 'fileOpenPreference',
+  'terminalScrollback', 'terminalCursorStyle', 'terminalCursorBlink', 'copyOnSelect', 'terminalRightClick',
+  'macOptionIsMeta', 'commandSnippets',
 ]);
 
 /** Top-level keys whose values differ between two settings snapshots. */

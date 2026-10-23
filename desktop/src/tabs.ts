@@ -47,6 +47,8 @@ export interface Tab {
    * order changes in the binary tree.
    */
   paneNumbers: Map<string, number>;
+  /** Keyboard input typed into any pane goes to every pane of this tab. */
+  broadcastInput?: boolean;
 }
 
 let tabIdCounter = 0;

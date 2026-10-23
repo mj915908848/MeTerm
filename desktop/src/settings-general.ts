@@ -10,6 +10,8 @@ import { createSettingsSelect } from './custom-select';
 import { escapeHtml } from './status-bar';
 import { createGroup, createPage, switchRow, SETTINGS_ICONS, type SettingsPage } from './settings-layout';
 import { createCommandAssistRows } from './settings-command-assist';
+import { createTerminalInputRows } from './settings-terminal-input';
+import { createSnippetRows } from './settings-snippets';
 // emit removed — palette now syncs through update() → saveSettings → settings-changed
 
 /**
@@ -810,10 +812,12 @@ export function createGeneralPages(
       ]),
       createGroup(t('settingsGroupShell'), [shellSection, encodingSection]),
       createGroup(t('settingsGroupTerminalBehavior'), [
+        ...createTerminalInputRows(current, update),
         check(rememberGroup, 'terminal-notifications-toggle', t('terminalNotificationsHint')),
         check(rememberGroup, 'file-link-confirm-toggle', t('fileLinkConfirmHint')),
       ]),
       createGroup(t('settingsGroupCommandAssist'), createCommandAssistRows(current, update)),
+      createGroup(t('settingsGroupSnippets'), createSnippetRows(current, update)),
     ]),
     page('files', t('settingsPageFileManager'), SETTINGS_ICONS.files, [
       createGroup(t('settingsGroupFmDisplay'), [fmModeSection, drawerLayoutRow, fileManagerFontSection]),

@@ -10,6 +10,7 @@
  * - getActiveSessionProgress()
  */
 
+import { syncBroadcastIndicator } from './terminal-broadcast';
 import { TabManager } from './tabs';
 import { TerminalRegistry } from './terminal';
 import { DrawerManager } from './drawer';
@@ -133,6 +134,7 @@ export async function activateTab(tabId: string): Promise<void> {
         TerminalRegistry.mountToPane(leaf.sessionId, paneEl);
       }
     }
+    syncBroadcastIndicator();
   } else {
     // Single pane: mount terminal directly into terminal area
     const leaf = leaves[0];
