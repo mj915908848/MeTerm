@@ -233,3 +233,26 @@ test('multimodal failures retain live unprefixed text format', () => {
     { type: 'text', text: 'failed capture' }, { type: 'image', mediaType: 'image/png', data: 'AAAA' },
   ]);
 });
+
+test('a reply shown before the self-check or a user cut-in is kept', () => {
+  const reply = (content: string, reasoning = ''): ConvEntry => ({ type: 'thinking', content, reasoning, timestamp: tick() });
+  const selfChecked = buildRestoredMessages([
+    user('检查磁盘'),
+    reply('磁盘用了 40%，没有问题。'),
+    thinking('确认一下'),
+    assistant('已核对，结论不变。'),
+  ]);
+  assert.deepEqual(selfChecked.map(m => m.role), ['user', 'assistant']);
+  assert.equal(selfChecked[1].content, '磁盘用了 40%，没有问题。\n\n已核对，结论不变。');
+  assert.equal(selfChecked[1].reasoning_content, '确认一下');
+
+  const cutIn = buildRestoredMessages([
+    user('看日志'),
+    reply('先看 nginx 的错误日志。', 'r1'),
+    user('顺便看下 php-fpm'),
+    assistant('好的。'),
+  ]);
+  assert.deepEqual(cutIn.map(m => m.role), ['user', 'assistant', 'user', 'assistant']);
+  assert.equal(cutIn[1].content, '先看 nginx 的错误日志。');
+  assert.equal(cutIn[1].reasoning_content, 'r1');
+});

@@ -20,6 +20,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { resolveLocalToolPath, ToolHandler } from './ai-tools-core';
 import { executeViaTerminal } from './ai-tools-shell';
+import { readShellInputState } from './ai-tools-command';
 import { hasSensitivePathComponent } from './ai-permission-rules';
 import { quoteRemotePath, resolveSftpPath } from './ai-remote-path';
 import {
@@ -131,6 +132,12 @@ async function withSudoTemp<T>(
   opts: { stage: boolean; commit: boolean; mkdirs?: boolean },
   work: (temp: string) => Promise<T>,
 ): Promise<T | string> {
+  // The sudo steps are typed into the pane's shell: a full-screen program
+  // or a waiting question would receive them as input instead.
+  const input = readShellInputState(ctx.sessionId).kind;
+  if (input !== 'shell') {
+    return `Error: sudo=true needs the shell prompt, but ${input === 'tui' ? 'a full-screen program' : 'a program waiting for input'} is running in the pane. Ask the user to exit it first.`;
+  }
   const cmd = opts.stage ? sudoStageCommand(quoteRemotePath(path)) : tempFileCommand();
   const out = await executeViaTerminal(ctx.sessionId, cmd, 20, ctx.shellType);
   const temp = parseTempPath(out);

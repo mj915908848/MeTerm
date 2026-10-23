@@ -16,6 +16,7 @@ import type {
 import { contentToText } from './ai-provider';
 import { COMPACT_SYSTEM_PROMPT, findCompactSplit, clipSummaryEvidence } from './ai-agent-compact-policy';
 import { abortableOperation } from './ai-abortable-operation';
+import type { TokenUsage } from './ai-token-usage';
 
 /** Number of most recent messages to keep verbatim. Everything before
  *  this window gets summarized into a single synthetic user message.
@@ -42,11 +43,13 @@ const COMPACT_MAX_OUTPUT = 2000;
  * @param messages  The full conversation (without system prompt).
  * @param provider  The provider to call for the summary (reuse current).
  * @param signal    Optional abort signal — summarization respects it.
+ * @param onUsage   Receives the tokens the summary call reported, if any.
  */
 export async function summarizeOlderMessages(
   messages: ChatMessage[],
   provider: AIProvider,
   signal?: AbortSignal,
+  onUsage?: (usage: TokenUsage) => void,
 ): Promise<ChatMessage[] | null> {
   if (messages.length < COMPACT_MIN_MESSAGES) return null;
 
@@ -78,7 +81,7 @@ export async function summarizeOlderMessages(
 
   let summary: string;
   try {
-    summary = await callLLMOnce(provider, summaryMessages, signal);
+    summary = await callLLMOnce(provider, summaryMessages, signal, onUsage);
   } catch {
     return null;
   }
@@ -137,6 +140,7 @@ async function callLLMOnce(
   provider: AIProvider,
   messages: ChatMessage[],
   signal?: AbortSignal,
+  onUsage?: (usage: TokenUsage) => void,
 ): Promise<string> {
   const controller = new AbortController();
   const onAbort = () => controller.abort();
@@ -151,9 +155,10 @@ async function callLLMOnce(
 
     const callbacks: StreamCallbacks = {
       onToken: (t) => { if (!controller.signal.aborted) collected += t; },
-      onComplete: (full) => {
+      onComplete: (full, _toolCalls, _reasoning, info) => {
         if (settled) return;
         settled = true;
+        if (info?.usage) onUsage?.(info.usage);
         resolve(full || collected);
       },
       onError: (err) => {
