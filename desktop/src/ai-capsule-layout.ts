@@ -221,7 +221,7 @@ export function createSideInputArea(
   // tries the clipboard.
   const attachBtn = document.createElement('button');
   attachBtn.className = 'ai-side-btn ai-side-btn-attach';
-  attachBtn.title = 'Attach image (left click: pick file · right click: paste from clipboard)';
+  attachBtn.title = t('aiAttachBtnTitle');
   // Reuse the same SVG used by the bottom-mode AI bar so the visual
   // weight matches.  Imported lazily to avoid a circular dep at the
   // module-loading layer.
@@ -233,7 +233,7 @@ export function createSideInputArea(
     const target = callbacks.resolveCurrentInstance(instance);
     const fromClipboard = await m.triggerClipboardImagePaste(target);
     if (fromClipboard) return;
-    await m.pickImageFiles(target);
+    await m.pickAnyAttachmentFiles(target);
   });
   attachBtn.addEventListener('contextmenu', async (e) => {
     e.preventDefault();

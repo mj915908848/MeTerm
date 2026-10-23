@@ -16,7 +16,7 @@
 // first real message is appended (see removeEmptyState).
 
 import { invoke } from '@tauri-apps/api/core';
-import { getLanguage } from './i18n';
+import { getLanguage, t } from './i18n';
 import { gatherContext } from './ai-agent-context';
 import { TerminalRegistry } from './terminal';
 import type { AICapsuleInstance } from './ai-capsule-types';
@@ -521,7 +521,7 @@ function buildContextHeader(
   if (ctx.isSSH) {
     parts.push(`<span class="ai-empty-ctx-ico" aria-hidden="true">🌐</span><span>${escapeHtml(ctx.serverInfo || 'ssh')}</span>`);
   } else {
-    parts.push(`<span class="ai-empty-ctx-ico" aria-hidden="true">📍</span><span>Local</span>`);
+    parts.push(`<span class="ai-empty-ctx-ico" aria-hidden="true">📍</span><span>${escapeHtml(t('aiChatHostLocal'))}</span>`);
   }
 
   // CWD

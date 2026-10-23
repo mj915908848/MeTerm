@@ -2,7 +2,7 @@
 // Create / open / minimize / close the chat panel, plus conversation
 // restoration and "send to LLM" logic. Extracted from ai-capsule.ts.
 
-import { t } from './i18n';
+import { t, tf } from './i18n';
 import { loadSettings } from './themes';
 import { TerminalRegistry } from './terminal';
 import { createOverlayScrollbar } from './overlay-scrollbar';
@@ -598,8 +598,8 @@ export function restoreConversation(
         if (msg.paneNumber && msg.paneNumber > 0) {
           const badge = document.createElement('span');
           badge.className = 'ai-msg-pane-badge';
-          badge.textContent = `Pane ${msg.paneNumber}`;
-          badge.title = `Sent from Pane ${msg.paneNumber}`;
+          badge.textContent = tf('aiPaneBadge', { n: msg.paneNumber });
+          badge.title = tf('aiPaneSentFrom', { n: msg.paneNumber });
           el.appendChild(badge);
         }
         const c = document.createElement('div');

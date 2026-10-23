@@ -1131,7 +1131,7 @@ class AICapsuleManagerClass {
     if (this._floatingBtn) return;
     const btn = document.createElement('button');
     btn.className = 'ai-bar-floating-show';
-    btn.title = 'Show AI Bar';
+    btn.title = t('aiBarShow');
     btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>`;
     btn.style.display = 'none';
     btn.addEventListener('click', () => this.showBar());

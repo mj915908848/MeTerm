@@ -12,15 +12,19 @@ import type { AttachedImage, AICapsuleInstance } from './ai-capsule-types';
 import { openImageLightbox } from './ai-image-lightbox';
 import {
   ALLOWED_IMAGE_MIMES,
+  IMAGE_BUDGET_BYTES,
   MAX_IMAGE_RAW_BYTES,
   MAX_IMAGES,
   MIN_LONGEST_EDGE,
   base64DecodedBytes,
   evaluateAdmission,
+  formatBytes,
   planShrink,
   sumEncodedBytes,
 } from './ai-image-budget';
+import type { AdmissionReason } from './ai-image-budget';
 import { showToast } from './notify';
+import { t, tf } from './i18n';
 import {
   attachFileToInstance,
   pickAttachmentFiles as pickAttachmentFilesImpl,
@@ -205,7 +209,7 @@ export async function pickImageFiles(
       multiple: true,
       filters: [
         {
-          name: 'Images',
+          name: t('aiAttachImageFilter'),
           extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
         },
       ],
@@ -234,10 +238,8 @@ export async function pickImageFiles(
         // the file is over the cap (or unreadable). Say so instead of
         // dropping it silently, which is what used to happen.
         showToast({
-          title: 'Image not attached',
-          body: `"${fileName}" could not be read — the limit is ${Math.round(
-            MAX_IMAGE_RAW_BYTES / (1024 * 1024),
-          )} MB per image.`,
+          title: t('aiAttachImageRejected'),
+          body: tf('aiAttachImageReadFailed', { name: fileName, limit: formatBytes(MAX_IMAGE_RAW_BYTES) }),
         });
         continue;
       }
@@ -306,7 +308,7 @@ interface ImageCandidate {
 }
 
 function reportRejected(message: string): false {
-  showToast({ title: 'Image not attached', body: message });
+  showToast({ title: t('aiAttachImageRejected'), body: message });
   return false;
 }
 
@@ -327,7 +329,7 @@ export async function attachBlobToInstance(
   label?: string,
 ): Promise<boolean> {
   if (!ALLOWED_MIMES.has(blob.type)) {
-    return reportRejected('Unsupported image format — PNG, JPEG, WebP or GIF only.');
+    return reportRejected(t('aiAttachImageUnsupported'));
   }
   const buf = await blob.arrayBuffer();
   return admitImage(instance, {
@@ -368,12 +370,31 @@ async function admitImage(
       pushCandidate(instance, shrunk);
       return true;
     }
-    return reportRejected(
-      `Still too large at ${MIN_LONGEST_EDGE}px — resize it further, or attach fewer images.`,
-    );
+    return reportRejected(tf('aiAttachImageStillTooLarge', { px: MIN_LONGEST_EDGE }));
   }
 
-  return reportRejected(verdict.message);
+  return reportRejected(rejectionMessage(verdict.reason, cand, queuedEncodedBytes));
+}
+
+/** Localized text for a budget rejection (the budget module's own message is English-only). */
+function rejectionMessage(
+  reason: AdmissionReason,
+  cand: ImageCandidate,
+  queuedEncodedBytes: number,
+): string {
+  switch (reason) {
+    case 'too-many':
+      return tf('aiAttachImageTooMany', { n: MAX_IMAGES });
+    case 'unsupported-type':
+      return t('aiAttachImageUnsupported');
+    case 'image-too-large':
+      return tf('aiAttachImageTooLarge', { size: formatBytes(cand.rawBytes), limit: formatBytes(MAX_IMAGE_RAW_BYTES) });
+    case 'turn-too-large':
+      return tf('aiAttachImagesTooLarge', {
+        size: formatBytes(queuedEncodedBytes + cand.data.length),
+        limit: formatBytes(IMAGE_BUDGET_BYTES),
+      });
+  }
 }
 
 function pushCandidate(instance: AICapsuleInstance, cand: ImageCandidate): void {
@@ -581,11 +602,11 @@ function renderCompactChips(strip: HTMLDivElement, instance: AICapsuleInstance):
   instance.pendingImages.forEach((img, idx) => {
     const chip = document.createElement('div');
     chip.className = 'ai-pending-image-chip';
-    chip.title = img.label ?? `image ${idx + 1}`;
+    chip.title = img.label ?? tf('aiAttachImageChip', { n: idx + 1 });
 
     const label = document.createElement('span');
     label.className = 'ai-pending-image-chip-label';
-    label.textContent = `image${idx + 1}`;
+    label.textContent = tf('aiAttachImageChip', { n: idx + 1 });
     label.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -597,7 +618,7 @@ function renderCompactChips(strip: HTMLDivElement, instance: AICapsuleInstance):
     close.className = 'ai-pending-image-chip-remove';
     close.type = 'button';
     close.innerHTML = '&times;';
-    close.title = 'Remove image';
+    close.title = t('aiAttachRemoveImage');
     close.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
@@ -618,7 +639,7 @@ function renderThumbnailStrip(strip: HTMLDivElement, instance: AICapsuleInstance
   instance.pendingImages.forEach((img, idx) => {
     const thumb = document.createElement('div');
     thumb.className = 'ai-pending-image-thumb';
-    thumb.title = img.label ?? `image ${idx + 1}`;
+    thumb.title = img.label ?? tf('aiAttachImageChip', { n: idx + 1 });
 
     const el = document.createElement('img');
     el.src = `data:${img.mediaType};base64,${img.data}`;
@@ -636,7 +657,7 @@ function renderThumbnailStrip(strip: HTMLDivElement, instance: AICapsuleInstance
     close.className = 'ai-pending-image-remove';
     close.type = 'button';
     close.innerHTML = '&times;';
-    close.title = 'Remove image';
+    close.title = t('aiAttachRemoveImage');
     close.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();

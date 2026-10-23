@@ -1,4 +1,5 @@
 import { escapeHtml } from './status-bar';
+import { t, tf } from './i18n';
 import { toolIcon, statusIcon, spinnerIcon, approveIcon, rejectIcon, editIcon, TOOL_COLORS } from './ai-icons';
 import type { AICapsuleInstance, ConvEntry } from './ai-capsule-types';
 import { notifyAgentWaiting } from './ai-notifications';
@@ -92,7 +93,7 @@ export function buildToolCard(msg: Extract<ConvEntry, { type: 'tool_call' }>): H
   // Phase 2 pane badge (restore path) — use the stored paneNumber so
   // the card renders the same way it did at live run time.
   const badgeHtml = msg.paneNumber && msg.paneNumber > 0
-    ? `<span class="ai-tool-pane-badge" title="Pane ${msg.paneNumber}">Pane ${msg.paneNumber}</span>`
+    ? `<span class="ai-tool-pane-badge" title="${escapeHtml(tf('aiPaneBadge', { n: msg.paneNumber }))}">${escapeHtml(tf('aiPaneBadge', { n: msg.paneNumber }))}</span>`
     : '';
   header.innerHTML = `
     <span class="ai-tool-icon">${toolIcon(msg.toolName, 14)}</span>
@@ -180,7 +181,8 @@ function decidePaneBadge(
 
 function paneBadgeSpan(paneNumber: number, isCrossPane: boolean): string {
   const cls = isCrossPane ? 'ai-tool-pane-badge cross' : 'ai-tool-pane-badge';
-  return `<span class="${cls}" title="${isCrossPane ? 'Cross-pane call' : 'Default target pane'}">Pane ${paneNumber}</span>`;
+  const title = isCrossPane ? t('aiPaneCrossCall') : t('aiPaneDefaultTarget');
+  return `<span class="${cls}" title="${escapeHtml(title)}">${escapeHtml(tf('aiPaneBadge', { n: paneNumber }))}</span>`;
 }
 
 /** Render an inline tool-call card in the chat panel. */
@@ -285,9 +287,9 @@ export function appendToolCallCard(
       progressWrap.className = 'ai-tool-transfer-progress';
       progressWrap.innerHTML = `
         <div class="ai-tool-transfer-bar"><div class="ai-tool-transfer-fill"></div></div>
-        <span class="ai-tool-transfer-label">waiting…</span>
+        <span class="ai-tool-transfer-label">${escapeHtml(t('aiTransferWaiting'))}</span>
         <div class="ai-tool-transfer-controls">
-          <button class="ai-transfer-btn ai-transfer-cancel" type="button" title="Cancel transfer">&times;</button>
+          <button class="ai-transfer-btn ai-transfer-cancel" type="button" title="${escapeHtml(t('aiTransferCancel'))}">&times;</button>
         </div>
       `;
       card.appendChild(progressWrap);
@@ -460,7 +462,7 @@ function renderWaitForUserInputCard(
 ): void {
   card.classList.add('ai-wait-card');
 
-  const reason = String(args.reason ?? 'User input required');
+  const reason = String(args.reason ?? t('aiWaitDefaultReason'));
   const timeoutSec = Number(args.timeout ?? 300);
 
   const header = document.createElement('div');
@@ -659,7 +661,7 @@ export function updateToolResultCard(
       const fill = progressWrap.querySelector('.ai-tool-transfer-fill') as HTMLElement;
       const label = progressWrap.querySelector('.ai-tool-transfer-label') as HTMLElement;
       if (fill) fill.style.width = '100%';
-      if (label) label.textContent = 'completed';
+      if (label) label.textContent = t('aiTransferCompleted');
     }
   }
 
@@ -767,7 +769,7 @@ function editPreviewLines(oldText: string, newText: string): string {
 
 function clipForPreview(text: string, max: number): string {
   if (text.length <= max) return text;
-  return `${text.slice(0, max)}\n… (+${text.length - max} chars)`;
+  return `${text.slice(0, max)}\n${tf('aiConfirmMoreChars', { n: text.length - max })}`;
 }
 
 export function showConfirmCard(
@@ -813,7 +815,7 @@ export function showConfirmCard(
         + `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(content, CONFIRM_CONTENT_PREVIEW_CHARS))}</pre>`;
     } else if (toolName === 'edit_file' && args.path) {
       const diff = editPreviewLines(String(args.old_string ?? ''), String(args.new_string ?? ''));
-      const all = args.replace_all === true ? ' (all occurrences)' : '';
+      const all = args.replace_all === true ? t('aiConfirmAllOccurrences') : '';
       preview.innerHTML = `<code>${escapeHtml(String(args.path))}${all}</code>`
         + `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(diff, CONFIRM_CONTENT_PREVIEW_CHARS))}</pre>`;
     } else {
@@ -826,15 +828,15 @@ export function showConfirmCard(
 
     const approveBtn = document.createElement('button');
     approveBtn.className = 'ai-confirm-btn ai-confirm-approve';
-    approveBtn.innerHTML = `${approveIcon(12)} <span>Allow</span>`;
+    approveBtn.innerHTML = `${approveIcon(12)} <span>${escapeHtml(t('aiPermissionActionAllow'))}</span>`;
 
     const rejectBtn = document.createElement('button');
     rejectBtn.className = 'ai-confirm-btn ai-confirm-reject';
-    rejectBtn.innerHTML = `${rejectIcon(12)} <span>Reject</span>`;
+    rejectBtn.innerHTML = `${rejectIcon(12)} <span>${escapeHtml(t('aiConfirmReject'))}</span>`;
 
     const editBtn = document.createElement('button');
     editBtn.className = 'ai-confirm-btn ai-confirm-edit';
-    editBtn.innerHTML = `${editIcon(12)} <span>Edit</span>`;
+    editBtn.innerHTML = `${editIcon(12)} <span>${escapeHtml(t('aiConfirmEdit'))}</span>`;
 
     buttons.appendChild(approveBtn);
     buttons.appendChild(rejectBtn);
@@ -926,7 +928,7 @@ export function showConfirmCard(
       editInput.spellcheck = false;
       const confirmEditBtn = document.createElement('button');
       confirmEditBtn.className = 'ai-confirm-btn ai-confirm-approve';
-      confirmEditBtn.innerHTML = `${approveIcon(12)} <span>Run</span>`;
+      confirmEditBtn.innerHTML = `${approveIcon(12)} <span>${escapeHtml(t('aiRunCommand'))}</span>`;
       editorDiv.appendChild(editInput);
       editorDiv.appendChild(confirmEditBtn);
       preview.replaceWith(editorDiv);

@@ -23,6 +23,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AttachedFile, AICapsuleInstance } from './ai-capsule-types';
 import { MAX_IMAGE_RAW_BYTES } from './ai-image-budget';
 import { showToast } from './notify';
+import { t, tf } from './i18n';
 
 /** Hard upper bound for drag-dropped files. We need to hold the
  *  entire file in JS memory as a number[] for the Tauri IPC call,
@@ -67,7 +68,7 @@ interface RustAttachmentInfo {
  */
 async function saveBlobAsAttachment(blob: Blob, name: string): Promise<RustAttachmentInfo> {
   if (blob.size > MAX_ATTACHMENT_BYTES) {
-    throw new Error(`file is ${fmtBytes(blob.size)}, exceeds the ${fmtBytes(MAX_ATTACHMENT_BYTES)} attachment cap`);
+    throw new Error(tf('aiAttachCapError', { size: fmtBytes(blob.size), limit: fmtBytes(MAX_ATTACHMENT_BYTES) }));
   }
   const buf = await blob.arrayBuffer();
   // Raw IPC body: the bytes go across as-is instead of as a JSON number
@@ -94,23 +95,23 @@ export async function attachFileToInstance(
   // ── Pending count cap ──
   if (instance.pendingAttachments.length >= MAX_ATTACHMENTS) {
     showToast({
-      title: 'Attachment limit',
-      body: `Maximum ${MAX_ATTACHMENTS} files can be queued at once. Remove an existing attachment first.`,
+      title: t('aiAttachLimitTitle'),
+      body: tf('aiAttachLimitBody', { n: MAX_ATTACHMENTS }),
     });
     return false;
   }
 
   // ── Empty file ──
   if (file.size === 0) {
-    showToast({ title: 'Empty file', body: `"${name}" is empty (0 bytes) and cannot be attached.` });
+    showToast({ title: t('aiAttachEmptyTitle'), body: tf('aiAttachEmptyBody', { name }) });
     return false;
   }
 
   // ── Size cap ──
   if (file.size > MAX_ATTACHMENT_BYTES) {
     showToast({
-      title: 'File too large',
-      body: `"${name}" is ${fmtBytes(file.size)}, exceeds the ${fmtBytes(MAX_ATTACHMENT_BYTES)} cap.\nUse the file manager or scp to transfer large files directly.`,
+      title: t('aiAttachTooLargeTitle'),
+      body: tf('aiAttachTooLargeBody', { name, size: fmtBytes(file.size), limit: fmtBytes(MAX_ATTACHMENT_BYTES) }),
     });
     return false;
   }
@@ -120,7 +121,7 @@ export async function attachFileToInstance(
     (a) => a.name === name && a.size === file.size,
   );
   if (isDuplicate) {
-    showToast({ title: 'Duplicate file', body: `"${name}" (${fmtBytes(file.size)}) is already queued.` });
+    showToast({ title: t('aiAttachDuplicateTitle'), body: tf('aiAttachDuplicateBody', { name, size: fmtBytes(file.size) }) });
     return false;
   }
 
@@ -139,7 +140,7 @@ export async function attachFileToInstance(
     return true;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    showToast({ title: 'Attachment failed', body: `Could not save "${name}": ${msg}` });
+    showToast({ title: t('aiAttachFailedTitle'), body: tf('aiAttachSaveFailedBody', { name, error: msg }) });
     return false;
   }
 }
@@ -189,11 +190,11 @@ export async function pickAttachmentFiles(
       try {
         const statResult = await invoke<string>('stat_path', { path: String(p) });
         if (statResult === 'dir') {
-          showToast({ title: 'Cannot attach directory', body: `"${fileName}" is a directory. Compress it first (zip/tar.gz) then attach the archive.` });
+          showToast({ title: t('aiAttachDirTitle'), body: tf('aiAttachDirBody', { name: fileName }) });
           continue;
         }
         if (statResult === 'none') {
-          showToast({ title: 'File not found', body: `"${fileName}" does not exist or is inaccessible.` });
+          showToast({ title: t('aiAttachNotFoundTitle'), body: tf('aiAttachNotFoundBody', { name: fileName }) });
           continue;
         }
       } catch { /* stat_path unavailable — proceed, let read fail */ }
@@ -208,7 +209,7 @@ export async function pickAttachmentFiles(
 
         // ── Empty file guard ──
         if (u8.length === 0) {
-          showToast({ title: 'Empty file', body: `"${fileName}" is empty (0 bytes) and cannot be attached.` });
+          showToast({ title: t('aiAttachEmptyTitle'), body: tf('aiAttachEmptyBody', { name: fileName }) });
           continue;
         }
 
@@ -218,7 +219,7 @@ export async function pickAttachmentFiles(
             (a) => a.name === fileName && a.size === u8.length,
           );
           if (isDup) {
-            showToast({ title: 'Duplicate file', body: `"${fileName}" (${fmtBytes(u8.length)}) is already queued.` });
+            showToast({ title: t('aiAttachDuplicateTitle'), body: tf('aiAttachDuplicateBody', { name: fileName, size: fmtBytes(u8.length) }) });
             continue;
           }
         }
@@ -253,7 +254,7 @@ export async function pickAttachmentFiles(
         attached++;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        showToast({ title: 'Attachment failed', body: `"${fileName}": ${msg}` });
+        showToast({ title: t('aiAttachFailedTitle'), body: tf('aiAttachFailedBody', { name: fileName, error: msg }) });
       }
     }
     if (attached > 0) renderAttachmentStrip(instance);
@@ -366,7 +367,7 @@ export function renderAttachmentStrip(instance: AICapsuleInstance): void {
     close.className = 'ai-pending-attachment-remove';
     close.type = 'button';
     close.innerHTML = '&times;';
-    close.title = 'Remove attachment';
+    close.title = t('aiAttachRemoveFile');
     close.addEventListener('click', (e) => {
       e.stopPropagation();
       e.preventDefault();
