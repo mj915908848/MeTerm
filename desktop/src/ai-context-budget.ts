@@ -38,7 +38,7 @@ export const CONTEXT_CHARS_PER_LINE = 200;
  * user-controlled via the settings slider, so this is a safety net
  * rather than the real setting.
  */
-export const DEFAULT_CONTEXT_LINES = 10;
+export const DEFAULT_CONTEXT_LINES = 30;
 
 /**
  * Take the last `maxLines` lines of a pane's captured output, then trim
@@ -60,4 +60,46 @@ export function excerptForPane(
   if (!raw || maxLines <= 0 || maxChars <= 0) return '';
   const cap = Math.min(maxChars, maxLines * CONTEXT_CHARS_PER_LINE);
   return raw.split('\n').slice(-maxLines).join('\n').slice(0, cap);
+}
+
+/**
+ * Lines of the user's last command output kept in the prompt when the
+ * shell hook marks where that command started. Bigger than the plain
+ * tail because it is one coherent block (errors usually sit at the start
+ * of a failure and the summary at the end), but still bounded since the
+ * system prompt is resent on every agent iteration.
+ */
+export const COMMAND_BLOCK_MAX_LINES = 80;
+
+/** Share of COMMAND_BLOCK_MAX_LINES kept from the start of a long block. */
+const COMMAND_BLOCK_HEAD_SHARE = 1 / 4;
+
+/**
+ * Trim a command's output to `maxLines` lines and `maxChars` characters,
+ * keeping the head and the tail and saying how many lines were left out
+ * in between. Returns '' for any non-positive budget.
+ */
+export function excerptCommandOutput(
+  output: string,
+  maxLines: number,
+  maxChars: number,
+): string {
+  if (!output || maxLines <= 0 || maxChars <= 0) return '';
+  const lines = output.split('\n').map((l) => l.slice(0, CONTEXT_CHARS_PER_LINE));
+  let text: string;
+  if (lines.length <= maxLines) {
+    text = lines.join('\n');
+  } else {
+    const head = Math.max(1, Math.floor(maxLines * COMMAND_BLOCK_HEAD_SHARE));
+    const tail = Math.max(1, maxLines - head);
+    const omitted = lines.length - head - tail;
+    text = [
+      ...lines.slice(0, head),
+      `[… ${omitted} lines omitted — call read_terminal to see them …]`,
+      ...lines.slice(-tail),
+    ].join('\n');
+  }
+  if (text.length <= maxChars) return text;
+  // Over the character budget: keep the end, where the result usually is.
+  return text.slice(-maxChars);
 }

@@ -371,6 +371,7 @@ export interface AppSettings {
   aiChatHistoryLimit: number;
   /** Set once the old default step limit (15) has been raised to 30. */
   aiStepLimitRaised?: boolean;
+  aiContextLinesRaised?: boolean;
   /**
    * Permission mode for tool execution. Fine-grained override of
    * aiAgentTrustLevel; when set, takes precedence. Values:
@@ -482,7 +483,7 @@ const DEFAULT_SETTINGS: AppSettings = {
    * clamped by the control, which would then display a different number
    * from the one actually used. See ai-context-budget.ts.
    */
-  aiContextLines: 10,
+  aiContextLines: 30,
   /**
    * Conversation-history token budget feeding the compaction threshold.
    * 128k lands on the settings slider's 32k step grid, and it
@@ -563,6 +564,14 @@ export function loadSettings(): AppSettings {
       if (!parsed.aiStepLimitRaised) {
         if (parsed.aiAgentMaxIterations === 15) settings.aiAgentMaxIterations = DEFAULT_SETTINGS.aiAgentMaxIterations;
         settings.aiStepLimitRaised = true;
+        needsSave = true;
+      }
+
+      // Migration: the default terminal excerpt went from 10 to 30 lines,
+      // since 10 often cut off the start of an error. Same rule as above.
+      if (!parsed.aiContextLinesRaised) {
+        if (parsed.aiContextLines === 10) settings.aiContextLines = DEFAULT_SETTINGS.aiContextLines;
+        settings.aiContextLinesRaised = true;
         needsSave = true;
       }
 

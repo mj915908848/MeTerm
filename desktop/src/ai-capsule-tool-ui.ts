@@ -45,7 +45,7 @@ export function toolArgsInline(toolName: string, args: Record<string, unknown>):
   if (toolName === 'run_command' && args.command) {
     return `<span class="ai-tool-args-inline"><code>$ ${escapeHtml(String(args.command))}</code></span>`;
   } else if ((toolName === 'read_file' || toolName === 'write_file' || toolName === 'edit_file') && args.path) {
-    return `<span class="ai-tool-args-inline"><code>${escapeHtml(String(args.path))}</code></span>`;
+    return `<span class="ai-tool-args-inline"><code>${args.sudo === true ? 'sudo ' : ''}${escapeHtml(String(args.path))}</code></span>`;
   } else if (toolName === 'read_terminal') {
     return `<span class="ai-tool-args-inline"><code>${escapeHtml(String(args.lines ?? 50))} lines</code></span>`;
   } else if (toolName === 'command_help' && args.command) {
@@ -763,6 +763,11 @@ const CONFIRM_CONTENT_PREVIEW_CHARS = 20_000;
 /** Characters of other tools' arguments shown on the approval card. */
 const CONFIRM_ARGS_PREVIEW_CHARS = 4_000;
 
+/** Approval cards for file tools run with sudo=true lead with "sudo". */
+function sudoPrefix(args: Record<string, unknown>): string {
+  return args.sudo === true ? 'sudo ' : '';
+}
+
 /** edit_file approval preview: removed lines with "-", added with "+". */
 function editPreviewLines(oldText: string, newText: string): string {
   const mark = (text: string, sign: string) => text.split('\n').map((line) => `${sign} ${line}`);
@@ -813,8 +818,10 @@ export function showConfirmCard(
       // Show what will be written, not just where: approving a path alone
       // is approving blind.
       const content = typeof args.content === 'string' ? args.content : '';
-      preview.innerHTML = `<code>${escapeHtml(String(args.path))}</code>`
+      preview.innerHTML = `<code>${sudoPrefix(args)}${escapeHtml(String(args.path))}</code>`
         + `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(content, CONFIRM_CONTENT_PREVIEW_CHARS))}</pre>`;
+    } else if (toolName === 'read_file' && args.path) {
+      preview.innerHTML = `<code>${sudoPrefix(args)}${escapeHtml(String(args.path))}</code>`;
     } else if (toolName === 'save_host_note') {
       const replace = args.mode === 'replace';
       preview.innerHTML = `<code>${escapeHtml(replace ? hostNoteReplaceLabel() : hostNoteAppendLabel())}</code>`
@@ -822,7 +829,7 @@ export function showConfirmCard(
     } else if (toolName === 'edit_file' && args.path) {
       const diff = editPreviewLines(String(args.old_string ?? ''), String(args.new_string ?? ''));
       const all = args.replace_all === true ? t('aiConfirmAllOccurrences') : '';
-      preview.innerHTML = `<code>${escapeHtml(String(args.path))}${all}</code>`
+      preview.innerHTML = `<code>${sudoPrefix(args)}${escapeHtml(String(args.path))}${all}</code>`
         + `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(diff, CONFIRM_CONTENT_PREVIEW_CHARS))}</pre>`;
     } else {
       preview.innerHTML = `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(JSON.stringify(args, null, 2), CONFIRM_ARGS_PREVIEW_CHARS))}</pre>`;

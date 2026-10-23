@@ -58,6 +58,7 @@ import {
 } from './ai-permission-rules';
 import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit';
 import { emptyReplyNotice, outputTruncatedNotice, stepLimitNotice } from './ai-tool-i18n';
+import { newSelfCheckState, noteToolCall, selfCheckNote } from './ai-self-check';
 import { parseToolArguments } from './ai-provider-wire';
 import { addUsage, type TokenUsage } from './ai-token-usage';
 import { readShellInputState } from './ai-tools-command';
@@ -736,6 +737,7 @@ export class ToolAgent {
     let consecutiveErrors = 0;
     let llmRetryCount = 0;
     let contextCompressions = 0;
+    const selfCheck = newSelfCheckState();
 
     // The persistent todo listener (installed via setTodoUpdateListener
     // by the UI) is the canonical sink for plan changes. We don't
@@ -926,6 +928,18 @@ export class ToolAgent {
           // would then drop everything the next iteration streams.
           if (this.pendingUserMessages.length > 0) {
             callbacks.onThinkingComplete?.(fixed);
+            continue;
+          }
+
+          // One self-check pass when the plan is unfinished or the last
+          // change was never verified (see ai-self-check.ts).
+          const checkNote = useTools
+            ? selfCheckNote(selfCheck, this.todoState.openItems(), fixed, iteration < maxIterations - 1)
+            : null;
+          if (checkNote) {
+            selfCheck.nudged = true;
+            callbacks.onThinkingComplete?.(fixed);
+            this.messages.push({ role: 'user', content: checkNote });
             continue;
           }
 
@@ -1237,6 +1251,7 @@ export class ToolAgent {
             }
             const started = Date.now();
             const out = await this.safeExecute(handler as ToolHandler, decision.args, toolCtx, toolCall.function.name);
+            noteToolCall(selfCheck, toolCall.function.name, (handler as ToolHandler).requiresConfirm(decision.args), out.isError);
 
             // ── Repeat-action loop detection ──
             // Track this call in a sliding window of size 5; if the

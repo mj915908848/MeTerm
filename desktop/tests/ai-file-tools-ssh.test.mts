@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ts from 'typescript';
 import { quoteRemotePath, resolveSftpPath } from '../src/ai-remote-path.ts';
+import * as sudoFile from '../src/ai-sudo-file.ts';
 
 type Invoke = (command: string, args: Record<string, unknown>) => Promise<unknown>;
 
@@ -15,10 +16,10 @@ const noSftp: Invoke = async (command) => {
   throw 'SFTP not available for this session';
 };
 
-function sshFileTools(invoke: Invoke = noSftp, cwd = '') {
+function sshFileTools(invoke: Invoke = noSftp, cwd = '', env: NodeJS.ProcessEnv = process.env) {
   const file = new URL('../src/ai-tools-file.ts', import.meta.url);
   const source = ts.createSourceFile('ai-tools-file.ts', readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
-  const names = new Set(['fmtError', 'sftpUnavailable', 'formatReadResult', 'createReadFileTool', 'createWriteFileTool', 'createEditFileTool']);
+  const names = new Set(['fmtError', 'sftpUnavailable', 'formatReadResult', 'createReadFileTool', 'createWriteFileTool', 'createEditFileTool', 'wantsSudo', 'sudoUnsupported', 'withSudoTemp']);
   const declarations = source.statements
     .filter((node): node is ts.FunctionDeclaration => ts.isFunctionDeclaration(node) && !!node.name && names.has(node.name.text))
     .map(node => node.getText(source).replace(/^export\s+/, ''));
@@ -29,15 +30,24 @@ function sshFileTools(invoke: Invoke = noSftp, cwd = '') {
   const code = ts.transpileModule([...constants, ...declarations].join('\n'), {
     compilerOptions: { target: ts.ScriptTarget.ES2021, module: ts.ModuleKind.CommonJS },
   }).outputText;
-  const tools = new Function('executeViaTerminal', 'invoke', 'resolveLocalToolPath', 'quoteRemotePath', 'resolveSftpPath', 'hasSensitivePathComponent',
+  const sudoNames = ['commitSucceeded', 'describeSudoFailure', 'parseTempPath', 'removeTempCommand', 'sudoCommitCommand', 'sudoStageCommand', 'tempFileCommand'] as const;
+  const tools = new Function('executeViaTerminal', 'invoke', 'resolveLocalToolPath', 'quoteRemotePath', 'resolveSftpPath', 'hasSensitivePathComponent', ...sudoNames,
     `${code}\nreturn { read: createReadFileTool(), write: createWriteFileTool(), edit: createEditFileTool() };`,
   )(
-    async (_sessionId: string, command: string) => execFileSync('sh', ['-c', command], { encoding: 'utf8' }),
+    async (_sessionId: string, command: string) => {
+      try {
+        return execFileSync('sh', ['-c', command], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch (e) {
+        const err = e as { stdout?: string; stderr?: string };
+        return `${err.stdout ?? ''}${err.stderr ?? ''}`;
+      }
+    },
     invoke,
     () => assert.fail('SSH tool must not resolve a local path'),
     quoteRemotePath,
     resolveSftpPath,
     () => false,
+    ...sudoNames.map(name => sudoFile[name]),
   );
   const context = { isSSH: true, sessionId: 'test-ssh', shellType: 'bash', cwd };
   type Tool = { execute: (args: Record<string, unknown>, context: unknown) => Promise<string> };
@@ -134,4 +144,71 @@ test('SSH file tools go over SFTP when it is available, with ~ and cwd resolved'
 test('SSH edit_file reports a non-unique match instead of guessing', async () => {
   const { edit, context } = sshFileTools(async () => { throw 'old_string occurs 2 times in the file.'; });
   assert.match(await edit.execute({ path: '/a', old_string: 'x', new_string: 'y' }, context), /^Error editing file: old_string occurs 2 times/);
+});
+
+/** A fake `sudo` on PATH: `-n` succeeds and runs the command, or fails like sudo when NEEDS_PW is set. */
+function fakeSudoEnv(dir: string, needsPassword = false): NodeJS.ProcessEnv {
+  const bin = join(dir, 'bin');
+  execFileSync('mkdir', ['-p', bin]);
+  writeFileSync(join(bin, 'sudo'), needsPassword
+    ? '#!/bin/sh\necho "sudo: a password is required" >&2\nexit 1\n'
+    : '#!/bin/sh\n[ "$1" = "-n" ] && shift\nexec "$@"\n', { mode: 0o755 });
+  return { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+}
+
+/** SFTP stand-in that works on local files, for the temp-file leg of sudo. */
+const localSftp: Invoke = async (command, args) => {
+  const path = String(args.path);
+  if (command === 'sftp_read_file') {
+    const content = readFileSync(path, 'utf8');
+    return { content, size: content.length, is_binary: false, too_large: false, truncated: false, total_lines: null };
+  }
+  if (command === 'sftp_write_file') { writeFileSync(path, String(args.content)); return String(args.content).length; }
+  if (command === 'sftp_edit_file') {
+    const before = readFileSync(path, 'utf8');
+    if (!before.includes(String(args.oldString))) throw 'old_string not found in the file.';
+    writeFileSync(path, before.replace(String(args.oldString), String(args.newString)));
+    return { replacements: 1, first_line: 1, size: before.length };
+  }
+  throw new Error(`unexpected ${command}`);
+};
+
+test('sudo edit_file / write_file / read_file stage through a temp file and write back', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meterm-sudo-'));
+  try {
+    const target = join(dir, "it's.conf");
+    writeFileSync(target, 'listen 80;\nserver_name a;\n');
+    const { read, write, edit, context } = sshFileTools(localSftp, '', fakeSudoEnv(dir));
+    assert.match(await edit.execute({ path: target, old_string: 'listen 80;', new_string: 'listen 8080;', sudo: true }, context), /^File edited/);
+    assert.equal(readFileSync(target, 'utf8'), 'listen 8080;\nserver_name a;\n');
+    assert.match(await read.execute({ path: target, sudo: true }, context), /listen 8080;/);
+    const created = join(dir, 'new dir', 'x.conf');
+    assert.match(await write.execute({ path: created, content: 'a=1', sudo: true }, context), /^File written successfully with sudo/);
+    assert.equal(readFileSync(created, 'utf8'), 'a=1');
+    const failed = await edit.execute({ path: target, old_string: 'missing', new_string: 'x', sudo: true }, context);
+    assert.match(failed, /^Error editing file: old_string not found/);
+    assert.equal(readFileSync(target, 'utf8'), 'listen 8080;\nserver_name a;\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sudo file tools explain a password prompt instead of hanging', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meterm-sudo-'));
+  try {
+    const target = join(dir, 'a.conf');
+    writeFileSync(target, 'x');
+    const { edit, context } = sshFileTools(localSftp, '', fakeSudoEnv(dir, true));
+    const result = await edit.execute({ path: target, old_string: 'x', new_string: 'y', sudo: true }, context);
+    assert.match(result, /sudo needs a password.*sudo -v/s);
+    assert.equal(readFileSync(target, 'utf8'), 'x');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sudo=true is refused on local sessions', async () => {
+  const { edit } = sshFileTools();
+  const local = { isSSH: false, sessionId: 'local', shellType: 'zsh', cwd: '/' };
+  assert.match(await edit.execute({ path: '/etc/hosts', old_string: 'a', new_string: 'b', sudo: true }, local), /only supported on SSH/);
 });
