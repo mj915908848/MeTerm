@@ -4,7 +4,7 @@
 //   - ai-tools-core.ts     : types, registry, danger detection, utilities
 //   - ai-tools-shell.ts    : shell hook injection + command executor
 //   - ai-tools-command.ts  : run_command / read_terminal / type_text / press_keys / watch_terminal / wait_for_user_input / read_screen
-//   - ai-tools-file.ts     : read_file / write_file
+//   - ai-tools-file.ts     : read_file / write_file / edit_file
 //   - ai-tools-meta.ts     : web_search / command_help
 // This file remains the public entry point — it only re-exports and
 // assembles the default ToolRegistry via initializeTools().
@@ -45,7 +45,7 @@ import {
   createWaitForUserInputTool,
   createReadScreenTool,
 } from './ai-tools-command';
-import { createReadFileTool, createWriteFileTool } from './ai-tools-file';
+import { createReadFileTool, createWriteFileTool, createEditFileTool } from './ai-tools-file';
 import { createWebSearchTool, createCommandHelpTool } from './ai-tools-meta';
 import { createTodoWriteTool } from './ai-tools-todo';
 import { createUploadFileTool, createDownloadFileTool } from './ai-tools-transfer';
@@ -68,6 +68,7 @@ export function initializeTools(): ToolRegistry {
   registry.register(createWaitForUserInputTool());
   registry.register(createReadFileTool());
   registry.register(createWriteFileTool());
+  registry.register(createEditFileTool());
   // Task planning + transfer + structured search
   registry.register(createTodoWriteTool());
   registry.register(createUploadFileTool());

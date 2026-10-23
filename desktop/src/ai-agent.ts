@@ -57,10 +57,11 @@ import {
   type PermissionRule,
 } from './ai-permission-rules';
 import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit';
-import { emptyReplyNotice, outputTruncatedNotice } from './ai-tool-i18n';
+import { emptyReplyNotice, outputTruncatedNotice, stepLimitNotice } from './ai-tool-i18n';
 import { parseToolArguments } from './ai-provider-wire';
 import { addUsage, type TokenUsage } from './ai-token-usage';
 import { readShellInputState } from './ai-tools-command';
+import { ensureRemoteOs } from './ai-host-facts';
 
 // Re-exports for backward compatibility
 export type { TerminalContext } from './ai-agent-context';
@@ -285,7 +286,7 @@ export interface AgentCallbacks {
 
 // ─── Constants ──────────────────────────────────────────────────
 
-const DEFAULT_MAX_ITERATIONS = 15;
+const DEFAULT_MAX_ITERATIONS = 30;
 /** Hard ceiling for `unlimited` mode (maxIterations === 0). Prevents
  *  runaway loops if the LLM falls into a degenerate tool-call cycle
  *  that the repeat-action detector doesn't catch. */
@@ -718,6 +719,14 @@ export class ToolAgent {
         injectShellHook(sessionId);
       }
     }
+
+    // Remote OS for the pane list in the system prompt, looked up once per
+    // session over SFTP (bounded wait, so a slow host cannot stall the run).
+    await Promise.all(
+      buildToolContext(sessionId).panes
+        .filter((pane) => pane.isSSH)
+        .map((pane) => ensureRemoteOs(pane.sessionId)),
+    );
 
     // Sent on every call besides the history, so it counts against the
     // compaction threshold too.
@@ -1465,11 +1474,21 @@ export class ToolAgent {
     }
 
     // ── Max iterations reached ──
+    // Give the model one last call to tell the user where things stand,
+    // instead of ending on a canned line. Tools stay declared so the
+    // history (which ends in tool results) stays valid for every
+    // provider; any tool call it still makes is dropped, not run.
     this.todoState.interrupt();
-    this.abortController = null;
-    callbacks.onComplete(
-      'Maximum execution steps reached. Please provide new instructions to continue.',
+    const summary = await this.summarizeAtStepLimit(
+      sessionId, contextLines, providerConfig, useTools ? toolSpecs : [], callbacks,
     );
+    if (this.aborted) {
+      this.abortController = null;
+      callbacks.onAborted?.(iteration);
+      return;
+    }
+    this.abortController = null;
+    callbacks.onComplete(summary);
     } finally {
       // No teardown needed for the persistent todo listener — it is
       // owned by the UI and lives across runs.
@@ -1522,6 +1541,56 @@ export class ToolAgent {
       return { result, isError: false };
     } catch (e) {
       return { result: (e as Error).message, isError: true };
+    }
+  }
+
+  // ─── Step-limit summary ─────────────────────────────────────
+
+  /**
+   * One tool-less turn after the step limit: what was done, where it
+   * stopped, what to do next. Falls back to a fixed notice when the call
+   * fails or returns no text.
+   */
+  private async summarizeAtStepLimit(
+    sessionId: string,
+    contextLines: number,
+    providerConfig: AIProviderConfig,
+    toolSpecs: ToolSpec[],
+    callbacks: AgentCallbacks,
+  ): Promise<string> {
+    const fallback = stepLimitNotice();
+    if (this.aborted) return fallback;
+    callbacks.onIterationStart?.();
+    const meta = getSessionMeta(sessionId);
+    const ctx = gatherContext(sessionId, contextLines, { targetPaneNumber: meta.targetPaneNumber });
+    const systemPrompt = buildSystemPrompt(ctx, toolSpecs.length > 0, {
+      todoBlock: this.todoState.renderForSystemPrompt(),
+      contextLines,
+      stepLimitReached: true,
+    });
+    this.abortController = new AbortController();
+    try {
+      const response = await this.callLLM(
+        createProvider(providerConfig),
+        [
+          { role: 'system', content: systemPrompt.text, stablePrefixChars: systemPrompt.stablePrefixChars },
+          ...this.messages,
+        ],
+        toolSpecs.length > 0 ? toolSpecs : undefined,
+        callbacks,
+        this.abortController.signal,
+      );
+      this.runUsage = addUsage(this.runUsage, response.usage);
+      const text = fixCodeBlocks(response.text).trim();
+      if (!text) return fallback;
+      this.messages.push({
+        role: 'assistant',
+        content: text,
+        ...(response.reasoning ? { reasoning_content: response.reasoning } : {}),
+      });
+      return text;
+    } catch {
+      return fallback;
     }
   }
 

@@ -364,7 +364,9 @@ export interface AppSettings {
   aiThinkingBudget: number;
   // AI Agent configuration
   aiAgentTrustLevel: number;       // 0 = manual, 1 = semi-auto, 2 = full-auto
-  aiAgentMaxIterations: number;    // max agentic loop steps (default 15)
+  aiAgentMaxIterations: number;    // max agentic loop steps (default 30)
+  /** Set once the old default step limit (15) has been raised to 30. */
+  aiStepLimitRaised?: boolean;
   /**
    * Permission mode for tool execution. Fine-grained override of
    * aiAgentTrustLevel; when set, takes precedence. Values:
@@ -488,7 +490,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   /** 0 = follow the model's own reasoning-token default. */
   aiThinkingBudget: 0,
   aiAgentTrustLevel: 0,
-  aiAgentMaxIterations: 15,
+  aiAgentMaxIterations: 30,
   searxngUrl: '',
   searxngUsername: '',
   searxngPassword: '',
@@ -546,6 +548,15 @@ export function loadSettings(): AppSettings {
         delete legacySettings.aiApiKey;
         delete legacySettings.aiBaseUrl;
         delete legacySettings.aiModel;
+        needsSave = true;
+      }
+
+      // Migration: the default step limit went from 15 to 30. Every saved
+      // settings object carries the old default, so raise it once; a limit
+      // the user picked themselves (anything but 15) is kept.
+      if (!parsed.aiStepLimitRaised) {
+        if (parsed.aiAgentMaxIterations === 15) settings.aiAgentMaxIterations = DEFAULT_SETTINGS.aiAgentMaxIterations;
+        settings.aiStepLimitRaised = true;
         needsSave = true;
       }
 

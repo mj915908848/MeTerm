@@ -407,6 +407,7 @@ pub async fn agent_read_file(
     path: String,
     max_bytes: Option<u64>,
     max_lines: Option<u64>,
+    start_line: Option<u64>,
     workspace_root: String,
     approved_canonical_path: Option<String>,
 ) -> Result<AgentReadResult, String> {
@@ -415,6 +416,7 @@ pub async fn agent_read_file(
             path,
             max_bytes,
             max_lines,
+            start_line,
             workspace_root,
             approved_canonical_path,
         )
@@ -426,6 +428,7 @@ fn agent_read_file_blocking(
     path: String,
     max_bytes: Option<u64>,
     max_lines: Option<u64>,
+    start_line: Option<u64>,
     workspace_root: String,
     approved_canonical_path: Option<String>,
 ) -> Result<AgentReadResult, String> {
@@ -441,7 +444,7 @@ fn agent_read_file_blocking(
     let cap = max_bytes.unwrap_or(10 * 1024 * 1024); // 10 MB default
 
     if let Some(max_lines) = max_lines {
-        return read_head_lines(&p, size, max_lines, cap);
+        return read_line_range(&p, size, start_line.unwrap_or(1), max_lines, cap);
     }
 
     if size > cap {
@@ -489,17 +492,30 @@ const HEAD_CONTENT_CAP: usize = 2 * 1024 * 1024;
 /// Read only the first `max_lines` lines, streaming instead of loading the
 /// whole file. The rest is scanned (up to `scan_cap` bytes, without being
 /// kept) just to report the total line count.
-fn read_head_lines(
+fn read_line_range(
     p: &std::path::Path,
     size: u64,
+    start_line: u64,
     max_lines: u64,
     scan_cap: u64,
 ) -> Result<AgentReadResult, String> {
-    use std::io::{BufRead, Read};
-
     let file = std::fs::File::open(p).map_err(|e| format!("read failed: {}", e))?;
-    let mut reader = std::io::BufReader::with_capacity(64 * 1024, file);
+    let reader = std::io::BufReader::with_capacity(64 * 1024, file);
+    read_lines_from(reader, size, start_line, max_lines, scan_cap)
+}
 
+/// Keep lines `start_line ..= start_line + max_lines - 1` (1-based) of
+/// `reader`, streaming instead of loading the whole input. Lines before
+/// the range are counted but not kept; the rest is scanned (up to
+/// `scan_cap` bytes in total) just to report the total line count.
+/// Shared by local reads and SFTP reads of remote files.
+pub(crate) fn read_lines_from<R: std::io::BufRead>(
+    mut reader: R,
+    size: u64,
+    start_line: u64,
+    max_lines: u64,
+    scan_cap: u64,
+) -> Result<AgentReadResult, String> {
     // Binary detection: any NUL byte in the first 4KB.
     if reader
         .fill_buf()
@@ -523,6 +539,23 @@ fn read_head_lines(
     let mut newlines: u64 = 0;
     let mut scanned: u64 = 0;
     let mut truncated = false;
+    // Skip the lines before the requested range without keeping them.
+    let mut skip = start_line.max(1) - 1;
+    let mut skipped: Vec<u8> = Vec::new();
+    while skip > 0 && scanned < scan_cap {
+        skipped.clear();
+        let n = reader
+            .read_until(b'\n', &mut skipped)
+            .map_err(|e| format!("read failed: {}", e))?;
+        if n == 0 {
+            break;
+        }
+        scanned += n as u64;
+        if skipped.last() == Some(&b'\n') {
+            newlines += 1;
+        }
+        skip -= 1;
+    }
     while lines < max_lines {
         let n = reader
             .read_until(b'\n', &mut kept)
@@ -701,6 +734,105 @@ pub fn agent_write_file(app: AppHandle, path: String, content: String) -> Result
     std::fs::write(p, content.as_bytes()).map_err(|e| format!("write failed: {}", e))?;
 
     Ok(content.len() as u64)
+}
+
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct AgentEditResult {
+    /// Number of occurrences replaced.
+    pub replacements: usize,
+    /// 1-based line of the first replacement in the edited file.
+    pub first_line: usize,
+    /// Size of the edited file in bytes.
+    pub size: u64,
+}
+
+/// Replace `old` with `new` in `content`. `old` must occur exactly once
+/// unless `replace_all` is set, so the model cannot edit the wrong spot
+/// by accident. When the file uses CRLF line endings and the model sent
+/// LF, the edit is matched (and written) with CRLF instead.
+pub(crate) fn apply_text_edit(
+    content: &str,
+    old: &str,
+    new: &str,
+    replace_all: bool,
+) -> Result<(String, AgentEditResult), String> {
+    if old.is_empty() {
+        return Err("old_string must not be empty; use write_file to create a file".into());
+    }
+    if old == new {
+        return Err("old_string and new_string are identical; nothing to change".into());
+    }
+    let (old, new) = if !content.contains(old) && content.contains("\r\n") && !old.contains('\r') {
+        (
+            old.replace('\n', "\r\n"),
+            new.replace("\r\n", "\n").replace('\n', "\r\n"),
+        )
+    } else {
+        (old.to_string(), new.to_string())
+    };
+    let count = content.matches(old.as_str()).count();
+    if count == 0 {
+        return Err("old_string was not found in the file. Read the file again and copy the text exactly, including whitespace and indentation.".into());
+    }
+    if count > 1 && !replace_all {
+        return Err(format!(
+            "old_string occurs {} times in the file. Include more surrounding lines so it matches exactly once, or set replace_all to true.",
+            count
+        ));
+    }
+    let first = content.find(old.as_str()).unwrap_or(0);
+    let first_line = content[..first].matches('\n').count() + 1;
+    let edited = if replace_all {
+        content.replace(old.as_str(), &new)
+    } else {
+        content.replacen(old.as_str(), &new, 1)
+    };
+    let size = edited.len() as u64;
+    Ok((
+        edited,
+        AgentEditResult {
+            replacements: if replace_all { count } else { 1 },
+            first_line,
+            size,
+        },
+    ))
+}
+
+/// Largest file `agent_edit_file` / `sftp_edit_file` will load.
+pub(crate) const AGENT_EDIT_MAX_BYTES: u64 = 10 * 1024 * 1024;
+
+/// Edit a local file in place by exact string replacement.
+#[tauri::command]
+pub fn agent_edit_file(
+    app: AppHandle,
+    path: String,
+    old_string: String,
+    new_string: String,
+    replace_all: Option<bool>,
+) -> Result<AgentEditResult, String> {
+    let resolved = normalize_path(&path);
+    let p = std::path::Path::new(&resolved);
+    ensure_agent_write_allowed(&app, p)?;
+    if !p.is_file() {
+        return Err(format!("not a regular file: {}", resolved));
+    }
+    let size = std::fs::metadata(p)
+        .map_err(|e| format!("stat failed: {}", e))?
+        .len();
+    if size > AGENT_EDIT_MAX_BYTES {
+        return Err(format!("file too large to edit ({} bytes)", size));
+    }
+    let bytes = std::fs::read(p).map_err(|e| format!("read failed: {}", e))?;
+    let content =
+        String::from_utf8(bytes).map_err(|_| "file is not valid UTF-8 text".to_string())?;
+    let (edited, result) = apply_text_edit(
+        &content,
+        &old_string,
+        &new_string,
+        replace_all.unwrap_or(false),
+    )?;
+    std::fs::write(p, edited.as_bytes()).map_err(|e| format!("write failed: {}", e))?;
+    Ok(result)
 }
 
 /// Save user-dropped/picked attachment bytes to a stable location in
@@ -1590,18 +1722,18 @@ mod agent_fs_tests {
         let dir = temp_dir("head");
         let file = dir.join("a.txt");
         std::fs::write(&file, "one\ntwo\nthree\nfour").unwrap();
-        let r = read_head_lines(&file, 18, 2, 1024).unwrap();
+        let r = read_line_range(&file, 18, 1, 2, 1024).unwrap();
         assert_eq!(r.content.as_deref(), Some("one\ntwo"));
         assert!(r.truncated);
         assert_eq!(r.total_lines, Some(4));
 
-        let all = read_head_lines(&file, 18, 10, 1024).unwrap();
+        let all = read_line_range(&file, 18, 1, 10, 1024).unwrap();
         assert_eq!(all.content.as_deref(), Some("one\ntwo\nthree\nfour"));
         assert!(!all.truncated);
         assert_eq!(all.total_lines, Some(4));
 
         // Past the scan cap the total is unknown but the head is still read.
-        let capped = read_head_lines(&file, 18, 1, 4).unwrap();
+        let capped = read_line_range(&file, 18, 1, 1, 4).unwrap();
         assert_eq!(capped.content.as_deref(), Some("one"));
         assert!(capped.truncated);
         assert_eq!(capped.total_lines, None);
@@ -1609,11 +1741,50 @@ mod agent_fs_tests {
     }
 
     #[test]
+    fn line_range_skips_leading_lines() {
+        let input = "one\ntwo\nthree\nfour";
+        let r = read_lines_from(input.as_bytes(), 18, 2, 2, 1024).unwrap();
+        assert_eq!(r.content.as_deref(), Some("two\nthree"));
+        assert!(r.truncated);
+        assert_eq!(r.total_lines, Some(4));
+        let tail = read_lines_from(input.as_bytes(), 18, 4, 10, 1024).unwrap();
+        assert_eq!(tail.content.as_deref(), Some("four"));
+        assert!(!tail.truncated);
+        let past = read_lines_from(input.as_bytes(), 18, 9, 10, 1024).unwrap();
+        assert_eq!(past.content.as_deref(), Some(""));
+        assert_eq!(past.total_lines, Some(4));
+    }
+
+    #[test]
+    fn text_edit_requires_a_unique_match() {
+        let (out, r) = apply_text_edit("a\nport 80\nb\n", "port 80", "port 8080", false).unwrap();
+        assert_eq!(out, "a\nport 8080\nb\n");
+        assert_eq!(r.replacements, 1);
+        assert_eq!(r.first_line, 2);
+        assert!(apply_text_edit("x x", "x", "y", false)
+            .unwrap_err()
+            .contains("2 times"));
+        let (all, r) = apply_text_edit("x x", "x", "y", true).unwrap();
+        assert_eq!(all, "y y");
+        assert_eq!(r.replacements, 2);
+        assert!(apply_text_edit("abc", "zzz", "y", false)
+            .unwrap_err()
+            .contains("not found"));
+        assert!(apply_text_edit("abc", "", "y", false).is_err());
+    }
+
+    #[test]
+    fn text_edit_matches_crlf_files() {
+        let (out, _) = apply_text_edit("a\r\nb\r\nc\r\n", "a\nb", "a\nB\nb", false).unwrap();
+        assert_eq!(out, "a\r\nB\r\nb\r\nc\r\n");
+    }
+
+    #[test]
     fn head_read_flags_binary() {
         let dir = temp_dir("bin");
         let file = dir.join("b.bin");
         std::fs::write(&file, [1u8, 0, 2, 3]).unwrap();
-        assert!(read_head_lines(&file, 4, 10, 1024).unwrap().is_binary);
+        assert!(read_line_range(&file, 4, 1, 10, 1024).unwrap().is_binary);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

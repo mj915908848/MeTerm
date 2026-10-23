@@ -437,8 +437,8 @@ function createAgentRows(
 ): HTMLElement[] {
   // Max steps slider + Unlimited checkbox
   const isUnlimited = current.aiAgentMaxIterations === 0;
-  const iterRow = mkSliderRow(t('aiAgentMaxIterations'), 'ai-iter-slider', 1, 30, 1,
-    isUnlimited ? 15 : current.aiAgentMaxIterations,
+  const iterRow = mkSliderRow(t('aiAgentMaxIterations'), 'ai-iter-slider', 1, 60, 1,
+    isUnlimited ? 30 : current.aiAgentMaxIterations,
     (v) => `${v}`, (v) => update({ aiAgentMaxIterations: v }));
   const iterSlider = iterRow.querySelector('#ai-iter-slider') as HTMLInputElement;
   const iterValSpan = iterRow.querySelector('.ai-slider-value') as HTMLSpanElement;

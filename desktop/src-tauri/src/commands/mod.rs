@@ -1,3 +1,4 @@
+pub mod agent_remote;
 pub mod ai;
 pub mod connection_export;
 pub mod connection_sync;

@@ -84,3 +84,11 @@ test('loading settings removes the exact auto-added rule set from persisted sett
   assert.equal(load().aiPermissionRules, undefined);
   assert.equal(saved?.aiPermissionRules, undefined);
 });
+
+test('write_file rules, including the default /etc and .ssh denials, also govern edit_file', () => {
+  const editHandler = { requiresConfirm: () => true, isDestructive: () => false } as any;
+  for (const path of ['/etc/nginx/nginx.conf', '/root/.ssh/authorized_keys', '/srv/app/.env']) {
+    assert.equal(decidePermission('edit_file', { path, old_string: 'a', new_string: 'b' }, editHandler, 'acceptAll', DEFAULT_PERMISSION_RULES).kind, 'deny', path);
+  }
+  assert.deepEqual(decidePermission('edit_file', { path: '/srv/app/app.yml', old_string: 'a', new_string: 'b' }, editHandler, 'acceptAll', DEFAULT_PERMISSION_RULES), { kind: 'allow' });
+});

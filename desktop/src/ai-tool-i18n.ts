@@ -16,6 +16,7 @@ const TOOL_LABELS: Record<string, LangMap> = {
   press_keys:          { en: 'Press Keys',          zh: '按键操作' },
   read_file:           { en: 'Read File',           zh: '读取文件' },
   write_file:          { en: 'Write File',          zh: '写入文件' },
+  edit_file:           { en: 'Edit File',           zh: '修改文件' },
   list_files:          { en: 'List Files',          zh: '列出文件' },
   list_directory:      { en: 'List Directory',      zh: '列出目录' },
   search_files:        { en: 'Search Files',        zh: '搜索文件' },
@@ -133,6 +134,12 @@ export function outputTruncatedNotice(): string {
   return getLanguage() === 'zh'
     ? '回复达到了最大输出长度，内容可能不完整。可在 AI 设置中调大“最大 Token”。'
     : 'The reply hit the maximum output length and may be incomplete. You can raise "Max Tokens" in the AI settings.';
+}
+
+export function stepLimitNotice(): string {
+  return getLanguage() === 'zh'
+    ? '已达到单次最多执行步数。发送“继续”可接着做，或在 AI 设置中调大步数上限。'
+    : 'Reached the maximum number of steps for one run. Send "continue" to carry on, or raise the step limit in the AI settings.';
 }
 
 export function emptyReplyNotice(): string {

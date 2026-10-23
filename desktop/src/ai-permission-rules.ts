@@ -61,7 +61,8 @@ export function effectivePermissionMode(settings: {
 export interface PermissionRuleMatch {
   /** Regex applied to args.command (for run_command). */
   command?: string;
-  /** Regex applied to args.path (for read_file / write_file). */
+  /** Regex applied to args.path (for read_file / write_file). A write_file
+   *  rule also governs edit_file: both change file content. */
   path?: string;
 }
 
@@ -126,7 +127,9 @@ function ruleMatches(
   args: Record<string, unknown>,
 ): boolean | 'invalid' {
   const { rule, command, path } = compiled;
-  if (rule.tool !== '*' && rule.tool !== toolName) return false;
+  if (rule.tool !== '*' && rule.tool !== toolName && !(rule.tool === 'write_file' && toolName === 'edit_file')) {
+    return false;
+  }
   if (command.kind === 'invalid' || path.kind === 'invalid') return 'invalid';
 
   if (command.kind === 'valid') {

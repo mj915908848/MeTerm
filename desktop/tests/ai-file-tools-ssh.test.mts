@@ -1,37 +1,47 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import ts from 'typescript';
-import { quoteRemotePath } from '../src/ai-remote-path.ts';
+import { quoteRemotePath, resolveSftpPath } from '../src/ai-remote-path.ts';
 
-function sshFileTools() {
+type Invoke = (command: string, args: Record<string, unknown>) => Promise<unknown>;
+
+/** Session without SFTP: every sftp_* command fails the way the backend does. */
+const noSftp: Invoke = async (command) => {
+  assert.match(command, /^sftp_/, 'SSH tool must not invoke a local filesystem command');
+  throw 'SFTP not available for this session';
+};
+
+function sshFileTools(invoke: Invoke = noSftp, cwd = '') {
   const file = new URL('../src/ai-tools-file.ts', import.meta.url);
   const source = ts.createSourceFile('ai-tools-file.ts', readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
-  const names = new Set(['fmtError', 'createReadFileTool', 'createWriteFileTool']);
+  const names = new Set(['fmtError', 'sftpUnavailable', 'formatReadResult', 'createReadFileTool', 'createWriteFileTool', 'createEditFileTool']);
   const declarations = source.statements
     .filter((node): node is ts.FunctionDeclaration => ts.isFunctionDeclaration(node) && !!node.name && names.has(node.name.text))
     .map(node => node.getText(source).replace(/^export\s+/, ''));
   assert.equal(declarations.length, names.size);
-  const code = ts.transpileModule(declarations.join('\n'), {
+  const constants = source.statements
+    .filter((node): node is ts.VariableStatement => ts.isVariableStatement(node))
+    .map(node => node.getText(source));
+  const code = ts.transpileModule([...constants, ...declarations].join('\n'), {
     compilerOptions: { target: ts.ScriptTarget.ES2021, module: ts.ModuleKind.CommonJS },
   }).outputText;
-  const tools = new Function('executeViaTerminal', 'invoke', 'resolveLocalToolPath', 'quoteRemotePath',
-    `${code}\nreturn { read: createReadFileTool(), write: createWriteFileTool() };`,
+  const tools = new Function('executeViaTerminal', 'invoke', 'resolveLocalToolPath', 'quoteRemotePath', 'resolveSftpPath', 'hasSensitivePathComponent',
+    `${code}\nreturn { read: createReadFileTool(), write: createWriteFileTool(), edit: createEditFileTool() };`,
   )(
     async (_sessionId: string, command: string) => execFileSync('sh', ['-c', command], { encoding: 'utf8' }),
-    () => assert.fail('SSH tool must not invoke local filesystem command'),
+    invoke,
     () => assert.fail('SSH tool must not resolve a local path'),
     quoteRemotePath,
+    resolveSftpPath,
+    () => false,
   );
-  const context = { isSSH: true, sessionId: 'test-ssh', shellType: 'bash' };
-  return { ...tools, context } as {
-    read: { execute: (args: Record<string, unknown>, context: unknown) => Promise<string> };
-    write: { execute: (args: Record<string, unknown>, context: unknown) => Promise<string> };
-    context: typeof context;
-  };
+  const context = { isSSH: true, sessionId: 'test-ssh', shellType: 'bash', cwd };
+  type Tool = { execute: (args: Record<string, unknown>, context: unknown) => Promise<string> };
+  return { ...tools, context } as { read: Tool; write: Tool; edit: Tool; context: typeof context };
 }
 
 test('SSH read_file rejects a nonnumeric maxLines instead of executing it as shell syntax', async () => {
@@ -82,4 +92,46 @@ test('SSH read_file and write_file expand a ~/ path on the remote side', async (
     process.env.HOME = saved;
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test('SSH read_file without SFTP honours offset and limit', async () => {
+  const { read, context } = sshFileTools();
+  const dir = mkdtempSync(join(tmpdir(), 'meterm-ssh-read-'));
+  try {
+    const path = join(dir, 'lines.txt');
+    writeFileSync(path, 'one\ntwo\nthree\nfour\n');
+    assert.equal(await read.execute({ path, offset: 2, limit: 2 }, context), 'two\nthree\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('SSH file tools go over SFTP when it is available, with ~ and cwd resolved', async () => {
+  const calls: Array<[string, Record<string, unknown>]> = [];
+  const sftp: Invoke = async (command, args) => {
+    calls.push([command, args]);
+    if (command === 'sftp_read_file') {
+      return { content: 'b\nc', size: 8, is_binary: false, too_large: false, truncated: true, total_lines: 4 };
+    }
+    if (command === 'sftp_write_file') return 5;
+    if (command === 'sftp_edit_file') return { replacements: 1, first_line: 3, size: 42 };
+    throw new Error(`unexpected ${command}`);
+  };
+  const { read, write, edit, context } = sshFileTools(sftp, '/srv/app');
+  const shown = await read.execute({ path: 'notes.txt', offset: 2, limit: 2 }, context);
+  assert.match(shown, /^b\nc\n\n--- Showing lines 2-3 of 4 .*offset=4/);
+  assert.match(await write.execute({ path: '~/x.txt', content: 'hello' }, context), /^File written successfully/);
+  assert.match(await edit.execute({ path: '/etc/app.conf', old_string: 'a', new_string: 'b' }, context), /^File edited: .*line 3/);
+  assert.deepEqual(calls.map(([command, args]) => [command, args.path]), [
+    ['sftp_read_file', '/srv/app/notes.txt'],
+    ['sftp_write_file', 'x.txt'],
+    ['sftp_edit_file', '/etc/app.conf'],
+  ]);
+  assert.equal(calls[0][1].startLine, 2);
+  assert.equal(calls[2][1].replaceAll, false);
+});
+
+test('SSH edit_file reports a non-unique match instead of guessing', async () => {
+  const { edit, context } = sshFileTools(async () => { throw 'old_string occurs 2 times in the file.'; });
+  assert.match(await edit.execute({ path: '/a', old_string: 'x', new_string: 'y' }, context), /^Error editing file: old_string occurs 2 times/);
 });
