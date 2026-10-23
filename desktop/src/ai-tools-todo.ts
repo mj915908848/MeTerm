@@ -73,6 +73,21 @@ export class TodoState implements TodoStateRef {
     this.set(this.items.map(item => item.status === 'in_progress' ? { ...item, status: 'interrupted' } : item));
   }
 
+  /**
+   * The run ended with a plain reply, so nothing is running any more.
+   * Models often write the answer for the last step without a final
+   * todo_write, which left that step spinning forever. When it is the
+   * only unfinished item, the reply was that step, so mark it done;
+   * otherwise the model stopped mid-plan (e.g. to ask the user), so put
+   * the step back to pending for the next turn to pick up.
+   */
+  settleAfterReply(): void {
+    if (!this.items.some(item => item.status === 'in_progress')) return;
+    const othersOpen = this.items.some(item => item.status === 'pending' || item.status === 'interrupted');
+    const next: TodoStatus = othersOpen ? 'pending' : 'completed';
+    this.set(this.items.map(item => item.status === 'in_progress' ? { ...item, status: next } : item));
+  }
+
   /** Render the current todo list as a compact text block for system prompt injection. */
   renderForSystemPrompt(): string {
     if (this.items.length === 0) return '';

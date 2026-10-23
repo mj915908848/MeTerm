@@ -57,7 +57,7 @@ import {
   type PermissionRule,
 } from './ai-permission-rules';
 import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit';
-import { outputTruncatedNotice } from './ai-tool-i18n';
+import { emptyReplyNotice, outputTruncatedNotice } from './ai-tool-i18n';
 import { parseToolArguments } from './ai-provider-wire';
 import { readShellInputState } from './ai-tools-command';
 
@@ -901,12 +901,16 @@ export class ToolAgent {
 
           // If user injected messages while we were streaming,
           // finalize this response and continue the loop so the LLM
-          // can perceive and react to the new messages.
+          // can perceive and react to the new messages. This must not
+          // go through onComplete: that ends the run for the UI, which
+          // would then drop everything the next iteration streams.
           if (this.pendingUserMessages.length > 0) {
-            callbacks.onComplete(fixed);
+            callbacks.onThinkingComplete?.(fixed);
             continue;
           }
 
+          if (!fixed.trim()) callbacks.onDegraded?.(emptyReplyNotice());
+          this.todoState.settleAfterReply();
           this.abortController = null;
           callbacks.onComplete(fixed);
           return;
@@ -1450,6 +1454,7 @@ export class ToolAgent {
     }
 
     // ── Max iterations reached ──
+    this.todoState.interrupt();
     this.abortController = null;
     callbacks.onComplete(
       'Maximum execution steps reached. Please provide new instructions to continue.',

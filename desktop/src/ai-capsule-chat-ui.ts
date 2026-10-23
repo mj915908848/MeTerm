@@ -453,6 +453,28 @@ export function appendSystemNotice(instance: AICapsuleInstance, text: string): v
   instance.messages.push({ type: 'system', content: text, timestamp: Date.now() });
 }
 
+/**
+ * Append a synthetic todo_write entry when the agent changed the plan
+ * locally (no tool ran), so the board restored from history matches.
+ * `result` is model-facing only — the todo_write tool card is hidden in
+ * the UI (ai-capsule-tool-ui), the board reads `args` — so it stays
+ * English like the retention prefix instead of going through i18n.
+ */
+function recordLocalPlanUpdate(instance: AICapsuleInstance, result: string): void {
+  const planEntry = [...instance.messages].reverse().find(m => m.type === 'tool_call' && m.toolName === 'todo_write');
+  if (planEntry?.type !== 'tool_call') return;
+  const todos = instance.agent.getTodos();
+  const recorded = Array.isArray(planEntry.args.todos) ? planEntry.args.todos as Array<{ status?: unknown }> : [];
+  if (recorded.length === todos.length && recorded.every((r, i) => r?.status === todos[i].status)) return;
+  instance.messages.push({
+    type: 'tool_call', toolName: 'todo_write',
+    args: { todos },
+    result,
+    isError: false,
+    timestamp: Date.now(),
+  });
+}
+
 export function buildAgentCallbacks(
   instance: AICapsuleInstance,
   deps: {
@@ -482,8 +504,6 @@ export function buildAgentCallbacks(
   return {
     onToken: (token) => appendStreamToken(instance, token),
     onReasoning: (token) => appendReasoningToken(instance, token),
-    onComplete: (fullText) => finalizeMessage(instance, fullText, finalizeDeps),
-    onError: (err) => showError(instance, err.message),
     onThinkingComplete: (text) => {
       finalizeThinking(instance, text, thinkingDeps);
     },
@@ -499,22 +519,20 @@ export function buildAgentCallbacks(
     onToolResult: (toolName, result, isError) => deps.updateToolResultCard(instance, toolName, result, isError),
     onToolImages: (toolName, images) => deps.updateToolResultImages?.(instance, toolName, images),
     onConfirmRequired: (toolName, args) => deps.showConfirmCard(instance, toolName, args),
+    onComplete: (fullText) => {
+      // The agent settles a plan step left in_progress when the run ends
+      // with a reply; record that so a restored chat shows the same board.
+      recordLocalPlanUpdate(instance, 'Local task-plan update after the run ended with a reply. No tool was executed for this update.');
+      finalizeMessage(instance, fullText, finalizeDeps);
+    },
+    onError: (err) => {
+      instance.agent.interruptTodos();
+      recordLocalPlanUpdate(instance, 'Local task-plan update after an error; unfinished tasks were not completed. No tool was executed for this update.');
+      showError(instance, err.message);
+    },
     onAborted: (_steps) => {
       instance.agent.interruptTodos();
-      const planEntry = [...instance.messages].reverse().find(m => m.type === 'tool_call' && m.toolName === 'todo_write');
-      if (planEntry?.type === 'tool_call') {
-        // Synthetic record of the interrupt. `result` is model-facing only — the
-        // todo_write tool card is hidden in the UI (ai-capsule-tool-ui), the board
-        // reads `args` — so it stays English like the retention prefix instead of
-        // going through i18n.
-        instance.messages.push({
-          type: 'tool_call', toolName: 'todo_write',
-          args: { todos: instance.agent.getTodos() },
-          result: 'Local task-plan update after interruption; unfinished tasks were not completed. No tool was executed for this update.',
-          isError: false,
-          timestamp: Date.now(),
-        });
-      }
+      recordLocalPlanUpdate(instance, 'Local task-plan update after interruption; unfinished tasks were not completed. No tool was executed for this update.');
       collapseActiveThinking(instance);
       instance.reasoningBuffer = '';
       if (instance.streamMsgEl && instance.streamBuffer) {
@@ -537,6 +555,10 @@ export function buildAgentCallbacks(
         instance.streamMsgEl = null;
       }
       instance.streamBuffer = '';
+      // The failed attempt's reasoning is replayed by the retry; drop it
+      // so the thinking block doesn't show it twice.
+      instance.chatPanel?.querySelector('.ai-chat-messages .ai-thinking-block.active')?.remove();
+      instance.reasoningBuffer = '';
 
       const reasonText = reason === 'rate_limit'
         ? t('aiRateLimitRetry')
