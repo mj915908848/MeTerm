@@ -13,6 +13,7 @@ import { runAgentWithCallbacks } from './ai-agent-runner';
 import { clearPendingImages } from './ai-capsule-image-attach';
 import { clearPendingAttachments } from './ai-capsule-file-attach';
 import { resolveFocusedPaneNumber } from './ai-capsule-tab-state';
+import { allowConversationSend, currentConversationHost } from './ai-conversation-host-ui';
 
 export interface InputSetupHost {
   // Prompt detection
@@ -109,6 +110,9 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
     const attached = instance.pendingImages.slice();
     const attachedFiles = instance.pendingAttachments.slice();
     if (!text && attached.length === 0 && attachedFiles.length === 0) return;
+    // Same host gate as the side panel's sendToLLMFrom: a conversation bound to
+    // another host must not continue here.
+    if (!allowConversationSend(instance)) return;
 
     // Check if AI is configured
     const settings = loadSettings();
@@ -124,6 +128,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
     // for the whole run, even if the user switches focus mid-stream.
     // Reset in the finally() handler below.
     const lockedPaneNumber = resolveFocusedPaneNumber(instance.sessionId);
+    instance.conversationHost ??= currentConversationHost(instance);
     instance.state.activeRunTargetPaneNumber = lockedPaneNumber || null;
 
     // Open chat panel and send
