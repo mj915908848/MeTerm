@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { hostsMatch, sshConversationHost, validHost } from '../src/ai-conversation-host.ts';
 import { bindLegacyHistory } from '../src/ai-conversation-binding-store.ts';
+import * as historyStore from '../src/ai-chat-history-store.ts';
 
 /**
  * Load a source module with an explicit dependency table.
@@ -139,13 +140,14 @@ function historySurface(className: string) {
     './ai-conversation-host-ui': { currentConversationHost: () => sshConversationHost('a', 22), conversationHostLabel: (host: any) => host?.displayName ?? 'Unbound' },
     './ai-conversation-binding-store': {},
     './overlay-scrollbar': { getPopupScrollViewport: (panel: any) => panel },
+    './themes': {}, './notify': {}, './ai-chat-history-store': historyStore,
   });
   (globalThis as any).document = { createElement: (tag: string) => new Element(tag) };
   const panel = new Element('div'); panel.className = className;
   const instance = { chatHistoryPanel: panel, element: {} };
   const deps = { ensurePopupResizeHandle: () => {}, restoreConversation: () => {}, handleDeleteConversation: () => {} };
   const convs = [sshConversationHost('a', 22), sshConversationHost('b', 22), undefined]
-    .map((hostBinding, i) => ({ id: String(i), title: 'goal', hostBinding, messages: [], updatedAt: 1 }));
+    .map((hostBinding, i) => ({ id: String(i), title: 'goal', hostBinding, messageCount: 0, searchText: '', createdAt: 1, updatedAt: 1 }));
   return { persistence, panel, instance, deps, convs, dispose: () => { delete (globalThis as any).document; } };
 }
 
@@ -261,10 +263,12 @@ test('save captures binding before async IO and explicit snapshots never borrow 
   const gate = new Promise<void>(resolve => { release = resolve; });
   const writes: any[] = [];
   const persistence = loadModule('ai-capsule-chat-persistence.ts', {
-    '@tauri-apps/plugin-fs': { BaseDirectory: { AppData: 1 }, exists: async () => { await gate; return true; }, writeTextFile: async (_: string, text: string) => writes.push(JSON.parse(text)) },
+    '@tauri-apps/plugin-fs': { BaseDirectory: { AppData: 1 }, exists: async () => { await gate; return true; }, rename: async () => {},
+      writeTextFile: async (path: string, text: string) => { if (!path.includes('/index/')) writes.push(JSON.parse(text)); } },
     './i18n': {}, './ai-icons': {}, './ai-capsule-markdown': {}, './ai-capsule-history': {}, './ai-capsule-tool-ui': {}, './overlay-scrollbar': {},
     './ai-conversation-host': { hostsMatch, validHost }, './ai-conversation-host-ui': {},
-    './ai-conversation-binding-store': {},
+    './ai-conversation-binding-store': {}, './notify': {}, './ai-chat-history-store': historyStore,
+    './themes': { loadSettings: () => ({ aiSaveChatHistory: true }) },
   });
   const original = sshConversationHost('a', 22);
   const instance = { currentConversationId: 'old', conversationHost: original, messages: [{ type: 'user', content: 'goal', timestamp: 1 }] };

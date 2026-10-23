@@ -28,6 +28,7 @@ export const SETTINGS_PANEL_KEYS: ReadonlySet<string> = new Set([
   'enableTerminalNotifications', 'defaultShell', 'aiBarOpacity', 'aiMaxTokens',
   'aiTemperature', 'aiContextLines', 'aiHistoryBudgetTokens', 'aiEnableThinking',
   'aiThinkingBudget', 'aiAgentTrustLevel', 'aiAgentMaxIterations', 'aiPermissionMode',
+  'aiSaveChatHistory', 'aiChatHistoryLimit',
   'searxngUrl', 'searxngUsername', 'searxngEnabled', 'fileLinkSkipConfirm',
   'enableVibrancy', 'tldrEnabled', 'cmdCompletionEnabled', 'shellHookInjection',
   'pipScale', 'pipScaleByScreen', 'autoNewSession', 'nbCustomColors', 'fileOpenPreference',

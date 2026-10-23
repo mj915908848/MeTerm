@@ -5,6 +5,7 @@ import { hostsMatch } from './ai-conversation-host';
 import { writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
 import { t } from './i18n';
 import { showToast } from './notify';
+import type { ConversationSummary } from './ai-chat-history-store';
 import { globalCompletionIndex } from './cmd-completion-data';
 import { loadSettings } from './themes';
 import { AgentCallbacks } from './ai-agent';
@@ -37,7 +38,8 @@ import {
   renderHistoryPanel as renderHistoryPanelFn, removeHistoryEntry as removeHistoryEntryFn,
 } from './ai-capsule-history';
 import {
-  saveConversation as saveConversationFn, loadConversations as loadConversationsFn,
+  saveConversation as saveConversationFn, loadConversationSummaries as loadConversationSummariesFn,
+  loadConversation as loadConversationFn, pruneConversations as pruneConversationsFn,
   deleteConversation as deleteConversationFn, confirmDeleteConversation as confirmDeleteConversationFn,
   renderChatHistoryListFromCache as renderChatHistoryListFromCacheFn,
   renderChatHistoryDetail as renderChatHistoryDetailFn,
@@ -155,7 +157,7 @@ class AICapsuleManagerClass {
   // Popup resize state (extracted into a holder object)
   private _popupState = new PopupResizeState();
   // 缓存已加载的对话列表，用于搜索筛选
-  private _cachedConversations = new Map<string, ChatConversation[]>();
+  private _cachedConversations = new Map<string, ConversationSummary[]>();
 
   constructor() {
     document.addEventListener('meterm-terminal-connected', ((event: CustomEvent<{ sessionId: string }>) => {
@@ -343,20 +345,26 @@ class AICapsuleManagerClass {
     const id = inst.currentConversationId;
     const messages = inst.messages;
     const host = currentConversationHost(inst);
-    try {
-      const conversations = await loadConversationsFn();
+    // Disk loading is asynchronous. A user action, focus change or settings
+    // change must win over this optional automatic restoration.
+    const superseded = (): boolean => {
       const settings = loadSettings();
-      // Disk loading is asynchronous. A user action, focus change or settings
-      // change must win over this optional automatic restoration.
-      if (!settings.autoOpenAiOnConnect || !settings.autoRestoreAiHistoryOnConnect
+      return !settings.autoOpenAiOnConnect || !settings.autoRestoreAiHistoryOnConnect
           || this.capsules.get(inst.sessionId) !== inst || this._lastShownSessionId !== inst.sessionId
           || !inst.chatOpen || inst.chatHistoryOpen || inst.isStreaming || inst.messages.length > 0
           || inst.messages !== messages || inst.currentConversationId !== id
-          || !hostsMatch(host, currentConversationHost(inst))) return;
-      const latest = conversations.filter(conv => hostsMatch(conv.hostBinding, host) && conv.messages.length > 0
+          || !hostsMatch(host, currentConversationHost(inst));
+    };
+    try {
+      const summaries = await loadConversationSummariesFn();
+      if (superseded()) return;
+      const latest = summaries.filter(conv => hostsMatch(conv.hostBinding, host) && conv.messageCount > 0
           && !this.isConversationOpenInOtherTab(inst, conv.id))
         .sort((a, b) => b.updatedAt - a.updatedAt)[0];
-      if (latest) this.restoreConversation(inst, latest);
+      if (!latest) return;
+      const conv = await loadConversationFn(latest.id);
+      if (!conv || superseded() || this.isConversationOpenInOtherTab(inst, conv.id)) return;
+      this.restoreConversation(inst, conv);
     } catch (error) {
       console.warn('[ai] Automatic host history restoration failed:', error);
     }
@@ -729,8 +737,12 @@ class AICapsuleManagerClass {
     return saveConversationFn(instance, snapshot);
   }
 
-  private async loadConversations(): Promise<ChatConversation[]> {
-    return loadConversationsFn();
+  /** The history list, with the retention limit applied first. Conversations
+   *  open in any tab are never pruned. */
+  private async loadConversations(): Promise<ConversationSummary[]> {
+    const open = new Set<string>();
+    for (const inst of this.capsules.values()) open.add(inst.currentConversationId);
+    return pruneConversationsFn(await loadConversationSummariesFn(), open);
   }
 
   private async deleteConversation(id: string): Promise<void> {
@@ -803,13 +815,14 @@ class AICapsuleManagerClass {
     await renderChatHistoryListFn(instance, this.getChatHistoryPopupHost());
   }
 
-  private renderChatHistoryListFromCache(instance: AICapsuleInstance, convs: ChatConversation[], filter?: string): void {
+  private renderChatHistoryListFromCache(instance: AICapsuleInstance, convs: ConversationSummary[], filter?: string): void {
     // Skip popup resize handle in side panel mode (inline view doesn't need it)
     const noopResize = () => {};
     const isSideInline = instance.chatHistoryPanel?.classList.contains('ai-side-chat-history-view');
     renderChatHistoryListFromCacheFn(instance, convs, {
       ensurePopupResizeHandle: isSideInline ? noopResize : (p, b) => this.ensurePopupResizeHandle(p, b),
       restoreConversation: (inst, conv) => this.restoreConversation(inst, conv),
+      loadConversation: (id) => loadConversationFn(id),
       handleDeleteConversation: (inst, convId) => { void this.handleDeleteConversation(inst, convId); },
     }, filter);
   }
