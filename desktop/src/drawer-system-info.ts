@@ -245,7 +245,7 @@ function renderCompactSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElement
  *
  *   who line   user@host
  *   system     OS, kernel, uptime
- *   resources  CPU, memory, each disk and swap, each with a thin bar
+ *   resources  CPU, memory, swap, then each disk, each with a thin bar
  *              (load average in the section title)
  *   network    NIC picker in the title; receive/transmit sparkline and rates
  *   processes  command / CPU / memory
@@ -291,8 +291,8 @@ function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElemen
   const resourceGroup = `<div class="si-group">
     ${stack(t('serverInfoCPU'), cpuValue, info.cpu_usage, escapeHtml(String(info.cpu_model ?? '')))}
     ${stack(t('serverInfoMemory'), `${sizeShort(info.mem_used ?? 0)} / ${sizeShort(info.mem_total ?? 0)}`, memPercent)}
-    ${diskStacks}
     ${swapStack}
+    ${diskStacks}
   </div>`;
 
   const loads = formatLoadAverage(info.load_avg).split(', ').filter(Boolean);

@@ -18,7 +18,7 @@
 }
 
 /* ── Grouped-card layout (drawer-system-info.ts renderExpandedSysInfo) ──
-   who line → system card → resources card (CPU, memory, disks, swap) →
+   who line → system card → resources card (CPU, memory, swap, disks) →
    network card → processes card. Each card is one rounded --fill-subtle
    surface with hairline rows, like the settings window. */
 .server-info.server-info-expanded {

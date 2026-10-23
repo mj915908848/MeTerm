@@ -1982,7 +1982,7 @@ const translations: Record<Language, Translations> = {
     serverInfoLoad: '负载',
     serverInfoCPU: 'CPU',
     serverInfoMemory: '内存',
-    serverInfoSwap: 'Swap',
+    serverInfoSwap: '交换',
     serverInfoProcesses: '进程',
     serverInfoDisk: '磁盘',
     serverInfoNetwork: '网络',

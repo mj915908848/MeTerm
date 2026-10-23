@@ -125,7 +125,7 @@ test('swap is always listed in the resources card', () => {
   const body = src.slice(fn, src.indexOf('\n}\n', fn));
   assert.ok(body.includes("stack(t('serverInfoSwap')"), 'a swap row with a bar');
   assert.ok(body.includes("t('serverInfoSwapOff')"), 'an "off" row when the host has no swap');
-  assert.ok(/\$\{diskStacks\}\s*\$\{swapStack\}/.test(body), 'swap comes after the disks');
+  assert.ok(/memPercent\)\}\s*\$\{swapStack\}\s*\$\{diskStacks\}/.test(body), 'swap sits right under memory, above the disks');
 });
 
 // The drawer and the panel poll on different surfaces; rendering the process
