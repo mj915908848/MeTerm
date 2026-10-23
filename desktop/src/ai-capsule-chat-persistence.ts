@@ -68,32 +68,47 @@ export async function ensureChatDir(): Promise<void> {
   _chatHistoryDirReady = true;
 }
 
-export async function saveConversation(
+/** Per-conversation write chain: saves of one file never overlap or land out of order. */
+const saveChains = new Map<string, Promise<void>>();
+
+export function saveConversation(
   instance: AICapsuleInstance,
   snapshot?: { id: string; messages: ConvEntry[]; hostBinding?: ChatConversation['hostBinding'] },
 ): Promise<void> {
   const id = snapshot?.id ?? instance.currentConversationId;
   const msgs = snapshot?.messages ?? instance.messages;
   const hostBinding = snapshot ? snapshot.hostBinding : instance.conversationHost;
-  if (msgs.length === 0) return;
-  try {
-    await ensureChatDir();
-    const firstUser = msgs.find(m => m.type === 'user');
-    const conv: ChatConversation = {
-      id,
-      hostBinding,
-      title: firstUser ? firstUser.content.slice(0, 80) : 'Untitled',
-      messages: msgs,
-      createdAt: msgs[0]?.timestamp || Date.now(),
-      updatedAt: Date.now(),
-    };
-    const safeId = conv.id.replace(/[^a-zA-Z0-9_-]/g, '');
-    if (!safeId) return;
-    const filePath = `${CHAT_DIR}/${safeId}.json`;
-    await writeTextFile(filePath, JSON.stringify(conv), FS_OPTS);
-  } catch (e) {
-    console.error('[chat-history] save failed:', e);
-  }
+  if (msgs.length === 0) return Promise.resolve();
+  const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '');
+  if (!safeId) return Promise.resolve();
+  // Serialize now: `messages` keeps changing while the write waits its turn.
+  const firstUser = msgs.find(m => m.type === 'user');
+  const conv: ChatConversation = {
+    id,
+    hostBinding,
+    title: firstUser ? firstUser.content.slice(0, 80) : 'Untitled',
+    messages: msgs,
+    createdAt: msgs[0]?.timestamp || Date.now(),
+    updatedAt: Date.now(),
+  };
+  const text = JSON.stringify(conv);
+  const filePath = `${CHAT_DIR}/${safeId}.json`;
+  const write = async () => {
+    try {
+      await ensureChatDir();
+      // Write aside and rename over, so a crash mid-write cannot leave a
+      // truncated file that loadConversations would then skip.
+      const temporary = `${filePath}.save.tmp`;
+      await writeTextFile(temporary, text, FS_OPTS);
+      await rename(temporary, filePath, { oldPathBaseDir: BaseDirectory.AppData, newPathBaseDir: BaseDirectory.AppData });
+    } catch (e) {
+      console.error('[chat-history] save failed:', e);
+    }
+  };
+  const next = (saveChains.get(safeId) ?? Promise.resolve()).then(write);
+  saveChains.set(safeId, next);
+  void next.then(() => { if (saveChains.get(safeId) === next) saveChains.delete(safeId); });
+  return next;
 }
 
 export async function loadConversations(): Promise<ChatConversation[]> {
@@ -125,6 +140,8 @@ export async function deleteConversation(id: string): Promise<void> {
   if (!/^[a-zA-Z0-9_-]+$/.test(id)) return;
   try {
     await ensureChatDir();
+    // Let a queued save finish first, or it would write the file back.
+    await saveChains.get(id);
     await deleteHistoryFiles(id, {
       exists: path => exists(path, FS_OPTS),
       remove: path => remove(path, FS_OPTS),

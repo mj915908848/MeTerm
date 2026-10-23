@@ -525,7 +525,12 @@ export function buildAgentCallbacks(
       beginAssistantMessage(instance);
     },
     onToolCall: (toolName, args) => deps.appendToolCallCard(instance, toolName, args),
-    onToolResult: (toolName, result, isError) => deps.updateToolResultCard(instance, toolName, result, isError),
+    onToolResult: (toolName, result, isError) => {
+      deps.updateToolResultCard(instance, toolName, result, isError);
+      // Persist after every tool step, not just at the end of the turn: a long
+      // agent run interrupted by a crash or force-quit kept nothing otherwise.
+      deps.saveConversation(instance);
+    },
     onToolImages: (toolName, images) => deps.updateToolResultImages?.(instance, toolName, images),
     onConfirmRequired: (toolName, args) => deps.showConfirmCard(instance, toolName, args),
     onComplete: (fullText) => {

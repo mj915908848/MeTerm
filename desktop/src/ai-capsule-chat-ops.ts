@@ -40,6 +40,8 @@ export interface ChatOpsHost {
   addHistory(instance: AICapsuleInstance, command: string, source: 'manual' | 'ai'): void;
   saveConversation(instance: AICapsuleInstance, snapshot?: { id: string; messages: ConvEntry[]; hostBinding?: ChatConversation['hostBinding'] }): Promise<void>;
   deleteConversation(id: string): Promise<void>;
+  /** Same confirmation (and "don't ask for 5 minutes" window) as deleting from the history list. */
+  confirmDeleteConversation(): Promise<boolean>;
   closeHistory(instance: AICapsuleInstance): void;
   closeChatHistory(instance: AICapsuleInstance): void;
   updateButtonHighlight(instance: AICapsuleInstance): void;
@@ -158,9 +160,16 @@ export function createChatPanel(
   const clearBtn = document.createElement('button');
   clearBtn.className = 'ai-chat-clear';
   clearBtn.textContent = t('aiClearChat');
-  clearBtn.addEventListener('click', () => {
+  clearBtn.addEventListener('click', async () => {
     const inst = currentInstance();
     if (inst.isStreaming) return;
+    // Clearing deletes the saved file too, so a conversation reopened from
+    // history would be gone for good: confirm like the history list does.
+    if (inst.messages.length > 0) {
+      const convId = inst.currentConversationId;
+      if (!(await host.confirmDeleteConversation())) return;
+      if (inst.isStreaming || inst.currentConversationId !== convId) return;
+    }
     leaveHeaderHistoryView(inst, instance, panel, host);
     // Clear without saving — user explicitly discards
     void host.deleteConversation(inst.currentConversationId);

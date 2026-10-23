@@ -51,7 +51,7 @@ export async function deleteHistoryFiles(id: string, storage: Pick<BindingStorag
     // If primary deletion fails, retain the last recovery copy.
     if (await storage.exists(path)) await storage.remove(path);
     const failures: unknown[] = [];
-    for (const sidecar of [`${path}.pre-host-binding.bak`, `${path}.binding.tmp`]) {
+    for (const sidecar of [`${path}.pre-host-binding.bak`, `${path}.binding.tmp`, `${path}.save.tmp`]) {
       try { if (await storage.exists(sidecar)) await storage.remove(sidecar); }
       catch (error) { failures.push(error); }
     }

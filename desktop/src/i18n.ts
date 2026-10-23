@@ -591,6 +591,8 @@ export interface Translations {
   aiChatHostLocal: string;
   aiChatHostMismatchTitle: string;
   aiChatHostMismatch: string;
+  aiChatOpenElsewhereTitle: string;
+  aiChatOpenElsewhere: string;
   aiChatPreviewAriaLabel: string;
   aiChatPreviewNoticeBound: string;
   aiChatPreviewNoticeUnbound: string;
@@ -1341,6 +1343,8 @@ const translations: Record<Language, Translations> = {
     aiChatHostLocal: 'Local',
     aiChatHostMismatchTitle: 'Host mismatch',
     aiChatHostMismatch: 'Host mismatch. Switch to the conversation host or start a new conversation.',
+    aiChatOpenElsewhereTitle: 'Already open',
+    aiChatOpenElsewhere: 'This conversation is open in another tab. Continue it there, or close it there first.',
     aiChatPreviewAriaLabel: 'Read-only conversation history',
     aiChatPreviewNoticeBound: 'Read-only history. Switch to the matching host and reopen from history to continue. Ownership identifies the initial host, not every operation target.',
     aiChatPreviewNoticeUnbound: 'Legacy history is unbound. Confirm ownership, bind to the current host, then reopen from history to continue.',
@@ -2104,6 +2108,8 @@ const translations: Record<Language, Translations> = {
     aiChatHostLocal: '本机',
     aiChatHostMismatchTitle: '主机不匹配',
     aiChatHostMismatch: '当前主机与对话归属不匹配，请切换到对应主机或新建对话。',
+    aiChatOpenElsewhereTitle: '对话已打开',
+    aiChatOpenElsewhere: '这条对话已在另一个标签中打开，请在那边继续，或先在那边关闭。',
     aiChatPreviewAriaLabel: '只读对话历史',
     aiChatPreviewNoticeBound: '只读历史。切换到对应主机后，从历史列表重新打开即可继续。归属表示首次发送的主机，不代表所有操作的目标。',
     aiChatPreviewNoticeUnbound: '旧历史尚未绑定主机。确认归属后，可绑定当前主机，再从历史列表打开继续。',

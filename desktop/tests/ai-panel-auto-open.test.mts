@@ -65,6 +65,7 @@ function restoreHarness() {
   const ast = ts.createSourceFile('ai-capsule.ts', text, ts.ScriptTarget.Latest, true);
   const declaration = ast.statements.find(ts.isClassDeclaration)!;
   const method = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText() === 'restoreLatestHostHistory')!;
+  const openElsewhere = declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText() === 'isConversationOpenInOtherTab')!;
   const settings = { autoOpenAiOnConnect: true, autoRestoreAiHistoryOnConnect: true };
   let currentHost = sshConversationHost('host', 22);
   let release: (convs: any[]) => void = () => {}; let loads = 0;
@@ -72,13 +73,14 @@ function restoreHarness() {
   const js = ts.transpileModule(`class Manager {
     capsules=new Map(); _lastShownSessionId='session'; restored=[];
     ${method.getText()}
+    ${openElsewhere.getText()}
     restoreConversation(inst,conv){this.restored.push(conv);inst.currentConversationId=conv.id}
   }`, { compilerOptions: { target: ts.ScriptTarget.ES2021 } }).outputText;
   const Manager = new Function('loadSettings', 'currentConversationHost', 'hostsMatch', 'loadConversationsFn', js + ';return Manager;')(
     () => settings, () => currentHost, hostsMatch, () => { loads++; return data; },
   );
   const manager = new Manager();
-  const inst = { sessionId: 'session', currentConversationId: 'fresh', messages: [], chatOpen: true, chatHistoryOpen: false, isStreaming: false };
+  const inst = { sessionId: 'session', tabId: 'tab', currentConversationId: 'fresh', messages: [], chatOpen: true, chatHistoryOpen: false, isStreaming: false };
   manager.capsules.set(inst.sessionId, inst);
   return { manager, inst, settings, release, loads: () => loads, switchHost: () => { currentHost = sshConversationHost('other', 22); } };
 }
@@ -89,6 +91,13 @@ test('auto-restore selects the newest same-host bound conversation, never cross-
     history('old', sshConversationHost('host', 22), 1), history('latest', sshConversationHost('HOST', 22), 10),
     history('port', sshConversationHost('host', 2222), 101)]);
   await pending; assert.deepEqual(h.manager.restored.map((c: any) => c.id), ['latest']);
+});
+test('auto-restore skips a conversation that another tab already has open', async () => {
+  const h = restoreHarness();
+  h.manager.capsules.set('elsewhere', { sessionId: 'elsewhere', tabId: 'other-tab', currentConversationId: 'latest' });
+  const pending = h.manager.restoreLatestHostHistory(h.inst);
+  h.release([history('old', sshConversationHost('host', 22), 1), history('latest', sshConversationHost('host', 22), 10)]);
+  await pending; assert.deepEqual(h.manager.restored.map((c: any) => c.id), ['old']);
 });
 test('auto-restore leaves a fresh conversation when there is no matching history', async () => {
   const h = restoreHarness(); const pending = h.manager.restoreLatestHostHistory(h.inst);
@@ -115,4 +124,47 @@ for (const [name, change] of Object.entries(changes)) test(`late history load do
   const h = restoreHarness(); const pending = h.manager.restoreLatestHostHistory(h.inst);
   change(h); h.release([history('latest', sshConversationHost('host', 22), 10)]); await pending;
   assert.deepEqual(h.manager.restored, []);
+});
+
+function restoreGuardHarness() {
+  const text = readFileSync(new URL('../src/ai-capsule.ts', import.meta.url), 'utf8');
+  const ast = ts.createSourceFile('ai-capsule.ts', text, ts.ScriptTarget.Latest, true);
+  const declaration = ast.statements.find(ts.isClassDeclaration)!;
+  const pick = (name: string) => declaration.members.find(node => ts.isMethodDeclaration(node) && node.name.getText() === name)!.getText();
+  const js = ts.transpileModule(`class Manager {
+    capsules=new Map(); delegated=[]; closed=[]; toasts=[];
+    ${pick('restoreConversation')}
+    ${pick('isConversationOpenInOtherTab')}
+    closeChatHistory(inst){this.closed.push(inst)}
+    getChatOpsHost(){return {}}
+  }`, { compilerOptions: { target: ts.ScriptTarget.ES2021 } }).outputText;
+  const toasts: any[] = []; const delegated: string[] = [];
+  const Manager = new Function('currentConversationHost', 'hostsMatch', 'showToast', 't', 'restoreConversationFn', js + ';return Manager;')(
+    () => sshConversationHost('host', 22), hostsMatch, (toast: any) => toasts.push(toast), (key: string) => key,
+    (_inst: any, conv: any) => delegated.push(conv.id),
+  );
+  const manager = new Manager();
+  const inst = { sessionId: 'a', tabId: 'tab-a', currentConversationId: 'live' };
+  manager.capsules.set('a', inst);
+  return { manager, inst, toasts, delegated };
+}
+const bound = (id: string) => history(id, sshConversationHost('host', 22), 1);
+test('reopening the live conversation only closes history instead of loading the older listed copy', () => {
+  const h = restoreGuardHarness(); h.manager.restoreConversation(h.inst, bound('live'));
+  assert.deepEqual(h.delegated, []); assert.deepEqual(h.manager.closed, [h.inst]);
+});
+test('a conversation open in another tab is not opened a second time', () => {
+  const h = restoreGuardHarness();
+  h.manager.capsules.set('b', { sessionId: 'b', tabId: 'tab-b', currentConversationId: 'shared' });
+  h.manager.capsules.set('a2', { sessionId: 'a2', tabId: 'tab-a', currentConversationId: 'same-tab-pane' });
+  h.manager.restoreConversation(h.inst, bound('shared'));
+  assert.deepEqual(h.delegated, []); assert.equal(h.toasts.length, 1);
+  h.manager.restoreConversation(h.inst, bound('free'));
+  assert.deepEqual(h.delegated, ['free']);
+});
+test('cross-host conversations still go to the read-only preview path', () => {
+  const h = restoreGuardHarness();
+  h.manager.capsules.set('b', { sessionId: 'b', tabId: 'tab-b', currentConversationId: 'remote' });
+  h.manager.restoreConversation(h.inst, history('remote', sshConversationHost('other', 22), 1));
+  assert.deepEqual(h.delegated, ['remote']);
 });

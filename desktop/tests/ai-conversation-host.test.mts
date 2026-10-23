@@ -348,3 +348,11 @@ test('legacy preview requires confirmation and freezes target before asynchronou
     assert.equal(instance.currentConversationId, 'active');
   } finally { delete (globalThis as any).document; }
 });
+
+test('both AI send paths bind the conversation host and enforce the host gate', () => {
+  for (const file of ['../src/ai-capsule-chat-ops.ts', '../src/ai-capsule-input-setup.ts']) {
+    const text = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.match(text, /if \(!allowConversationSend\(instance\)\) return;/, file);
+    assert.match(text, /instance\.conversationHost \?\?= currentConversationHost\(instance\);/, file);
+  }
+});

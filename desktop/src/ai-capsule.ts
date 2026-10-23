@@ -4,6 +4,7 @@ import { allowConversationSend, currentConversationHost } from './ai-conversatio
 import { hostsMatch } from './ai-conversation-host';
 import { writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
 import { t } from './i18n';
+import { showToast } from './notify';
 import { globalCompletionIndex } from './cmd-completion-data';
 import { loadSettings } from './themes';
 import { AgentCallbacks } from './ai-agent';
@@ -251,6 +252,7 @@ class AICapsuleManagerClass {
       addHistory: (inst, cmd, src) => this.addHistory(inst, cmd, src),
       saveConversation: (inst, snap) => this.saveConversation(inst, snap),
       deleteConversation: (id) => this.deleteConversation(id),
+      confirmDeleteConversation: async () => Date.now() < this._deleteSkipUntil || this.confirmDeleteConversation(),
       closeHistory: (inst) => this.closeHistory(inst),
       closeChatHistory: (inst) => this.closeChatHistory(inst),
       updateButtonHighlight: (inst) => this.updateButtonHighlight(inst),
@@ -351,7 +353,8 @@ class AICapsuleManagerClass {
           || !inst.chatOpen || inst.chatHistoryOpen || inst.isStreaming || inst.messages.length > 0
           || inst.messages !== messages || inst.currentConversationId !== id
           || !hostsMatch(host, currentConversationHost(inst))) return;
-      const latest = conversations.filter(conv => hostsMatch(conv.hostBinding, host) && conv.messages.length > 0)
+      const latest = conversations.filter(conv => hostsMatch(conv.hostBinding, host) && conv.messages.length > 0
+          && !this.isConversationOpenInOtherTab(inst, conv.id))
         .sort((a, b) => b.updatedAt - a.updatedAt)[0];
       if (latest) this.restoreConversation(inst, latest);
     } catch (error) {
@@ -379,7 +382,28 @@ class AICapsuleManagerClass {
   }
 
   private restoreConversation(instance: AICapsuleInstance, conv: ChatConversation): void {
+    if (hostsMatch(conv.hostBinding, currentConversationHost(instance))) {
+      // Already the live conversation of this tab: the listed copy can be older
+      // than what is in memory, so reloading it would drop the newest turns.
+      if (conv.id === instance.currentConversationId) {
+        this.closeChatHistory(instance);
+        return;
+      }
+      // Each tab rewrites the whole file on save, so a conversation open in two
+      // tabs would lose whichever side saved first.
+      if (this.isConversationOpenInOtherTab(instance, conv.id)) {
+        showToast({ title: t('aiChatOpenElsewhereTitle'), body: t('aiChatOpenElsewhere') });
+        return;
+      }
+    }
     restoreConversationFn(instance, conv, this.getChatOpsHost());
+  }
+
+  private isConversationOpenInOtherTab(instance: AICapsuleInstance, convId: string): boolean {
+    for (const other of this.capsules.values()) {
+      if (other.tabId !== instance.tabId && other.currentConversationId === convId) return true;
+    }
+    return false;
   }
 
   // ─── Chat UI (delegated to ai-capsule-chat-ui.ts) ──
