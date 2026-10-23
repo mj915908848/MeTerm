@@ -57,6 +57,8 @@ test('read-only command lines are not changes', () => {
     'find / -name "*.conf" 2>/dev/null | head',
     'apt list --upgradable',
     "awk '{ if ($1 > 5) print }' /proc/loadavg",
+    'docker ps &>/dev/null && echo up',
+    'journalctl -p err 2>/dev/stderr | tail',
   ]) assert.equal(commandLooksMutating(cmd), false, cmd);
 });
 
@@ -72,6 +74,10 @@ test('changing command lines are changes', () => {
     'docker compose up -d',
     'kubectl apply -f deploy.yaml',
     'pacman -Syu',
+    '  rm /tmp/x',
+    'find /var/log -name "*.gz" -delete',
+    'find /tmp -name x -exec rm {} +',
+    'ls *.bak | xargs rm',
   ]) assert.equal(commandLooksMutating(cmd), true, cmd);
 });
 

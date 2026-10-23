@@ -60,12 +60,6 @@ import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit
 import { emptyReplyNotice, outputTruncatedNotice, stepLimitNotice } from './ai-tool-i18n';
 import { commandLooksMutating, newSelfCheckState, noteToolCall, selfCheckNote, stepsLeftAfterReply } from './ai-self-check';
 
-/** Tool rounds after which a run without a plan is asked to write one. */
-const PLAN_OVERDUE_AFTER_ROUNDS = 4;
-const PLAN_STALE_AFTER_ROUNDS = 3;
-
-/** Appended to every refused tool call (see rule REFUSED ACTIONS). */
-const REFUSAL_NOTE = 'This refusal is the user\'s decision: do not reach the same effect with another tool or command. Choose an approach that does not touch it, or ask the user.';
 import { parseToolArguments } from './ai-provider-wire';
 import { addUsage, type TokenUsage } from './ai-token-usage';
 import { readShellInputState } from './ai-tools-command';
@@ -75,6 +69,13 @@ import { ensureRemoteOs } from './ai-host-facts';
 export type { TerminalContext } from './ai-agent-context';
 export { gatherContext } from './ai-agent-context';
 export type { AgentEvent } from './ai-agent-events';
+
+/** Tool rounds after which a run without a plan is asked to write one. */
+const PLAN_OVERDUE_AFTER_ROUNDS = 4;
+const PLAN_STALE_AFTER_ROUNDS = 3;
+
+/** Appended to every refused tool call (see rule REFUSED ACTIONS). */
+const REFUSAL_NOTE = 'This refusal is the user\'s decision: do not reach the same effect with another tool or command. Choose an approach that does not touch it, or ask the user.';
 
 const SCOPED_READ_TOOLS = new Set(['read_file', 'grep_search', 'glob_search', 'list_directory']);
 const TERMINAL_INPUT_TOOLS = new Set(['type_text', 'press_keys']);
@@ -886,9 +887,11 @@ export class ToolAgent {
         // lookups; after four tool rounds without a plan, ask for one.
         planOverdue: hasTools && iteration > PLAN_OVERDUE_AFTER_ROUNDS && !this.todoState.renderForSystemPrompt(),
         // ...and models that have one tick everything off at the very end;
-        // after three rounds without touching an open plan, remind them.
+        // after three rounds without touching an active plan, remind them.
+        // A plan left over from an earlier request has no in_progress item
+        // (settleAfterReply / interrupt), so an unrelated task is not nagged.
         planStale: hasTools && iteration - planUpdatedAt > PLAN_STALE_AFTER_ROUNDS
-          && this.todoState.get().some((it) => it.status !== 'completed'),
+          && this.todoState.get().some((it) => it.status === 'in_progress'),
       });
 
       this.lastSystemPromptTokens = estimateTextTokens(systemPrompt.text);
