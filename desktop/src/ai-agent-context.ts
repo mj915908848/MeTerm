@@ -418,7 +418,7 @@ export function buildSystemPrompt(
     : '';
   const attachmentsSection = attachmentsBlock ? `\n${attachmentsBlock}\n` : '';
   const planSection = opts?.planOverdue && !opts?.stepLimitReached
-    ? `\nNO PLAN YET — this task has already taken several steps. Before your next command, call todo_write with the plan, marking the steps already done as completed. If the task is already nearly done, finish it instead.\n`
+    ? `\nNO PLAN YET — this task has already taken several steps and has no plan of its own (a plan above, if any, is left over from an earlier request). Before your next command, call todo_write with the plan, marking the steps already done as completed. If the task is already nearly done, finish it instead.\n`
     : opts?.planStale && !opts?.stepLimitReached
       ? `\nPLAN NOT UPDATED — the plan above has not changed for several steps. If the in-progress step is done, call todo_write now to mark it completed and the next one in_progress (in the same round as your next command). The user watches the plan to follow your progress.\n`
       : '';

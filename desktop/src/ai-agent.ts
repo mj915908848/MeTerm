@@ -885,7 +885,10 @@ export class ToolAgent {
         contextLines,
         // Models skip todo_write on tasks that look like a series of
         // lookups; after four tool rounds without a plan, ask for one.
-        planOverdue: hasTools && iteration > PLAN_OVERDUE_AFTER_ROUNDS && !this.todoState.renderForSystemPrompt(),
+        // A plan left over from an earlier request (nothing in progress, not
+        // touched this run) does not count as a plan for this one.
+        planOverdue: hasTools && iteration > PLAN_OVERDUE_AFTER_ROUNDS && planUpdatedAt === 0
+          && !this.todoState.get().some((it) => it.status === 'in_progress'),
         // ...and models that have one tick everything off at the very end;
         // after three rounds without touching an active plan, remind them.
         // A plan left over from an earlier request has no in_progress item
