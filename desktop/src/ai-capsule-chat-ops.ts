@@ -350,7 +350,7 @@ export function closeChatAndSave(instance: AICapsuleInstance, host: ChatOpsHost)
     instance.agentAbort = null;
     instance.agent.abort();
     instance.isStreaming = false;
-    document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false } }));
+    document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false, key: instance.tabId } }));
     host.updateButtonHighlight(instance);
   }
 
@@ -506,7 +506,7 @@ export function sendToLLMFrom(
 
   instance.isStreaming = true;
   instance.streamBuffer = '';
-  document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: true } }));
+  document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: true, key: instance.tabId } }));
   host.updateButtonHighlight(instance);
   // Update side panel send button to stop icon
   updateSideSendButton(getSideSendButton(instance), true);

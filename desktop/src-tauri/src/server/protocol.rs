@@ -205,7 +205,11 @@ pub fn encode_pair_approval(approved: bool, pair_id: &str) -> Vec<u8> {
     buf
 }
 
-/// Encode a pong message. For SSH sessions includes RTT in ms as 4-byte BE.
+/// RTT value meaning "SSH session, but no reading this time" (timeout or busy).
+pub const PONG_RTT_UNKNOWN: u32 = u32::MAX;
+
+/// Encode a pong message. For SSH sessions includes RTT in ms as 4-byte BE
+/// (`PONG_RTT_UNKNOWN` when it could not be measured).
 pub fn encode_pong(rtt_ms: Option<u32>) -> Vec<u8> {
     match rtt_ms {
         Some(ms) => {

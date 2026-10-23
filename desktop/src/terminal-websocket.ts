@@ -24,6 +24,9 @@ import type { AppSettings } from './themes';
 import type { ManagedTerminal } from './terminal-types';
 
 /** Streaming decoders for AI output listeners, one per terminal. */
+/** Mirrors protocol::PONG_RTT_UNKNOWN on the Rust side. */
+const PONG_RTT_UNKNOWN = 0xFFFFFFFF;
+
 const outputDecoders = new WeakMap<ManagedTerminal, TextDecoder>();
 
 export interface WsCallbacks {
@@ -176,14 +179,17 @@ export function handleIncomingMessage(
     const sentTs = callbacks.getPingTimestamp(mt.id);
     if (sentTs !== undefined) {
       callbacks.deletePingTimestamp(mt.id);
-      let rtt: number;
+      // Only SSH pongs carry a reading (the backend's round trip to the remote
+      // host). A local pong is just the IPC hop to our own backend — always
+      // ~0ms and not a latency worth showing. 0xFFFFFFFF = SSH but no reading
+      // this time (timeout / busy), which must not count as a sample either.
       if (payload.length >= 4) {
         const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
-        rtt = view.getUint32(0);
-      } else {
-        rtt = Date.now() - sentTs;
+        const rtt = view.getUint32(0);
+        if (rtt !== PONG_RTT_UNKNOWN) {
+          document.dispatchEvent(new CustomEvent('status-bar-pong', { detail: { sessionId: mt.id, rtt } }));
+        }
       }
-      document.dispatchEvent(new CustomEvent('status-bar-pong', { detail: { sessionId: mt.id, rtt } }));
     }
     return;
   }

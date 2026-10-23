@@ -1073,6 +1073,9 @@ class AICapsuleManagerClass {
     }
 
     this.tabStates.destroy(tabId);
+    // The run (if any) dies with the tab; its own "finished" event may never
+    // arrive, so drop the tab from the status bar's running set here.
+    document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false, key: tabId } }));
   }
 
   // ─── Active instance accessor ─────────────────────────────────

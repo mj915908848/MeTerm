@@ -181,7 +181,12 @@ pub async fn dispatch_message(
             }
         }
         protocol::MSG_PING => {
-            handle_ping(session, &authority).await;
+            // Measuring can wait on the SSH connection for seconds; don't hold
+            // this client's input and resize frames behind it.
+            let session = session.clone();
+            let client_id = authority.client_id().to_string();
+            let conn_gen = authority.conn_gen();
+            tokio::spawn(async move { handle_ping(&session, &client_id, conn_gen).await });
         }
         protocol::MSG_NUDGE => {
             if !authority.can_control() {
@@ -634,44 +639,52 @@ pub async fn dispatch_message(
 // Ping handler
 // ---------------------------------------------------------------------------
 
-async fn handle_ping(session: &Arc<Session>, authority: &DispatchAuthority) {
+async fn handle_ping(session: &Arc<Session>, client_id: &str, conn_gen: u64) {
     let exec_type = session.executor_type.lock().unwrap().clone();
-    if exec_type == "ssh" {
-        if let Some(handle) = session.ssh_exec_handle.lock().await.as_ref() {
-            if let Some(ssh_handle) = handle.downcast_ref::<std::sync::Arc<
-                tokio::sync::Mutex<Option<russh::client::Handle<super::terminal::ssh::SshHandler>>>,
-            >>() {
-                let start = std::time::Instant::now();
-                let mut guard = ssh_handle.lock().await;
-                if let Some(ref mut sess) = *guard {
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(10),
-                        sess.channel_open_session(),
-                    )
-                    .await
-                    {
-                        Ok(Ok(ch)) => {
-                            let _ = ch.close().await;
-                            let rtt_ms = start.elapsed().as_millis() as u32;
-                            session.send_to_client_generation(
-                                authority.client_id(),
-                                authority.conn_gen(),
-                                protocol::encode_pong(Some(rtt_ms)),
-                            );
-                            return;
-                        }
-                        _ => {
-                            session.close_with_frame(protocol::encode_session_end());
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    session.send_to_client_generation(
-        authority.client_id(),
-        authority.conn_gen(),
-        protocol::encode_pong(None),
-    );
+    let rtt_ms = if exec_type == "ssh" {
+        Some(
+            measure_ssh_rtt(session)
+                .await
+                .unwrap_or(protocol::PONG_RTT_UNKNOWN),
+        )
+    } else {
+        None
+    };
+    session.send_to_client_generation(client_id, conn_gen, protocol::encode_pong(rtt_ms));
 }
+
+/// Round trip of one `keepalive@openssh.com` global request on the session's
+/// SSH connection. No channel is opened, and the clock starts only once the
+/// handle lock is held, so a concurrent exec (server info, file probes) does
+/// not show up as latency. `None` means "no reading": the caller reports it as
+/// unknown and leaves the session alone; a dead connection is detected by
+/// russh's own keepalive (SSH_KEEPALIVE_INTERVAL / SSH_KEEPALIVE_MAX).
+async fn measure_ssh_rtt(session: &Arc<Session>) -> Option<u32> {
+    type SshHandleArc = std::sync::Arc<
+        tokio::sync::Mutex<Option<russh::client::Handle<super::terminal::ssh::SshHandler>>>,
+    >;
+    // Clone the inner handle out so the outer slot is not held while we wait.
+    let ssh_handle: SshHandleArc = {
+        let slot = session.ssh_exec_handle.lock().await;
+        slot.as_ref()?.downcast_ref::<SshHandleArc>()?.clone()
+    };
+    let guard = tokio::time::timeout(PING_TIMEOUT, ssh_handle.lock())
+        .await
+        .ok()?;
+    let handle = guard.as_ref()?;
+    if handle.is_closed() {
+        return None;
+    }
+    let start = std::time::Instant::now();
+    tokio::time::timeout(PING_TIMEOUT, handle.send_ping())
+        .await
+        .ok()?
+        .ok()?;
+    // send_ping also returns Ok when the connection drops before the reply.
+    if handle.is_closed() {
+        return None;
+    }
+    Some((start.elapsed().as_millis() as u32).min(protocol::PONG_RTT_UNKNOWN - 1))
+}
+
+const PING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);

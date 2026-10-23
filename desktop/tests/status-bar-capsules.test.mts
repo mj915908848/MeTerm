@@ -2,7 +2,8 @@
  * The status bar is on screen only while there is something to report:
  * connecting, reconnecting, a failure, a file transfer, a running AI turn.
  * A session that connected and then just sat there is not an event, so the bar
- * retracts to 0 and #app takes the 24px row back.
+ * fades out. It floats over the content instead of owning a grid row, so
+ * showing/hiding it never resizes the terminals (no SIGWINCH per AI turn).
  *
  * History, because this has flip-flopped: v0.2.11 made the bar auto-hide;
  * 2026-09-22 whitelisted the plain `connected` state at the owner's request
@@ -167,23 +168,22 @@ function boot(): Harness {
 
 // ─── Guards ───────────────────────────────────────────────────────
 
-test('a settled connection leaves the bar (and its 24px row) out of the way', () => {
+test('a settled connection leaves the bar out of the way', () => {
   const { container, app, statusBar } = boot();
 
   // Nothing open yet (the home view) — the bar is collapsed.
   assert.equal(container.classList.contains('status-collapsed'), true);
-  assert.equal(app.classList.contains('app-status-collapsed'), true);
 
   statusBar.setConnection('connected', 'bruceli@192.168.0.150');
 
-  // A healthy session is not an event: the row goes back to #app.
+  // A healthy session is not an event: the bar fades out.
   assert.equal(container.classList.contains('status-collapsed'), true,
     'a settled connection must not pin the bar on screen');
-  assert.equal(app.classList.contains('app-status-collapsed'), true,
-    'the reserved grid row must be reclaimed together with the bar');
+  // ...and it never touches the #app layout, so no terminal is resized.
+  assert.equal(app.classList.contains('app-status-collapsed'), false);
 
-  // The readout is still built and kept current in the DOM — it is the row
-  // height that hides it, so the capsules are already right when the bar
+  // The readout is still built and kept current in the DOM — it is only
+  // faded out, so the capsules are already right when the bar
   // comes back for an error or a transfer.
   const connection = find(container, 'capsule-connection');
   assert.ok(connection, 'the connection capsule must exist');
@@ -197,7 +197,7 @@ test('a settled connection leaves the bar (and its 24px row) out of the way', ()
   // Closing everything keeps it collapsed.
   statusBar.setConnection('disconnected');
   assert.equal(container.classList.contains('status-collapsed'), true);
-  assert.equal(app.classList.contains('app-status-collapsed'), true);
+  assert.equal(app.classList.contains('app-status-collapsed'), false);
 });
 
 test('the bar comes back while something is in flight, capsules and all', () => {
@@ -263,7 +263,7 @@ function ruleBody(css: string, selector: string): string {
   return match ? match[1] : '';
 }
 
-test('the bar height and the #app grid row that reserves it stay in step', () => {
+test('the bar floats over the content and never takes a grid row', () => {
   const statusCss = styleSource('status-bar.css');
   const baseCss = styleSource('base.css');
 
@@ -271,18 +271,17 @@ test('the bar height and the #app grid row that reserves it stay in step', () =>
   assert.ok(statusCss.length > 500, 'status-bar.css must be readable');
   assert.match(baseCss, /#app\s*\{/);
 
-  const barHeight = ruleBody(statusCss, '#status').match(/height:\s*([^;]+);/)?.[1].trim();
-  assert.equal(barHeight, '24px');
+  const bar = ruleBody(statusCss, '#status');
+  assert.match(bar, /position:\s*absolute;/,
+    'a bar in the grid flow would resize every terminal when it shows/hides');
+  assert.match(bar, /pointer-events:\s*none;/,
+    'the transparent strip must not swallow clicks meant for the terminal');
 
   const appRows = ruleBody(baseCss, '#app').match(/grid-template-rows:\s*([^;]+);/)?.[1].trim();
-  assert.equal(appRows, `33px 24px minmax(0, 1fr)`,
-    'the reserved status row must equal the status bar height');
+  assert.equal(appRows, `33px minmax(0, 1fr)`, '#app must not reserve a status row');
+  assert.doesNotMatch(baseCss, /app-status-collapsed/);
 
   const collapsed = ruleBody(statusCss, '#status.status-collapsed');
-  assert.match(collapsed, /height:\s*0;/);
-
-  const appCollapsed = ruleBody(baseCss, '#app.app-status-collapsed');
-  assert.equal(appCollapsed.match(/grid-template-rows:\s*([^;]+);/)?.[1].trim(),
-    '33px 0px minmax(0, 1fr)',
-    'the collapsed grid row must be 0 so no 24px gap is left behind');
+  assert.match(collapsed, /opacity:\s*0;/);
+  assert.doesNotMatch(collapsed, /height:/, 'hiding must not change the bar\'s box');
 });

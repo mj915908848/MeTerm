@@ -353,7 +353,7 @@ class TabManagerClass {
       const mt = TerminalRegistry.get(firstLeaf.sessionId);
       if (mt) {
         tab.title = mt.shellTitle || mt.title;
-        tab.status = mt.ended ? 'ended' : mt.ws ? 'connected' : 'disconnected';
+        tab.status = mt.ended ? 'ended' : (mt.ws || mt.transport?.connected) ? 'connected' : 'disconnected';
       }
     }
 

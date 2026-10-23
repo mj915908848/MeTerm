@@ -11,10 +11,14 @@
  *   - ignore pongs that were already in flight (or triggered by input on some
  *     other terminal) at the moment it collapsed.
  *
- * This is not just tidiness: on an SSH session each ping makes the backend open
- * and close a channel on the remote host (dispatch.rs::handle_ping), so a
- * hidden bar that keeps pinging touches the remote every 5s for a number
- * nobody can see.
+ * This is not just tidiness: on an SSH session each ping makes the backend
+ * send a keepalive@openssh.com round trip to the remote host
+ * (dispatch.rs::handle_ping), so a hidden bar that keeps pinging touches the
+ * remote every 5s for a number nobody can see.
+ *
+ * And the number must be the on-screen session's own: every terminal's 30s
+ * keepalive pong arrives on the same event, so a pong for any other session
+ * is not a sample, and a tab switch starts a fresh average.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -257,4 +261,48 @@ test('a reading never outlives the bar it belongs to', () => {
   h.firePong('ssh-1', 99);
   assert.doesNotMatch(h.statusBar.getConnectionTooltip(), /Latency/,
     'a pong already in flight must not repopulate the window behind the collapsed bar');
+});
+
+test('only the on-screen session\'s pongs are samples', () => {
+  const h = boot();
+  h.statusBar.setConnection('connected', 'bruceli@192.168.0.150');
+  h.statusBar.setAIActive(true, 'tab-1');
+  assert.equal(h.collapsed(), false);
+
+  // A background tab's keepalive pong (a local shell, say) is not this host.
+  h.firePong('local-7', 0);
+  assert.doesNotMatch(h.statusBar.getConnectionTooltip(), /Latency/);
+
+  h.firePong('ssh-1', 80);
+  h.firePong('other-ssh', 400);
+  assert.match(h.statusBar.getConnectionTooltip(), /Latency: 80ms/,
+    'another session\'s reading must not be averaged in');
+});
+
+test('the AI capsule stays while any tab\'s run is still going', () => {
+  const h = boot();
+  h.statusBar.setConnection('connected', 'bruceli@192.168.0.150');
+  h.statusBar.setAIActive(true, 'tab-a');
+  h.statusBar.setAIActive(true, 'tab-b');
+
+  h.statusBar.setAIActive(false, 'tab-b');
+  h.flushTimers();
+  assert.equal(h.collapsed(), false, 'tab A is still running');
+  assert.ok(find(h.container, 'capsule-ai'));
+
+  h.statusBar.setAIActive(false, 'tab-a');
+  h.flushTimers();
+  assert.equal(h.collapsed(), true);
+});
+
+test('a healthy connection capsule does not offer a reconnect', () => {
+  const h = boot();
+  h.statusBar.setConnection('connected', 'bruceli@192.168.0.150');
+  h.statusBar.setAIActive(true, 'tab-1');
+  const capsule = find(h.container, 'capsule-connection');
+  assert.ok(capsule);
+  assert.equal(capsule.classList.contains('clickable'), false);
+
+  h.statusBar.setConnection('reconnecting', 'bruceli@192.168.0.150');
+  assert.equal(capsule.classList.contains('clickable'), true);
 });
