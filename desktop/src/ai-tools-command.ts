@@ -396,7 +396,7 @@ export function createRunCommandTool(): ToolHandler {
       parameters: {
         type: 'object',
         properties: {
-          command: { type: 'string', description: 'The shell command to execute (single command)' },
+          command: { type: 'string', description: 'The shell command to execute: one logical step (read-only fact gathering may be combined)' },
           timeout: {
             type: 'number',
             description: 'Timeout in seconds to wait for output (default: 30, max: 1800)',
@@ -548,7 +548,7 @@ export function createReadTerminalTool(): ToolHandler {
     definition: {
       name: 'read_terminal',
       description:
-        'Read the most recent N lines from a pane\'s terminal screen buffer. Use ONLY to check terminal state before acting — NEVER after run_command (which already returns output). Pass `pane: <N>` to read a non-default pane (useful for correlating state across panes — e.g. check pane 2\'s logs while operating pane 1).',
+        'Read the most recent N lines from a pane\'s terminal screen buffer. Use it to check terminal state before acting, or to read output of commands the user ran — NEVER after your own run_command (which already returns output; use read_output for the full text). Pass `pane: <N>` to read a non-default pane (useful for correlating state across panes — e.g. check pane 2\'s logs while operating pane 1).',
       parameters: {
         type: 'object',
         properties: {

@@ -61,7 +61,7 @@ import { emptyReplyNotice, outputTruncatedNotice, stepLimitNotice } from './ai-t
 import { commandLooksMutating, newSelfCheckState, noteToolCall, selfCheckNote, stepsLeftAfterReply } from './ai-self-check';
 
 /** Tool rounds after which a run without a plan is asked to write one. */
-const PLAN_OVERDUE_AFTER_ROUNDS = 3;
+const PLAN_OVERDUE_AFTER_ROUNDS = 4;
 const PLAN_STALE_AFTER_ROUNDS = 3;
 
 /** Appended to every refused tool call (see rule REFUSED ACTIONS). */
@@ -883,7 +883,7 @@ export class ToolAgent {
         attachmentsBlock: this.renderAttachmentsBlock(),
         contextLines,
         // Models skip todo_write on tasks that look like a series of
-        // lookups; after three tool rounds without a plan, ask for one.
+        // lookups; after four tool rounds without a plan, ask for one.
         planOverdue: hasTools && iteration > PLAN_OVERDUE_AFTER_ROUNDS && !this.todoState.renderForSystemPrompt(),
         // ...and models that have one tick everything off at the very end;
         // after three rounds without touching an open plan, remind them.

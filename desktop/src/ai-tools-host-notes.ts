@@ -21,7 +21,7 @@ export function createSaveHostNoteTool(): ToolHandler {
       name: 'save_host_note',
       description:
         'Save a durable fact about the host of a pane so you see it again in later conversations about that host: where an app or its config lives, how it is deployed or restarted, ports, versions, quirks you had to work around. ' +
-        'Write ONE fact per line, each short (aim for under ~100 characters), e.g. "sshd config: /etc/ssh/sshd_config + drop-ins in sshd_config.d/" — not one long paragraph; every line becomes its own bullet. ' +
+        'Do not save current state or findings (load, errors, disk health today) — only what stays true. Write ONE fact per line, each short (aim for under ~100 characters), e.g. "sshd config: /etc/ssh/sshd_config + drop-ins in sshd_config.d/" — not one long paragraph; every line becomes its own bullet. ' +
         'mode "append" (default) adds the lines to the existing notes; mode "replace" overwrites all notes for the host — use it to correct or condense outdated notes. ' +
         `Limit ${HOST_NOTES_MAX_CHARS} characters per host. NEVER save passwords, tokens, keys or other secrets.`,
       parameters: {
