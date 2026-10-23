@@ -134,3 +134,9 @@ export function outputTruncatedNotice(): string {
     ? '回复达到了最大输出长度，内容可能不完整。可在 AI 设置中调大“最大 Token”。'
     : 'The reply hit the maximum output length and may be incomplete. You can raise "Max Tokens" in the AI settings.';
 }
+
+export function emptyReplyNotice(): string {
+  return getLanguage() === 'zh'
+    ? '模型这次没有返回任何回复内容，可以重新发送或换个说法再试。'
+    : 'The model ended its turn without any reply text. Try sending again or rephrasing.';
+}
