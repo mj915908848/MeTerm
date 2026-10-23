@@ -1,4 +1,4 @@
-import { getLanguage, t } from './i18n';
+import { getLanguage, t, tf } from './i18n';
 import { formatUsage } from './ai-token-usage';
 import { escapeHtml } from './status-bar';
 import { pulseIcon, thinkingIcon, stopIcon } from './ai-icons';
@@ -76,8 +76,8 @@ export function appendUserMessage(
   if (hasMultiPane && effectivePane !== undefined && effectivePane > 0) {
     const badge = document.createElement('span');
     badge.className = 'ai-msg-pane-badge';
-    badge.textContent = `Pane ${effectivePane}`;
-    badge.title = `Sent from Pane ${effectivePane}`;
+    badge.textContent = tf('aiPaneBadge', { n: effectivePane });
+    badge.title = tf('aiPaneSentFrom', { n: effectivePane });
     msg.appendChild(badge);
   }
 

@@ -167,7 +167,7 @@ export function createBarElement(
   // the other AI bar buttons.
   const attachBtn = document.createElement('button');
   attachBtn.className = 'ai-bar-btn ai-bar-btn-attach';
-  attachBtn.title = 'Attach image (left click: pick file · right click: paste from clipboard)';
+  attachBtn.title = t('aiAttachBtnTitle');
   attachBtn.innerHTML = ATTACH_ICON_SVG;
 
   bar.appendChild(modelSelect);
@@ -191,7 +191,7 @@ export function createBarElement(
   // Hide AI bar button (always last)
   const hideBtn = document.createElement('button');
   hideBtn.className = 'ai-bar-btn ai-bar-btn-hide';
-  hideBtn.title = 'Hide';
+  hideBtn.title = t('aiBarHide');
   hideBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
   hideBtn.addEventListener('click', () => cb.hideBar());
   bar.appendChild(hideBtn);

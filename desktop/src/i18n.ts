@@ -638,6 +638,50 @@ export interface Translations {
   aiChatHistorySearchPlaceholder: string;
   aiChatScopeCurrent: string;
   aiChatScopeAll: string;
+  aiAttachBtnTitle: string;
+  aiAttachRemoveImage: string;
+  aiAttachRemoveFile: string;
+  aiAttachImageChip: string;
+  aiAttachImageFilter: string;
+  aiAttachImageRejected: string;
+  aiAttachImageReadFailed: string;
+  aiAttachImageUnsupported: string;
+  aiAttachImageTooMany: string;
+  aiAttachImageTooLarge: string;
+  aiAttachImagesTooLarge: string;
+  aiAttachImageStillTooLarge: string;
+  aiAttachLimitTitle: string;
+  aiAttachLimitBody: string;
+  aiAttachEmptyTitle: string;
+  aiAttachEmptyBody: string;
+  aiAttachTooLargeTitle: string;
+  aiAttachTooLargeBody: string;
+  aiAttachCapError: string;
+  aiAttachDuplicateTitle: string;
+  aiAttachDuplicateBody: string;
+  aiAttachFailedTitle: string;
+  aiAttachSaveFailedBody: string;
+  aiAttachFailedBody: string;
+  aiAttachDirTitle: string;
+  aiAttachDirBody: string;
+  aiAttachNotFoundTitle: string;
+  aiAttachNotFoundBody: string;
+  aiImageLightboxClose: string;
+  aiBarHide: string;
+  aiBarShow: string;
+  aiModelNone: string;
+  aiPaneBadge: string;
+  aiPaneSentFrom: string;
+  aiPaneCrossCall: string;
+  aiPaneDefaultTarget: string;
+  aiTransferWaiting: string;
+  aiTransferCancel: string;
+  aiTransferCompleted: string;
+  aiConfirmReject: string;
+  aiConfirmEdit: string;
+  aiConfirmAllOccurrences: string;
+  aiConfirmMoreChars: string;
+  aiWaitDefaultReason: string;
   commonCopied: string;
   updateAvailable: string;
   updateNow: string;
@@ -1418,6 +1462,50 @@ const translations: Record<Language, Translations> = {
     aiChatHistorySearchPlaceholder: 'Search conversations or hosts',
     aiChatScopeCurrent: 'Current host',
     aiChatScopeAll: 'All conversations',
+    aiAttachBtnTitle: 'Attach (click: paste clipboard image, or pick files if none · right click: paste clipboard image)',
+    aiAttachRemoveImage: 'Remove image',
+    aiAttachRemoveFile: 'Remove attachment',
+    aiAttachImageChip: 'image{n}',
+    aiAttachImageFilter: 'Images',
+    aiAttachImageRejected: 'Image not attached',
+    aiAttachImageReadFailed: '"{name}" could not be read — the limit is {limit} per image.',
+    aiAttachImageUnsupported: 'Unsupported image format — PNG, JPEG, WebP or GIF only.',
+    aiAttachImageTooMany: 'Up to {n} images per message.',
+    aiAttachImageTooLarge: '{size} image — the limit is {limit} per image.',
+    aiAttachImagesTooLarge: 'These images total {size} — the request limit is {limit}.',
+    aiAttachImageStillTooLarge: 'Still too large at {px}px — resize it further, or attach fewer images.',
+    aiAttachLimitTitle: 'Attachment limit',
+    aiAttachLimitBody: 'Maximum {n} files can be queued at once. Remove an existing attachment first.',
+    aiAttachEmptyTitle: 'Empty file',
+    aiAttachEmptyBody: '"{name}" is empty (0 bytes) and cannot be attached.',
+    aiAttachTooLargeTitle: 'File too large',
+    aiAttachTooLargeBody: '"{name}" is {size}, exceeds the {limit} cap.\nUse the file manager or scp to transfer large files directly.',
+    aiAttachCapError: 'file is {size}, exceeds the {limit} attachment cap',
+    aiAttachDuplicateTitle: 'Duplicate file',
+    aiAttachDuplicateBody: '"{name}" ({size}) is already queued.',
+    aiAttachFailedTitle: 'Attachment failed',
+    aiAttachSaveFailedBody: 'Could not save "{name}": {error}',
+    aiAttachFailedBody: '"{name}": {error}',
+    aiAttachDirTitle: 'Cannot attach directory',
+    aiAttachDirBody: '"{name}" is a directory. Compress it first (zip/tar.gz) then attach the archive.',
+    aiAttachNotFoundTitle: 'File not found',
+    aiAttachNotFoundBody: '"{name}" does not exist or is inaccessible.',
+    aiImageLightboxClose: 'Close (Esc)',
+    aiBarHide: 'Hide',
+    aiBarShow: 'Show AI Bar',
+    aiModelNone: 'No model configured',
+    aiPaneBadge: 'Pane {n}',
+    aiPaneSentFrom: 'Sent from Pane {n}',
+    aiPaneCrossCall: 'Cross-pane call',
+    aiPaneDefaultTarget: 'Default target pane',
+    aiTransferWaiting: 'waiting…',
+    aiTransferCancel: 'Cancel transfer',
+    aiTransferCompleted: 'completed',
+    aiConfirmReject: 'Reject',
+    aiConfirmEdit: 'Edit',
+    aiConfirmAllOccurrences: ' (all occurrences)',
+    aiConfirmMoreChars: '… (+{n} chars)',
+    aiWaitDefaultReason: 'User input required',
     commonCopied: 'Copied!',
     updateAvailable: 'New version {version} is available',
     updateNow: 'Update Now',
@@ -2211,6 +2299,50 @@ const translations: Record<Language, Translations> = {
     aiChatHistorySearchPlaceholder: '搜索对话或主机',
     aiChatScopeCurrent: '当前主机',
     aiChatScopeAll: '全部对话',
+    aiAttachBtnTitle: '添加附件（左键：粘贴剪贴板图片，没有图片时选择文件 · 右键：粘贴剪贴板图片）',
+    aiAttachRemoveImage: '移除图片',
+    aiAttachRemoveFile: '移除附件',
+    aiAttachImageChip: '图片{n}',
+    aiAttachImageFilter: '图片',
+    aiAttachImageRejected: '图片未添加',
+    aiAttachImageReadFailed: '无法读取“{name}”，单张图片上限为 {limit}。',
+    aiAttachImageUnsupported: '不支持的图片格式，仅支持 PNG、JPEG、WebP 或 GIF。',
+    aiAttachImageTooMany: '每条消息最多 {n} 张图片。',
+    aiAttachImageTooLarge: '图片大小 {size}，单张上限为 {limit}。',
+    aiAttachImagesTooLarge: '图片合计 {size}，单次请求上限为 {limit}。',
+    aiAttachImageStillTooLarge: '缩小到 {px}px 后仍然过大，请先自行缩小图片或减少图片数量。',
+    aiAttachLimitTitle: '附件数量已达上限',
+    aiAttachLimitBody: '最多同时添加 {n} 个文件，请先移除已有附件。',
+    aiAttachEmptyTitle: '空文件',
+    aiAttachEmptyBody: '“{name}”是空文件（0 字节），无法添加。',
+    aiAttachTooLargeTitle: '文件过大',
+    aiAttachTooLargeBody: '“{name}”大小为 {size}，超过 {limit} 上限。\n大文件请用文件管理器或 scp 直接传输。',
+    aiAttachCapError: '文件大小为 {size}，超过 {limit} 附件上限',
+    aiAttachDuplicateTitle: '重复文件',
+    aiAttachDuplicateBody: '“{name}”（{size}）已在附件列表中。',
+    aiAttachFailedTitle: '附件添加失败',
+    aiAttachSaveFailedBody: '无法保存“{name}”：{error}',
+    aiAttachFailedBody: '“{name}”：{error}',
+    aiAttachDirTitle: '无法添加文件夹',
+    aiAttachDirBody: '“{name}”是文件夹，请先压缩（zip/tar.gz）再添加压缩包。',
+    aiAttachNotFoundTitle: '文件不存在',
+    aiAttachNotFoundBody: '“{name}”不存在或无法访问。',
+    aiImageLightboxClose: '关闭（Esc）',
+    aiBarHide: '隐藏',
+    aiBarShow: '显示 AI 输入栏',
+    aiModelNone: '未配置模型',
+    aiPaneBadge: '窗格 {n}',
+    aiPaneSentFrom: '从窗格 {n} 发送',
+    aiPaneCrossCall: '跨窗格调用',
+    aiPaneDefaultTarget: '默认目标窗格',
+    aiTransferWaiting: '等待中…',
+    aiTransferCancel: '取消传输',
+    aiTransferCompleted: '已完成',
+    aiConfirmReject: '拒绝',
+    aiConfirmEdit: '编辑',
+    aiConfirmAllOccurrences: '（全部匹配项）',
+    aiConfirmMoreChars: '…（还有 {n} 个字符）',
+    aiWaitDefaultReason: '需要用户输入',
     commonCopied: '已复制!',
     updateAvailable: '新版本 {version} 已发布',
     updateNow: '立即更新',
@@ -2415,6 +2547,11 @@ export function getLanguage(): Language {
 
 export function t(key: keyof Translations): string {
   return translations[currentLanguage][key];
+}
+
+/** `t()` with `{name}` placeholders filled in; unknown placeholders are left as-is. */
+export function tf(key: keyof Translations, vars: Record<string, string | number>): string {
+  return t(key).replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m));
 }
 
 export function getAvailableLanguages(): { value: Language; label: string }[] {

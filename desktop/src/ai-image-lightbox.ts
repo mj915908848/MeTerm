@@ -14,6 +14,8 @@
 //     interaction simple — open / inspect / close is enough for
 //     terminal screenshots.
 
+import { t } from './i18n';
+
 let activeBackdrop: HTMLDivElement | null = null;
 let activeKeyHandler: ((e: KeyboardEvent) => void) | null = null;
 
@@ -39,7 +41,7 @@ export function openImageLightbox(src: string, alt = ''): void {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'ai-img-lightbox-close';
   closeBtn.type = 'button';
-  closeBtn.title = 'Close (Esc)';
+  closeBtn.title = t('aiImageLightboxClose');
   closeBtn.innerHTML = `
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
       <line x1="4" y1="4" x2="14" y2="14"/>

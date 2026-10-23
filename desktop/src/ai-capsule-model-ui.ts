@@ -12,13 +12,13 @@ export function updateModelLabel(label: HTMLSpanElement): void {
   const resolved = resolveActiveModel(settings.aiProviders, settings.aiActiveModel);
   if (settings.aiActiveModel === 'auto') {
     label.textContent = t('aiModelAuto');
-    label.title = resolved ? `Auto → ${resolved.entry.label}: ${resolved.model}` : 'Auto';
+    label.title = resolved ? `${t('aiModelAuto')} → ${resolved.entry.label}: ${resolved.model}` : t('aiModelAuto');
   } else if (resolved) {
     label.textContent = resolved.model;
     label.title = `${resolved.entry.label} · ${resolved.model}`;
   } else {
     label.textContent = t('aiModelAuto');
-    label.title = 'No model configured';
+    label.title = t('aiModelNone');
   }
 }
 

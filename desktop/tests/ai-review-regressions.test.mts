@@ -124,9 +124,9 @@ test('cancelling approval removes the card, clears its timer and ignores late cl
   }
   const fn = find('ai-capsule-tool-ui.ts', node => ts.isFunctionDeclaration(node) && node.name?.text === 'showConfirmCard');
   const timers = new Set<number>();
-  const show = new Function('document', 'TOOL_COLORS', 'toolIcon', 'toolDisplayName', 'escapeHtml', 'approveIcon', 'rejectIcon', 'editIcon', 'notifyAgentWaiting', 'statusIcon', 'setTimeout', 'clearTimeout',
+  const show = new Function('document', 'TOOL_COLORS', 'toolIcon', 'toolDisplayName', 'escapeHtml', 'approveIcon', 'rejectIcon', 'editIcon', 'notifyAgentWaiting', 'statusIcon', 't', 'setTimeout', 'clearTimeout',
     compile(fn.getText().replace('export ', '')) + ';return showConfirmCard;')(
-    { createElement: () => new Element() }, {}, () => '', () => '', (s: string) => s, () => '', () => '', () => '', () => {}, () => '',
+    { createElement: () => new Element() }, {}, () => '', () => '', (s: string) => s, () => '', () => '', () => '', () => {}, () => '', (k: string) => k,
     () => { timers.add(1); return 1; }, (id: number) => timers.delete(id),
   );
   const ctl = new AbortController(); const container = new Element();
