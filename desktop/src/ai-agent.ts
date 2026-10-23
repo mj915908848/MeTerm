@@ -62,6 +62,9 @@ import { newSelfCheckState, noteToolCall, selfCheckNote } from './ai-self-check'
 
 /** Tool rounds after which a run without a plan is asked to write one. */
 const PLAN_OVERDUE_AFTER_ROUNDS = 3;
+
+/** Appended to every refused tool call (see rule REFUSED ACTIONS). */
+const REFUSAL_NOTE = 'This refusal is the user\'s decision: do not reach the same effect with another tool or command. Choose an approach that does not touch it, or ask the user.';
 import { parseToolArguments } from './ai-provider-wire';
 import { addUsage, type TokenUsage } from './ai-token-usage';
 import { readShellInputState } from './ai-tools-command';
@@ -1227,8 +1230,9 @@ export class ToolAgent {
                 rawArgs: toolCall.function.arguments,
                 reason,
               });
-              // Rejected tools are flagged as errors so the LLM doesn't misinterpret the denial as a success
-              return { result: reason, isError: true };
+              // Rejected tools are flagged as errors so the LLM doesn't misinterpret the denial as a success.
+              // The note sits on the result itself, where the model decides what to do next.
+              return { result: `${reason} ${REFUSAL_NOTE}`, isError: true };
             };
             if (!decision || decision.kind === 'reject') {
               return rejected(decision?.kind === 'reject' ? decision.message : 'No decision');
