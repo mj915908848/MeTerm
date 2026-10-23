@@ -4,6 +4,7 @@
 // history/chat-history search mode, etc.
 
 import { t } from './i18n';
+import { announceHostNotes } from './ai-capsule-chat-ui';
 import { loadSettings, updateSettings } from './themes';
 import { TerminalRegistry } from './terminal';
 import { resolveActiveModel } from './ai-provider';
@@ -133,6 +134,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
 
     // Open chat panel and send
     host.openChat(instance);
+    announceHostNotes(instance);
     host.appendUserMessage(instance, text, attached.length > 0 ? attached : undefined);
     instance.messages.push({
       type: 'user',

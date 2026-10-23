@@ -28,7 +28,7 @@ import { resolveFocusedPaneNumber } from './ai-capsule-tab-state';
 import { hostsMatch } from './ai-conversation-host';
 import { allowConversationSend, currentConversationHost, previewHostConversation } from './ai-conversation-host-ui';
 import { bindLegacyConversation } from './ai-capsule-chat-persistence';
-import { attachPersistentTodoListener } from './ai-capsule-chat-ui';
+import { announceHostNotes, attachPersistentTodoListener } from './ai-capsule-chat-ui';
 import { renderTodoBoard as renderTodoBoardImport, restoreTodoBoardFromHistory } from './ai-capsule-tool-ui';
 
 /** Host interface: methods the extracted functions need from the manager. */
@@ -484,6 +484,7 @@ export function sendToLLMFrom(
   instance.state.activeRunTargetPaneNumber = lockedPaneNumber || null;
 
   openChat(instance, host);
+  announceHostNotes(instance);
   host.appendUserMessage(instance, text, attached.length > 0 ? attached : undefined);
   instance.messages.push({
     type: 'user',

@@ -3,7 +3,7 @@
 // the notes of the host the focused pane is connected to. A dot on the
 // button shows that host already has notes.
 
-import { t } from './i18n';
+import { t, tf } from './i18n';
 import { DrawerManager } from './drawer';
 import {
   getHostNotes,
@@ -20,6 +20,19 @@ const NOTES_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 16 16" fill="no
 export function hostNotesKeyForSession(sessionId: string): string | null {
   const info = DrawerManager.getServerInfo(sessionId);
   return info ? hostNotesKey(true, `${info.username}@${info.host}:${info.port}`) : hostNotesKey(false, null);
+}
+
+/**
+ * "Loaded N host notes for X" for the start of a conversation, so the
+ * user can see that the agent knows about this host. Null when the
+ * host has no notes.
+ */
+export function hostNotesLoadedNotice(sessionId: string): string | null {
+  const key = hostNotesKeyForSession(sessionId);
+  if (!key) return null;
+  const count = getHostNotes(key).split('\n').filter((l) => l.trim()).length;
+  if (count === 0) return null;
+  return tf('aiHostNotesLoaded', { count, host: hostNotesTitle(key).title });
 }
 
 /**
