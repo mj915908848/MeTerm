@@ -1,4 +1,5 @@
-import { t } from './i18n';
+import { getLanguage, t } from './i18n';
+import { formatUsage } from './ai-token-usage';
 import { escapeHtml } from './status-bar';
 import { pulseIcon, thinkingIcon, stopIcon } from './ai-icons';
 import { renderMarkdown } from './ai-capsule-markdown';
@@ -340,6 +341,14 @@ export function finalizeMessage(
         while (mdWrapper.firstChild) content.appendChild(mdWrapper.firstChild);
         deps.bindCommandButtons(instance, content);
       }
+    }
+    // What the run cost, as the provider reported it (cache hits included).
+    const usage = instance.agent.getRunUsage?.();
+    if (usage) {
+      const line = document.createElement('div');
+      line.className = 'ai-msg-usage';
+      line.textContent = formatUsage(usage, getLanguage() === 'zh' ? 'zh' : 'en');
+      instance.streamMsgEl.appendChild(line);
     }
   }
 

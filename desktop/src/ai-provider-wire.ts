@@ -4,7 +4,7 @@
 // prompt-cache layout. No imports beyond types, so `node --test` can
 // load it directly.
 
-import type { ProviderType } from './ai-provider';
+import type { ChatMessage, ProviderType } from './ai-provider';
 
 /** The payload of an SSE `data:` line (the space after the colon is optional). */
 export function sseData(line: string): string | null {
@@ -76,6 +76,22 @@ const EPHEMERAL = { type: 'ephemeral' } as const;
 export const TURN_CONTEXT_HEADING = '[Current terminal context, refreshed every turn. Supplied by MeTerm, not typed by the user.]';
 
 /**
+ * Split the agent's system prompt at `stablePrefixChars` into the part that
+ * is identical on every iteration and the per-turn context (terminal
+ * output, plan, attachments). Null when there is nothing to split.
+ */
+export function splitTurnContext(
+  systemText: string,
+  stablePrefixChars: number | undefined,
+): { stable: string; context: string } | null {
+  if (stablePrefixChars === undefined || stablePrefixChars <= 0 || stablePrefixChars >= systemText.length) return null;
+  return {
+    stable: systemText.slice(0, stablePrefixChars).trimEnd(),
+    context: systemText.slice(stablePrefixChars).trim(),
+  };
+}
+
+/**
  * Lay out the system prompt and conversation for Anthropic prompt caching.
  *
  * Anthropic caches by exact prefix in the order tools → system → messages.
@@ -93,12 +109,11 @@ export function anthropicCacheLayout(
   stablePrefixChars: number | undefined,
   messages: Record<string, unknown>[],
 ): { system: unknown[]; messages: Record<string, unknown>[] } {
-  const split = stablePrefixChars !== undefined && stablePrefixChars > 0 && stablePrefixChars < systemText.length;
+  const split = splitTurnContext(systemText, stablePrefixChars);
   if (!split) {
     return { system: [{ type: 'text', text: systemText, cache_control: EPHEMERAL }], messages };
   }
-  const stable = systemText.slice(0, stablePrefixChars).trimEnd();
-  const context = systemText.slice(stablePrefixChars).trim();
+  const { stable, context } = split;
   const system: unknown[] = [{ type: 'text', text: stable, cache_control: EPHEMERAL }];
   if (!context) return { system, messages };
 
@@ -111,6 +126,32 @@ export function anthropicCacheLayout(
   blocks[blocks.length - 1] = { ...(blocks[blocks.length - 1] as object), cache_control: EPHEMERAL };
   blocks.push({ type: 'text', text: `${TURN_CONTEXT_HEADING}\n\n${context}` });
   return { system, messages: [...messages.slice(0, -1), { ...last, content: blocks }] };
+}
+
+/**
+ * The same move for providers that cache prefixes on their own (DeepSeek,
+ * OpenAI, Gemini, Qwen, GLM…): they match the request from the start, so
+ * per-turn context inside the system message ended every cache hit before
+ * the conversation history, which was then billed in full on every
+ * iteration. The context is appended to the last user or tool message
+ * instead, which keeps the role order every server accepts. When the
+ * conversation does not end with one, the messages are returned unchanged.
+ */
+export function moveTurnContextToEnd(messages: ChatMessage[]): ChatMessage[] {
+  const systemCount = messages.filter((m) => m.role === 'system').length;
+  const sys = messages[0];
+  const last = messages[messages.length - 1];
+  if (systemCount !== 1 || sys?.role !== 'system' || typeof sys.content !== 'string') return messages;
+  if (!last || (last.role !== 'user' && last.role !== 'tool')) return messages;
+  const split = splitTurnContext(sys.content, sys.stablePrefixChars);
+  if (!split) return messages;
+  const system: ChatMessage = { ...sys, content: split.stable, stablePrefixChars: undefined };
+  if (!split.context) return [system, ...messages.slice(1)];
+  const text = `${TURN_CONTEXT_HEADING}\n\n${split.context}`;
+  const content: ChatMessage['content'] = typeof last.content === 'string'
+    ? (last.content ? `${last.content}\n\n${text}` : text)
+    : [...last.content, { type: 'text', text }];
+  return [system, ...messages.slice(1, -1), { ...last, content }];
 }
 
 function userBlocks(content: unknown): unknown[] {
@@ -146,6 +187,24 @@ function strictOpenAIHost(baseUrl: string): boolean {
     return false;
   }
   return host === 'api.openai.com' || host === 'api.groq.com';
+}
+
+// Hosts documented to accept `stream_options` and report token usage in
+// the final chunk. Others may reject the unknown field, so they are not
+// sent it; their usage is still read whenever they include it anyway.
+const USAGE_STREAM_HOSTS = new Set([
+  'api.openai.com', 'api.deepseek.com', 'dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com',
+]);
+
+/** `stream_options` asking for usage in the final chunk, where the server is known to accept it. */
+export function openAIStreamOptions(baseUrl: string): Record<string, unknown> {
+  let host: string;
+  try {
+    host = new URL(baseUrl).hostname.toLowerCase();
+  } catch {
+    return {};
+  }
+  return USAGE_STREAM_HOSTS.has(host) ? { stream_options: { include_usage: true } } : {};
 }
 
 /**

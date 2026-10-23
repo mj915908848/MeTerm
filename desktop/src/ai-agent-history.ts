@@ -101,6 +101,8 @@ export function shouldAutoCompact(
   return estimateMessageTokens(messages) + fixedPromptTokens > threshold;
 }
 
+const OLDER_TOOL_MARKER = /\n\.\.\.\(older tool output truncated; \d+ chars\)$/;
+
 /**
  * MicroCompact: truncate long tool_result messages in-place so they
  * don't bloat every subsequent LLM request.
@@ -112,21 +114,29 @@ export function shouldAutoCompact(
  * Keeps the most recent `keepRecent` tool messages untouched so the
  * model has the latest context in full.
  *
+ * Every rewrite of an earlier message ends the provider's prompt-cache
+ * hit at that message, so truncation waits until it would save at least
+ * `minSavingsChars` and then shortens every eligible message at once,
+ * instead of moving the cut by one message on every iteration. Messages
+ * that already carry the marker are left alone.
+ *
  * Returns true if any message was modified.
  */
 export function microCompact(
   messages: ChatMessage[],
   maxOlderToolChars = 800,
   keepRecent = 2,
+  minSavingsChars = 8000,
 ): boolean {
   let toolCount = 0;
   // Count tool messages to know which ones are "recent" (from the end).
   for (const m of messages) if (m.role === 'tool') toolCount++;
   if (toolCount <= keepRecent) return false;
 
-  let modified = false;
-  let seenTool = 0;
   const toKeepFrom = toolCount - keepRecent;
+  const candidates: Array<ChatMessage & { content: string }> = [];
+  let savings = 0;
+  let seenTool = 0;
 
   for (const msg of messages) {
     if (msg.role !== 'tool') continue;
@@ -136,16 +146,20 @@ export function microCompact(
     // tool results (image from read_screen) are always preserved as-is
     // because their value is not reducible via character slicing.
     if (!isStringContent(msg.content)) continue;
-    if (msg.content.length > maxOlderToolChars) {
-      msg.content = safeTruncate(
-        msg.content,
-        maxOlderToolChars,
-        `\n...(older tool output truncated; ${msg.content.length} chars)`,
-      );
-      modified = true;
-    }
+    if (msg.content.length <= maxOlderToolChars || OLDER_TOOL_MARKER.test(msg.content)) continue;
+    candidates.push(msg as ChatMessage & { content: string });
+    savings += msg.content.length - maxOlderToolChars;
   }
-  return modified;
+  if (candidates.length === 0 || savings < minSavingsChars) return false;
+
+  for (const msg of candidates) {
+    msg.content = safeTruncate(
+      msg.content,
+      maxOlderToolChars,
+      `\n...(older tool output truncated; ${msg.content.length} chars)`,
+    );
+  }
+  return true;
 }
 
 /**
