@@ -12,6 +12,7 @@ import {
   HOST_NOTES_MAX_CHARS,
   LOCAL_HOST_KEY,
   setHostNotes,
+  toBullets,
 } from './ai-host-notes';
 
 export function createSaveHostNoteTool(): ToolHandler {
@@ -20,12 +21,13 @@ export function createSaveHostNoteTool(): ToolHandler {
       name: 'save_host_note',
       description:
         'Save a durable fact about the host of a pane so you see it again in later conversations about that host: where an app or its config lives, how it is deployed or restarted, ports, versions, quirks you had to work around. ' +
-        'mode "append" (default) adds `note` as one new bullet line; mode "replace" overwrites all notes for the host with `note` — use it to correct or condense outdated notes. ' +
-        `Keep notes short and factual (limit ${HOST_NOTES_MAX_CHARS} characters per host). NEVER save passwords, tokens, keys or other secrets.`,
+        'Write ONE fact per line, each short (aim for under ~100 characters), e.g. "sshd config: /etc/ssh/sshd_config + drop-ins in sshd_config.d/" — not one long paragraph; every line becomes its own bullet. ' +
+        'mode "append" (default) adds the lines to the existing notes; mode "replace" overwrites all notes for the host — use it to correct or condense outdated notes. ' +
+        `Limit ${HOST_NOTES_MAX_CHARS} characters per host. NEVER save passwords, tokens, keys or other secrets.`,
       parameters: {
         type: 'object',
         properties: {
-          note: { type: 'string', description: 'The fact to add (append) or the full new notes (replace)' },
+          note: { type: 'string', description: 'One short fact per line: the lines to add (append) or the full new notes (replace)' },
           mode: { type: 'string', description: '"append" (default) or "replace"' },
           pane: {
             type: 'number',
@@ -50,7 +52,7 @@ export function createSaveHostNoteTool(): ToolHandler {
       if (!target.ok) return `Error: ${target.error}`;
       const key = hostNotesKey(target.pane.isSSH, target.pane.serverInfo);
       if (!key) return 'Error: the host of this pane is unknown, so notes cannot be saved for it.';
-      const next = mode === 'replace' ? note : appendedHostNotes(getHostNotes(key), note);
+      const next = mode === 'replace' ? toBullets(note).join('\n') : appendedHostNotes(getHostNotes(key), note);
       try {
         setHostNotes(key, next);
       } catch (e) {

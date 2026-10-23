@@ -1046,3 +1046,29 @@ html.vibrancy-active .ai-trust-dropdown {
 .settings-searching .settings-card > .ai-advanced-row:not(.settings-search-miss) { display: grid; }
 .settings-searching .settings-card > .ai-advanced-toggle { display: none; }
 @media (prefers-reduced-motion: reduce) { .ai-advanced-chevron { transition: none; } }
+
+/* ── Settings › AI › Host Notes (settings-ai-host-notes.ts) ── */
+.ai-host-notes { display: flex; flex-direction: column; gap: 14px; padding: 8px 0 10px; }
+.ai-host-notes-entry { display: flex; flex-direction: column; gap: 6px; }
+.ai-host-notes-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.ai-host-notes-time { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.ai-host-notes-delete {
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s;
+}
+.ai-host-notes-delete:hover,
+.ai-host-notes-delete.armed { color: #ff6b6b; background: rgba(255, 107, 107, 0.12); }

@@ -1269,3 +1269,107 @@ html.vibrancy-active .ai-side-model-dropdown {
 /* ── Light-theme overrides: white-on-light bubbles/code lose all contrast; use black. ── */
 [data-theme="light"] .ai-msg-assistant .ai-msg-content { background: rgba(0, 0, 0, 0.04); }
 [data-theme="light"] .ai-inline-code { background: rgba(0, 0, 0, 0.06); }
+
+/* ── Host notes: toolbar button + popover (ai-host-notes-popover.ts) ── */
+.ai-side-btn-host-notes { position: relative; }
+.ai-side-btn-host-notes.active { color: var(--accent); }
+.ai-side-btn-host-notes.has-notes::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.ai-host-notes-popover {
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  padding: 10px 12px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(var(--bg-settings), 1);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+html.vibrancy-active .ai-host-notes-popover {
+  background: rgba(var(--bg-settings), 0.8);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+.ai-host-notes-popover-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.ai-host-notes-popover-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.ai-host-notes-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ai-host-notes-link:hover { text-decoration: underline; }
+
+/* Shared by the popover and Settings › AI › Host Notes. */
+.ai-host-notes-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-host-notes-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.ai-host-notes-intro {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.ai-host-notes-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ai-host-notes-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-y: auto;
+}
+[data-theme="light"] .ai-host-notes-textarea { background: rgba(0, 0, 0, 0.04); }
+.ai-host-notes-textarea:focus { box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.5); }
+.ai-host-notes-count {
+  align-self: flex-end;
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
