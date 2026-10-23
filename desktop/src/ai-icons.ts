@@ -10,6 +10,7 @@ export const TOOL_COLORS: Record<string, string> = {
   run_command: '#F59E0B',          // amber
   read_terminal: '#3B82F6',        // blue
   read_file: '#06B6D4',            // cyan
+  read_output: '#3B82F6',          // blue (same family as read_terminal)
   write_file: '#8B5CF6',           // purple
   edit_file: '#8B5CF6',            // purple (same family as write_file)
   list_files: '#10B981',           // emerald
@@ -19,6 +20,7 @@ export const TOOL_COLORS: Record<string, string> = {
   read_screen: '#A78BFA',          // lavender (visual/eyes)
   // Phase 3 — task planning + transfer + structured search
   todo_write: '#0EA5E9',           // sky blue (planning)
+  save_host_note: '#0EA5E9',       // sky blue (same family as todo_write)
   upload_file: '#22C55E',          // green (data flowing out → server)
   download_file: '#0EA5E9',        // sky blue (data flowing back)
   list_directory: '#10B981',       // emerald (folder)
@@ -68,6 +70,7 @@ export function toolIcon(toolName: string, size = 16): string {
       </svg>`;
 
     case 'read_file':
+    case 'read_output':
       return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M4 1.5h5.5L13 5v9.5a1 1 0 01-1 1H4a1 1 0 01-1-1v-13a1 1 0 011-1z" stroke="${color}" stroke-width="1.4"/>
         <path d="M9.5 1.5V5H13" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
@@ -119,6 +122,7 @@ export function toolIcon(toolName: string, size = 16): string {
       </svg>`;
 
     case 'todo_write':
+    case 'save_host_note':
       // Checklist clipboard
       return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="3" y="2" width="10" height="12.5" rx="1.2" stroke="${color}" stroke-width="1.4"/>

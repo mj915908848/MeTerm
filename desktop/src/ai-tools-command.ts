@@ -2,6 +2,7 @@
 // run_command, read_terminal, type_text, press_keys, watch_terminal
 // All tools that interact with the live terminal session.
 
+import { truncateWithRecall } from './ai-output-store';
 import { TerminalRegistry } from './terminal';
 import {
   ToolHandler,
@@ -444,7 +445,7 @@ export function createRunCommandTool(): ToolHandler {
       );
       // executeAgentCommand already stripped ANSI + command echo + trailing
       // prompt lines via cleanOutput() — we only need size-limit truncation.
-      const output = truncateOutput(raw, TOKEN_BUDGET.perToolOutputChars);
+      const output = truncateWithRecall(raw, TOKEN_BUDGET.perToolOutputChars);
 
       // Update CWD in tool context for the default target only.
       if (cwd && pane.isDefaultTarget) ctx.cwd = cwd;
@@ -999,7 +1000,7 @@ export function createWatchTerminalTool(): ToolHandler {
           cleanup();
           const elapsed = Math.round((Date.now() - startTime) / 1000);
           const stripped = stripAnsi(lifecycle.output).trim();
-          const truncated = truncateOutput(stripped, TOKEN_BUDGET.perToolOutputChars);
+          const truncated = truncateWithRecall(stripped, TOKEN_BUDGET.perToolOutputChars);
 
           let header = `[status: ${reason}, elapsed: ${elapsed}s`;
           if (reason === 'completed') {

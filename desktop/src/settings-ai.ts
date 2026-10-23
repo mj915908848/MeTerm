@@ -7,6 +7,7 @@ import { createSettingsSelect } from './custom-select';
 import { THINKING_BUDGET_TIERS } from './ai-thinking-budget';
 import { CHAT_HISTORY_LIMITS } from './ai-chat-history-store';
 import { createGroup, createPage } from './settings-layout';
+import { createHostNotesRows } from './settings-ai-host-notes';
 import {
   createPermissionModeRow,
   createPermissionRulesEditor,
@@ -18,8 +19,8 @@ const EYE_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" st
 const CLOSE_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
 
 /**
- * Settings › AI. Five groups — model services, replies, agent, web search,
- * conversation history.
+ * Settings › AI. Six groups — model services, replies, agent, web search,
+ * conversation history, host notes.
  * The rarely touched sampling and context knobs fold away under Advanced at
  * the end of Replies.
  */
@@ -33,6 +34,7 @@ export function createAIPage(
     createGroup(t('aiGroupAgent'), createAgentRows(current, update)),
     createGroup(t('aiGroupWebSearch'), createWebSearchRows(current, update)),
     createGroup(t('aiGroupChatHistory'), createChatHistoryRows(current, update)),
+    createGroup(t('aiGroupHostNotes'), createHostNotesRows()),
   ]);
 }
 

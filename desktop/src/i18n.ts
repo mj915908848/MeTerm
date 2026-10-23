@@ -377,6 +377,11 @@ export interface Translations {
   aiGroupAgent: string;
   aiGroupWebSearch: string;
   aiGroupChatHistory: string;
+  aiGroupHostNotes: string;
+  aiHostNotesNone: string;
+  aiHostNotesHint: string;
+  aiHostNotesLocal: string;
+  aiHostNotesDelete: string;
   aiSaveChatHistory: string;
   aiSaveChatHistoryHint: string;
   aiChatHistoryLimit: string;
@@ -1218,6 +1223,11 @@ const translations: Record<Language, Translations> = {
     aiGroupAgent: 'Agent',
     aiGroupWebSearch: 'Web Search',
     aiGroupChatHistory: 'Conversation History',
+    aiGroupHostNotes: 'Host Notes',
+    aiHostNotesNone: 'No notes yet. When the agent learns something useful about a server (where an app lives, how it is restarted), it saves a note here after you approve it, and uses it the next time you work on that server.',
+    aiHostNotesHint: 'Shown to the agent whenever it works on this host. Edits are saved when you leave the box; clear the text to delete.',
+    aiHostNotesLocal: 'This computer',
+    aiHostNotesDelete: 'Delete',
     aiSaveChatHistory: 'Save Conversations',
     aiSaveChatHistoryHint: 'Keeps AI conversations on this computer so they can be reopened. What the agent types into terminal prompts and screenshots taken by tools are not saved; long command output is shortened.',
     aiChatHistoryLimit: 'Keep',
@@ -2055,6 +2065,11 @@ const translations: Record<Language, Translations> = {
     aiGroupAgent: 'Agent',
     aiGroupWebSearch: '联网搜索',
     aiGroupChatHistory: '对话历史',
+    aiGroupHostNotes: '主机备忘',
+    aiHostNotesNone: '还没有备忘。AI 在服务器上做事时学到有用的信息（比如应用目录、重启方法），会在你确认后记在这里，下次在同一台服务器上工作时自动参考。',
+    aiHostNotesHint: 'AI 在这台主机上工作时会看到这些备忘。离开输入框时自动保存，清空文字即删除。',
+    aiHostNotesLocal: '本机',
+    aiHostNotesDelete: '删除',
     aiSaveChatHistory: '保存 AI 对话历史',
     aiSaveChatHistoryHint: '把 AI 对话保存在本机，之后可以重新打开。Agent 在终端提示符里输入的内容和工具截的图不会保存，过长的命令输出会截短。',
     aiChatHistoryLimit: '保留',

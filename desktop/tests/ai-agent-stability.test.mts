@@ -95,7 +95,7 @@ function watchHarness(overrides: {
   // The factory's module-level collaborators are not part of the extraction.
   const create = new Function(
     'TerminalRegistry', 'resolvePaneTarget', 'paneHeaderFor', 'PANE_PARAM_SCHEMA',
-    'withSessionPtyLock', 'stripAnsi', 'truncateOutput', 'TOKEN_BUDGET',
+    'withSessionPtyLock', 'stripAnsi', 'truncateOutput', 'truncateWithRecall', 'TOKEN_BUDGET',
     'detectInteractiveState', 'endsWithShellPrompt', 'buildNextStepHint',
     'precheckWatch', 'lastMatchingLine', 'tailOf',
     'WATCH_DETECT_SILENCE_MS', 'WATCH_DETECT_TAIL_CHARS', 'WATCH_PROMPT_SETTLE_MS',
@@ -107,7 +107,7 @@ function watchHarness(overrides: {
   const tool = create(
     registry, () => ({ ok: true, pane: { sessionId: 'test' } }), () => '', {},
     async (_: string, fn: () => Promise<string>) => { locked = true; try { return await fn(); } finally { locked = false; } },
-    (s: string) => s, (s: string) => s, { perToolOutputChars: 100000 },
+    (s: string) => s, (s: string) => s, (s: string) => s, { perToolOutputChars: 100000 },
     overrides.detect ?? (() => ({ state: 'active' })), endsWithShellPromptStub,
     (status: string) => `[hint ${status}]`,
     precheckWatch, lastMatchingLine, tailOf,
