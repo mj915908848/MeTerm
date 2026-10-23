@@ -521,11 +521,15 @@ function buildNextStepHint(status: string): string {
         + 'NEVER ask the user for the password in chat, and NEVER call type_text / press_keys here — both are refused on password prompts. '
         + 'wait_for_user_input will pause the agent, show a card prompting the user to type the password directly into the terminal, and auto-resume once the command completes.';
     case 'waiting_confirm':
-      return '[hint] The command is waiting for a Y/n confirmation. If your intent is clear (install, proceed, overwrite, …), call type_text("y") followed by press_keys("Enter") (or "n"). If you are unsure, call wait_for_user_input so the user can decide in-terminal.';
+      return '[hint] The command is waiting for a Y/n confirmation. If a [prompt_info] line gives defaultYes, press_keys("Enter") accepts that default. If your intent is clear (install, proceed, overwrite, …), call type_text("y") followed by press_keys("Enter") (or "n"). If you are unsure, call wait_for_user_input so the user can decide in-terminal.';
     case 'waiting_input':
-      return '[hint] The command is waiting for input. Call watch_terminal to see more context first. If the input is sensitive (API key, passphrase, token), use wait_for_user_input so the user types it directly — otherwise type_text the value and press_keys("Enter").';
+      return '[hint] The command is waiting for input. Read the [prompt_info] line first when there is one: '
+        + 'kind "select" with cursorIndex N → press_keys("Enter") takes option N, or move with press_keys(["Down",…,"Enter"]) / ["Up",…] counted from N; '
+        + 'kind "free_text" → press_keys("Enter") accepts defaultValue, otherwise type_text the value + press_keys("Enter"); '
+        + 'kind "press_any_key" → press_keys("Enter"). '
+        + 'Without prompt_info, call watch_terminal to see the prompt first. If the input is sensitive (API key, passphrase, token), use wait_for_user_input so the user types it directly — otherwise type_text the value and press_keys("Enter").';
     case 'tui':
-      return '[hint] The terminal is in a full-screen TUI. To SEE what is on the screen, call read_screen — NEVER use read_terminal or watch_terminal for TUI inspection (they return cursor-positioning escapes that do not match what the user sees). To exit, use press_keys with the program-specific quit sequence (press_keys("q") for less/man/top/htop, press_keys("Esc") then type_text(":q") + press_keys("Enter") for vim, press_keys("Ctrl-C") to interrupt). After each exit attempt, INSPECT the [Terminal: ...] state line in the press_keys result — if it says "TUI just exited", STOP sending more exit keys. If you have made 2 exit attempts without success, call read_screen to verify the state, and consider web_search "how to quit <program>" for unfamiliar programs. Do NOT use wait_for_user_input here.';
+      return '[hint] The terminal is in a full-screen TUI. To SEE what is on the screen, call read_screen — NEVER use read_terminal or watch_terminal for TUI inspection (they return cursor-positioning escapes that do not match what the user sees). To exit, use press_keys with the program-specific quit sequence (press_keys("q") for less/man/top/htop, press_keys("Esc") then type_text(":q") + press_keys("Enter") for vim, press_keys("Ctrl-C") to interrupt). After each exit attempt, INSPECT the [Terminal: ...] state line in the press_keys result — if it says "TUI just exited", STOP sending more exit keys. For an unfamiliar program try type_text("/help") + press_keys("Enter") (or press_keys("?")). If you have made 2 exit attempts without success, call read_screen to verify the state (look for a help footer such as "[q]uit"), and consider web_search "how to quit <program>". Last resort: press_keys("Ctrl-C") then press_keys("Ctrl-D"). Do NOT use wait_for_user_input here.';
     case 'idle_no_signal':
       return '[hint] The process is silent but may still be running. Call watch_terminal to observe, or read_terminal for a snapshot.';
     case 'timeout':
@@ -598,24 +602,10 @@ export function createTypeTextTool(): ToolHandler {
     definition: {
       name: 'type_text',
       description:
-        'Type literal text into the terminal. Sends the `text` argument verbatim as UTF-8 bytes — NO escape parsing, NO <Enter>/<Tab> tokens, NO backslash translation.\n' +
-        '\n' +
-        'Use this whenever you want the user/program to "see exactly these characters". Use press_keys() right after if you also need to press Enter or other keys.\n' +
-        '\n' +
-        'Common patterns:\n' +
-        '  • Answer a prompt:        type_text("y") + press_keys("Enter")\n' +
-        '  • Type Chinese:           type_text("你好,你是谁") + press_keys("Enter")\n' +
-        '  • Search in vim:          type_text("/needle") + press_keys("Enter")\n' +
-        '  • Type a file path:       type_text("/etc/hosts")\n' +
-        '  • Snippet with angle:     type_text("if (x < 3) {")     ← angle brackets stay literal\n' +
-        '  • Type a regex:           type_text("\\\\d+")              ← backslash stays literal\n' +
-        '\n' +
-        'Rules:\n' +
-        '  • REFUSED on password prompts: use wait_for_user_input.\n' +
-        '  • Empty string is rejected — pass a real value.\n' +
-        '  • For Enter / Tab / arrows / Ctrl-C / etc., call press_keys() — type_text("\\n") types a literal backslash + n.\n' +
-        '  • The send is one contiguous PTY write.\n' +
-        '  • A newline that submits a line at a shell prompt is permission-checked like run_command — use run_command for shell commands.',
+        'Type literal text into the terminal: the `text` argument is sent verbatim as one UTF-8 write — no escape parsing, no <Enter> tokens, no backslash translation, so <, \\ and Chinese stay literal. '
+        + 'Follow with press_keys("Enter") to submit, e.g. type_text("y") + press_keys("Enter"), type_text("/needle") + press_keys("Enter") in vim. '
+        + 'Refused on password prompts (use wait_for_user_input). Empty text is rejected. "\\n" types a backslash + n — use press_keys for Enter/Tab/arrows. '
+        + 'A newline that submits a line at a shell prompt is permission-checked like run_command; use run_command for shell commands.',
       parameters: {
         type: 'object',
         properties: {
@@ -682,45 +672,12 @@ export function createPressKeysTool(): ToolHandler {
     definition: {
       name: 'press_keys',
       description:
-        'Press keyboard keys on the terminal. The bytes written are BYTE-FOR-BYTE the same data the kernel sees from a real keyboard — Enter is CR (0x0D), arrows are CSI sequences, Ctrl-C is 0x03, etc.\n' +
-        '\n' +
-        'This tool accepts ONLY named key tokens. To type literal characters call type_text() instead.\n' +
-        '\n' +
-        'Argument forms:\n' +
-        '  • Single key:    press_keys({keys: "Enter"})\n' +
-        '  • Array:         press_keys({keys: ["Down", "Down", "Enter"]})\n' +
-        '  • Space-separated string: press_keys({keys: "Down Down Enter"})\n' +
-        '\n' +
-        'Known keys (case-insensitive):\n' +
-        '  Enter Return CR LF Tab ShiftTab Esc Escape Space Backspace BS\n' +
-        '  Delete Del Insert Ins\n' +
-        '  Up Down Left Right Home End PageUp PgUp PageDown PgDn\n' +
-        '  F1..F12\n' +
-        '\n' +
-        'Modifiers (combinable, any order):\n' +
-        '  Ctrl-X / Control-X / C-x   — Ctrl + letter (0x01..0x1A)\n' +
-        '  Alt-X / Meta-X / M-x       — Alt prepends ESC\n' +
-        '  Shift-Tab                  — back-tab (CSI Z)\n' +
-        '  Ctrl-Left / Ctrl-Right     — bash word-jump\n' +
-        '  Alt-Backspace              — bash word-delete\n' +
-        '\n' +
-        'Examples:\n' +
-        '  • Submit:               press_keys("Enter")\n' +
-        '  • Cancel:               press_keys("Ctrl-C")\n' +
-        '  • Quit less / man:      press_keys("q")\n' +
-        '  • Vim quit:             type_text(":q") + press_keys("Enter")\n' +
-        '  • Menu navigate:        press_keys(["Down", "Down", "Enter"])\n' +
-        '  • fzf select 3rd:       press_keys("Down Down Enter")\n' +
-        '  • Word back:            press_keys("Alt-B")\n' +
-        '  • Tab complete:         press_keys("Tab")\n' +
-        '  • Clear screen:         press_keys("Ctrl-L")\n' +
-        '\n' +
-        'Rules:\n' +
-        '  • REFUSED on password prompts: use wait_for_user_input.\n' +
-        '  • Unknown key tokens (e.g. "FooBar") return an error — use type_text for literal characters.\n' +
-        '  • A single non-alphanumeric character (".", ",", "/", "q") is accepted as itself.\n' +
-        '  • All keys in one call are sent as a contiguous burst.\n' +
-        '  • Enter at a shell prompt runs the current line and is permission-checked like run_command.',
+        'Press named keys on the terminal, byte-for-byte as a real keyboard sends them (Enter = CR, arrows = CSI sequences, Ctrl-C = 0x03). For literal characters use type_text. '
+        + 'Forms: "Enter", ["Down", "Down", "Enter"], or "Down Down Enter". '
+        + 'Keys (case-insensitive): Enter Return Tab ShiftTab Esc Space Backspace Delete Insert Up Down Left Right Home End PageUp PageDown F1..F12; a single character such as "q", "/", "." is sent as itself. '
+        + 'Modifiers: Ctrl-X (letter), Alt-X (prefixes ESC), Shift-Tab, Ctrl-Left / Ctrl-Right, Alt-Backspace. '
+        + 'Examples: press_keys("Ctrl-C") to interrupt, press_keys("q") to quit less/man, press_keys("Esc") then type_text(":q") + press_keys("Enter") for vim. '
+        + 'Refused on password prompts (use wait_for_user_input). Unknown key names return an error. All keys in one call are sent as one burst; Enter at a shell prompt is permission-checked like run_command.',
       parameters: {
         type: 'object',
         properties: {
@@ -1135,21 +1092,10 @@ export function createWaitForUserInputTool(): ToolHandler {
     definition: {
       name: 'wait_for_user_input',
       description:
-        'Pause the agent and wait for the USER to type something directly in the terminal (sudo/SSH/GPG password, host-key confirmation, TUI input, etc.).\n' +
-        '\n' +
-        '== CRITICAL SECURITY RULE ==\n' +
-        'Whenever a command is blocked on a password prompt, YOU MUST call this tool. NEVER ask the user for a password in the chat — passwords must go directly from the user\'s keyboard to the terminal so they stay out of the conversation history and model context.\n' +
-        '\n' +
-        'What this tool does:\n' +
-        '  • Shows a highlighted "Agent paused — waiting for you" card in the UI\n' +
-        '  • Sends a desktop notification if the window is in the background\n' +
-        '  • Blocks until the shell returns to its prompt (command finished) OR the caller-specified timeout elapses OR the user cancels\n' +
-        '  • Does NOT read what the user typed\n' +
-        '\n' +
-        'Returns a [status: ...] header:\n' +
-        '  [status: completed, exit: N]   — shell is back at its prompt, the agent should inspect terminal state and continue\n' +
-        '  [status: timeout]              — user did not respond within the timeout, agent should stop and ask for help in plain text\n' +
-        '  [status: aborted]              — the user cancelled the wait',
+        'Pause the agent until the USER types something directly in the terminal: a sudo/SSH/GPG password, a host-key confirmation, input only they can give. '
+        + 'Whenever a command is blocked on a password prompt you MUST call this — never ask for a password in chat, so secrets stay out of the conversation. '
+        + 'Shows a "waiting for you" card (plus a desktop notification when the window is in the background) and returns when the shell is back at its prompt, the timeout elapses, or the user cancels. It does not read what the user typed. '
+        + 'Result: [status: completed, exit: N] → inspect the terminal and continue; [status: timeout] → stop and ask for help in plain text; [status: aborted] → the user cancelled.',
       parameters: {
         type: 'object',
         properties: {
@@ -1411,25 +1357,10 @@ export function createReadScreenTool(): ToolHandler {
     definition: {
       name: 'read_screen',
       description:
-        'Capture a PNG screenshot of the current terminal display and attach it to the tool result as an image part — YOU will receive the actual image and should look at it directly.\n' +
-        '\n' +
-        'WHY THIS TOOL EXISTS:\n' +
-        'TUI programs (vim, htop, less, tmux, ncurses dialogs, top, btop, k9s, lazygit, fzf …) draw their UI using cursor positioning, box-drawing characters, color attributes, and the alternate screen buffer. The plain text serialization that read_terminal returns is often INCOMPLETE or AMBIGUOUS for these programs:\n' +
-        '  • Box-drawing characters look like garbage\n' +
-        '  • Selected/highlighted rows are indistinguishable from normal rows (color is lost)\n' +
-        '  • Status bars / mode indicators may be missing\n' +
-        '  • Cursor position cannot be inferred\n' +
-        '\n' +
-        'WHEN TO CALL THIS TOOL:\n' +
-        '  • The previous run_command returned [status: tui]\n' +
-        '  • You need to know what is highlighted / selected / focused in a TUI menu\n' +
-        '  • read_terminal returned text that does not match what the user is asking about\n' +
-        '  • You launched a full-screen program (vim, less, htop, fzf …) and need to react to it\n' +
-        '\n' +
-        'HOW THE RESULT IS DELIVERED:\n' +
-        'You will receive a multimodal tool result containing (a) a short text header noting size + capture method, and (b) the actual PNG bytes as an image part. Look at the image directly — do NOT ask the user to OCR it for you, do NOT try to decode it from text, and do NOT call run_command to "see" it. The text header is informational only; the visual content is in the image part.\n' +
-        '\n' +
-        'PREFER read_terminal when you only need plain text — it is much cheaper. Use read_screen specifically when visual rendering matters.',
+        'Capture a PNG screenshot of the terminal and attach it to the result as an image — look at the image itself. '
+        + 'Use it for full-screen TUIs (vim, less, htop, top, tmux, k9s, lazygit, fzf, ncurses dialogs): their text serialization loses highlighting, box drawing, status bars and the cursor, so read_terminal cannot show what is selected or focused. '
+        + 'Call it after [status: tui], when you need to know what is highlighted in a menu, or when read_terminal does not match what the user describes. '
+        + 'For plain text output prefer read_terminal, which is much cheaper.',
       parameters: {
         type: 'object',
         properties: {
