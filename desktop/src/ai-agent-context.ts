@@ -338,6 +338,8 @@ export function buildSystemPrompt(
     stepLimitReached?: boolean;
     /** Several steps in with no plan: ask for one now. */
     planOverdue?: boolean;
+    /** A plan is open but has not been updated for several rounds. */
+    planStale?: boolean;
   },
 ): SystemPrompt {
   const lang = getLanguage();
@@ -363,8 +365,8 @@ export function buildSystemPrompt(
   const toolInstructions = hasTools
     ? `Instructions:
 1. HOW A TASK GOES — understand what the user wants (check the pane context first), look before you change anything, plan when the task has several steps, change one thing at a time, verify the result, then report.
-2. PLANNING — for a request with MORE than ~3 distinct steps (deployments, environment setup, end-to-end debugging, health checks or investigations that cover several areas, multi-file changes), your FIRST tool call MUST be \`todo_write\` with the plan; keep exactly one item in_progress and mark items completed as soon as they are done. The plan is shown in this context every iteration. Skip it for 1–2 step requests.
-3. LOOK-ONLY REQUESTS — when the user asks you to check, look into, investigate or explain something (e.g. "看看", "查一下", "为什么"), gather the facts and report what you found and the fix you would suggest. Do not change the system until the user asks you to. For a broad check ("看看服务器状况"), do ONE overview pass over the areas the user named, report, and offer to dig deeper into a specific finding — do not chase every lead (per-container logs, thread sampling, full SMART dumps) on your own.
+2. PLANNING — for a request with MORE than ~3 distinct steps (deployments, environment setup, end-to-end debugging, health checks or investigations that cover several areas, multi-file changes), your FIRST tool call MUST be \`todo_write\` with the plan; keep exactly one item in_progress and mark each item completed as soon as it is done — the user follows your progress on the plan, so never tick everything off at the end. The todo_write update can go in the same round as your next command. The plan is shown in this context every iteration. Skip it for 1–2 step requests.
+3. LOOK-ONLY REQUESTS — when the user asks you to check, look into, investigate or explain something (e.g. "看看", "查一下", "为什么"), gather the facts and report what you found and the fix you would suggest. Do not change the system until the user asks you to. For a broad check ("看看服务器状况"), do ONE overview pass over the areas the user named, report, and offer to dig deeper into a specific finding — do not chase every lead (per-container logs, thread sampling, full SMART dumps) on your own. Likewise, after a change the user asked for (e.g. restarting a container), verify it once and report; do not open a new investigation (image digests, config history) unless asked.
 4. REFUSED ACTIONS — a tool call denied by a permission rule or rejected by the user is the user's decision. Do not reach the same effect another way (e.g. \`sudo tee\` through run_command after a refused edit_file). Take an approach that does not touch that thing, or stop and ask.
 5. FAILURES AND VERIFICATION —
    • Check each command's output and exit code before the next step.
@@ -414,7 +416,9 @@ export function buildSystemPrompt(
   const attachmentsSection = attachmentsBlock ? `\n${attachmentsBlock}\n` : '';
   const planSection = opts?.planOverdue && !opts?.stepLimitReached
     ? `\nNO PLAN YET — this task has already taken several steps. Before your next command, call todo_write with the plan, marking the steps already done as completed.\n`
-    : '';
+    : opts?.planStale && !opts?.stepLimitReached
+      ? `\nPLAN NOT UPDATED — the plan above has not changed for several steps. If the in-progress step is done, call todo_write now to mark it completed and the next one in_progress (in the same round as your next command). The user watches the plan to follow your progress.\n`
+      : '';
 
   // Instructions first, per-turn context last: the instructions are
   // identical on every iteration, so providers with prompt caching can

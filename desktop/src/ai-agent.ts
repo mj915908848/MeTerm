@@ -62,6 +62,7 @@ import { commandLooksMutating, newSelfCheckState, noteToolCall, selfCheckNote, s
 
 /** Tool rounds after which a run without a plan is asked to write one. */
 const PLAN_OVERDUE_AFTER_ROUNDS = 3;
+const PLAN_STALE_AFTER_ROUNDS = 3;
 
 /** Appended to every refused tool call (see rule REFUSED ACTIONS). */
 const REFUSAL_NOTE = 'This refusal is the user\'s decision: do not reach the same effect with another tool or command. Choose an approach that does not touch it, or ask the user.';
@@ -744,6 +745,7 @@ export class ToolAgent {
     let llmRetryCount = 0;
     let contextCompressions = 0;
     const selfCheck = newSelfCheckState();
+    let planUpdatedAt = 0;
 
     // The persistent todo listener (installed via setTodoUpdateListener
     // by the UI) is the canonical sink for plan changes. We don't
@@ -883,6 +885,10 @@ export class ToolAgent {
         // Models skip todo_write on tasks that look like a series of
         // lookups; after three tool rounds without a plan, ask for one.
         planOverdue: hasTools && iteration > PLAN_OVERDUE_AFTER_ROUNDS && !this.todoState.renderForSystemPrompt(),
+        // ...and models that have one tick everything off at the very end;
+        // after three rounds without touching an open plan, remind them.
+        planStale: hasTools && iteration - planUpdatedAt > PLAN_STALE_AFTER_ROUNDS
+          && this.todoState.get().some((it) => it.status !== 'completed'),
       });
 
       this.lastSystemPromptTokens = estimateTextTokens(systemPrompt.text);
@@ -1266,6 +1272,7 @@ export class ToolAgent {
             const changes = (handler as ToolHandler).requiresConfirm(decision.args)
               && (toolCall.function.name !== 'run_command' || commandLooksMutating(String(decision.args.command ?? '')));
             noteToolCall(selfCheck, toolCall.function.name, changes, out.isError);
+            if (toolCall.function.name === 'todo_write' && !out.isError) planUpdatedAt = iteration;
 
             // ── Repeat-action loop detection ──
             // Track this call in a sliding window of size 5; if the
