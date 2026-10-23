@@ -555,6 +555,10 @@ export function buildAgentCallbacks(
         instance.streamMsgEl = null;
       }
       instance.streamBuffer = '';
+      // The failed attempt's reasoning is replayed by the retry; drop it
+      // so the thinking block doesn't show it twice.
+      instance.chatPanel?.querySelector('.ai-chat-messages .ai-thinking-block.active')?.remove();
+      instance.reasoningBuffer = '';
 
       const reasonText = reason === 'rate_limit'
         ? t('aiRateLimitRetry')

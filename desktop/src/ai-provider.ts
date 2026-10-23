@@ -230,11 +230,17 @@ async function nativeFetch(
 /**
  * 通过 Tauri Rust 后端发起 HTTP POST 请求并以流式方式读取 SSE 响应。
  * 解决 Windows WebView2 的 CORS 限制，替代浏览器 fetch() 用于 AI 流式聊天。
+ *
+ * The stream ends at the provider's end marker (`[DONE]`, or `onData`
+ * returning true), not only when the connection closes: some gateways
+ * keep the connection open (or keep sending keep-alive comments) after
+ * the reply is done, which left the reply "thinking" until the idle
+ * timeout.
  */
 async function nativeStreamPost(
   provider: AIProviderConfig,
   body: object,
-  onData: (data: string) => void,
+  onData: (data: string) => boolean | void,
   signal?: AbortSignal,
   anthropicBeta: string[] = [],
 ): Promise<void> {
@@ -244,23 +250,43 @@ async function nativeStreamPost(
     const channel = new Channel<string>();
     const streamId = crypto.randomUUID();
     let buffer = '';
+    let ended = false;
 
-    const onAbort = () => {
+    const cancelNative = () => {
       // Drop the provider request in Rust too — otherwise it keeps
       // generating (and billing) until the stream ends on its own.
       void invoke('cancel_ai_stream', { streamId }).catch(() => {});
+    };
+    const onAbort = () => {
+      cancelNative();
       reject(Object.assign(new Error('AbortError'), { name: 'AbortError' }));
     };
     signal?.addEventListener('abort', onAbort, { once: true });
 
+    const end = () => {
+      ended = true;
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    /** Feed one SSE line; returns true once the stream has ended. */
+    const feed = (line: string): boolean => {
+      const data = sseData(line);
+      if (data === null) return false;
+      if (data === '[DONE]' || onData(data) === true) {
+        end();
+        cancelNative();
+        return true;
+      }
+      return false;
+    };
+
     channel.onmessage = (text: string) => {
-      if (signal?.aborted) return;
+      if (signal?.aborted || ended) return;
       buffer += text;
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
       for (const line of lines) {
-        const data = sseData(line);
-        if (data !== null && data !== '[DONE]') onData(data);
+        if (feed(line)) return;
       }
     };
 
@@ -276,14 +302,12 @@ async function nativeStreamPost(
       streamId,
       onEvent: channel,
     }).then(() => {
-      signal?.removeEventListener('abort', onAbort);
-      if (!signal?.aborted) {
-        // 处理流末尾可能残留的不完整行
-        const data = sseData(buffer);
-        if (data !== null && data !== '[DONE]') onData(data);
-        resolve();
-      }
+      if (ended || signal?.aborted) return;
+      // 处理流末尾可能残留的不完整行
+      feed(buffer);
+      if (!ended) end();
     }).catch((e: unknown) => {
+      if (ended) return;
       signal?.removeEventListener('abort', onAbort);
       if (!signal?.aborted) reject(new Error(String(e)));
     });
@@ -762,6 +786,7 @@ class AnthropicProvider implements AIProvider {
           streamError ??= streamPayloadError('anthropic', parsed);
           content.feed(parsed);
 
+          if (parsed.type === 'message_stop') return true;
           if (parsed.type === 'message_delta') {
             if (parsed.delta?.stop_reason === 'max_tokens') truncated = true;
           } else if (parsed.type === 'content_block_start') {
