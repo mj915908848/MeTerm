@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { quoteRemotePath } from '../src/ai-remote-path.ts';
+import { quoteRemotePath, resolveSftpPath } from '../src/ai-remote-path.ts';
 
 /** What the remote shell actually sees as the argument, with HOME=/h. */
 function expand(path: string): string {
@@ -35,4 +35,14 @@ test('the write_file command shape works end to end with a ~ path', () => {
     env: { ...process.env, HOME: home },
   });
   assert.equal(readFileSync(join(home, 'deep/dir/out.txt'), 'utf8'), 'hi');
+});
+
+test('SFTP paths: ~ maps to the login directory, relative paths join the cwd', () => {
+  assert.equal(resolveSftpPath('~', '/srv'), '.');
+  assert.equal(resolveSftpPath('~/a/b.txt', '/srv'), 'a/b.txt');
+  assert.equal(resolveSftpPath('/etc/hosts', ''), '/etc/hosts');
+  assert.equal(resolveSftpPath('conf/app.yml', '/srv/app/'), '/srv/app/conf/app.yml');
+  assert.equal(resolveSftpPath('conf/app.yml', ''), null);
+  assert.equal(resolveSftpPath('~bob/x', '/srv'), null);
+  assert.equal(resolveSftpPath('  ', '/srv'), null);
 });

@@ -41,7 +41,7 @@ function attachToolResultScrollbar(resultEl: HTMLElement): void {
 export function toolArgsInline(toolName: string, args: Record<string, unknown>): string {
   if (toolName === 'run_command' && args.command) {
     return `<span class="ai-tool-args-inline"><code>$ ${escapeHtml(String(args.command))}</code></span>`;
-  } else if ((toolName === 'read_file' || toolName === 'write_file') && args.path) {
+  } else if ((toolName === 'read_file' || toolName === 'write_file' || toolName === 'edit_file') && args.path) {
     return `<span class="ai-tool-args-inline"><code>${escapeHtml(String(args.path))}</code></span>`;
   } else if (toolName === 'read_terminal') {
     return `<span class="ai-tool-args-inline"><code>${escapeHtml(String(args.lines ?? 50))} lines</code></span>`;
@@ -759,6 +759,12 @@ const CONFIRM_CONTENT_PREVIEW_CHARS = 20_000;
 /** Characters of other tools' arguments shown on the approval card. */
 const CONFIRM_ARGS_PREVIEW_CHARS = 4_000;
 
+/** edit_file approval preview: removed lines with "-", added with "+". */
+function editPreviewLines(oldText: string, newText: string): string {
+  const mark = (text: string, sign: string) => text.split('\n').map((line) => `${sign} ${line}`);
+  return [...mark(oldText, '-'), ...mark(newText, '+')].join('\n');
+}
+
 function clipForPreview(text: string, max: number): string {
   if (text.length <= max) return text;
   return `${text.slice(0, max)}\n… (+${text.length - max} chars)`;
@@ -805,6 +811,11 @@ export function showConfirmCard(
       const content = typeof args.content === 'string' ? args.content : '';
       preview.innerHTML = `<code>${escapeHtml(String(args.path))}</code>`
         + `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(content, CONFIRM_CONTENT_PREVIEW_CHARS))}</pre>`;
+    } else if (toolName === 'edit_file' && args.path) {
+      const diff = editPreviewLines(String(args.old_string ?? ''), String(args.new_string ?? ''));
+      const all = args.replace_all === true ? ' (all occurrences)' : '';
+      preview.innerHTML = `<code>${escapeHtml(String(args.path))}${all}</code>`
+        + `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(diff, CONFIRM_CONTENT_PREVIEW_CHARS))}</pre>`;
     } else {
       preview.innerHTML = `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(JSON.stringify(args, null, 2), CONFIRM_ARGS_PREVIEW_CHARS))}</pre>`;
     }
@@ -849,6 +860,8 @@ export function showConfirmCard(
       previewText = `$ ${String(args.command).slice(0, 140)}`;
     } else if (toolName === 'write_file' && args.path) {
       previewText = `write ${String(args.path)}`;
+    } else if (toolName === 'edit_file' && args.path) {
+      previewText = `edit ${String(args.path)}`;
     } else {
       previewText = `${toolName}`;
     }

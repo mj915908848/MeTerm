@@ -272,6 +272,11 @@ export function getShellType(sessionId: string): string {
   return shellTypeCache.get(sessionId) ?? 'bash';
 }
 
+/** Shell type the hook reported, or null when it is only the 'bash' guess. */
+export function knownShellType(sessionId: string): string | null {
+  return shellTypeCache.get(sessionId) ?? null;
+}
+
 // The shell-type cache is keyed by session id and never had a delete, so it
 // grew by one entry per session the window had ever seen. It is only a
 // heuristic (OSC 7766 arrives once per shell, at hook install), so dropping an

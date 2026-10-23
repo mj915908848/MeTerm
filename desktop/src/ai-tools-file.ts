@@ -1,5 +1,5 @@
 // ─── AI Tools: File Operations ──────────────────────────────────
-// read_file, write_file — supports both local and SSH remote paths.
+// read_file, write_file, edit_file — supports both local and SSH remote paths.
 //
 // Local files go through dedicated Rust commands (`agent_read_file`,
 // `agent_write_file`) that use std::fs directly. We DO NOT use the
@@ -11,14 +11,17 @@
 // value, since Tauri's plugin sometimes throws strings instead of
 // Error objects).
 //
-// Remote (SSH) files go through the existing `executeViaTerminal`
-// path which runs `head` / `printf` over the live PTY.
+// Remote (SSH) files go through the session's SFTP client
+// (`sftp_read_file` / `sftp_write_file` / `sftp_edit_file`), so nothing is
+// typed into the user's shell. When SFTP is unavailable (subsystem
+// disabled, `~user` paths) read/write fall back to `sed` / `printf` over
+// the live PTY via `executeViaTerminal`.
 
 import { invoke } from '@tauri-apps/api/core';
 import { resolveLocalToolPath, ToolHandler } from './ai-tools-core';
 import { executeViaTerminal } from './ai-tools-shell';
 import { hasSensitivePathComponent } from './ai-permission-rules';
-import { quoteRemotePath } from './ai-remote-path';
+import { quoteRemotePath, resolveSftpPath } from './ai-remote-path';
 
 interface AgentReadResult {
   content: string | null;
@@ -43,6 +46,36 @@ function fmtError(e: unknown): string {
   return String(e);
 }
 
+/** Default number of lines read_file returns. */
+const READ_DEFAULT_LINES = 200;
+
+/** True when an SFTP command failed because the session has no SFTP. */
+function sftpUnavailable(e: unknown): boolean {
+  return /SFTP not available|session not found/i.test(fmtError(e));
+}
+
+/** Render an AgentReadResult (local or SFTP) as the read_file tool result. */
+function formatReadResult(result: AgentReadResult, startLine: number, path: string): string {
+  if (result.too_large) {
+    return `File too large (${(result.size / 1024 / 1024).toFixed(1)} MB). Use run_command with head/tail/grep to read specific parts.`;
+  }
+  if (result.is_binary) {
+    return `This appears to be a binary file (${result.size} bytes). Cannot display content. Use run_command with xxd / file / strings to inspect.`;
+  }
+  const content = result.content ?? '';
+  if (!result.truncated && startLine <= 1) return content;
+  const shown = content ? content.split('\n').length : 0;
+  const total = result.total_lines ? ` of ${result.total_lines}` : '';
+  if (shown === 0) {
+    return `--- ${path}: no lines at or after line ${startLine}${total ? ` (file has${total.replace(' of', '')} lines)` : ''}. ---`;
+  }
+  const end = startLine + shown - 1;
+  const more = result.truncated
+    ? ` To read further, call read_file again with offset=${end + 1}.`
+    : '';
+  return `${content}\n\n--- Showing lines ${startLine}-${end}${total} (${result.size} bytes total).${more} ---`;
+}
+
 // ─── read_file ──────────────────────────────────────────────────
 
 export function createReadFileTool(): ToolHandler {
@@ -50,15 +83,20 @@ export function createReadFileTool(): ToolHandler {
     definition: {
       name: 'read_file',
       description:
-        'Read the content of a file at the given path. Supports absolute paths, ~/-prefixed paths, and (on local sessions) Windows drive paths. For SSH sessions the read goes through the remote shell via `head`.',
+        'Read a text file. Returns up to `limit` lines starting at line `offset` (1-based); a footer says which lines were shown and how to read on. Supports absolute paths, ~/-prefixed paths, paths relative to the pane cwd, and (on local sessions) Windows drive paths. On SSH sessions the file is read over SFTP, not typed into the terminal.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Absolute or ~/-prefixed file path' },
-          maxLines: {
+          path: { type: 'string', description: 'Absolute, ~/-prefixed, or cwd-relative file path' },
+          offset: {
             type: 'number',
-            description: 'Maximum number of lines to read (default: 200)',
-            default: 200,
+            description: 'First line to return, 1-based (default: 1)',
+            default: 1,
+          },
+          limit: {
+            type: 'number',
+            description: `Maximum number of lines to return (default: ${READ_DEFAULT_LINES})`,
+            default: READ_DEFAULT_LINES,
           },
         },
         required: ['path'],
@@ -74,16 +112,37 @@ export function createReadFileTool(): ToolHandler {
       if (!path) {
         return 'Error: read_file requires a non-empty "path" argument.';
       }
-      const requestedMaxLines = args.maxLines;
-      if (requestedMaxLines !== undefined &&
-          (typeof requestedMaxLines !== 'number' || !Number.isSafeInteger(requestedMaxLines) || requestedMaxLines < 1)) {
-        return 'Error: read_file maxLines must be a positive integer.';
+      // `maxLines` is the old name of `limit`; restored conversations still use it.
+      const requestedLimit = args.limit ?? args.maxLines;
+      if (requestedLimit !== undefined &&
+          (typeof requestedLimit !== 'number' || !Number.isSafeInteger(requestedLimit) || requestedLimit < 1)) {
+        return 'Error: read_file limit must be a positive integer.';
       }
-      const maxLines = requestedMaxLines ?? 200;
+      const requestedOffset = args.offset;
+      if (requestedOffset !== undefined &&
+          (typeof requestedOffset !== 'number' || !Number.isSafeInteger(requestedOffset) || requestedOffset < 1)) {
+        return 'Error: read_file offset must be a positive integer (1 = first line).';
+      }
+      const maxLines = requestedLimit ?? READ_DEFAULT_LINES;
+      const startLine = requestedOffset ?? 1;
 
       if (ctx.isSSH) {
-        // SSH: read via terminal command (see quoteRemotePath).
-        const cmd = `head -n ${maxLines} ${quoteRemotePath(path)} 2>&1`;
+        const sftpPath = resolveSftpPath(path, ctx.cwd ?? '');
+        if (sftpPath) {
+          try {
+            const result = await invoke<AgentReadResult>('sftp_read_file', {
+              sessionId: ctx.sessionId,
+              path: sftpPath,
+              startLine,
+              maxLines,
+            });
+            return formatReadResult(result, startLine, path);
+          } catch (e) {
+            if (!sftpUnavailable(e)) return `Error reading file: ${fmtError(e)}`;
+          }
+        }
+        // No SFTP: read via terminal command (see quoteRemotePath).
+        const cmd = `sed -n '${startLine},${startLine + maxLines - 1}p' ${quoteRemotePath(path)} 2>&1`;
         try {
           return await executeViaTerminal(ctx.sessionId, cmd, 15, ctx.shellType);
         } catch (e) {
@@ -97,31 +156,15 @@ export function createReadFileTool(): ToolHandler {
       try {
         const result = await invoke<AgentReadResult>('agent_read_file', {
           path: localPath,
-          // Only the first maxLines lines are read; the rest of the file
+          // Only the requested lines are kept; the rest of the file
           // (up to 10 MB) is scanned just to count its lines.
           maxBytes: 10 * 1024 * 1024,
           maxLines,
+          startLine,
           workspaceRoot: ctx.cwd,
           approvedCanonicalPath: ctx.approvedReadPaths?.get(localPath) ?? null,
         });
-
-        if (result.too_large) {
-          return `File too large (${(result.size / 1024 / 1024).toFixed(1)} MB). Use run_command with head/tail/grep to read specific parts.`;
-        }
-        if (result.is_binary) {
-          return `This appears to be a binary file (${result.size} bytes). Cannot display content. Use run_command with xxd / file / strings to inspect.`;
-        }
-        const content = result.content ?? '';
-        if (result.truncated) {
-          const shown = content.split('\n').length;
-          const total = result.total_lines ? `of ${result.total_lines} lines` : 'lines';
-          return (
-            content +
-            `\n\n--- Showing first ${shown} ${total} (${result.size} bytes total). ` +
-            `Use the maxLines parameter, or run_command with sed/awk, to read other ranges. ---`
-          );
-        }
-        return content;
+        return formatReadResult(result, startLine, path);
       } catch (e) {
         return `Error reading file: ${fmtError(e)}`;
       }
@@ -136,11 +179,11 @@ export function createWriteFileTool(): ToolHandler {
     definition: {
       name: 'write_file',
       description:
-        'Write content to a file at the given path. If the file exists it will be overwritten. Parent directories are created automatically. Supports absolute paths and ~/-prefixed paths. For SSH sessions the write goes through the remote shell via printf.',
+        'Create a file, or replace a file\'s ENTIRE content. To change part of an existing file use edit_file instead — rewriting a file you have only partly read loses the rest. Parent directories are created automatically. Supports absolute, ~/-prefixed and cwd-relative paths. On SSH sessions the file is written over SFTP.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Absolute or ~/-prefixed file path' },
+          path: { type: 'string', description: 'Absolute, ~/-prefixed, or cwd-relative file path' },
           content: { type: 'string', description: 'Content to write (UTF-8)' },
         },
         required: ['path', 'content'],
@@ -167,8 +210,22 @@ export function createWriteFileTool(): ToolHandler {
       }
 
       if (ctx.isSSH) {
-        // A quoted printf argument preserves the exact text, including whether
-        // the final line has a newline. Heredocs always add a final newline.
+        const sftpPath = resolveSftpPath(filePath, ctx.cwd ?? '');
+        if (sftpPath) {
+          try {
+            const written = await invoke<number>('sftp_write_file', {
+              sessionId: ctx.sessionId,
+              path: sftpPath,
+              content,
+            });
+            return `File written successfully: ${filePath} (${written} bytes)`;
+          } catch (e) {
+            if (!sftpUnavailable(e)) return `Error writing file: ${fmtError(e)}`;
+          }
+        }
+        // No SFTP: a quoted printf argument preserves the exact text,
+        // including whether the final line has a newline. Heredocs always
+        // add a final newline.
         const safePath = quoteRemotePath(filePath);
         const safeContent = content.replace(/'/g, `'\\''`);
         const dirCmd = `mkdir -p "$(dirname ${safePath})"`;
@@ -201,6 +258,80 @@ export function createWriteFileTool(): ToolHandler {
       } catch (e) {
         return `Error writing file: ${fmtError(e)}`;
       }
+    },
+  };
+}
+
+// ─── edit_file ──────────────────────────────────────────────────
+
+interface AgentEditResult {
+  replacements: number;
+  first_line: number;
+  size: number;
+}
+
+export function createEditFileTool(): ToolHandler {
+  return {
+    definition: {
+      name: 'edit_file',
+      description:
+        'Change part of an existing text file by exact string replacement: old_string is replaced with new_string. old_string must match the file exactly (whitespace and indentation included) and occur exactly once — include a few surrounding lines to make it unique, or set replace_all to change every occurrence. Read the relevant part of the file with read_file first. The rest of the file is untouched, so this is the safe way to edit config files. On SSH sessions the edit goes over SFTP as the login user; for files that need root, use run_command with sudo instead.',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: 'Absolute, ~/-prefixed, or cwd-relative file path' },
+          old_string: { type: 'string', description: 'Exact text to replace (must be non-empty)' },
+          new_string: { type: 'string', description: 'Replacement text (may be empty to delete)' },
+          replace_all: {
+            type: 'boolean',
+            description: 'Replace every occurrence instead of requiring a unique match (default: false)',
+            default: false,
+          },
+        },
+        required: ['path', 'old_string', 'new_string'],
+      },
+    },
+    isConcurrencySafe: false,
+    requiresConfirm: () => true,
+    isDestructive: (args) => hasSensitivePathComponent(String(args.path ?? '')),
+
+    async execute(args, ctx): Promise<string> {
+      const filePath = String(args.path ?? '').trim();
+      if (!filePath) return 'Error: edit_file requires a non-empty "path" argument.';
+      if (typeof args.old_string !== 'string' || typeof args.new_string !== 'string') {
+        return 'Error: edit_file requires string "old_string" and "new_string" arguments.';
+      }
+      const params = {
+        oldString: args.old_string,
+        newString: args.new_string,
+        replaceAll: args.replace_all === true,
+      };
+
+      let result: AgentEditResult;
+      try {
+        if (ctx.isSSH) {
+          const sftpPath = resolveSftpPath(filePath, ctx.cwd ?? '');
+          if (!sftpPath) {
+            return 'Error: edit_file cannot resolve this remote path. Use an absolute path, or read_file + write_file.';
+          }
+          result = await invoke<AgentEditResult>('sftp_edit_file', {
+            sessionId: ctx.sessionId,
+            path: sftpPath,
+            ...params,
+          });
+        } else {
+          const localPath = resolveLocalToolPath(filePath, ctx.cwd);
+          if (!localPath) return 'Error: cannot resolve a relative path because the terminal working directory is unavailable.';
+          result = await invoke<AgentEditResult>('agent_edit_file', { path: localPath, ...params });
+        }
+      } catch (e) {
+        if (ctx.isSSH && sftpUnavailable(e)) {
+          return 'Error: SFTP is not available on this session, so edit_file cannot run. Use read_file + write_file, or sed via run_command.';
+        }
+        return `Error editing file: ${fmtError(e)}`;
+      }
+      const what = result.replacements === 1 ? '1 replacement' : `${result.replacements} replacements`;
+      return `File edited: ${filePath} (${what}, first at line ${result.first_line}; ${result.size} bytes now).`;
     },
   };
 }

@@ -11,6 +11,7 @@ export const TOOL_COLORS: Record<string, string> = {
   read_terminal: '#3B82F6',        // blue
   read_file: '#06B6D4',            // cyan
   write_file: '#8B5CF6',           // purple
+  edit_file: '#8B5CF6',            // purple (same family as write_file)
   list_files: '#10B981',           // emerald
   search_files: '#EC4899',         // pink
   command_help: '#14B8A6',         // teal
@@ -75,6 +76,7 @@ export function toolIcon(toolName: string, size = 16): string {
       </svg>`;
 
     case 'write_file':
+    case 'edit_file':
       return `<svg width="${size}" height="${size}" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M4 1.5h5.5L13 5v9.5a1 1 0 01-1 1H4a1 1 0 01-1-1v-13a1 1 0 011-1z" stroke="${color}" stroke-width="1.4"/>
         <path d="M9.5 1.5V5H13" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
