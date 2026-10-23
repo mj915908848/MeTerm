@@ -1,5 +1,63 @@
 # MeTerm 更新记录
 
+## v0.3.3
+
+### 新功能
+
+- **AI 可以直接改文件** — 新增 edit_file（精确替换指定文本）；SSH 上读写和编辑文件改走 SFTP，不再往你的终端里打 head / printf；加 sudo 后也能编辑 root 拥有的配置文件，改动同样经过确认卡片。需要 sudo 密码时会提示先运行 `sudo -v`，不会卡住。
+- **主机备忘** — AI 可以为每台主机记下稳定的事实（经确认后保存，不存密钥），之后在这台主机上的对话会自动带上。AI 侧栏工具栏新增备忘按钮，可直接查看和编辑；设置 › AI › 主机备忘列出全部备忘。
+- **完整输出可取回** — 长命令输出给模型时按整行截断并多保留结尾（错误通常在最后），完整内容保留下来，AI 可以用 read_output 按行号或关键字读回。
+- **显示真实 token 用量** — 每次回答结束后显示服务商报告的输入、缓存命中和输出 token 数。
+- **AI 更懂当前环境** — 上下文里带上远端 / 本地系统、所用 shell 和今天的日期；装了 Shell Hook 时还带上你上一条命令、退出码和输出。
+- **更稳的执行流程** — 默认步数上限 15 → 30，达到上限时让模型总结做了什么、到哪一步、下一步是什么；结束前若计划没走完或最后的改动没验证，会先自检一次；失败时先查原因再重试，约 3 次不同尝试后停止。
+- **服务器信息改为分组卡片** — 主机、系统、资源（CPU、内存、交换、各磁盘）、网络和进程分别成卡片；交换分区总会显示，未启用时注明。
+
+### 问题修复 / 优化
+
+- **AI 不再一直转圈** — 回答结束后任务计划不再停在「进行中」；网关在结束标记后不断开连接时，回答也会及时结束，不用等 180 秒超时；回答过程中发送的新消息也能正常显示回复。
+- **token 消耗更低** — OpenAI 兼容服务（DeepSeek、Qwen、GLM 等）和 Gemini 也把每轮变化的终端上下文放到最后，提示词缓存能持续命中；旧工具输出分批压缩，不再每轮打断缓存。
+- **AI 对话历史修复** — AI 栏发送的对话也绑定主机；同一对话不会在两个标签同时打开而互相覆盖；清空非空对话前先确认；每个工具步骤后即保存，写入排队并先写临时文件。
+- **AI 对话历史管理** — 历史列表只读取摘要，打开更快；默认保留 200 条（可选 50 / 100 / 500 / 全部），从最旧的开始清理，打开中的对话不删；保存的副本不记录输入内容、不存工具图片、过长输出只留头尾。设置 › AI 新增「对话历史」组。
+- **命令历史不再记录密码** — 没有 Shell Hook 时，密码 / 口令 / 验证码提示、vim / less 等全屏程序中、以及以空格开头的行都不记录，也不进入补全；修复重启后命令补全没有历史。
+- **传输历史不再互相覆盖** — 多个会话或窗口共享一份记录并合并保存；其他窗口正在进行的传输不再被误标为「中断」。
+- **AI 面板汉化** — 附件、图片、传输进度、确认卡片等文案补齐中英文；侧栏附件按钮也能选普通文件了。
+
+### 验证
+
+- 合并前均通过 CI：前端构建与测试、Rust fmt / clippy / 测试（macOS 与 Windows）。
+- 正式安装包、真实 SSH 连接以及 Windows 真机尚未完整手动验证。
+
+---
+
+## Changelog (English)
+
+### What's New
+
+- **AI can edit files directly** — New edit_file (exact text replacement). On SSH, reading, writing and editing files go over SFTP instead of typing head / printf into your terminal, and with sudo the agent can edit root-owned configs through the same approval card. A sudo password prompt is reported with a hint to run `sudo -v` first instead of hanging.
+- **Host notes** — The agent can save stable facts per host (after approval, never secrets), and later conversations on that host include them. The AI side panel toolbar gets a notes button to view and edit them; Settings › AI › Host Notes lists all notes.
+- **Full output on demand** — Long command output is cut on whole lines with more of the tail kept (errors come last); the full text is kept and the agent can read it back by line range or regex with read_output.
+- **Real token usage** — Input, cache-hit and output tokens reported by the provider are shown under each run's final reply.
+- **More environment awareness** — Context now includes the remote / local OS, the shell and today's date; with the shell hook it also includes your last command, its exit code and output.
+- **Steadier runs** — Default step limit 15 → 30, and at the limit the model summarizes what it did, where things stand and the next step. Before finishing with plan steps open or the last change unverified, it self-checks once. Failures are diagnosed before retrying, giving up after about 3 different attempts.
+- **Server Info in grouped cards** — Host, system, resources (CPU, memory, swap, each disk), network and processes each get a card; swap is always listed, marked when disabled.
+
+### Bug Fixes
+
+- **No more endless spinning** — The task plan no longer stays "in progress" after the final reply; a gateway that keeps the connection open after the end marker no longer leaves the reply waiting for the 180 s timeout; a message sent while a reply is streaming now gets its answer shown.
+- **Lower token use** — OpenAI-compatible services (DeepSeek, Qwen, GLM, …) and Gemini now put the per-turn terminal context last so prompt caches keep hitting; old tool outputs are compacted in batches instead of breaking the cache every turn.
+- **Conversation history fixes** — Conversations sent from the AI bar are bound to their host; one conversation can't be open in two tabs and overwrite itself; clearing a non-empty conversation asks first; saves happen after every tool step through a write queue with write-then-rename.
+- **Conversation history management** — The list reads small summaries, so it opens faster; 200 conversations are kept by default (50 / 100 / 500 / all), oldest pruned first, never one that is open; saved copies drop typed input, tool images and clip long output. Settings › AI gains a Conversation History group.
+- **No passwords in command history** — Without the shell hook, password / passphrase / code prompts, full-screen programs like vim or less, and lines starting with a space are not recorded or offered for completion; completion history now survives restarts.
+- **Transfer history no longer overwrites itself** — Sessions and windows share one merged record, and another window's running transfers are no longer marked interrupted.
+- **AI panel localization** — Attachments, images, transfer progress, approval cards and more are translated; the side panel attach button accepts any file.
+
+### Validation
+
+- Every merge passed CI: frontend build and tests, Rust fmt / clippy / tests on macOS and Windows.
+- The packaged release build, live SSH connections and Windows hardware have not been fully verified by hand.
+
+---
+
 ## v0.3.2
 
 ### 设置整理
