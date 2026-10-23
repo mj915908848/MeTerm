@@ -5,6 +5,7 @@ import { DrawerManager } from './drawer';
 import { sendToTerminal } from './terminal-transport';
 import { readText as clipboardReadText, writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
 import type { ManagedTerminal } from './terminal-types';
+import { recordPrompt } from './terminal-command-block';
 
 export interface OscHandlerCallbacks {
   /** Called when shell state transitions to idle (OSC 7768) */
@@ -82,6 +83,7 @@ export function handleOscEvents(
         mt.shellState.lastExitCode = ev.exit ?? 0;
         mt.shellState.cwd = ev.cwd ?? '';
         mt.shellState.lastCommand = ev.cmd ?? '';
+        recordPrompt(mt, ev.cmd ?? '', ev.exit ?? 0);
         mt.shellState.phase = 'ready';
         mt.shellState.hookInjected = true;
         mt.shellState.promptRow = mt.terminal.buffer.active.baseY + mt.terminal.buffer.active.cursorY;

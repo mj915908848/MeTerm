@@ -22,6 +22,10 @@ import { resolveLocalToolPath, ToolHandler } from './ai-tools-core';
 import { executeViaTerminal } from './ai-tools-shell';
 import { hasSensitivePathComponent } from './ai-permission-rules';
 import { quoteRemotePath, resolveSftpPath } from './ai-remote-path';
+import {
+  commitSucceeded, describeSudoFailure, parseTempPath, removeTempCommand,
+  sudoCommitCommand, sudoStageCommand, tempFileCommand,
+} from './ai-sudo-file';
 
 interface AgentReadResult {
   content: string | null;
@@ -76,6 +80,59 @@ function formatReadResult(result: AgentReadResult, startLine: number, path: stri
   return `${content}\n\n--- Showing lines ${startLine}-${end}${total} (${result.size} bytes total).${more} ---`;
 }
 
+// ─── sudo (SSH only) ────────────────────────────────────────────
+// See ai-sudo-file.ts: root-owned files are staged through a temp file
+// that SFTP can reach as the login user.
+
+const SUDO_PARAM = {
+  type: 'boolean',
+  description: 'SSH sessions only: access the file as root via sudo, for files the login user cannot read or write (e.g. under /etc). Uses sudo -n, so if sudo needs a password the tool says so and you must have the user run `sudo -v` first.',
+  default: false,
+} as const;
+
+type ToolCtx = Parameters<ToolHandler['execute']>[1];
+
+function wantsSudo(args: Record<string, unknown>): boolean {
+  return args.sudo === true;
+}
+
+function sudoUnsupported(ctx: ToolCtx): string | null {
+  return ctx.isSSH ? null : 'Error: sudo=true is only supported on SSH sessions. Locally, use run_command with sudo.';
+}
+
+/**
+ * Run `work` against a temp file staged for `path`, then clean up. With
+ * `stage` the temp starts as a root-read copy of the file; without it the
+ * temp starts empty. `commit` writes the temp back over the file as root.
+ */
+async function withSudoTemp<T>(
+  ctx: ToolCtx,
+  path: string,
+  opts: { stage: boolean; commit: boolean; mkdirs?: boolean },
+  work: (temp: string) => Promise<T>,
+): Promise<T | string> {
+  const cmd = opts.stage ? sudoStageCommand(quoteRemotePath(path)) : tempFileCommand();
+  const out = await executeViaTerminal(ctx.sessionId, cmd, 20, ctx.shellType);
+  const temp = parseTempPath(out);
+  if (!temp) return `Error: could not read ${path} with sudo: ${describeSudoFailure(out)}`;
+  let result: T;
+  try {
+    result = await work(temp);
+  } catch (e) {
+    await executeViaTerminal(ctx.sessionId, removeTempCommand(temp), 10, ctx.shellType).catch(() => '');
+    throw e;
+  }
+  if (!opts.commit) {
+    await executeViaTerminal(ctx.sessionId, removeTempCommand(temp), 10, ctx.shellType).catch(() => '');
+    return result;
+  }
+  const done = await executeViaTerminal(
+    ctx.sessionId, sudoCommitCommand(quoteRemotePath(path), temp, opts.mkdirs ?? false), 20, ctx.shellType,
+  );
+  if (!commitSucceeded(done)) return `Error: could not write ${path} with sudo: ${describeSudoFailure(done)}`;
+  return result;
+}
+
 // ─── read_file ──────────────────────────────────────────────────
 
 export function createReadFileTool(): ToolHandler {
@@ -98,14 +155,16 @@ export function createReadFileTool(): ToolHandler {
             description: `Maximum number of lines to return (default: ${READ_DEFAULT_LINES})`,
             default: READ_DEFAULT_LINES,
           },
+          sudo: SUDO_PARAM,
         },
         required: ['path'],
       },
     },
     // read_file only reads → safe to parallelize across multiple files.
     isConcurrencySafe: true,
-    requiresConfirm: () => false,
-    isDestructive: () => false,
+    // A root read can expose anything on the host, so it is always confirmed.
+    requiresConfirm: (args) => wantsSudo(args),
+    isDestructive: (args) => wantsSudo(args),
 
     async execute(args, ctx): Promise<string> {
       const path = String(args.path ?? '').trim();
@@ -125,6 +184,21 @@ export function createReadFileTool(): ToolHandler {
       }
       const maxLines = requestedLimit ?? READ_DEFAULT_LINES;
       const startLine = requestedOffset ?? 1;
+
+      if (wantsSudo(args)) {
+        const unsupported = sudoUnsupported(ctx);
+        if (unsupported) return unsupported;
+        try {
+          return await withSudoTemp(ctx, path, { stage: true, commit: false }, async (temp) => {
+            const result = await invoke<AgentReadResult>('sftp_read_file', {
+              sessionId: ctx.sessionId, path: temp, startLine, maxLines,
+            });
+            return formatReadResult(result, startLine, path);
+          });
+        } catch (e) {
+          return `Error reading file: ${fmtError(e)}`;
+        }
+      }
 
       if (ctx.isSSH) {
         const sftpPath = resolveSftpPath(path, ctx.cwd ?? '');
@@ -185,6 +259,7 @@ export function createWriteFileTool(): ToolHandler {
         properties: {
           path: { type: 'string', description: 'Absolute, ~/-prefixed, or cwd-relative file path' },
           content: { type: 'string', description: 'Content to write (UTF-8)' },
+          sudo: SUDO_PARAM,
         },
         required: ['path', 'content'],
       },
@@ -195,7 +270,7 @@ export function createWriteFileTool(): ToolHandler {
     requiresConfirm: () => true,
     // Full-auto skips confirmation, except for credential locations
     // (~/.ssh, .env, keys, …) where a silent write could plant access.
-    isDestructive: (args) => hasSensitivePathComponent(String(args.path ?? '')),
+    isDestructive: (args) => wantsSudo(args) || hasSensitivePathComponent(String(args.path ?? '')),
 
     async execute(args, ctx): Promise<string> {
       const filePath = String(args.path ?? '').trim();
@@ -207,6 +282,19 @@ export function createWriteFileTool(): ToolHandler {
       // Size guard
       if (content.length > 100 * 1024) {
         return `Content too large (${(content.length / 1024).toFixed(1)} KB). Break into smaller files or use run_command to write.`;
+      }
+
+      if (wantsSudo(args)) {
+        const unsupported = sudoUnsupported(ctx);
+        if (unsupported) return unsupported;
+        try {
+          return await withSudoTemp(ctx, filePath, { stage: false, commit: true, mkdirs: true }, async (temp) => {
+            const written = await invoke<number>('sftp_write_file', { sessionId: ctx.sessionId, path: temp, content });
+            return `File written successfully with sudo: ${filePath} (${written} bytes)`;
+          });
+        } catch (e) {
+          return `Error writing file: ${fmtError(e)}`;
+        }
       }
 
       if (ctx.isSSH) {
@@ -275,7 +363,7 @@ export function createEditFileTool(): ToolHandler {
     definition: {
       name: 'edit_file',
       description:
-        'Change part of an existing text file by exact string replacement: old_string is replaced with new_string. old_string must match the file exactly (whitespace and indentation included) and occur exactly once — include a few surrounding lines to make it unique, or set replace_all to change every occurrence. Read the relevant part of the file with read_file first. The rest of the file is untouched, so this is the safe way to edit config files. On SSH sessions the edit goes over SFTP as the login user; for files that need root, use run_command with sudo instead.',
+        'Change part of an existing text file by exact string replacement: old_string is replaced with new_string. old_string must match the file exactly (whitespace and indentation included) and occur exactly once — include a few surrounding lines to make it unique, or set replace_all to change every occurrence. Read the relevant part of the file with read_file first. The rest of the file is untouched, so this is the safe way to edit config files. On SSH sessions the edit goes over SFTP as the login user; for files that need root (e.g. under /etc), set sudo=true.',
       parameters: {
         type: 'object',
         properties: {
@@ -287,13 +375,14 @@ export function createEditFileTool(): ToolHandler {
             description: 'Replace every occurrence instead of requiring a unique match (default: false)',
             default: false,
           },
+          sudo: SUDO_PARAM,
         },
         required: ['path', 'old_string', 'new_string'],
       },
     },
     isConcurrencySafe: false,
     requiresConfirm: () => true,
-    isDestructive: (args) => hasSensitivePathComponent(String(args.path ?? '')),
+    isDestructive: (args) => wantsSudo(args) || hasSensitivePathComponent(String(args.path ?? '')),
 
     async execute(args, ctx): Promise<string> {
       const filePath = String(args.path ?? '').trim();
@@ -309,7 +398,14 @@ export function createEditFileTool(): ToolHandler {
 
       let result: AgentEditResult;
       try {
-        if (ctx.isSSH) {
+        if (wantsSudo(args)) {
+          const unsupported = sudoUnsupported(ctx);
+          if (unsupported) return unsupported;
+          const edited = await withSudoTemp(ctx, filePath, { stage: true, commit: true }, (temp) =>
+            invoke<AgentEditResult>('sftp_edit_file', { sessionId: ctx.sessionId, path: temp, ...params }));
+          if (typeof edited === 'string') return edited;
+          result = edited;
+        } else if (ctx.isSSH) {
           const sftpPath = resolveSftpPath(filePath, ctx.cwd ?? '');
           if (!sftpPath) {
             return 'Error: edit_file cannot resolve this remote path. Use an absolute path, or read_file + write_file.';

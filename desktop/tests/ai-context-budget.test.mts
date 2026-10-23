@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import {
   CONTEXT_CHARS_PER_LINE,
   DEFAULT_CONTEXT_LINES,
+  excerptCommandOutput,
   SYSTEM_CONTEXT_CHARS,
   excerptForPane,
 } from '../src/ai-context-budget.ts';
@@ -121,4 +122,26 @@ test('the shared pool can hold at least one pane at the default budget', () => {
     SYSTEM_CONTEXT_CHARS >= DEFAULT_CONTEXT_LINES * CONTEXT_CHARS_PER_LINE,
     'the terminal-context pool is too small to hold a single pane at the default line budget',
   );
+});
+
+test('excerptCommandOutput keeps short output whole', () => {
+  assert.equal(excerptCommandOutput('a\nb\nc', 80, 10000), 'a\nb\nc');
+  assert.equal(excerptCommandOutput('', 80, 10000), '');
+  assert.equal(excerptCommandOutput('a', 0, 10000), '');
+});
+
+test('excerptCommandOutput keeps head and tail of a long block and counts the gap', () => {
+  const lines = Array.from({ length: 200 }, (_, i) => `line ${i + 1}`);
+  const out = excerptCommandOutput(lines.join('\n'), 80, 100000).split('\n');
+  assert.equal(out.length, 81);
+  assert.equal(out[0], 'line 1');
+  assert.equal(out[19], 'line 20');
+  assert.match(out[20], /120 lines omitted.*read_terminal/);
+  assert.equal(out[80], 'line 200');
+});
+
+test('excerptCommandOutput keeps the end when over the character budget', () => {
+  const out = excerptCommandOutput('x'.repeat(50) + '\nERROR at the end', 80, 20);
+  assert.equal(out.length, 20);
+  assert.ok(out.endsWith('ERROR at the end'));
 });
