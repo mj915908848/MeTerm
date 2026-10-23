@@ -9,6 +9,7 @@ import type { AgentCallbacks } from './ai-agent';
 import { notifyAgentComplete, notifyAgentError } from './ai-notifications';
 import { attachLightboxClick } from './ai-image-lightbox';
 import { removeEmptyState } from './ai-empty-state';
+import { hostNotesLoadedNotice } from './ai-host-notes-popover';
 import { TabManager } from './tabs';
 
 export const LLM_SEND_SVG = `<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8L7 3.5 13.5 2.5 12.5 9 8 13.5z"/><path d="M2.5 8L6.5 6.5 9.5 9.5 8 13.5"/><circle cx="9.5" cy="6.5" r="1" fill="currentColor" stroke="none"/></svg>`;
@@ -446,6 +447,13 @@ export function showError(instance: AICapsuleInstance, message: string): void {
 
   // Background notification on error (throttled + focus-aware inside).
   notifyAgentError(message);
+}
+
+/** At the first message of a conversation, say which host notes the agent will see. */
+export function announceHostNotes(instance: AICapsuleInstance): void {
+  if (instance.messages.some((m) => m.type === 'user')) return;
+  const notice = hostNotesLoadedNotice(instance.sessionId);
+  if (notice) appendSystemNotice(instance, notice);
 }
 
 export function appendSystemNotice(instance: AICapsuleInstance, text: string): void {

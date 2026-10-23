@@ -390,6 +390,7 @@ export interface Translations {
   aiHostNotesPlaceholder: string;
   aiHostNotesNoHost: string;
   aiHostNotesManage: string;
+  aiHostNotesLoaded: string;
   aiSaveChatHistory: string;
   aiSaveChatHistoryHint: string;
   aiChatHistoryLimit: string;
@@ -1244,6 +1245,7 @@ const translations: Record<Language, Translations> = {
     aiHostNotesPlaceholder: 'Nothing yet. One fact per line, e.g.\napp in /srv/app, restart with systemctl restart app',
     aiHostNotesNoHost: 'Notes need a connected terminal: this pane has no host yet.',
     aiHostNotesManage: 'All hosts…',
+    aiHostNotesLoaded: 'Host notes for {host} loaded ({count} lines)',
     aiSaveChatHistory: 'Save Conversations',
     aiSaveChatHistoryHint: 'Keeps AI conversations on this computer so they can be reopened. What the agent types into terminal prompts and screenshots taken by tools are not saved; long command output is shortened.',
     aiChatHistoryLimit: 'Keep',
@@ -2094,6 +2096,7 @@ const translations: Record<Language, Translations> = {
     aiHostNotesPlaceholder: '还没有备忘。每行一条，例如：\n应用在 /srv/app，用 systemctl restart app 重启',
     aiHostNotesNoHost: '当前窗格还没有连接主机，无法记录备忘。',
     aiHostNotesManage: '全部主机…',
+    aiHostNotesLoaded: '已载入 {host} 的主机备忘（{count} 条）',
     aiSaveChatHistory: '保存 AI 对话历史',
     aiSaveChatHistoryHint: '把 AI 对话保存在本机，之后可以重新打开。Agent 在终端提示符里输入的内容和工具截的图不会保存，过长的命令输出会截短。',
     aiChatHistoryLimit: '保留',

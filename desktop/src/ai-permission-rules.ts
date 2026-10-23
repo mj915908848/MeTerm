@@ -264,8 +264,11 @@ export function requiresReadScopeConfirmation(
 // settings (aiPermissionRules, to be wired into settings UI later).
 
 export const DEFAULT_PERMISSION_RULES: PermissionRule[] = [
-  // Deny: anything that writes to sensitive files.
-  { tool: 'write_file', match: { path: '\\.ssh/|\\.env$|\\.env\\.|/etc/' }, action: 'deny' },
+  // Deny: anything that writes credential files.
+  { tool: 'write_file', match: { path: '\\.ssh/|\\.env$|\\.env\\.' }, action: 'deny' },
+  // Ask: system config. Denying it only pushed the agent to `sudo tee` via
+  // run_command, where the user cannot review the change line by line.
+  { tool: 'write_file', match: { path: '/etc/' }, action: 'ask' },
   // Deny: destructive git operations even in acceptAll mode.
   { tool: 'run_command', match: { command: '^\\s*git\\s+push\\s+.*--force' }, action: 'deny' },
   { tool: 'run_command', match: { command: '^\\s*git\\s+reset\\s+--hard' }, action: 'deny' },
@@ -275,12 +278,27 @@ export const DEFAULT_PERMISSION_RULES: PermissionRule[] = [
   { tool: 'run_command', match: { command: '\\bwget\\b.*--post' }, action: 'ask' },
 ];
 
+/**
+ * The default rule set as the old Add button saved it into settings. Kept
+ * verbatim so those saved copies are still recognized after the defaults
+ * change.
+ */
+export const LEGACY_DEFAULT_PERMISSION_RULES: PermissionRule[] = [
+  { tool: 'write_file', match: { path: '\\.ssh/|\\.env$|\\.env\\.|/etc/' }, action: 'deny' },
+  { tool: 'run_command', match: { command: '^\\s*git\\s+push\\s+.*--force' }, action: 'deny' },
+  { tool: 'run_command', match: { command: '^\\s*git\\s+reset\\s+--hard' }, action: 'deny' },
+  { tool: 'run_command', match: { command: '^\\s*sudo\\s+' }, action: 'ask' },
+  { tool: 'run_command', match: { command: '\\bcurl\\b.*(-X\\s*(POST|PUT|DELETE|PATCH)|--data|--upload-file|-d\\s)' }, action: 'ask' },
+  { tool: 'run_command', match: { command: '\\bwget\\b.*--post' }, action: 'ask' },
+];
+
 /** Recognize only the unchanged rows created by the old Add button. */
 export function isLegacyAutoAddedRuleSet(rules: unknown): rules is PermissionRule[] {
-  if (!Array.isArray(rules) || rules.length <= DEFAULT_PERMISSION_RULES.length) return false;
-  const defaultRows = rules.slice(0, DEFAULT_PERMISSION_RULES.length);
-  const addedRows = rules.slice(DEFAULT_PERMISSION_RULES.length);
-  return JSON.stringify(defaultRows) === JSON.stringify(DEFAULT_PERMISSION_RULES)
+  const legacy = LEGACY_DEFAULT_PERMISSION_RULES;
+  if (!Array.isArray(rules) || rules.length <= legacy.length) return false;
+  const defaultRows = rules.slice(0, legacy.length);
+  const addedRows = rules.slice(legacy.length);
+  return JSON.stringify(defaultRows) === JSON.stringify(legacy)
     && addedRows.every((rule) => JSON.stringify(rule) === JSON.stringify({ tool: 'run_command', action: 'ask' }));
 }
 

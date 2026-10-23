@@ -81,11 +81,6 @@ export class TodoState implements TodoStateRef {
    * otherwise the model stopped mid-plan (e.g. to ask the user), so put
    * the step back to pending for the next turn to pick up.
    */
-  /** Plan items not completed yet, as their labels. */
-  openItems(): string[] {
-    return this.items.filter(item => item.status !== 'completed').map(item => item.content);
-  }
-
   settleAfterReply(): void {
     if (!this.items.some(item => item.status === 'in_progress')) return;
     const othersOpen = this.items.some(item => item.status === 'pending' || item.status === 'interrupted');
@@ -164,7 +159,7 @@ export function createTodoWriteTool(): ToolHandler {
         'Create or update the agent\'s persistent task plan. Use this BEFORE starting any task that takes more than ~3 distinct steps (deployments, multi-file refactors, environment setup, end-to-end debugging). Each call REPLACES the entire list with the new authoritative version — always pass the full plan, not a delta. ' +
         'Rules: ' +
         '(1) Exactly ONE item may be in_progress at a time — mark the next item in_progress only after marking the previous one completed. ' +
-        '(2) Mark items completed IMMEDIATELY after they finish; do not batch completions. ' +
+        '(2) Mark items completed IMMEDIATELY after they finish; do not batch completions. The update can go in the same round as your next command. ' +
         '(3) Each item needs both `content` (imperative, e.g. "Deploy backend") and `activeForm` (present-continuous, e.g. "Deploying backend"). ' +
         '(4) When new sub-tasks appear mid-run, add them with status=pending and re-emit the whole list. ' +
         '(5) Items left over from a finished phase that no longer apply should be removed entirely. ' +

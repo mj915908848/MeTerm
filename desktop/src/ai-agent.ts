@@ -58,7 +58,8 @@ import {
 } from './ai-permission-rules';
 import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit';
 import { emptyReplyNotice, outputTruncatedNotice, stepLimitNotice } from './ai-tool-i18n';
-import { newSelfCheckState, noteToolCall, selfCheckNote } from './ai-self-check';
+import { commandLooksMutating, newSelfCheckState, noteToolCall, selfCheckNote, stepsLeftAfterReply } from './ai-self-check';
+
 import { parseToolArguments } from './ai-provider-wire';
 import { addUsage, type TokenUsage } from './ai-token-usage';
 import { readShellInputState } from './ai-tools-command';
@@ -68,6 +69,13 @@ import { ensureRemoteOs } from './ai-host-facts';
 export type { TerminalContext } from './ai-agent-context';
 export { gatherContext } from './ai-agent-context';
 export type { AgentEvent } from './ai-agent-events';
+
+/** Tool rounds after which a run without a plan is asked to write one. */
+const PLAN_OVERDUE_AFTER_ROUNDS = 4;
+const PLAN_STALE_AFTER_ROUNDS = 3;
+
+/** Appended to every refused tool call (see rule REFUSED ACTIONS). */
+const REFUSAL_NOTE = 'This refusal is the user\'s decision: do not reach the same effect with another tool or command. Choose an approach that does not touch it, or ask the user.';
 
 const SCOPED_READ_TOOLS = new Set(['read_file', 'grep_search', 'glob_search', 'list_directory']);
 const TERMINAL_INPUT_TOOLS = new Set(['type_text', 'press_keys']);
@@ -738,6 +746,7 @@ export class ToolAgent {
     let llmRetryCount = 0;
     let contextCompressions = 0;
     const selfCheck = newSelfCheckState();
+    let planUpdatedAt = 0;
 
     // The persistent todo listener (installed via setTodoUpdateListener
     // by the UI) is the canonical sink for plan changes. We don't
@@ -874,6 +883,18 @@ export class ToolAgent {
         todoBlock: this.todoState.renderForSystemPrompt(),
         attachmentsBlock: this.renderAttachmentsBlock(),
         contextLines,
+        // Models skip todo_write on tasks that look like a series of
+        // lookups; after four tool rounds without a plan, ask for one.
+        // A plan left over from an earlier request (nothing in progress, not
+        // touched this run) does not count as a plan for this one.
+        planOverdue: hasTools && iteration > PLAN_OVERDUE_AFTER_ROUNDS && planUpdatedAt === 0
+          && !this.todoState.get().some((it) => it.status === 'in_progress'),
+        // ...and models that have one tick everything off at the very end;
+        // after three rounds without touching an active plan, remind them.
+        // A plan left over from an earlier request has no in_progress item
+        // (settleAfterReply / interrupt), so an unrelated task is not nagged.
+        planStale: hasTools && iteration - planUpdatedAt > PLAN_STALE_AFTER_ROUNDS
+          && this.todoState.get().some((it) => it.status === 'in_progress'),
       });
 
       this.lastSystemPromptTokens = estimateTextTokens(systemPrompt.text);
@@ -934,7 +955,7 @@ export class ToolAgent {
           // One self-check pass when the plan is unfinished or the last
           // change was never verified (see ai-self-check.ts).
           const checkNote = useTools
-            ? selfCheckNote(selfCheck, this.todoState.openItems(), fixed, iteration < maxIterations - 1)
+            ? selfCheckNote(selfCheck, stepsLeftAfterReply(this.todoState.get()), fixed, iteration < maxIterations - 1)
             : null;
           if (checkNote) {
             selfCheck.nudged = true;
@@ -1221,8 +1242,9 @@ export class ToolAgent {
                 rawArgs: toolCall.function.arguments,
                 reason,
               });
-              // Rejected tools are flagged as errors so the LLM doesn't misinterpret the denial as a success
-              return { result: reason, isError: true };
+              // Rejected tools are flagged as errors so the LLM doesn't misinterpret the denial as a success.
+              // The note sits on the result itself, where the model decides what to do next.
+              return { result: `${reason} ${REFUSAL_NOTE}`, isError: true };
             };
             if (!decision || decision.kind === 'reject') {
               return rejected(decision?.kind === 'reject' ? decision.message : 'No decision');
@@ -1251,7 +1273,12 @@ export class ToolAgent {
             }
             const started = Date.now();
             const out = await this.safeExecute(handler as ToolHandler, decision.args, toolCtx, toolCall.function.name);
-            noteToolCall(selfCheck, toolCall.function.name, (handler as ToolHandler).requiresConfirm(decision.args), out.isError);
+            // Confirmation is the read/write classifier, but it also asks for
+            // compound or sudo read-only commands, so look at the command too.
+            const changes = (handler as ToolHandler).requiresConfirm(decision.args)
+              && (toolCall.function.name !== 'run_command' || commandLooksMutating(String(decision.args.command ?? '')));
+            noteToolCall(selfCheck, toolCall.function.name, changes, out.isError);
+            if (toolCall.function.name === 'todo_write' && !out.isError) planUpdatedAt = iteration;
 
             // ── Repeat-action loop detection ──
             // Track this call in a sliding window of size 5; if the

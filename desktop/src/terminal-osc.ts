@@ -83,7 +83,7 @@ export function handleOscEvents(
         mt.shellState.lastExitCode = ev.exit ?? 0;
         mt.shellState.cwd = ev.cwd ?? '';
         mt.shellState.lastCommand = ev.cmd ?? '';
-        recordPrompt(mt, ev.cmd ?? '', ev.exit ?? 0);
+        recordPrompt(mt, ev.cmd ?? '', ev.exit ?? 0, mt.shellState.phase === 'agent_executing');
         mt.shellState.phase = 'ready';
         mt.shellState.hookInjected = true;
         mt.shellState.promptRow = mt.terminal.buffer.active.baseY + mt.terminal.buffer.active.cursorY;

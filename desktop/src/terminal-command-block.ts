@@ -15,6 +15,8 @@ import type { ManagedTerminal } from './terminal-types';
 interface CommandBlock {
   command: string;
   exitCode: number;
+  /** Sent by the AI agent (run_command), not typed by the user. */
+  byAgent: boolean;
   /** Row of the prompt the command was typed at. */
   start: IMarker;
   /** Row of the prompt that followed it. */
@@ -33,7 +35,7 @@ const states = new WeakMap<ManagedTerminal, BlockState>();
  * written before the event has been parsed, so the cursor sits on the
  * new prompt.
  */
-export function recordPrompt(mt: ManagedTerminal, command: string, exitCode: number): void {
+export function recordPrompt(mt: ManagedTerminal, command: string, exitCode: number, byAgent: boolean): void {
   mt.terminal.write('', () => {
     const state = states.get(mt) ?? {};
     const prev = state.prompt;
@@ -46,7 +48,7 @@ export function recordPrompt(mt: ManagedTerminal, command: string, exitCode: num
     // prompt directly below the last one means nothing ran.
     const emptyEnter = !!prev && now.line - prev.line <= 1 && !!old && old.command === cmd;
     if (cmd && prev && prev.line >= 0 && !emptyEnter) {
-      block = { command: cmd, exitCode, start: prev, end: now };
+      block = { command: cmd, exitCode, byAgent, start: prev, end: now };
     }
     const keep = new Set<IMarker>([now, ...(block ? [block.start, block.end] : [])]);
     for (const m of [prev, old?.start, old?.end]) {
@@ -77,7 +79,7 @@ function logicalLines(mt: ManagedTerminal, from: number, to: number): string[] {
  */
 export function lastCommandBlock(
   mt: ManagedTerminal,
-): { command: string; exitCode: number; output: string } | null {
+): { command: string; exitCode: number; byAgent: boolean; output: string } | null {
   const state = states.get(mt);
   const block = state?.block;
   if (!block || state.prompt !== block.end) return null;
@@ -89,5 +91,5 @@ export function lastCommandBlock(
   // First logical line is the prompt with the command typed after it.
   const lines = logicalLines(mt, block.start.line, block.end.line).slice(1);
   while (lines.length > 0 && !lines[lines.length - 1].trim()) lines.pop();
-  return { command: block.command, exitCode: block.exitCode, output: lines.join('\n') };
+  return { command: block.command, exitCode: block.exitCode, byAgent: block.byAgent, output: lines.join('\n') };
 }
