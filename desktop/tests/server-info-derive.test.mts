@@ -94,9 +94,9 @@ test('swap above the reported total is clamped to 100%', () => {
 // ── Wiring ──
 //
 // The sections are built as one template, so their order in it is the layout
-// (the "dashboard" Jie picked): who line, CPU / memory / load / network tiles,
-// disks, then processes.
-test('the panel renders the dashboard sections in order', () => {
+// (the grouped cards Jie picked, option C): who line, system card, resources
+// card with load in its title, network card, then processes.
+test('the panel renders the grouped-card sections in order', () => {
   const src = read('drawer-system-info.ts');
   // Only the expanded template counts: renderCompactSysInfo assigns the same
   // property earlier in the file.
@@ -113,17 +113,19 @@ test('the panel renders the dashboard sections in order', () => {
     assert.ok(i >= 0, `not found in the sysinfo template: ${needle}`);
     return i;
   };
-  const who = at('${whoSub}');
-  const cpu = at('${cpuTile}');
-  const mem = at('${memTile}');
-  const load = at('${loadTile}');
-  const net = at('${renderNetTile(instance)}');
-  const disks = at('${diskRows');
-  const procs = at('${renderProcessBox(instance)}');
-  assert.ok(
-    who < cpu && cpu < mem && mem < load && load < net && net < disks && disks < procs,
-    'who line, then the four tiles, then disks, then processes',
-  );
+  const order = ['${connHtml}', '${systemGroup}', '${resourceTitle}', '${resourceGroup}', '${renderNetGroup(instance)}', '${renderProcessBox(instance)}'].map(at);
+  assert.deepEqual([...order].sort((x, y) => x - y), order, 'who line, system, resources, network, then processes');
+});
+
+// Swap is a row of the resources card on every host — with a bar when the host
+// has swap, and "off" when it has none — not only when the load tile is free.
+test('swap is always listed in the resources card', () => {
+  const src = read('drawer-system-info.ts');
+  const fn = src.indexOf('function renderExpandedSysInfo');
+  const body = src.slice(fn, src.indexOf('\n}\n', fn));
+  assert.ok(body.includes("stack(t('serverInfoSwap')"), 'a swap row with a bar');
+  assert.ok(body.includes("t('serverInfoSwapOff')"), 'an "off" row when the host has no swap');
+  assert.ok(/memPercent\)\}\s*\$\{swapStack\}\s*\$\{diskStacks\}/.test(body), 'swap sits right under memory, above the disks');
 });
 
 // The drawer and the panel poll on different surfaces; rendering the process

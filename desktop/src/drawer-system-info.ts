@@ -98,18 +98,7 @@ export function renderBar(percent: number | undefined): string {
   return `<div class="si-bar ${usageClass(pct)}"><i style="width:${pct}%"></i></div>`;
 }
 
-/** Big number + unit, or `—` when the value is unknown. */
-function bigPercent(percent: number | undefined): string {
-  if (percent === undefined || !Number.isFinite(percent)) return '—';
-  return `${Math.max(0, Math.min(100, percent)).toFixed(0)}<small>%</small>`;
-}
-
-/** Bytes without the space, for the tight corners of a tile (`1.2MB`). */
-function shortBytes(bytes: number): string {
-  return formatBytes(bytes).replace(' ', '');
-}
-
-/** Disk-row size: one letter unit, a decimal only below 10 (`38G`, `1.9G`). */
+/** Resource size: one letter unit, a decimal only below 10 (`38G`, `1.9G`). */
 function sizeShort(bytes: number): string {
   if (bytes <= 0) return '0';
   const units = ['B', 'K', 'M', 'G', 'T', 'P'];
@@ -118,8 +107,8 @@ function sizeShort(bytes: number): string {
   return `${val < 10 && i > 0 ? val.toFixed(1) : val.toFixed(0)}${units[i]}`;
 }
 
-/** Network tile: NIC picker, receive/transmit sparkline and current rates. */
-export function renderNetTile(instance: SysInfoFields): string {
+/** Network section: NIC picker in the title, then a card with the receive/transmit sparkline and current rates. */
+export function renderNetGroup(instance: SysInfoFields): string {
   const ifaces = instance.prevNetIfaces || [];
   if (ifaces.length === 0) return '';
 
@@ -159,13 +148,13 @@ export function renderNetTile(instance: SysInfoFields): string {
     </svg>`;
   }
 
-  return `<div class="si-card">
-    <div class="si-card-k">${t('serverInfoNetwork')}
+  return `<div class="si-sec">${t('serverInfoNetwork')}
       <select class="net-nic-select" data-session="${instance.sessionId}" aria-label="${t('serverInfoNetwork')}">${nicOptions}</select>
     </div>
-    ${chartSvg}
-    <div class="si-card-sub"><span class="si-rx">↓${shortBytes(lastRx)}</span> <span class="si-tx">↑${shortBytes(lastTx)}</span></div>
-  </div>`;
+    <div class="si-group si-group-net">
+      ${chartSvg}
+      <div class="si-net"><span class="si-rx">↓ ${formatRate(lastRx)}</span><span class="si-tx">↑ ${formatRate(lastTx)}</span></div>
+    </div>`;
 }
 
 /** Compact mode breakpoint — exactly 2 columns of 44px tiles + gap + padding */
@@ -251,11 +240,14 @@ function renderCompactSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElement
 }
 
 /**
- * Render full expanded view (wide sidebar) — the "dashboard" layout:
+ * Render full expanded view (wide sidebar) — the "grouped cards" layout, like
+ * the settings window: each section is one rounded card with hairline rows.
  *
- *   who line   user@host, then OS · arch · uptime
- *   tiles      CPU, memory, load, network (2×2, the numbers people glance at)
- *   disks      one row per mount, swap last
+ *   who line   user@host
+ *   system     OS, kernel, uptime
+ *   resources  CPU, memory, swap, then each disk, each with a thin bar
+ *              (load average in the section title)
+ *   network    NIC picker in the title; receive/transmit sparkline and rates
  *   processes  command / CPU / memory
  */
 function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElement): void {
@@ -269,59 +261,51 @@ function renderExpandedSysInfo(instance: SysInfoFields, serverInfoEl: HTMLElemen
   const existingConn = serverInfoEl.querySelector('.server-info-conn');
   const connHtml = existingConn ? existingConn.outerHTML : '';
 
-  const os = escapeHtml(String(info.os_name || info.os_type));
-  const kernel = `${escapeHtml(String(info.kernel))} ${escapeHtml(String(info.arch))}`;
-  const uptime = formatUptime(info.uptime_seconds ?? 0);
-  const whoSub = `<div class="si-who-sub" title="${kernel}">${os} · ${t('serverInfoUptime')} ${uptime}</div>`;
-
-  const cpuTile = `<div class="si-card" title="${escapeHtml(String(info.cpu_model ?? ''))}">
-    <div class="si-card-k">${t('serverInfoCPU')}<span>${escapeHtml(String(info.cpu_cores ?? 0))} ${t('serverInfoCores')}</span></div>
-    <div class="si-card-big">${bigPercent(info.cpu_usage)}</div>
-    ${renderBar(info.cpu_usage)}
+  const kv = (label: string, value: string): string =>
+    `<div class="si-gr"><span class="si-gr-k">${label}</span><span class="si-gr-v" title="${value}">${value}</span></div>`;
+  const systemGroup = `<div class="si-group">
+    ${kv(t('serverInfoOS'), escapeHtml(String(info.os_name || info.os_type)))}
+    ${kv(t('serverInfoKernel'), `${escapeHtml(String(info.kernel))} ${escapeHtml(String(info.arch))}`)}
+    ${kv(t('serverInfoUptime'), formatUptime(info.uptime_seconds ?? 0))}
   </div>`;
 
-  const memTile = `<div class="si-card">
-    <div class="si-card-k">${t('serverInfoMemory')}</div>
-    <div class="si-card-big">${bigPercent(memPercent)}</div>
-    ${renderBar(memPercent)}
-    <div class="si-card-sub">${formatBytes(info.mem_used ?? 0)} / ${formatBytes(info.mem_total ?? 0)}</div>
+  /** One resource: label and figure on top, the usage bar under them. */
+  const stack = (label: string, value: string, percent: number | undefined, title = ''): string =>
+    `<div class="si-stack"${title ? ` title="${title}"` : ''}>
+      <div class="si-stack-top"><span class="si-stack-k">${label}</span><span class="si-stack-v">${value}</span></div>
+      ${renderBar(percent)}
+    </div>`;
+  const cpuValue = info.cpu_usage === undefined || !Number.isFinite(info.cpu_usage)
+    ? `— · ${escapeHtml(String(info.cpu_cores ?? 0))} ${t('serverInfoCores')}`
+    : `${info.cpu_usage.toFixed(0)}% · ${escapeHtml(String(info.cpu_cores ?? 0))} ${t('serverInfoCores')}`;
+  const diskStacks = (info.disks || []).map(d => {
+    const mount = escapeHtml(String(d.mount));
+    const pct = d.total > 0 ? (d.used / d.total) * 100 : 0;
+    return stack(`${t('serverInfoDisk')} ${mount}`, `${sizeShort(d.used)} / ${sizeShort(d.total)}`, pct,
+      `${mount}: ${formatBytes(d.used)} / ${formatBytes(d.total)}`);
+  }).join('');
+  // Swap is always listed, so "no swap" reads as a fact rather than a gap.
+  const swapStack = swapTotal > 0
+    ? stack(t('serverInfoSwap'), `${sizeShort(swapUsed)} / ${sizeShort(swapTotal)}`, swapPercent(swapTotal, swapUsed))
+    : `<div class="si-stack"><div class="si-stack-top"><span class="si-stack-k">${t('serverInfoSwap')}</span><span class="si-stack-v">${t('serverInfoSwapOff')}</span></div></div>`;
+  const resourceGroup = `<div class="si-group">
+    ${stack(t('serverInfoCPU'), cpuValue, info.cpu_usage, escapeHtml(String(info.cpu_model ?? '')))}
+    ${stack(t('serverInfoMemory'), `${sizeShort(info.mem_used ?? 0)} / ${sizeShort(info.mem_total ?? 0)}`, memPercent)}
+    ${swapStack}
+    ${diskStacks}
   </div>`;
 
-  // Older remote hosts (and the local fallback) report no load average: the
-  // tile shows swap instead, so the grid stays 2×2.
   const loads = formatLoadAverage(info.load_avg).split(', ').filter(Boolean);
-  const loadTile = loads.length > 0
-    ? `<div class="si-card">
-      <div class="si-card-k">${t('serverInfoLoad')}</div>
-      <div class="si-card-big">${loads[0]}</div>
-      ${loads.length >= 3 ? `<div class="si-card-sub" title="5m ${loads[1]} · 15m ${loads[2]}">${loads[1]} · ${loads[2]}</div>` : ''}
-    </div>`
-    : `<div class="si-card">
-      <div class="si-card-k">${t('serverInfoSwap')}</div>
-      <div class="si-card-big">${bigPercent(swapPercent(swapTotal, swapUsed))}</div>
-      ${renderBar(swapPercent(swapTotal, swapUsed))}
-    </div>`;
-
-  const diskRow = (label: string, used: number, total: number): string => {
-    const pct = total > 0 ? (used / total) * 100 : 0;
-    return `<div class="si-row" title="${label}: ${formatBytes(used)} / ${formatBytes(total)}">
-      <span class="si-row-k">${label}</span>
-      ${renderBar(pct)}
-      <span class="si-row-v">${sizeShort(used)} / ${sizeShort(total)}</span>
-    </div>`;
-  };
-  const diskRows = (info.disks || []).map(d => diskRow(escapeHtml(String(d.mount)), d.used, d.total)).join('')
-    + (swapTotal > 0 && loads.length > 0 ? diskRow(t('serverInfoSwap'), swapUsed, swapTotal) : '');
+  const resourceTitle = `<div class="si-sec">${t('serverInfoResources')}${
+    loads.length > 0 ? `<em title="1m · 5m · 15m">${t('serverInfoLoad')} ${loads.join(' · ')}</em>` : ''
+  }</div>`;
 
   serverInfoEl.innerHTML = `
-    <div class="si-who">${connHtml}${whoSub}</div>
-    <div class="si-grid">
-      ${cpuTile}
-      ${memTile}
-      ${loadTile}
-      ${renderNetTile(instance)}
-    </div>
-    ${diskRows ? `<div class="si-sec">${t('serverInfoDisk')}</div>${diskRows}` : ''}
+    <div class="si-who">${connHtml}</div>
+    ${systemGroup}
+    ${resourceTitle}
+    ${resourceGroup}
+    ${renderNetGroup(instance)}
     ${renderProcessBox(instance)}
   `;
 
@@ -379,12 +363,14 @@ function renderProcessBox(instance: SysInfoFields): string {
   }).join('');
 
   return `<div class="si-sec">${t('serverInfoProcesses')}</div>
-    <div class="si-proc si-proc-head">
-      <span class="si-proc-cmd">${t('processColCommand')}</span>
-      <span class="si-proc-num">${t('processColCPU')}</span>
-      <span class="si-proc-num">${t('processColMem')}</span>
-    </div>
-    <div class="si-proc-list">${rows}</div>`;
+    <div class="si-group">
+      <div class="si-proc si-proc-head">
+        <span class="si-proc-cmd">${t('processColCommand')}</span>
+        <span class="si-proc-num">${t('processColCPU')}</span>
+        <span class="si-proc-num">${t('processColMem')}</span>
+      </div>
+      <div class="si-proc-list">${rows}</div>
+    </div>`;
 }
 
 export function renderSysInfo(instance: SysInfoFields): void {
@@ -406,7 +392,7 @@ export function renderSysInfo(instance: SysInfoFields): void {
   }
 
   // Tooltip on truncated text
-  serverInfoEl.querySelectorAll('.server-info-value, .si-who-sub, .si-row-k').forEach((el) => {
+  serverInfoEl.querySelectorAll('.server-info-value, .si-gr-v, .si-stack-k').forEach((el) => {
     el.addEventListener('mouseenter', () => {
       const htmlEl = el as HTMLElement;
       if (htmlEl.scrollWidth > htmlEl.clientWidth) {
