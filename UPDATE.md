@@ -1,5 +1,41 @@
 # MeTerm 更新记录
 
+## v0.3.2
+
+### 设置整理
+
+- **AI 设置页重新整理** — 按「模型服务 / 回复 / Agent / 网页搜索」分组，并支持搜索；服务商默认折叠显示，标出密钥和模型是否已配置，点「编辑」才展开表单；温度、历史条数、终端行数收进「回复」里折叠的「高级」行。每一项都附一行说明，写明作用和哪些模型支持。
+- **只保留一个权限模式** — 原来的信任等级图标和权限模式下拉框控制的是同一件事，而且一旦选了权限模式，信任等级（以及 AI 栏的盾牌按钮）就会悄悄失效。现在设置页、AI 栏盾牌和 Agent 统一使用权限模式；之前没选过的用户沿用原信任等级对应的行为。
+- **命令辅助移到终端页** — tldr 帮助、命令补全和 Shell Hook 注入移到「终端 › 命令辅助」，并去掉过时的 Windows 提示。
+- **终端配色按深色 / 浅色分别选择** — 深色和浅色外观各记一套终端配色，列表只显示匹配的主题，切换外观不再覆盖你的选择；Neo-Brutalism 主题显示说明。已有设置会从当前主题自动带入。
+- **窗口透明度与背景图强度分开调** — 两个独立滑块，背景图强度从原来的透明度值带入。
+- **其他调整** — 全新安装默认跟随系统语言（原为英文）；会话概览默认开启；语言单独成组，界面字体并入主题，抽屉高度移到文件管理器（侧栏模式下隐藏），启动会话移到「启动与窗口」；文件管理器页新增双击打开方式设置；名称不够直白的设置项都改了名并加一行提示，依赖其他开关的项改为隐藏而不是置灰。
+
+### 验证
+
+- 合并前均通过 CI：前端构建与测试、Rust fmt / clippy / 测试（macOS 与 Windows）。
+- 正式安装包、真实 SSH 连接以及 Windows 真机尚未完整手动验证。
+
+---
+
+## Changelog (English)
+
+### Settings Cleanup
+
+- **Reorganized AI settings** — Grouped into Model services / Replies / Agent / Web search, and searchable. Providers are listed collapsed with key and model status; Edit opens the form. Temperature, history limit and terminal lines sit under a folded "Advanced" row in Replies. Every row has a line on what it does and which models honor it.
+- **One permission mode** — The trust-level icons and the permission-mode select controlled the same thing, and picking a mode silently disabled the trust level (and the AI bar shield). Settings, the AI bar shield and the agent now all use the permission mode; users who never picked one keep their old trust level's behavior.
+- **Command assist moves to Terminal** — tldr help, command completion and shell-hook injection now live under Terminal › Command Assist, without the outdated Windows warning.
+- **Terminal colours per appearance** — Dark and light appearances each remember their own terminal theme, each list only offers matching themes, and switching appearance no longer overwrites your pick. Neo-Brutalism shows a note instead. Existing settings carry over from the current theme.
+- **Separate window opacity and background image strength** — Two sliders; image strength is seeded from the old opacity value.
+- **Other changes** — Fresh installs start in the system language instead of English; session overview is on by default; language gets its own group, UI font joins Theme, drawer height moves to File Manager (hidden in sidebar mode), startup session moves to Startup & Window; the File Manager page exposes the double-click open preference; unclear rows are renamed with a one-line hint, and dependent rows hide instead of greying out.
+
+### Validation
+
+- Every merge passed CI: frontend build and tests, Rust fmt / clippy / tests on macOS and Windows.
+- The packaged release build, live SSH connections and Windows hardware have not been fully verified by hand.
+
+---
+
 ## v0.3.1
 
 ### 新功能 / 界面调整
