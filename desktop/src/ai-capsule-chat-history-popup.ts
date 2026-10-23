@@ -11,10 +11,11 @@
 import { t } from './i18n';
 import { createOverlayScrollbar } from './overlay-scrollbar';
 import type { AICapsuleInstance, ChatConversation } from './ai-capsule-types';
+import type { ConversationSummary } from './ai-chat-history-store';
 
 export interface ChatHistoryPopupHost {
-  /** Load all saved conversations from disk. */
-  loadConversations(): Promise<ChatConversation[]>;
+  /** Load the summaries of all saved conversations (not their messages). */
+  loadConversations(): Promise<ConversationSummary[]>;
   /** Delete a specific conversation from disk. */
   deleteConversation(id: string): Promise<void>;
   /** Confirm dialog for deletion. Returns true if the user approved. */
@@ -35,13 +36,13 @@ export interface ChatHistoryPopupHost {
   resetPopupManualHeight(): void;
   adjustPopupMaxHeight(panel: HTMLElement, aiBar: HTMLElement): void;
   /** Conversation cache used by the search filter. */
-  getCachedConversations(sessionId: string): ChatConversation[] | undefined;
-  setCachedConversations(sessionId: string, convs: ChatConversation[]): void;
+  getCachedConversations(sessionId: string): ConversationSummary[] | undefined;
+  setCachedConversations(sessionId: string, convs: ConversationSummary[]): void;
   deleteCachedConversations(sessionId: string): void;
   /** Render the list from cache (delegates to the persistence module). */
   renderListFromCache(
     instance: AICapsuleInstance,
-    convs: ChatConversation[],
+    convs: ConversationSummary[],
     filter?: string,
   ): void;
 }

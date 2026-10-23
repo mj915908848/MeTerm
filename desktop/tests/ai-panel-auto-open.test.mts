@@ -76,8 +76,11 @@ function restoreHarness() {
     ${openElsewhere.getText()}
     restoreConversation(inst,conv){this.restored.push(conv);inst.currentConversationId=conv.id}
   }`, { compilerOptions: { target: ts.ScriptTarget.ES2021 } }).outputText;
-  const Manager = new Function('loadSettings', 'currentConversationHost', 'hostsMatch', 'loadConversationsFn', js + ';return Manager;')(
-    () => settings, () => currentHost, hostsMatch, () => { loads++; return data; },
+  let summaries: any[] = [];
+  const Manager = new Function('loadSettings', 'currentConversationHost', 'hostsMatch', 'loadConversationSummariesFn', 'loadConversationFn', js + ';return Manager;')(
+    () => settings, () => currentHost, hostsMatch,
+    () => { loads++; return data.then(convs => { summaries = convs; return convs.map(c => ({ ...c, messageCount: c.messages.length })); }); },
+    async (id: string) => summaries.find(c => c.id === id) ?? null,
   );
   const manager = new Manager();
   const inst = { sessionId: 'session', tabId: 'tab', currentConversationId: 'fresh', messages: [], chatOpen: true, chatHistoryOpen: false, isStreaming: false };

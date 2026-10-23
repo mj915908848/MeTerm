@@ -5,6 +5,7 @@ import { PROVIDER_PRESETS, fetchModels, type ProviderType, type AIProviderEntry 
 import { flushSettingsSecrets } from './settings-secrets';
 import { createSettingsSelect } from './custom-select';
 import { THINKING_BUDGET_TIERS } from './ai-thinking-budget';
+import { CHAT_HISTORY_LIMITS } from './ai-chat-history-store';
 import { createGroup, createPage } from './settings-layout';
 import {
   createPermissionModeRow,
@@ -17,7 +18,8 @@ const EYE_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" st
 const CLOSE_ICON = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
 
 /**
- * Settings › AI. Four groups — model services, replies, agent, web search.
+ * Settings › AI. Five groups — model services, replies, agent, web search,
+ * conversation history.
  * The rarely touched sampling and context knobs fold away under Advanced at
  * the end of Replies.
  */
@@ -30,6 +32,7 @@ export function createAIPage(
     createGroup(t('aiGroupReply'), [...createReplyRows(current, update), ...createAdvancedRows(current, update)]),
     createGroup(t('aiGroupAgent'), createAgentRows(current, update)),
     createGroup(t('aiGroupWebSearch'), createWebSearchRows(current, update)),
+    createGroup(t('aiGroupChatHistory'), createChatHistoryRows(current, update)),
   ]);
 }
 
@@ -615,6 +618,28 @@ function createWebSearchRows(
   });
 
   return [enableRow, urlRow, authRow, testRow];
+}
+
+// ─── Conversation history ──────────────────────────────────
+
+function createChatHistoryRows(
+  current: AppSettings,
+  update: (patch: Partial<AppSettings>) => void,
+): HTMLElement[] {
+  const limitSel = createSettingsSelect(CHAT_HISTORY_LIMITS.map((limit) => ({
+    value: String(limit),
+    label: limit === 0 ? t('aiChatHistoryLimitAll') : String(limit),
+    selected: current.aiChatHistoryLimit === limit,
+  })));
+  limitSel.el.setAttribute('aria-label', t('aiChatHistoryLimit'));
+  limitSel.onchange = () => update({ aiChatHistoryLimit: Number(limitSel.value) });
+  const limitRow = settingRow(t('aiChatHistoryLimit'), limitSel.el, t('aiChatHistoryLimitHint'));
+  limitRow.style.display = current.aiSaveChatHistory ? '' : 'none';
+  const saveRow = switchRow('ai-save-chat-history', t('aiSaveChatHistory'), current.aiSaveChatHistory, (on) => {
+    update({ aiSaveChatHistory: on });
+    limitRow.style.display = on ? '' : 'none';
+  }, t('aiSaveChatHistoryHint'));
+  return [saveRow, limitRow];
 }
 
 // ─── Advanced (folded into Replies) ────────────────────────

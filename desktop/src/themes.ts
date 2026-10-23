@@ -365,6 +365,10 @@ export interface AppSettings {
   // AI Agent configuration
   aiAgentTrustLevel: number;       // 0 = manual, 1 = semi-auto, 2 = full-auto
   aiAgentMaxIterations: number;    // max agentic loop steps (default 30)
+  /** Write AI conversations to chat-history/ at all. */
+  aiSaveChatHistory: boolean;
+  /** Conversations kept in history, oldest deleted first; 0 = keep all. */
+  aiChatHistoryLimit: number;
   /** Set once the old default step limit (15) has been raised to 30. */
   aiStepLimitRaised?: boolean;
   /**
@@ -491,6 +495,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   aiThinkingBudget: 0,
   aiAgentTrustLevel: 0,
   aiAgentMaxIterations: 30,
+  aiSaveChatHistory: true,
+  aiChatHistoryLimit: 200,
   searxngUrl: '',
   searxngUsername: '',
   searxngPassword: '',

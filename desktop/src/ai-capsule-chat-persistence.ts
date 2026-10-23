@@ -9,8 +9,13 @@ import type { AICapsuleInstance, ConvEntry, ChatConversation } from './ai-capsul
 import { hostsMatch, validHost } from './ai-conversation-host';
 import { currentConversationHost, conversationHostLabel } from './ai-conversation-host-ui';
 import { bindLegacyHistory, deleteHistoryFiles } from './ai-conversation-binding-store';
+import { loadSettings } from './themes';
+import { showToast } from './notify';
+import {
+  CHAT_DIR, SUMMARY_DIR, summaryPath, entriesForHistory, buildSummary, parseSummary, conversationsToPrune,
+  type ConversationSummary,
+} from './ai-chat-history-store';
 
-const CHAT_DIR = 'chat-history';
 const FS_OPTS = { baseDir: BaseDirectory.AppData };
 
 let _chatHistoryDirReady = false;
@@ -18,6 +23,7 @@ let _chatHistoryDirReady = false;
 type HistoryListDeps = {
   ensurePopupResizeHandle: (panel: HTMLElement, aiBar: HTMLElement) => void;
   restoreConversation: (inst: AICapsuleInstance, conv: ChatConversation) => void;
+  loadConversation: (id: string) => Promise<ChatConversation | null>;
   handleDeleteConversation: (inst: AICapsuleInstance, convId: string) => void;
 };
 
@@ -37,7 +43,7 @@ interface HistoryChrome {
   search: HTMLInputElement | null;
   rows: HTMLDivElement;
   /** Latest render inputs, so reused controls never act on a stale list. */
-  convs: ChatConversation[];
+  convs: ConversationSummary[];
   deps: HistoryListDeps | null;
   query: string;
 }
@@ -50,22 +56,45 @@ const bindingListenerAttached = new WeakSet<HTMLDivElement>();
 const attachedTo = (target: HTMLElement, node: HTMLElement): boolean =>
   Array.from(target.children).includes(node);
 
+const RENAME_OPTS = { oldPathBaseDir: BaseDirectory.AppData, newPathBaseDir: BaseDirectory.AppData };
+
+/** Summaries handed out by the last listing, so a binding shows without a reload. */
+const listedSummaries = new Map<string, ConversationSummary>();
+
 export async function bindLegacyConversation(id: string, host: NonNullable<ChatConversation['hostBinding']>): Promise<void> {
   await bindLegacyHistory(id, host, {
     read: path => readTextFile(path, FS_OPTS),
     write: (path, text) => writeTextFile(path, text, FS_OPTS),
     exists: path => exists(path, FS_OPTS),
     remove: path => remove(path, FS_OPTS),
-    rename: (from, to) => rename(from, to, { oldPathBaseDir: BaseDirectory.AppData, newPathBaseDir: BaseDirectory.AppData }),
+    rename: (from, to) => rename(from, to, RENAME_OPTS),
   });
+  const listed = listedSummaries.get(id);
+  if (listed) listed.hostBinding = host;
+  const conv = await loadConversation(id);
+  if (conv) await writeSummary(buildSummary(conv));
 }
 
 export async function ensureChatDir(): Promise<void> {
   if (_chatHistoryDirReady) return;
-  if (!(await exists(CHAT_DIR, FS_OPTS))) {
-    await mkdir(CHAT_DIR, { recursive: true, ...FS_OPTS });
+  if (!(await exists(SUMMARY_DIR, FS_OPTS))) {
+    await mkdir(SUMMARY_DIR, { recursive: true, ...FS_OPTS });
   }
   _chatHistoryDirReady = true;
+}
+
+/** Write aside and rename over, so a crash mid-write never leaves a truncated file. */
+async function writeAtomically(path: string, text: string): Promise<void> {
+  const temporary = `${path}.save.tmp`;
+  await writeTextFile(temporary, text, FS_OPTS);
+  await rename(temporary, path, RENAME_OPTS);
+}
+
+async function writeSummary(summary: ConversationSummary): Promise<void> {
+  try {
+    await ensureChatDir();
+    await writeAtomically(summaryPath(summary.id), JSON.stringify(summary));
+  } catch (e) { console.error('[chat-history] summary write failed:', summary.id, e); }
 }
 
 /** Per-conversation write chain: saves of one file never overlap or land out of order. */
@@ -75,69 +104,103 @@ export function saveConversation(
   instance: AICapsuleInstance,
   snapshot?: { id: string; messages: ConvEntry[]; hostBinding?: ChatConversation['hostBinding'] },
 ): Promise<void> {
+  if (!loadSettings().aiSaveChatHistory) return Promise.resolve();
   const id = snapshot?.id ?? instance.currentConversationId;
   const msgs = snapshot?.messages ?? instance.messages;
   const hostBinding = snapshot ? snapshot.hostBinding : instance.conversationHost;
   if (msgs.length === 0) return Promise.resolve();
-  const safeId = id.replace(/[^a-zA-Z0-9_-]/g, '');
-  if (!safeId) return Promise.resolve();
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) return Promise.resolve();
   // Serialize now: `messages` keeps changing while the write waits its turn.
   const firstUser = msgs.find(m => m.type === 'user');
   const conv: ChatConversation = {
     id,
     hostBinding,
     title: firstUser ? firstUser.content.slice(0, 80) : 'Untitled',
-    messages: msgs,
+    messages: entriesForHistory(msgs),
     createdAt: msgs[0]?.timestamp || Date.now(),
     updatedAt: Date.now(),
   };
   const text = JSON.stringify(conv);
-  const filePath = `${CHAT_DIR}/${safeId}.json`;
+  const summary = buildSummary(conv);
   const write = async () => {
     try {
       await ensureChatDir();
-      // Write aside and rename over, so a crash mid-write cannot leave a
-      // truncated file that loadConversations would then skip.
-      const temporary = `${filePath}.save.tmp`;
-      await writeTextFile(temporary, text, FS_OPTS);
-      await rename(temporary, filePath, { oldPathBaseDir: BaseDirectory.AppData, newPathBaseDir: BaseDirectory.AppData });
+      await writeAtomically(`${CHAT_DIR}/${id}.json`, text);
+      await writeAtomically(summaryPath(id), JSON.stringify(summary));
     } catch (e) {
       console.error('[chat-history] save failed:', e);
     }
   };
-  const next = (saveChains.get(safeId) ?? Promise.resolve()).then(write);
-  saveChains.set(safeId, next);
-  void next.then(() => { if (saveChains.get(safeId) === next) saveChains.delete(safeId); });
+  const next = (saveChains.get(id) ?? Promise.resolve()).then(write);
+  saveChains.set(id, next);
+  void next.then(() => { if (saveChains.get(id) === next) saveChains.delete(id); });
   return next;
 }
 
-export async function loadConversations(): Promise<ChatConversation[]> {
+/** Read one full conversation; null when it is missing or unreadable. */
+export async function loadConversation(id: string): Promise<ChatConversation | null> {
+  if (!/^[a-zA-Z0-9_-]+$/.test(id)) return null;
+  try {
+    const raw = JSON.parse(await readTextFile(`${CHAT_DIR}/${id}.json`, FS_OPTS)) as ChatConversation;
+    if (!raw || !Array.isArray(raw.messages)) return null;
+    raw.id = id;
+    raw.hostBinding = validHost(raw.hostBinding);
+    // Migrate old format: { role, content } → { type, content }
+    if (raw.messages.length && 'role' in raw.messages[0]) {
+      raw.messages = (raw.messages as unknown as { role: string; content: string; timestamp: number }[])
+        .map(m => ({ type: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant', content: m.content, timestamp: m.timestamp }));
+    }
+    return raw;
+  } catch (e) { console.error('[chat-history] read failed:', id, e); return null; }
+}
+
+/**
+ * The history list: one small summary per conversation, newest first. A
+ * conversation saved before summaries existed is read in full once and gets
+ * its summary written then.
+ */
+export async function loadConversationSummaries(): Promise<ConversationSummary[]> {
   try {
     await ensureChatDir();
-    const entries = await readDir(CHAT_DIR, FS_OPTS);
-    const convs: ChatConversation[] = [];
-    for (const entry of entries) {
-      if (!entry.name?.endsWith('.json')) continue;
-      if (/[/\\]/.test(entry.name)) continue;
+    const ids = (await readDir(CHAT_DIR, FS_OPTS))
+      .map(entry => entry.name ?? '')
+      .filter(name => name.endsWith('.json'))
+      .map(name => name.slice(0, -'.json'.length))
+      .filter(id => /^[a-zA-Z0-9_-]+$/.test(id));
+    const summaries = await Promise.all(ids.map(async (id): Promise<ConversationSummary | null> => {
       try {
-        const content = await readTextFile(`${CHAT_DIR}/${entry.name}`, FS_OPTS);
-        const raw = JSON.parse(content) as ChatConversation;
-        raw.hostBinding = validHost(raw.hostBinding);
-        // Migrate old format: { role, content } → { type, content }
-        if (raw.messages?.length && 'role' in raw.messages[0]) {
-          raw.messages = (raw.messages as unknown as { role: string; content: string; timestamp: number }[])
-            .map(m => ({ type: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant', content: m.content, timestamp: m.timestamp }));
-        }
-        convs.push(raw);
-      } catch (e) { console.error('[chat-history] read failed:', entry.name, e); }
-    }
-    convs.sort((a, b) => b.updatedAt - a.updatedAt);
-    return convs;
+        const listed = parseSummary(await readTextFile(summaryPath(id), FS_OPTS), id);
+        if (listed) { listed.hostBinding = validHost(listed.hostBinding); return listed; }
+      } catch { /* no summary yet */ }
+      const conv = await loadConversation(id);
+      if (!conv) return null;
+      const built = buildSummary(conv);
+      await writeSummary(built);
+      return built;
+    }));
+    const result = summaries.filter((s): s is ConversationSummary => s !== null)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    listedSummaries.clear();
+    for (const summary of result) listedSummaries.set(summary.id, summary);
+    return result;
   } catch (e) { console.error('[chat-history] load failed:', e); return []; }
+}
+
+/**
+ * Apply the retention limit: delete the oldest conversations beyond it, never
+ * one that `keep` names (open in a tab). Returns the summaries that remain.
+ */
+export async function pruneConversations(summaries: ConversationSummary[], keep: ReadonlySet<string>): Promise<ConversationSummary[]> {
+  const victims = conversationsToPrune(summaries, loadSettings().aiChatHistoryLimit, keep);
+  if (victims.length === 0) return summaries;
+  for (const id of victims) await deleteConversation(id);
+  const gone = new Set(victims);
+  return summaries.filter(s => !gone.has(s.id));
 }
 
 export async function deleteConversation(id: string): Promise<void> {
   if (!/^[a-zA-Z0-9_-]+$/.test(id)) return;
+  listedSummaries.delete(id);
   try {
     await ensureChatDir();
     // Let a queued save finish first, or it would write the file back.
@@ -302,7 +365,7 @@ function renderHistoryRows(
 
   const filtered = query
     ? scoped.filter(c => fuzzyMatch(c.title, query) || fuzzyMatch(conversationHostLabel(c.hostBinding), query) ||
-        c.messages.some(m => m.type !== 'tool_call' && fuzzyMatch(m.content, query)))
+        fuzzyMatch(c.searchText, query))
     : scoped;
 
   if (filtered.length === 0) {
@@ -315,10 +378,21 @@ function renderHistoryRows(
     const row = document.createElement('div');
     row.className = 'ai-chat-hist-row';
     row.tabIndex = 0; row.setAttribute('role', 'button');
-    row.addEventListener('click', () => deps.restoreConversation(instance, conv));
+    // The list holds summaries only; the full conversation is read on open.
+    let opening = false;
+    const open = async () => {
+      if (opening) return;
+      opening = true;
+      try {
+        const full = await deps.loadConversation(conv.id);
+        if (full) deps.restoreConversation(instance, full);
+        else showToast({ title: t('aiChatHistoryTitle'), body: t('aiChatHistoryLoadFailed') });
+      } finally { opening = false; }
+    };
+    row.addEventListener('click', () => { void open(); });
     row.addEventListener('keydown', event => {
       if (event.target === row && (event.key === 'Enter' || event.key === ' ')) {
-        event.preventDefault(); deps.restoreConversation(instance, conv);
+        event.preventDefault(); void open();
       }
     });
 
@@ -331,7 +405,7 @@ function renderHistoryRows(
 
     const rowMeta = document.createElement('div');
     rowMeta.className = 'ai-chat-hist-row-meta';
-    rowMeta.textContent = `${conversationHostLabel(conv.hostBinding)} · ${conv.messages.length} msgs · ${formatRelativeTime(conv.updatedAt)}`;
+    rowMeta.textContent = `${conversationHostLabel(conv.hostBinding)} · ${t('aiChatMessageCount').replace('{n}', String(conv.messageCount))} · ${formatRelativeTime(conv.updatedAt)}`;
 
     info.appendChild(rowTitle);
     info.appendChild(rowMeta);
@@ -353,7 +427,7 @@ function renderHistoryRows(
 
 export function renderChatHistoryListFromCache(
   instance: AICapsuleInstance,
-  convs: ChatConversation[],
+  convs: ConversationSummary[],
   deps: HistoryListDeps,
   filter?: string,
 ): void {

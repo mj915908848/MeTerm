@@ -59,3 +59,11 @@ test('delete cannot race an in-progress binding in the same window', async () =>
   await assert.rejects(deleteHistoryFiles('example', storage), /in progress/);
   release(); await pending; await deleteHistoryFiles('example', storage); assert.equal(files.size, 1);
 });
+test('deletion also removes the conversation summary and its staging file', async () => {
+  const { files, storage } = fixture();
+  files.set('chat-history/index/example.json', '{}');
+  files.set('chat-history/index/example.json.save.tmp', '{');
+  files.set('chat-history/index/other.json', '{}');
+  await deleteHistoryFiles('example', storage);
+  assert.deepEqual([...files.keys()].sort(), ['chat-history/index/other.json', 'chat-history/other.json']);
+});

@@ -376,6 +376,12 @@ export interface Translations {
   aiGroupReply: string;
   aiGroupAgent: string;
   aiGroupWebSearch: string;
+  aiGroupChatHistory: string;
+  aiSaveChatHistory: string;
+  aiSaveChatHistoryHint: string;
+  aiChatHistoryLimit: string;
+  aiChatHistoryLimitHint: string;
+  aiChatHistoryLimitAll: string;
   aiGroupAdvanced: string;
   aiAdvancedSummary: string;
   aiPreset: string;
@@ -592,6 +598,8 @@ export interface Translations {
   aiChatHostMismatchTitle: string;
   aiChatHostMismatch: string;
   aiChatOpenElsewhereTitle: string;
+  aiChatHistoryLoadFailed: string;
+  aiChatMessageCount: string;
   aiChatOpenElsewhere: string;
   aiChatPreviewAriaLabel: string;
   aiChatPreviewNoticeBound: string;
@@ -1145,6 +1153,12 @@ const translations: Record<Language, Translations> = {
     aiGroupReply: 'Replies',
     aiGroupAgent: 'Agent',
     aiGroupWebSearch: 'Web Search',
+    aiGroupChatHistory: 'Conversation History',
+    aiSaveChatHistory: 'Save Conversations',
+    aiSaveChatHistoryHint: 'Keeps AI conversations on this computer so they can be reopened. What the agent types into terminal prompts and screenshots taken by tools are not saved; long command output is shortened.',
+    aiChatHistoryLimit: 'Keep',
+    aiChatHistoryLimitHint: 'The oldest conversations beyond this are deleted. Conversations open in a tab are kept.',
+    aiChatHistoryLimitAll: 'All conversations',
     aiGroupAdvanced: 'Advanced',
     aiAdvancedSummary: 'Temperature, conversation history limit, terminal lines',
     aiPreset: 'Quick Select',
@@ -1344,6 +1358,8 @@ const translations: Record<Language, Translations> = {
     aiChatHostMismatchTitle: 'Host mismatch',
     aiChatHostMismatch: 'Host mismatch. Switch to the conversation host or start a new conversation.',
     aiChatOpenElsewhereTitle: 'Already open',
+    aiChatHistoryLoadFailed: 'This conversation could not be read. It may have been deleted.',
+    aiChatMessageCount: '{n} msgs',
     aiChatOpenElsewhere: 'This conversation is open in another tab. Continue it there, or close it there first.',
     aiChatPreviewAriaLabel: 'Read-only conversation history',
     aiChatPreviewNoticeBound: 'Read-only history. Switch to the matching host and reopen from history to continue. Ownership identifies the initial host, not every operation target.',
@@ -1910,6 +1926,12 @@ const translations: Record<Language, Translations> = {
     aiGroupReply: '回复',
     aiGroupAgent: 'Agent',
     aiGroupWebSearch: '联网搜索',
+    aiGroupChatHistory: '对话历史',
+    aiSaveChatHistory: '保存 AI 对话历史',
+    aiSaveChatHistoryHint: '把 AI 对话保存在本机，之后可以重新打开。Agent 在终端提示符里输入的内容和工具截的图不会保存，过长的命令输出会截短。',
+    aiChatHistoryLimit: '保留',
+    aiChatHistoryLimitHint: '超出数量时从最旧的对话开始删除，标签中打开着的对话不会被删。',
+    aiChatHistoryLimitAll: '全部保留',
     aiGroupAdvanced: '高级',
     aiAdvancedSummary: '温度、对话历史上限、附带终端行数',
     aiPreset: '快速选择',
@@ -2109,6 +2131,8 @@ const translations: Record<Language, Translations> = {
     aiChatHostMismatchTitle: '主机不匹配',
     aiChatHostMismatch: '当前主机与对话归属不匹配，请切换到对应主机或新建对话。',
     aiChatOpenElsewhereTitle: '对话已打开',
+    aiChatHistoryLoadFailed: '无法读取这条对话，它可能已被删除。',
+    aiChatMessageCount: '{n} 条',
     aiChatOpenElsewhere: '这条对话已在另一个标签中打开，请在那边继续，或先在那边关闭。',
     aiChatPreviewAriaLabel: '只读对话历史',
     aiChatPreviewNoticeBound: '只读历史。切换到对应主机后，从历史列表重新打开即可继续。归属表示首次发送的主机，不代表所有操作的目标。',
