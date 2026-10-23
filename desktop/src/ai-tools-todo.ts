@@ -81,11 +81,6 @@ export class TodoState implements TodoStateRef {
    * otherwise the model stopped mid-plan (e.g. to ask the user), so put
    * the step back to pending for the next turn to pick up.
    */
-  /** Plan items not completed yet, as their labels. */
-  openItems(): string[] {
-    return this.items.filter(item => item.status !== 'completed').map(item => item.content);
-  }
-
   settleAfterReply(): void {
     if (!this.items.some(item => item.status === 'in_progress')) return;
     const othersOpen = this.items.some(item => item.status === 'pending' || item.status === 'interrupted');

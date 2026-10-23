@@ -58,7 +58,7 @@ import {
 } from './ai-permission-rules';
 import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit';
 import { emptyReplyNotice, outputTruncatedNotice, stepLimitNotice } from './ai-tool-i18n';
-import { newSelfCheckState, noteToolCall, selfCheckNote } from './ai-self-check';
+import { commandLooksMutating, newSelfCheckState, noteToolCall, selfCheckNote, stepsLeftAfterReply } from './ai-self-check';
 
 /** Tool rounds after which a run without a plan is asked to write one. */
 const PLAN_OVERDUE_AFTER_ROUNDS = 3;
@@ -943,7 +943,7 @@ export class ToolAgent {
           // One self-check pass when the plan is unfinished or the last
           // change was never verified (see ai-self-check.ts).
           const checkNote = useTools
-            ? selfCheckNote(selfCheck, this.todoState.openItems(), fixed, iteration < maxIterations - 1)
+            ? selfCheckNote(selfCheck, stepsLeftAfterReply(this.todoState.get()), fixed, iteration < maxIterations - 1)
             : null;
           if (checkNote) {
             selfCheck.nudged = true;
@@ -1261,7 +1261,11 @@ export class ToolAgent {
             }
             const started = Date.now();
             const out = await this.safeExecute(handler as ToolHandler, decision.args, toolCtx, toolCall.function.name);
-            noteToolCall(selfCheck, toolCall.function.name, (handler as ToolHandler).requiresConfirm(decision.args), out.isError);
+            // Confirmation is the read/write classifier, but it also asks for
+            // compound or sudo read-only commands, so look at the command too.
+            const changes = (handler as ToolHandler).requiresConfirm(decision.args)
+              && (toolCall.function.name !== 'run_command' || commandLooksMutating(String(decision.args.command ?? '')));
+            noteToolCall(selfCheck, toolCall.function.name, changes, out.isError);
 
             // ── Repeat-action loop detection ──
             // Track this call in a sliding window of size 5; if the

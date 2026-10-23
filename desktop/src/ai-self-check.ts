@@ -34,6 +34,40 @@ export function noteToolCall(state: SelfCheckState, toolName: string, changes: b
   }
 }
 
+// Commands that change the machine. run_command also asks for
+// confirmation on read-only commands it cannot prove safe (compound
+// lines, sudo), so the self-check looks at the command itself.
+const MUTATING_COMMAND = new RegExp([
+  String.raw`\b(systemctl|service|rc-service)\b[^;&|]*\b(start|stop|restart|reload|enable|disable|mask|unmask|kill|daemon-reload)\b`,
+  String.raw`\b(apt|apt-get|yum|dnf|zypper|pacman|apk|brew|snap)\b[^;&|]*\b(install|remove|purge|upgrade|update|add|del)\b`,
+  String.raw`\bpacman\s+-[SRU]`,
+  String.raw`\b(pip3?|npm|pnpm|yarn|gem|cargo)\b[^;&|]*\b(install|uninstall|add|remove)\b`,
+  String.raw`\b(docker|podman)\b[^;&|]*\b(run|start|stop|restart|rm|rmi|kill|pull|create|prune|up|down)\b`,
+  String.raw`\bkubectl\b[^;&|]*\b(apply|delete|create|patch|edit|scale|rollout|set|label|annotate|drain|cordon)\b`,
+  String.raw`\bgit\b[^;&|]*\b(commit|push|pull|merge|rebase|reset|checkout|switch|stash|clean)\b`,
+  String.raw`(^|[;&|(]\s*|\bsudo\s+(-\S+\s+)*)(rm|rmdir|mv|cp|ln|chmod|chown|chgrp|mkdir|touch|truncate|dd|kill|pkill|killall|reboot|shutdown|useradd|userdel|usermod|passwd|crontab|mount|umount|iptables|ufw|firewall-cmd|nft|sysctl|tee|install)\b`,
+  String.raw`\bsed\b[^;&|]*\s-i`,
+  String.raw`\bsysctl\s+-w\b`,
+].join('|'));
+
+/** Whether a shell command line looks like it changes something. Heuristic. */
+export function commandLooksMutating(cmd: string): boolean {
+  if (MUTATING_COMMAND.test(cmd)) return true;
+  // A redirect into a file, except /dev/null and fd duplication (2>&1).
+  const withoutSafe = cmd.replace(/\d*>>?\s*(\/dev\/null|&\d|&-)/g, '');
+  return /(^|[^<>=-])>>?\s*[^\s&>]/.test(withoutSafe.replace(/'[^']*'|"[^"]*"/g, "''"));
+}
+
+/**
+ * Plan steps that are really unfinished once this reply is shown.
+ * When only one step is open, the reply is that step (usually "report
+ * the findings"), the same rule TodoState.settleAfterReply uses.
+ */
+export function stepsLeftAfterReply(items: Array<{ content: string; status: string }>): string[] {
+  const open = items.filter((it) => it.status !== 'completed');
+  return open.length <= 1 ? [] : open.map((it) => it.content);
+}
+
 /** A reply that ends by asking the user something is waiting on them, not finishing. */
 function asksUser(reply: string): boolean {
   return /[?？]\s*$/.test(reply.trim());
@@ -41,7 +75,7 @@ function asksUser(reply: string): boolean {
 
 /**
  * The note to send back instead of ending the run, or null to end it.
- * `openSteps` are the plan items not yet completed.
+ * `openSteps` are the plan items still open (stepsLeftAfterReply).
  */
 export function selfCheckNote(
   state: SelfCheckState,
@@ -58,6 +92,6 @@ export function selfCheckNote(
   if (state.unverifiedChange) {
     parts.push('Your last change has not been checked. Verify it with one read-only command that proves the result (e.g. a config test like `nginx -t`, `systemctl status <svc>`, `curl -I <url>`, re-running the command that failed, or reading back the edited lines).');
   }
-  parts.push('If something fails, fix it. When everything is verified, give the final reply and say what you checked. If there is nothing to verify, just repeat your final reply briefly.');
+  parts.push('If something fails, fix it and then give the final reply. If everything checks out, the user already has your reply above: answer with ONE short line saying what you checked and that the result stands. Do not repeat the report, and do not mention this self-check.');
   return parts.join('\n\n');
 }

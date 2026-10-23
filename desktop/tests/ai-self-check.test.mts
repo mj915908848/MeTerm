@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { newSelfCheckState, noteToolCall, selfCheckNote } from '../src/ai-self-check.ts';
+import { commandLooksMutating, newSelfCheckState, noteToolCall, selfCheckNote, stepsLeftAfterReply } from '../src/ai-self-check.ts';
 
 test('no note when nothing changed and the plan is done', () => {
   const s = newSelfCheckState();
@@ -45,4 +45,49 @@ test('no note when the reply asks the user something or no steps are left', () =
   assert.equal(selfCheckNote(s, ['x'], 'Should I restart nginx now?', true), null);
   assert.equal(selfCheckNote(s, ['x'], '要现在重启吗？', true), null);
   assert.equal(selfCheckNote(s, ['x'], 'Done.', false), null);
+});
+
+test('read-only command lines are not changes', () => {
+  for (const cmd of [
+    'cat /proc/loadavg; free -m; df -h',
+    'sudo -n journalctl -u nginx --since "30 min ago" 2>&1 | tail -50',
+    'systemctl status nginx; systemctl is-enabled nginx',
+    'ss -tlnp 2>/dev/null | grep 80',
+    'docker ps -a; docker logs --tail 50 web 2>&1',
+    'find / -name "*.conf" 2>/dev/null | head',
+    'apt list --upgradable',
+    "awk '{ if ($1 > 5) print }' /proc/loadavg",
+  ]) assert.equal(commandLooksMutating(cmd), false, cmd);
+});
+
+test('changing command lines are changes', () => {
+  for (const cmd of [
+    'sudo systemctl restart nginx',
+    'apt-get install -y htop',
+    'rm -rf /tmp/x',
+    'cd /etc && sudo -n mv a b',
+    "sed -i 's/80/8080/' /etc/app.conf",
+    'echo port=8080 > /etc/app.conf',
+    'echo x | sudo tee -a /etc/hosts',
+    'docker compose up -d',
+    'kubectl apply -f deploy.yaml',
+    'pacman -Syu',
+  ]) assert.equal(commandLooksMutating(cmd), true, cmd);
+});
+
+test('the reply covers a single remaining plan step', () => {
+  assert.deepEqual(stepsLeftAfterReply([
+    { content: 'Check load', status: 'completed' },
+    { content: 'Write the report', status: 'in_progress' },
+  ]), []);
+  assert.deepEqual(stepsLeftAfterReply([
+    { content: 'Restart nginx', status: 'pending' },
+    { content: 'Check the site', status: 'pending' },
+  ]), ['Restart nginx', 'Check the site']);
+});
+
+test('the note asks for a one-line answer when nothing needs fixing', () => {
+  const s = newSelfCheckState();
+  noteToolCall(s, 'edit_file', true, false);
+  assert.match(selfCheckNote(s, [], 'Done.', true) ?? '', /ONE short line/);
 });
