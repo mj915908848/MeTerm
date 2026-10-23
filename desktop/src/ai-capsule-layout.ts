@@ -7,6 +7,7 @@
  * and the side panel has its own independent input area for LLM chat.
  */
 
+import { createHostNotesButton } from './ai-host-notes-popover';
 import { TerminalRegistry } from './terminal';
 import { t } from './i18n';
 import { LLM_SEND_SVG } from './ai-capsule-chat-ui';
@@ -206,6 +207,9 @@ export function createSideInputArea(
     callbacks.toggleSideChatHistory(callbacks.resolveCurrentInstance(instance));
   });
 
+  // Notes for the host of the focused pane (see ai-host-notes-popover.ts).
+  const hostNotesBtn = createHostNotesButton(() => callbacks.resolveCurrentInstance(instance).sessionId);
+
   // Layout toggle button (switch back to bottom mode)
   const layoutBtn = document.createElement('button');
   layoutBtn.className = 'ai-side-btn ai-side-btn-layout';
@@ -344,6 +348,7 @@ export function createSideInputArea(
   toolbar.appendChild(trustSwitcher);
   toolbar.appendChild(thinkingToggle);
   toolbar.appendChild(chatHistBtn);
+  toolbar.appendChild(hostNotesBtn);
   toolbar.appendChild(layoutBtn);
   toolbar.appendChild(attachBtn);
   const toolbarSpacer = document.createElement('div');

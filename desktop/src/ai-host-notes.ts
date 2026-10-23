@@ -50,11 +50,23 @@ function readAll(): Record<string, HostNotesEntry> {
 
 function writeAll(all: Record<string, HostNotesEntry>): void {
   globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(all));
+  if (typeof window !== 'undefined' && typeof Event === 'function') {
+    window.dispatchEvent(new Event('meterm-host-notes-changed'));
+  }
 }
 
 export function getHostNotes(key: string): string {
   return readAll()[key]?.notes ?? '';
 }
+
+/** Notes plus last-change time; null when the host has none. */
+export function getHostNotesEntry(key: string): HostNotesEntry | null {
+  return readAll()[key] ?? null;
+}
+
+export const HOST_NOTES_STORAGE_KEY = STORAGE_KEY;
+/** Fired on window after a save in this window (other windows get `storage`). */
+export const HOST_NOTES_CHANGED_EVENT = 'meterm-host-notes-changed';
 
 /** Every host with notes, most recently changed first. */
 export function listHostNotes(): Array<{ key: string } & HostNotesEntry> {
@@ -75,9 +87,16 @@ export function setHostNotes(key: string, notes: string, now = Date.now()): void
   writeAll(all);
 }
 
-/** The notes after adding `note` as a new "- " line (not saved). */
+/** One "- " bullet per non-empty line of `text`. */
+export function toBullets(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim().replace(/^[-*•]\s*/, ''))
+    .filter(Boolean)
+    .map((line) => `- ${line}`);
+}
+
+/** The notes after adding each line of `note` as its own bullet (not saved). */
 export function appendedHostNotes(current: string, note: string): string {
-  const line = note.trim().replace(/\s*\n\s*/g, ' ');
-  const bullet = line.startsWith('- ') ? line : `- ${line}`;
-  return current.trim() ? `${current.trim()}\n${bullet}` : bullet;
+  return [current.trim(), ...toBullets(note)].filter(Boolean).join('\n');
 }

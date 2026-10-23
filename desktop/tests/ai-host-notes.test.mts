@@ -18,9 +18,9 @@ test('host key drops the user and lowercases; local panes share one key', () => 
 test('notes are saved, appended as bullets, listed newest first and deleted when empty', () => {
   memory.clear();
   notes.setHostNotes('a:22', notes.appendedHostNotes('', 'app in /srv/app'), 1);
-  notes.setHostNotes('a:22', notes.appendedHostNotes(notes.getHostNotes('a:22'), 'restart:\nsystemctl restart app'), 2);
+  notes.setHostNotes('a:22', notes.appendedHostNotes(notes.getHostNotes('a:22'), '* restart: systemctl restart app\n\n- logs in /var/log/app'), 2);
   notes.setHostNotes('b:22', '- nginx only', 3);
-  assert.equal(notes.getHostNotes('a:22'), '- app in /srv/app\n- restart: systemctl restart app');
+  assert.equal(notes.getHostNotes('a:22'), '- app in /srv/app\n- restart: systemctl restart app\n- logs in /var/log/app');
   assert.deepEqual(notes.listHostNotes().map((n) => n.key), ['b:22', 'a:22']);
   notes.setHostNotes('b:22', '  ');
   assert.deepEqual(notes.listHostNotes().map((n) => n.key), ['a:22']);
