@@ -17,7 +17,8 @@ use super::{error::Error, run, Handler};
 use crate::{
     de,
     extensions::{
-        self, FsyncExtension, HardlinkExtension, LimitsExtension, Statvfs, StatvfsExtension,
+        self, FsyncExtension, HardlinkExtension, LimitsExtension, PosixRenameExtension, Statvfs,
+        StatvfsExtension,
     },
     protocol::{
         Attrs, Close, Data, Extended, ExtendedReply, FSetStat, FileAttributes, Fstat, Handle, Init,
@@ -674,6 +675,26 @@ impl RawSftpSession {
             .extended(
                 extensions::HARDLINK,
                 HardlinkExtension {
+                    oldpath: oldpath.into(),
+                    newpath: newpath.into(),
+                }
+                .try_into()?,
+            )
+            .await?;
+
+        into_status!(result)
+    }
+
+    /// Rename that replaces an existing `newpath` atomically (POSIX rename(2)).
+    pub async fn posix_rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<Status>
+    where
+        O: Into<String>,
+        N: Into<String>,
+    {
+        let result = self
+            .extended(
+                extensions::POSIX_RENAME,
+                PosixRenameExtension {
                     oldpath: oldpath.into(),
                     newpath: newpath.into(),
                 }

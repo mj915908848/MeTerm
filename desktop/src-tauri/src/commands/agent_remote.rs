@@ -58,7 +58,7 @@ async fn read_remote_bytes(sftp: &SftpSession, path: &str, cap: u64) -> Result<V
 }
 
 /// Truncate and rewrite `path` in place, so the file keeps its owner,
-/// mode and any links pointing at it.
+/// mode and any links pointing at it. Not atomic: prefer store_remote_file.
 async fn write_remote_bytes(sftp: &SftpSession, path: &str, data: &[u8]) -> Result<(), String> {
     let mut file = sftp
         .create(path.to_string())
@@ -71,6 +71,84 @@ async fn write_remote_bytes(sftp: &SftpSession, path: &str, data: &[u8]) -> Resu
         .await
         .map_err(|e| format!("close failed: {}", e))?;
     Ok(())
+}
+
+/// Where the temp copy of `path` goes: a hidden file in the same directory,
+/// so the final rename stays on one file system.
+fn temp_sibling(path: &str) -> String {
+    let (dir, name) = match path.rsplit_once('/') {
+        Some((dir, name)) => (format!("{}/", dir), name),
+        None => (String::new(), path),
+    };
+    let tag = &uuid::Uuid::new_v4().simple().to_string()[..8];
+    format!("{}.{}.meterm-{}.tmp", dir, name, tag)
+}
+
+/// Replace an existing file without ever leaving it half-written: the new
+/// bytes go to a temp file next to it, which then takes its place with an
+/// atomic `posix-rename@openssh.com`. A dropped connection mid-write leaves
+/// the old file intact. Returns false when this cannot be done while
+/// keeping the file's owner (owned by someone else, no rename extension,
+/// directory not writable); the caller then rewrites the file in place.
+async fn replace_remote_atomically(
+    sftp: &SftpSession,
+    path: &str,
+    target: &russh_sftp::client::fs::Metadata,
+    data: &[u8],
+) -> bool {
+    // A file the owner cannot write must keep failing, as it did in place.
+    if target.permissions.is_some_and(|mode| mode & 0o200 == 0) {
+        return false;
+    }
+    let temp = temp_sibling(path);
+    let swapped = async {
+        // Create the temp empty and give it the target's mode first, so a
+        // private file's content is never readable through the temp.
+        write_remote_bytes(sftp, &temp, &[]).await.ok()?;
+        let mine = sftp.metadata(temp.clone()).await.ok()?;
+        // Only root can chown, so a file owned by someone else is rewritten
+        // in place to keep its owner.
+        if target.uid.is_some() && mine.uid != target.uid {
+            return None;
+        }
+        let mut attrs = russh_sftp::client::fs::Metadata::empty();
+        attrs.permissions = target.permissions.map(|mode| mode & 0o7777);
+        if target.gid.is_some() && mine.gid != target.gid {
+            attrs.uid = mine.uid;
+            attrs.gid = target.gid;
+        }
+        sftp.set_metadata(temp.clone(), attrs).await.ok()?;
+        write_remote_bytes(sftp, &temp, data).await.ok()?;
+        sftp.posix_rename(temp.clone(), path.to_string())
+            .await
+            .ok()
+            .filter(|done| *done)
+    }
+    .await;
+    if swapped.is_none() {
+        let _ = sftp.remove_file(temp).await;
+        return false;
+    }
+    true
+}
+
+/// Write `data` to `path`: atomically when the file already exists (see
+/// replace_remote_atomically), otherwise by creating it.
+async fn store_remote_file(sftp: &SftpSession, path: &str, data: &[u8]) -> Result<(), String> {
+    // Replace what a symlink points to, not the link itself.
+    let real = match sftp.symlink_metadata(path.to_string()).await {
+        Ok(meta) if meta.is_symlink() => sftp
+            .canonicalize(path.to_string())
+            .await
+            .unwrap_or_else(|_| path.to_string()),
+        _ => path.to_string(),
+    };
+    if let Ok(meta) = sftp.metadata(real.clone()).await {
+        if meta.is_regular() && replace_remote_atomically(sftp, &real, &meta, data).await {
+            return Ok(());
+        }
+    }
+    write_remote_bytes(sftp, &real, data).await
 }
 
 /// `mkdir -p` for the parent of `path`.
@@ -145,7 +223,7 @@ pub async fn sftp_write_file(
 ) -> Result<u64, String> {
     let sftp = sftp_for(&state, &session_id)?;
     create_parent_dirs(&sftp, &path).await?;
-    write_remote_bytes(&sftp, &path, content.as_bytes()).await?;
+    store_remote_file(&sftp, &path, content.as_bytes()).await?;
     Ok(content.len() as u64)
 }
 
@@ -168,6 +246,6 @@ pub async fn sftp_edit_file(
         &new_string,
         replace_all.unwrap_or(false),
     )?;
-    write_remote_bytes(&sftp, &path, edited.as_bytes()).await?;
+    store_remote_file(&sftp, &path, edited.as_bytes()).await?;
     Ok(result)
 }

@@ -933,8 +933,11 @@ export class ToolAgent {
         }
 
         // ── No tool calls → fix code blocks, then done ──
+        // Only the tool-less prompt asks for one command per bash block;
+        // an agent report may hold heredocs, loops or config snippets, which
+        // splitting line by line would break.
         if (!response.toolCalls || response.toolCalls.length === 0) {
-          const fixed = fixCodeBlocks(response.text);
+          const fixed = hasTools ? response.text : fixCodeBlocks(response.text);
           this.messages.push({
             role: 'assistant',
             content: fixed,
@@ -1623,7 +1626,7 @@ export class ToolAgent {
         this.abortController.signal,
       );
       this.runUsage = addUsage(this.runUsage, response.usage);
-      const text = fixCodeBlocks(response.text).trim();
+      const text = response.text.trim();
       if (!text) return fallback;
       this.messages.push({
         role: 'assistant',

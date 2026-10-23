@@ -141,6 +141,26 @@ test('SSH file tools go over SFTP when it is available, with ~ and cwd resolved'
   assert.equal(calls[2][1].replaceAll, false);
 });
 
+test('read_file caps a result by characters, not only by lines', async () => {
+  const longLines = Array.from({ length: 200 }, (_, i) => `${i + 1} ${'x'.repeat(500)}`).join('\n');
+  const { read, context } = sshFileTools(async () => (
+    { content: longLines, size: longLines.length, is_binary: false, too_large: false, truncated: true, total_lines: 900 }
+  ), '/srv');
+  const shown = await read.execute({ path: '/srv/big.log' }, context);
+  assert.ok(shown.length < 17000, `result is ${shown.length} chars`);
+  const footer = /--- Showing lines 1-(\d+) of 900 .*offset=(\d+)\. ---$/.exec(shown)!;
+  assert.ok(footer, shown.slice(-200));
+  assert.equal(Number(footer[2]), Number(footer[1]) + 1);
+
+  const oneLine = 'y'.repeat(100_000);
+  const { read: readOne } = sshFileTools(async () => (
+    { content: oneLine, size: oneLine.length, is_binary: false, too_large: false, truncated: false, total_lines: 1 }
+  ), '/srv');
+  const cut = await readOne.execute({ path: '/srv/min.js' }, context);
+  assert.ok(cut.length < 17000);
+  assert.match(cut, /Line 1 is longer than 16000 characters and was cut\..*offset=2\. ---$/);
+});
+
 test('SSH edit_file reports a non-unique match instead of guessing', async () => {
   const { edit, context } = sshFileTools(async () => { throw 'old_string occurs 2 times in the file.'; });
   assert.match(await edit.execute({ path: '/a', old_string: 'x', new_string: 'y' }, context), /^Error editing file: old_string occurs 2 times/);
