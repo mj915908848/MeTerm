@@ -1,11 +1,13 @@
 // ─── AI Tools: Meta / Information Tools ─────────────────────────
-// web_search (SearXNG) and command_help (tldr)
+// web_search (SearXNG), command_help (tldr) and read_output (stored
+// command output).
 // Non-terminal-interactive tools that fetch information.
 
 import { invoke } from '@tauri-apps/api/core';
 import { loadSettings } from './themes';
 import { queryTldr, formatTldrForAgent } from './tldr-help';
 import { ToolHandler } from './ai-tools-core';
+import { readStoredOutput, READ_OUTPUT_DEFAULT_LINES } from './ai-output-store';
 
 // ─── web_search (SearXNG) ───────────────────────────────────────
 
@@ -125,6 +127,44 @@ export function createCommandHelpTool(): ToolHandler {
       return formatTldrForAgent(result.page);
     },
     // command_help is a pure lookup → safe to parallelize.
+    isConcurrencySafe: true,
+    requiresConfirm: () => false,
+    isDestructive: () => false,
+  };
+}
+
+// ─── read_output (stored command output) ────────────────────────
+
+export function createReadOutputTool(): ToolHandler {
+  return {
+    definition: {
+      name: 'read_output',
+      description:
+        'Read the full text of a run_command / watch_terminal result that was shortened. A shortened result says "Full output saved as \"out-N\"" and which lines were omitted. Pass `offset`/`limit` to read a line range, or `pattern` (case-insensitive regex) to get only the matching lines with their line numbers. Much cheaper than re-running the command.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'The saved output id, e.g. "out-3"' },
+          offset: { type: 'number', description: 'First line to return, 1-based (default: 1)', minimum: 1 },
+          limit: {
+            type: 'number',
+            description: `Maximum lines to return (default: ${READ_OUTPUT_DEFAULT_LINES})`,
+            default: READ_OUTPUT_DEFAULT_LINES,
+            minimum: 1,
+          },
+          pattern: { type: 'string', description: 'Optional regex; when set, returns matching lines instead of a range' },
+        },
+        required: ['id'],
+      },
+    },
+    async execute(args): Promise<string> {
+      const id = String(args.id ?? '').trim();
+      if (!id) return 'Error: read_output requires an "id".';
+      const num = (v: unknown) => (typeof v === 'number' && Number.isSafeInteger(v) && v >= 1 ? v : undefined);
+      const pattern = typeof args.pattern === 'string' && args.pattern ? args.pattern : undefined;
+      return readStoredOutput(id, { offset: num(args.offset), limit: num(args.limit), pattern });
+    },
+    // Pure in-memory lookup → safe to parallelize.
     isConcurrencySafe: true,
     requiresConfirm: () => false,
     isDestructive: () => false,

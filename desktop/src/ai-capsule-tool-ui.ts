@@ -21,6 +21,8 @@ import {
   waitCancellingBtnLabel,
   waitResolvedLabel,
   submittedLineUnknownLabel,
+  hostNoteAppendLabel,
+  hostNoteReplaceLabel,
 } from './ai-tool-i18n';
 
 /**
@@ -813,6 +815,10 @@ export function showConfirmCard(
       const content = typeof args.content === 'string' ? args.content : '';
       preview.innerHTML = `<code>${escapeHtml(String(args.path))}</code>`
         + `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(content, CONFIRM_CONTENT_PREVIEW_CHARS))}</pre>`;
+    } else if (toolName === 'save_host_note') {
+      const replace = args.mode === 'replace';
+      preview.innerHTML = `<code>${escapeHtml(replace ? hostNoteReplaceLabel() : hostNoteAppendLabel())}</code>`
+        + `<pre class="ai-confirm-body">${escapeHtml(clipForPreview(String(args.note ?? ''), CONFIRM_CONTENT_PREVIEW_CHARS))}</pre>`;
     } else if (toolName === 'edit_file' && args.path) {
       const diff = editPreviewLines(String(args.old_string ?? ''), String(args.new_string ?? ''));
       const all = args.replace_all === true ? t('aiConfirmAllOccurrences') : '';

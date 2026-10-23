@@ -46,7 +46,8 @@ import {
   createReadScreenTool,
 } from './ai-tools-command';
 import { createReadFileTool, createWriteFileTool, createEditFileTool } from './ai-tools-file';
-import { createWebSearchTool, createCommandHelpTool } from './ai-tools-meta';
+import { createWebSearchTool, createCommandHelpTool, createReadOutputTool } from './ai-tools-meta';
+import { createSaveHostNoteTool } from './ai-tools-host-notes';
 import { createTodoWriteTool } from './ai-tools-todo';
 import { createUploadFileTool, createDownloadFileTool } from './ai-tools-transfer';
 import {
@@ -69,6 +70,8 @@ export function initializeTools(): ToolRegistry {
   registry.register(createReadFileTool());
   registry.register(createWriteFileTool());
   registry.register(createEditFileTool());
+  registry.register(createReadOutputTool());
+  registry.register(createSaveHostNoteTool());
   // Task planning + transfer + structured search
   registry.register(createTodoWriteTool());
   registry.register(createUploadFileTool());

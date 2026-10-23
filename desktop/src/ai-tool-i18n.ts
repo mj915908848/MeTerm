@@ -17,6 +17,8 @@ const TOOL_LABELS: Record<string, LangMap> = {
   read_file:           { en: 'Read File',           zh: '读取文件' },
   write_file:          { en: 'Write File',          zh: '写入文件' },
   edit_file:           { en: 'Edit File',           zh: '修改文件' },
+  read_output:         { en: 'Read Output',         zh: '查看完整输出' },
+  save_host_note:      { en: 'Save Host Note',      zh: '记录主机备忘' },
   list_files:          { en: 'List Files',          zh: '列出文件' },
   list_directory:      { en: 'List Directory',      zh: '列出目录' },
   search_files:        { en: 'Search Files',        zh: '搜索文件' },
@@ -127,6 +129,15 @@ export function submittedLineUnknownLabel(): string {
   return getLanguage() === 'zh'
     ? '将在终端中执行当前输入行（内容无法读取）'
     : 'Runs the current terminal line (its content could not be read)';
+}
+
+/** Confirm-card headers for save_host_note. */
+export function hostNoteAppendLabel(): string {
+  return getLanguage() === 'zh' ? '添加到这台主机的备忘：' : 'Add to this host\'s notes:';
+}
+
+export function hostNoteReplaceLabel(): string {
+  return getLanguage() === 'zh' ? '替换这台主机的全部备忘为：' : 'Replace all of this host\'s notes with:';
 }
 
 /** Notice shown when a reply stopped at the output-token limit. */
