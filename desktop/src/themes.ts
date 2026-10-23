@@ -423,6 +423,26 @@ export interface AppSettings {
   fileOpenPreference: 'builtin' | 'system';
   /** Neo-Brutalism custom palette overrides (hex colors keyed by --nb-* token) */
   nbCustomColors?: Record<string, string>;
+  /** Lines kept above the screen in each terminal. */
+  terminalScrollback: number;
+  terminalCursorStyle: 'block' | 'bar' | 'underline';
+  terminalCursorBlink: boolean;
+  /** Copy a terminal selection to the clipboard as soon as it is made. */
+  copyOnSelect: boolean;
+  /** Right click in the terminal: the app menu, or copy the selection / paste (PuTTY style). */
+  terminalRightClick: 'menu' | 'paste';
+  /** macOS: Option sends Meta (Esc prefix) instead of typing special characters. */
+  macOptionIsMeta: boolean;
+  /** Saved command snippets, sent from the snippet palette. */
+  commandSnippets: CommandSnippet[];
+}
+
+export interface CommandSnippet {
+  id: string;
+  name: string;
+  command: string;
+  /** Press Enter after inserting the command. */
+  run: boolean;
 }
 
 const SETTINGS_KEY = SETTINGS_STORAGE_KEY;
@@ -516,6 +536,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   fileManagerMode: 'drawer',
   sidebarWidth: 240,
   fileOpenPreference: 'builtin',
+  terminalScrollback: 5000,
+  terminalCursorStyle: 'block',
+  terminalCursorBlink: true,
+  copyOnSelect: false,
+  terminalRightClick: 'menu',
+  macOptionIsMeta: false,
+  commandSnippets: [],
 };
 
 export function loadSettings(): AppSettings {

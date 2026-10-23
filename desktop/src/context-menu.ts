@@ -24,6 +24,9 @@ import {
   writeText as clipboardWriteText,
 } from '@tauri-apps/plugin-clipboard-manager';
 import { getSelection, performCopy, performPaste } from './clipboard-actions';
+import { openTerminalSearch } from './terminal-search';
+import { openSnippetPalette } from './snippets';
+import { isBroadcasting, toggleInputBroadcast } from './terminal-broadcast';
 import { activateTab, showHomeView, openSettings } from './view-manager';
 import { doSplitPane, createNewSession, closeAllSessions } from './session-actions';
 import { renderTabs } from './tab-renderer';
@@ -542,6 +545,19 @@ export function showCustomContextMenu(event: MouseEvent): void {
   if (!inTerminal) {
     return;
   }
+  // PuTTY-style right click: copy the selection if there is one, else paste.
+  // Shift+right-click still opens the menu.
+  if (settings?.terminalRightClick === 'paste' && !event.shiftKey && !target?.closest('.terminal-search-bar')) {
+    document.getElementById('custom-context-menu')?.remove();
+    const selection = getSelection();
+    if (selection) {
+      performCopy();
+      TerminalRegistry.clearAllSelections();
+    } else {
+      performPaste();
+    }
+    return;
+  }
   const existing = document.getElementById('custom-context-menu');
   if (existing) {
     existing.remove();
@@ -618,6 +634,13 @@ export function showCustomContextMenu(event: MouseEvent): void {
   addItem(t('contextMenuPaste'), () => {
     performPaste();
   });
+  const focusedSession = TabManager.getActiveSessionId();
+  addItem(t('contextMenuFind'), () => {
+    if (focusedSession) openTerminalSearch(focusedSession);
+  }, !focusedSession);
+  addItem(t('contextMenuSnippets'), () => {
+    openSnippetPalette();
+  }, !focusedSession);
 
   // Split pane items
   const activeTabForCtx = TabManager.getActiveTab();
@@ -640,6 +663,9 @@ export function showCustomContextMenu(event: MouseEvent): void {
     }, splitCtxDisabled);
 
     if (countLeaves(activeTabForCtx.splitRoot) > 1) {
+      addItem((isBroadcasting(activeTabForCtx) ? '✓ ' : '') + t('broadcastInput'), () => {
+        toggleInputBroadcast(activeTabForCtx);
+      });
       addItem(settings?.language === 'zh' ? '抽取为独立标签' : 'Extract pane to new tab', () => {
         const newTabId = TabManager.extractPaneToNewTab(activeTabForCtx.id, activeTabForCtx.focusedPaneId);
         if (newTabId) {

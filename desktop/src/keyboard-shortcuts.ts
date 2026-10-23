@@ -19,12 +19,15 @@ import {
 } from './overlays';
 import {
   sshConfigMap, sessionProgressMap, jumpServerConfigMap,
-  settings, setSettings,
+  settings, setSettings, isHomeView,
 } from './app-state';
 import { showQuickHelp } from './tldr-card';
 import { togglePip, isPipActive } from './pip';
 import { toggleConnectionsDrawer } from './connections-drawer';
 import { loadSettings, updateSettings } from './themes';
+import { openTerminalSearch } from './terminal-search';
+import { openSnippetPalette } from './snippets';
+import { toggleInputBroadcast } from './terminal-broadcast';
 
 export function setupKeyboardShortcuts(): void {
   document.addEventListener('keydown', async (event) => {
@@ -102,6 +105,32 @@ export function setupKeyboardShortcuts(): void {
         });
         return;
       }
+    }
+
+    // ── Terminal find: Cmd+F on macOS, Ctrl+Shift+F on Windows (plain Ctrl+F
+    // is the shell's forward-char). Only from a terminal, so the file
+    // manager's own Cmd/Ctrl+F keeps working.
+    if (key === 'f' && !event.altKey && event.shiftKey === !isMac) {
+      const target = event.target as HTMLElement | null;
+      const sessionId = TabManager.getActiveSessionId();
+      if (sessionId && target?.closest?.('.terminal-container')) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        openTerminalSearch(sessionId);
+        return;
+      }
+    }
+
+    // ── Snippet palette (Cmd/Ctrl+Shift+S) and broadcast input to all panes
+    // (Cmd/Ctrl+Shift+I). Shifted, so they never collide with TUI keys.
+    if (event.shiftKey && !event.altKey && (key === 's' || key === 'i') && !isHomeView && TabManager.activeTabId) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      if (key === 's') openSnippetPalette();
+      else toggleInputBroadcast();
+      return;
     }
 
     // On Windows, skip app-level shortcuts when focus is inside the xterm terminal
