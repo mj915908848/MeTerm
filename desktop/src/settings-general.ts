@@ -518,12 +518,7 @@ export function createGeneralPages(
 
   function updateFontToggles(): void {
     const def = getFontDef(current.fontFamily);
-    nerdToggle.disabled = !def?.hasNerdFont;
     ligToggle.disabled = !def?.supportsLigatures;
-    if (!def?.hasNerdFont && nerdToggle.checked) {
-      nerdToggle.checked = false;
-      update({ enableNerdFont: false });
-    }
     if (!def?.supportsLigatures && ligToggle.checked) {
       ligToggle.checked = false;
       update({ enableLigatures: false });

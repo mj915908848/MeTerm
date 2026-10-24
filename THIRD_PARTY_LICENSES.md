@@ -40,6 +40,17 @@ MeTerm 使用了以下开源项目，感谢它们的作者和贡献者。
 
 ---
 
+## Nerd Fonts (Symbols Only)
+
+- **Project**: https://github.com/ryanoasis/nerd-fonts
+- **Integration**: Bundled font file (`desktop/src/fonts/symbols-nerd-font-mono.woff2`, converted from `SymbolsNerdFontMono-Regular.ttf` of release v3.4.0)
+- **License**: [MIT License](https://github.com/ryanoasis/nerd-fonts/blob/master/LICENSE); the bundled icon sets keep their own upstream licenses as listed by Nerd Fonts
+- **Usage**: Fallback font for Nerd Font icons when "Nerd Font Icons" is enabled.
+
+> Copyright (c) 2014 Ryan L McIntyre.
+
+---
+
 ## JumpServer
 
 - **Project**: https://github.com/jumpserver/jumpserver
