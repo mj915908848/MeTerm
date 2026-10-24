@@ -290,7 +290,7 @@ MeTerm/
 
 | 层级 | 技术 |
 |------|------|
-| **后端** | Rust, Axum, Tokio, xpty（跨平台 PTY）, russh（SSH/SFTP 终端链路）, ssh2/libssh2（桌面端 SSH 文件传输） |
+| **后端** | Rust, Axum, Tokio, xpty（跨平台 PTY）, russh / russh-sftp（SSH 终端与文件传输） |
 | **前端** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
 | **桌面** | Tauri v2 (Rust + TypeScript), reqwest, keyring |
 | **控制 Broker** | 独立 Rust 进程/协议核心；三平台系统服务适配尚未达到分发条件 |

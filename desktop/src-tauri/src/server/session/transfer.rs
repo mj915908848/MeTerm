@@ -330,49 +330,6 @@ pub async fn finalize_sftp_upload(
     }
 }
 
-pub fn finalize_ssh2_upload(
-    sftp: &ssh2::Sftp,
-    part_path: &str,
-    final_path: &str,
-) -> Result<(), String> {
-    if sftp
-        .rename(Path::new(part_path), Path::new(final_path), None)
-        .is_ok()
-    {
-        return Ok(());
-    }
-    let metadata = sftp
-        .lstat(Path::new(final_path))
-        .map_err(|error| format!("rename remote file: {error}"))?;
-    if !metadata.file_type().is_file() && !metadata.file_type().is_symlink() {
-        return Err("existing remote upload target is not a file".to_string());
-    }
-
-    let backup = backup_path(final_path);
-    sftp.rename(Path::new(final_path), Path::new(&backup), None)
-        .map_err(|error| format!("preserve existing remote target: {error}"))?;
-    match sftp.rename(Path::new(part_path), Path::new(final_path), None) {
-        Ok(()) => {
-            if let Err(error) = sftp.unlink(Path::new(&backup)) {
-                eprintln!(
-                    "[upload] committed remote target but could not remove backup {}: {}",
-                    backup, error
-                );
-            }
-            Ok(())
-        }
-        Err(error) => {
-            let restore = sftp.rename(Path::new(&backup), Path::new(final_path), None);
-            Err(match restore {
-                Ok(()) => format!("rename remote file: {error}"),
-                Err(restore_error) => format!(
-                    "rename remote file: {error}; original preserved at {backup}, restore failed: {restore_error}"
-                ),
-            })
-        }
-    }
-}
-
 pub async fn drain_pending_upload_writes(
     pending: Vec<russh_sftp::client::PendingWrite>,
 ) -> Result<(), UploadSettleError> {

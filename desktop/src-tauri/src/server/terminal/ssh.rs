@@ -267,9 +267,8 @@ fn sftp_client_config() -> client::Config {
 ///     This prevents an attacker who controls the frontend payload from
 ///     coaxing the backend into reading `/etc/passwd`, AWS creds, etc.
 ///
-/// Sync rather than async because the read is a single small file and
-/// both call sites (russh terminal auth + ssh2 SFTP auth in
-/// `commands/transfer.rs`) live on the same one-shot connect path.
+/// Sync rather than async because the read is a single small file on the
+/// one-shot connect path.
 pub fn resolve_private_key_pem(input: &str) -> Result<String, String> {
     let trimmed = input.trim();
 
