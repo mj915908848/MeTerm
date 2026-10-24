@@ -605,7 +605,7 @@ mod tests {
         assert!(zshrc.contains("7766;meterm_init;1"));
         assert!(zshrc.contains("7768"));
         assert!(
-            zshrc.contains("HISTFILE=\"$HOME/.zsh_history\""),
+            zshrc.contains("HISTFILE=\"$ZDOTDIR/.zsh_history\""),
             "HISTFILE fix must be present"
         );
         // Agent 镜像产物(M2):hooks JSON + 转发脚本落地,.zshrc 末尾追加 claude 包装函数。
