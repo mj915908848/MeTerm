@@ -28,8 +28,6 @@ export const MsgMasterRequest = 0x19;
 export const MsgMasterRequestNotify = 0x1a;
 export const MsgMasterApproval = 0x1b;
 export const MsgMasterReclaim = 0x1c;
-export const MsgPairNotify = 0x1d;
-export const MsgPairApproval = 0x1e;
 
 // Download flow control (client → server)
 export const MsgFileDownloadPause = 0x20;

@@ -11,14 +11,8 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
     };
     let token = generate_token();
 
-    let ban_file = if config.log_dir.is_empty() {
-        None
-    } else {
-        Some(format!("{}/banned-ips.json", config.log_dir))
-    };
-
-    // SSH 连接同步注册表:与 ban_file 同一个 app_data_dir,空目录时传空路径
-    // (ConnectionRegistry 读写失败静默忽略,等价于 BanManager 的 None 分支)。
+    // SSH 连接同步注册表:位于 app_data_dir,空目录时传空路径
+    // (ConnectionRegistry 读写失败静默忽略)。
     let connections_path = if config.log_dir.is_empty() {
         std::path::PathBuf::new()
     } else {
@@ -38,32 +32,12 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
         log_dir: config.log_dir.clone(),
     };
 
-    let ban_manager = Arc::new(BanManager::new(ban_file));
-    let mut authenticator = if config.token_file.is_empty() {
+    let authenticator = Arc::new(if config.token_file.is_empty() {
         Authenticator::new(token)
     } else {
         Authenticator::new_persistent(token, config.token_file.clone())
-    };
-    // 审查发现:ban_manager 此前从未挂到 Authenticator(封禁检查是死代码),接上
-    authenticator.set_ban_manager(ban_manager.clone());
-    let authenticator = Arc::new(authenticator);
-    // 桌面级事件总线(终端通知 Phase 1):先建好,注入 SessionManager(→ 每个 Session),
-    // 再原样存进 ServerState——同一条 channel,SessionManager 与 ServerState 各持一份 clone。
-    let event_bus = EventBus::new();
-    let session_manager = SessionManager::new(session_config, event_bus.clone());
-    let pairing_manager = PairingManager::new(
-        authenticator.clone(),
-        session_manager.clone(),
-        ban_manager.clone(),
-    );
-
-    // 设备 ID:有 state_dir 就持久化(见 load_or_create_device_id),否则临时生成
-    // (与 allocate_port 在空 log_dir 时退化为非持久端口的模式一致)。
-    let device_id = if config.log_dir.is_empty() {
-        uuid::Uuid::new_v4().to_string()
-    } else {
-        load_or_create_device_id(&config.log_dir)
-    };
+    });
+    let session_manager = SessionManager::new(session_config);
 
     // Sharing (LAN access, mDNS discovery, phone relay/push) has been removed:
     // the server only serves this app's own windows over loopback, so it needs
@@ -75,15 +49,9 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
         config,
         session_manager,
         authenticator,
-        ban_manager,
-        pairing_manager,
         jumpserver_sessions: jumpserver::ssh_session::JumpServerSessionRegistry::new(),
         connections,
         bypass_proxy: AtomicBool::new(true),
-        device_name: std::sync::Mutex::new(String::new()),
-        device_id,
-        event_bus,
-        presence: PresenceRegistry::new(),
     });
 
     let addr = format!("127.0.0.1:{}", port);

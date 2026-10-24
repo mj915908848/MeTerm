@@ -1,6 +1,5 @@
 use super::client::{Client, ClientSecurityContext};
 use super::{Session, TermCtrl};
-use crate::server::auth::AuthPrincipal;
 use crate::server::protocol;
 use crate::server::session::state::{ClientRole, SessionState};
 use std::collections::VecDeque;
@@ -47,58 +46,6 @@ impl DispatchAuthority {
 
     pub(crate) fn is_owner(&self) -> bool {
         self.is_owner
-    }
-}
-
-/// Authenticated principal that created a session.
-///
-/// Device ownership is bound to the exact credential generation so rotating
-/// or revoking a paired-device credential cannot inherit access to sessions
-/// created by the retired credential.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum SessionCreator {
-    Owner,
-    Device {
-        device_id: String,
-        generation: uuid::Uuid,
-    },
-}
-impl From<&AuthPrincipal> for SessionCreator {
-    fn from(principal: &AuthPrincipal) -> Self {
-        match principal {
-            AuthPrincipal::Owner { .. } => Self::Owner,
-            AuthPrincipal::Device {
-                device_id,
-                generation,
-                ..
-            } => Self::Device {
-                device_id: device_id.clone(),
-                generation: *generation,
-            },
-        }
-    }
-}
-
-impl SessionCreator {
-    pub(crate) fn allows_principal(&self, principal: &AuthPrincipal) -> bool {
-        match principal {
-            AuthPrincipal::Owner { .. } => true,
-            AuthPrincipal::Device {
-                device_id,
-                generation,
-                ..
-            } => self.allows_device(device_id, *generation),
-        }
-    }
-
-    pub(crate) fn allows_device(&self, device_id: &str, generation: uuid::Uuid) -> bool {
-        matches!(
-            self,
-            Self::Device {
-                device_id: owner_id,
-                generation: owner_generation,
-            } if owner_id == device_id && *owner_generation == generation
-        )
     }
 }
 
@@ -233,74 +180,6 @@ impl Session {
             }
         });
         true
-    }
-
-    /// Promote only the exact authenticated, currently-connected WebSocket generation.
-    ///
-    /// The clients lock serializes this check with reconnect_client. An HTTP takeover that was
-    /// issued by H0 therefore cannot arrive after H1 reuses the stable client ID and promote H1.
-    pub(crate) fn set_master_for_connection(
-        &self,
-        client_id: &str,
-        expected_conn_gen: u64,
-        principal: &AuthPrincipal,
-    ) -> Result<(), String> {
-        let clients = self.clients.lock().unwrap();
-        let client = clients
-            .get(client_id)
-            .ok_or_else(|| "client not found".to_string())?;
-        if !client.matches_request_principal(principal) {
-            return Err("client identity mismatch".to_string());
-        }
-        if !client.is_current_connection(expected_conn_gen) {
-            return Err("stale client connection".to_string());
-        }
-        if client.role == ClientRole::ReadOnly {
-            return Err("readonly client cannot become master".to_string());
-        }
-
-        let mut master = self.master_id.lock().unwrap();
-        if *master == client_id {
-            return Ok(());
-        }
-        if let Some(old) = clients.get(master.as_str()) {
-            old.send(protocol::encode_role_change(ClientRole::Viewer as u8));
-        }
-        *master = client_id.to_string();
-        client.send(protocol::encode_role_change(ClientRole::Master as u8));
-        Ok(())
-    }
-
-    pub(crate) fn forward_master_request_for_connection(
-        &self,
-        requester_id: &str,
-        expected_conn_gen: u64,
-        principal: &AuthPrincipal,
-    ) -> Result<(), String> {
-        let clients = self.clients.lock().unwrap();
-        let requester = clients
-            .get(requester_id)
-            .ok_or_else(|| "client not found".to_string())?;
-        if !requester.matches_request_principal(principal) {
-            return Err("client identity mismatch".to_string());
-        }
-        if !requester.is_current_connection(expected_conn_gen) {
-            return Err("stale client connection".to_string());
-        }
-        if requester.role == ClientRole::ReadOnly {
-            return Err("readonly client cannot request master".to_string());
-        }
-        let master_id = self.master_id.lock().unwrap().clone();
-        let master = clients
-            .get(&master_id)
-            .filter(|client| client.is_connected())
-            .ok_or_else(|| "master not connected".to_string())?;
-        master.send(protocol::encode_master_request_notify(
-            requester_id,
-            &self.id,
-            expected_conn_gen,
-        ));
-        Ok(())
     }
 
     pub(crate) fn forward_master_request_for_generation(
@@ -472,7 +351,6 @@ impl Session {
 #[cfg(test)]
 mod ordered_input_tests {
     use super::*;
-    use crate::server::events::EventBus;
     use crate::server::session::{Session, SessionConfig};
     use std::time::Duration;
 
@@ -486,7 +364,6 @@ mod ordered_input_tests {
                 ring_buffer_size: 4096,
                 log_dir: String::new(),
             },
-            EventBus::new(),
         );
         let (client, _receivers) = Client::new(
             "master".into(),
@@ -513,39 +390,5 @@ mod ordered_input_tests {
                 "input frame {expected} arrived out of order"
             );
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn device(device_id: &str, generation: uuid::Uuid) -> AuthPrincipal {
-        AuthPrincipal::Device {
-            device_id: device_id.to_string(),
-            device_name: "Phone".to_string(),
-            generation,
-        }
-    }
-
-    #[test]
-    fn device_creator_requires_exact_id_and_generation() {
-        let generation = uuid::Uuid::new_v4();
-        let creator = SessionCreator::from(&device("device-a", generation));
-
-        assert!(creator.allows_principal(&device("device-a", generation)));
-        assert!(!creator.allows_principal(&device("device-a", uuid::Uuid::new_v4())));
-        assert!(!creator.allows_principal(&device("device-b", generation)));
-    }
-
-    #[test]
-    fn owner_is_an_administrative_superuser_but_owns_no_device_generation() {
-        let owner = AuthPrincipal::Owner {
-            generation: uuid::Uuid::new_v4(),
-        };
-        let creator = SessionCreator::from(&owner);
-
-        assert!(creator.allows_principal(&owner));
-        assert!(!creator.allows_device("device-a", uuid::Uuid::new_v4()));
     }
 }

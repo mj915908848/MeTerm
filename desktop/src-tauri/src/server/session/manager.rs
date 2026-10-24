@@ -9,29 +9,14 @@ use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
-use super::client::ClientInfo;
 use super::state::SessionState;
-use super::{access::SessionCreator, Session, SessionConfig};
-use crate::server::auth::{AuthPrincipal, TrustedIngress};
-use crate::server::events::EventBus;
-
-/// Aggregated device info (grouped by IP).
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct DeviceInfo {
-    pub ip: String,
-    pub name: String,
-    pub sessions: Vec<ClientInfo>,
-    pub count: usize,
-}
+use super::{Session, SessionConfig};
 
 /// Manages all active sessions and runs the reaper.
 pub struct SessionManager {
     sessions: Mutex<HashMap<String, Arc<Session>>>,
     config: SessionConfig,
     cancel: CancellationToken,
-    /// 桌面级事件总线(终端通知 Phase 1):创建每个 `Session` 时把 clone 注入进去,
-    /// 使 run loop 能把通知性 OscEvent 额外投递到这里。
-    event_bus: EventBus,
 }
 
 /// An SSH session that has all of its immutable authorization metadata but is
@@ -69,12 +54,11 @@ impl Drop for PendingSession {
 }
 
 impl SessionManager {
-    pub fn new(config: SessionConfig, event_bus: EventBus) -> Arc<Self> {
+    pub fn new(config: SessionConfig) -> Arc<Self> {
         let mgr = Arc::new(Self {
             sessions: Mutex::new(HashMap::new()),
             config,
             cancel: CancellationToken::new(),
-            event_bus,
         });
 
         // Start the reaper task
@@ -101,54 +85,34 @@ impl SessionManager {
 
     /// Create a new session. Returns the session ID.
     pub fn create(&self) -> Arc<Session> {
-        self.create_with_creator(None, "local-shell", None)
+        self.create_with_type("local-shell", None)
     }
 
-    /// Create an SSH session bound to the authenticated principal that
-    /// requested it. Both type and binding are installed before the session
-    /// enters the registry, so authorization never observes a partial record.
+    /// Create an SSH session record without a terminal (tests only).
     #[cfg(test)]
-    pub(crate) fn create_for_principal(&self, principal: &AuthPrincipal) -> Arc<Session> {
-        self.create_with_creator(Some(SessionCreator::from(principal)), "ssh", None)
+    pub(crate) fn create_ssh(&self) -> Arc<Session> {
+        self.create_with_type("ssh", None)
     }
 
     /// Prepare an already-connected SSH terminal's metadata without publishing
     /// it. The caller wires the terminal and then commits the returned guard.
-    pub(crate) fn prepare_connected_ssh_for_principal(
-        self: &Arc<Self>,
-        principal: &AuthPrincipal,
-        config: crate::server::terminal::ssh::SshConfig,
-    ) -> PendingSession {
-        PendingSession {
-            manager: self.clone(),
-            session: self.build_with_creator(
-                Some(SessionCreator::from(principal)),
-                "ssh",
-                Some(config),
-            ),
-            committed: false,
-        }
-    }
-
-    /// Local-owner counterpart used by the Tauri SSH command.
     pub(crate) fn prepare_connected_ssh(
         self: &Arc<Self>,
         config: crate::server::terminal::ssh::SshConfig,
     ) -> PendingSession {
         PendingSession {
             manager: self.clone(),
-            session: self.build_with_creator(None, "ssh", Some(config)),
+            session: self.build_with_type("ssh", Some(config)),
             committed: false,
         }
     }
 
-    fn create_with_creator(
+    fn create_with_type(
         &self,
-        creator: Option<SessionCreator>,
         executor_type: &str,
         ssh_config: Option<crate::server::terminal::ssh::SshConfig>,
     ) -> Arc<Session> {
-        let session = self.build_with_creator(creator, executor_type, ssh_config);
+        let session = self.build_with_type(executor_type, ssh_config);
         self.sessions
             .lock()
             .unwrap()
@@ -156,19 +120,13 @@ impl SessionManager {
         session
     }
 
-    fn build_with_creator(
+    fn build_with_type(
         &self,
-        creator: Option<SessionCreator>,
         executor_type: &str,
         ssh_config: Option<crate::server::terminal::ssh::SshConfig>,
     ) -> Arc<Session> {
         let id = uuid::Uuid::new_v4().to_string();
-        let session = Arc::new(Session::new_with_creator(
-            id.clone(),
-            self.config.clone(),
-            self.event_bus.clone(),
-            creator,
-        ));
+        let session = Arc::new(Session::new(id.clone(), self.config.clone()));
         *session.executor_type.lock().unwrap() = executor_type.to_string();
         *session.ssh_config.lock().unwrap() = ssh_config;
         session
@@ -229,84 +187,6 @@ impl SessionManager {
         };
         drop(sessions);
         removed
-    }
-
-    /// List all clients across all sessions.
-    /// List all remote clients across all sessions (excludes local IPC clients).
-    pub fn list_all_clients(&self) -> Vec<ClientInfo> {
-        let sessions = self.sessions.lock().unwrap();
-        let mut all = Vec::new();
-        for session in sessions.values() {
-            all.extend(
-                session
-                    .list_clients()
-                    .into_iter()
-                    .filter(|c| c.device_id.is_some() || c.ingress != "direct_loopback"),
-            );
-        }
-        all
-    }
-
-    /// List devices grouped by IP (excluding loopback).
-    pub fn list_devices(&self) -> Vec<DeviceInfo> {
-        let all_clients = self.list_all_clients();
-        let mut by_ip: HashMap<String, Vec<ClientInfo>> = HashMap::new();
-        for client in all_clients {
-            let ip = client.remote_addr.clone();
-            if ip.is_empty() {
-                continue;
-            }
-            by_ip.entry(ip).or_default().push(client);
-        }
-        by_ip
-            .into_iter()
-            .map(|(ip, sessions)| DeviceInfo {
-                count: sessions.len(),
-                name: ip.clone(),
-                ip,
-                sessions,
-            })
-            .collect()
-    }
-
-    /// Kick all clients from a specific IP across all sessions.
-    pub fn kick_by_ip(&self, ip: &str) -> usize {
-        let sessions = self.sessions.lock().unwrap();
-        let mut total = 0;
-        for session in sessions.values() {
-            total += session.kick_by_ip(ip);
-        }
-        total
-    }
-
-    /// Disconnect all remote (non-loopback) clients across all sessions.
-    /// Sends ERR_KICKED and promotes next master if the master was kicked.
-    pub fn disconnect_all_clients(&self) -> usize {
-        self.disconnect_device_principals(None)
-    }
-
-    /// Immediately disconnect all authenticated device/relay WebSockets, or
-    /// just one stable device ID after a targeted credential revocation.
-    pub(crate) fn disconnect_device_principals(&self, device_id: Option<&str>) -> usize {
-        let sessions = self.sessions.lock().unwrap();
-        let mut total = 0;
-        for session in sessions.values() {
-            total += session.disconnect_device_principals(device_id);
-        }
-        total
-    }
-
-    pub(crate) fn disconnect_device_generation(
-        &self,
-        device_id: &str,
-        generation: uuid::Uuid,
-    ) -> usize {
-        self.sessions
-            .lock()
-            .unwrap()
-            .values()
-            .map(|session| session.disconnect_device_generation(device_id, generation))
-            .sum()
     }
 
     pub(crate) fn disconnect_owner_generation(&self, generation: uuid::Uuid) -> usize {
@@ -434,7 +314,7 @@ mod tests {
 
     #[tokio::test]
     async fn reaper_removes_draining_session_over_ttl() {
-        let mgr = SessionManager::new(test_config(), EventBus::new());
+        let mgr = SessionManager::new(test_config());
         let term = mgr.create();
         let term_id = term.id.clone();
 
@@ -452,7 +332,7 @@ mod tests {
         use super::super::client::{Client, ClientSecurityContext};
         use super::super::state::ClientRole;
 
-        let mgr = SessionManager::new(test_config(), EventBus::new());
+        let mgr = SessionManager::new(test_config());
         let session = mgr.create();
         let id = session.id.clone();
         let cancelled = session.cancellation_token();
@@ -506,7 +386,7 @@ mod tests {
 
     #[tokio::test]
     async fn pending_ssh_session_is_invisible_until_commit() {
-        let mgr = SessionManager::new(test_config(), EventBus::new());
+        let mgr = SessionManager::new(test_config());
         let pending = mgr.prepare_connected_ssh(test_ssh_config());
         let id = pending.session().id.clone();
 
@@ -519,7 +399,7 @@ mod tests {
 
     #[tokio::test]
     async fn dropping_pending_ssh_session_never_registers_it() {
-        let mgr = SessionManager::new(test_config(), EventBus::new());
+        let mgr = SessionManager::new(test_config());
         let pending = mgr.prepare_connected_ssh(test_ssh_config());
         let id = pending.session().id.clone();
 

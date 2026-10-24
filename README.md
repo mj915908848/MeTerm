@@ -291,7 +291,7 @@ MeTerm/
 │   └── src-tauri/        #   Rust backend
 │       └── src/
 │           ├── commands/  #     Tauri IPC commands (session, window, menu, AI, etc.)
-│           └── server/    #     In-process HTTP/WebSocket server
+│           └── server/    #     In-process backend (terminal IPC + local HTTP)
 │               ├── session/    # Session state machine & manager
 │               ├── terminal/   # Cross-platform PTY (Unix/Windows/WSL/SSH)
 │               ├── executor/   # Local & SSH executors
@@ -319,7 +319,7 @@ MeTerm/
 - **Single-process** — Backend server runs in-process via Tokio, no external sidecar management
 - **Cross-platform PTY** — Unified abstraction over Unix PTY, Windows ConPTY, WSL, and SSH
 - **Session state machine** — Created → Running → Draining (with ring buffer) → Closed, supporting seamless reconnection
-- **Binary protocol** — Custom binary messaging over WebSocket for efficient terminal I/O
+- **Binary protocol** — Custom binary messaging over Tauri IPC for efficient terminal I/O
 - **Adaptive SFTP pipeline** — Dynamic window scaling (2→64) based on RTT for high-throughput file transfers
 - **Desktop SSH transfer backend** — Desktop SSH uploads and downloads can use a dedicated native transfer path to avoid terminal-path bottlenecks
 
@@ -330,7 +330,7 @@ MeTerm/
 | Document | Description |
 |----------|-------------|
 | [REST API Reference](docs/API.md) | Complete API endpoints and usage examples |
-| [Binary Protocol](docs/PROTOCOL.md) | WebSocket binary communication protocol spec |
+| [Binary Protocol](docs/PROTOCOL.md) | Terminal binary protocol spec |
 | [Configuration](docs/CONFIGURATION.md) | Server parameters, client settings, role system |
 
 ---

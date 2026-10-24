@@ -1,5 +1,5 @@
 use super::*;
-use crate::server::{events::EventBus, session::SessionConfig};
+use crate::server::session::SessionConfig;
 
 struct Fixture(PathBuf);
 impl Fixture {
@@ -42,7 +42,6 @@ async fn download(
             ring_buffer_size: 1024,
             log_dir: String::new(),
         },
-        EventBus::new(),
     ));
     let (_tx, rx) = tokio::sync::mpsc::channel(8);
     run_session_download(session, source, dest, offset, rx, 1, channel, cancellation).await
@@ -230,7 +229,6 @@ async fn download_sftp_success_and_preopen_failure_preserve_destination() {
             ring_buffer_size: 1024,
             log_dir: String::new(),
         },
-        EventBus::new(),
     ));
     *session.sftp.lock().unwrap() = Some(sftp_pair(SftpTestConfig::default()).await);
     let channel = tauri::ipc::Channel::new(|_| Ok(()));

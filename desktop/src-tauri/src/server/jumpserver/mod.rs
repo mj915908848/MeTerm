@@ -17,8 +17,8 @@ mod resources;
 pub mod ssh_session;
 
 pub use client_pool::clear_client_pool;
+pub(crate) use client_pool::remove_owner_generation;
 use client_pool::{get_or_create_client, reset_client};
-pub(crate) use client_pool::{remove_device_generation, remove_owner_generation};
 use parsers::*;
 
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};

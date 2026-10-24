@@ -273,7 +273,7 @@ MeTerm/
 │   └── src-tauri/        #   Rust 后端
 │       └── src/
 │           ├── commands/  #     Tauri IPC 命令（会话、窗口、菜单、AI 等）
-│           └── server/    #     进程内 HTTP/WebSocket 服务
+│           └── server/    #     进程内后端（终端 IPC + 本机 HTTP）
 │               ├── session/    # 会话状态机与管理器
 │               ├── terminal/   # 跨平台 PTY（Unix/Windows/WSL/SSH）
 │               ├── executor/   # 本地与 SSH 执行器
@@ -301,7 +301,7 @@ MeTerm/
 - **单进程架构** — 后端服务通过 Tokio 在进程内运行，无需管理外部 sidecar 进程
 - **跨平台 PTY** — 统一抽象 Unix PTY、Windows ConPTY、WSL 和 SSH 终端
 - **会话状态机** — Created → Running → Draining（环形缓冲区保存输出）→ Closed，支持无缝重连
-- **二进制协议** — WebSocket 上的自定义二进制消息传输，高效终端 I/O
+- **二进制协议** — Tauri IPC 上的自定义二进制消息传输，高效终端 I/O
 - **SFTP 自适应流水线** — 基于 RTT 动态窗口调整（2→64），实现高吞吐文件传输
 - **桌面端 SSH 传输后端** — 桌面 SSH 上传和下载可走独立原生 SSH 传输路径，避免终端链路上的传输瓶颈
 
@@ -312,7 +312,7 @@ MeTerm/
 | 文档 | 说明 |
 |------|------|
 | [REST API 参考](docs/API.md) | 完整的 API 接口列表和使用示例 |
-| [二进制协议](docs/PROTOCOL.md) | WebSocket 二进制通信协议规范 |
+| [二进制协议](docs/PROTOCOL.md) | 终端二进制协议规范 |
 | [配置参考](docs/CONFIGURATION.md) | 服务端参数、客户端设置、角色系统 |
 
 ---

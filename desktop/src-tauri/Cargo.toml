@@ -39,9 +39,8 @@ base64 = "0.22"
 libc = "0.2"
 zeroize = "1"
 
-# In-process HTTP/WebSocket server (replaces Go sidecar)
-axum = { version = "0.8", features = ["ws"] }
-axum-extra = { version = "0.10", features = ["typed-header"] }
+# In-process HTTP server (replaces Go sidecar)
+axum = "0.8"
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "timeout"] }
 futures-util = "0.3"

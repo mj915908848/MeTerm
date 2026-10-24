@@ -16,7 +16,6 @@ import {
   MsgMasterRequest,
   MsgMasterApproval,
   MsgMasterReclaim,
-  MsgPairApproval,
 } from './protocol';
 import { AppSettings, getTheme, getColorSchemeBg, hexToRgba } from './themes';
 import { loadFont, getFontFamily, getEffectiveFontWeight } from './fonts';
@@ -170,23 +169,6 @@ class TerminalRegistryClass {
     sendToTerminal(mt, encodeMessage(MsgMasterReclaim, new Uint8Array(0)));
   }
 
-  /** Send pairing approval/denial via any active master session.
-   *  Returns true if sent via WebSocket, false if no active connection available. */
-  sendPairApproval(approved: boolean, pairId: string): boolean {
-    const pairIdBytes = new TextEncoder().encode(pairId);
-    const payload = new Uint8Array(1 + pairIdBytes.length);
-    payload[0] = approved ? 1 : 0;
-    payload.set(pairIdBytes, 1);
-    // Send through any active connection (IPC or WebSocket)
-    for (const mt of this.terminals.values()) {
-      const canSend = (mt.transport && mt.transport.connected) || (mt.ws && mt.ws.readyState === WebSocket.OPEN);
-      if (canSend) {
-        sendToTerminal(mt, encodeMessage(MsgPairApproval, payload));
-        return true;
-      }
-    }
-    return false;
-  }
 
   /** Send an immediate ping if last pong is stale — called on user input for SSH sessions */
   private maybePingOnInput(sessionId: string): void {

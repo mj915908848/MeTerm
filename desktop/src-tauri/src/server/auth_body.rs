@@ -122,9 +122,7 @@ mod tests {
     #[tokio::test]
     async fn preopened_old_generation_body_is_rejected_after_rotation() {
         let authenticator = Arc::new(Authenticator::new("O".repeat(32)));
-        let old_token = authenticator
-            .issue_device_token("device-a", "Old Phone")
-            .unwrap();
+        let old_token = authenticator.get_token();
         let executed = Arc::new(AtomicBool::new(false));
         let handler_executed = executed.clone();
 
@@ -173,9 +171,7 @@ mod tests {
             .expect("body should reach its initial pending poll")
             .expect("poll signal should remain open");
 
-        authenticator
-            .issue_device_token("device-a", "Repaired Phone")
-            .unwrap();
+        authenticator.set_token("P".repeat(32)).unwrap();
         let _ = release_tx.send(());
 
         let response = tokio::time::timeout(Duration::from_secs(2), response_task)

@@ -21,10 +21,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::server::auth::AuthPrincipal;
-use crate::server::events::{DesktopEvent, EventBus};
 use crate::server::protocol;
-use access::SessionCreator;
 use client::{Client, ClientSecurityContext};
 use state::{ClientRole, SessionState};
 
@@ -187,9 +184,6 @@ impl AdaptivePipeline {
 /// A terminal session.
 pub struct Session {
     pub id: String,
-    /// Immutable authenticated creator. SSH sessions require an exact match
-    /// for device access; owner requests remain administrative superusers.
-    creator: Option<SessionCreator>,
     pub state: Mutex<SessionState>,
     pub clients: Mutex<HashMap<String, Arc<Client>>>,
     pub master_id: Mutex<String>,
@@ -270,29 +264,14 @@ pub struct Session {
 
     /// Cancellation token for the session's run loop.
     cancel: CancellationToken,
-
-    /// 桌面级事件总线(终端通知 Phase 1):run loop 抽出 `OscEvent::Notify` 时,
-    /// 除会话内 `MSG_OSC_EVENT` 广播外,额外投一份 `DesktopEvent::Notify` 到这里,
-    /// 供 presence WS(后续任务)订阅转发给手机。
-    event_bus: EventBus,
 }
 
 impl Session {
-    pub fn new(id: String, config: SessionConfig, event_bus: EventBus) -> Self {
-        Self::new_with_creator(id, config, event_bus, None)
-    }
-
-    pub(crate) fn new_with_creator(
-        id: String,
-        config: SessionConfig,
-        event_bus: EventBus,
-        creator: Option<SessionCreator>,
-    ) -> Self {
+    pub fn new(id: String, config: SessionConfig) -> Self {
         let ring_size = config.ring_buffer_size;
         let cancel = CancellationToken::new();
         Self {
             id,
-            creator,
             state: Mutex::new(SessionState::Created),
             clients: Mutex::new(HashMap::new()),
             master_id: Mutex::new(String::new()),
@@ -325,23 +304,7 @@ impl Session {
             current_cwd: Mutex::new(None),
             osc_filter: Mutex::new(crate::server::osc_filter::OscFilter::new()),
             cancel,
-            event_bus,
         }
-    }
-
-    pub(crate) fn creator_allows_principal(&self, principal: &AuthPrincipal) -> bool {
-        if matches!(principal, AuthPrincipal::Owner { .. }) {
-            return true;
-        }
-        self.creator
-            .as_ref()
-            .is_some_and(|creator| creator.allows_principal(principal))
-    }
-
-    pub(crate) fn creator_allows_device(&self, device_id: &str, generation: uuid::Uuid) -> bool {
-        self.creator
-            .as_ref()
-            .is_some_and(|creator| creator.allows_device(device_id, generation))
     }
 
     /// The OSC 7768 hook token of this session's terminal, for hooks injected
@@ -712,17 +675,6 @@ impl Session {
                                     if let Ok(json) = serde_json::to_vec(&events) {
                                         let msg = protocol::encode_message(protocol::MSG_OSC_EVENT, &json);
                                         session.broadcast(msg);
-                                    }
-                                    // 额外一路:通知性 OscEvent 投到桌面事件总线,供 presence WS
-                                    // (后续任务)转发给手机。不影响上面的会话内 MSG_OSC_EVENT 广播。
-                                    // 先 clone 出标题、显式释放锁,避免在持有 title 锁的同时
-                                    // 又去 publish(publish 内部不持锁,但保持"取值后立即放锁"的习惯,
-                                    // 防止未来在 publish 路径里引入回读 title 造成死锁)。
-                                    let session_title = session.title.lock().unwrap().clone();
-                                    for desktop_event in
-                                        notify_events_to_publish(&events, &session.id, &session_title)
-                                    {
-                                        session.event_bus.publish(desktop_event);
                                     }
                                     session.dispatch_shell_prompt(&events);
                                 }
@@ -1197,28 +1149,6 @@ impl Session {
             .any(|c| c.is_connected() && c.is_trusted_local_owner())
     }
 
-    /// List connected client info for API responses.
-    pub fn list_clients(&self) -> Vec<client::ClientInfo> {
-        let clients = self.clients.lock().unwrap();
-        clients
-            .values()
-            .map(|c| {
-                let security = c.security_context();
-                client::ClientInfo {
-                    id: c.id.clone(),
-                    session_id: self.id.clone(),
-                    session_title: String::new(),
-                    role: c.role.as_str().to_string(),
-                    connected: c.is_connected(),
-                    last_seen: format!("{:?}", c.idle_duration()),
-                    remote_addr: c.remote_addr.clone(),
-                    ingress: security.ingress_name().to_string(),
-                    device_id: security.device_id().map(str::to_string),
-                }
-            })
-            .collect()
-    }
-
     /// Count connected clients.
     pub fn connected_client_count(&self) -> usize {
         self.clients
@@ -1227,78 +1157,6 @@ impl Session {
             .values()
             .filter(|c| c.is_connected())
             .count()
-    }
-
-    /// Verify that a client ID belongs to the authenticated request principal.
-    /// The local owner may administer any client; a device may name only its
-    /// own WS clients.
-    pub(crate) fn client_matches_principal(
-        &self,
-        client_id: &str,
-        principal: &AuthPrincipal,
-    ) -> bool {
-        let clients = self.clients.lock().unwrap();
-        let Some(client) = clients.get(client_id) else {
-            return false;
-        };
-        client.matches_request_principal(principal)
-    }
-
-    /// Disconnect device-authenticated clients, optionally scoped to one
-    /// stable device ID. Relay clients are fail-closed even if malformed state
-    /// somehow lacks a Device principal.
-    pub(crate) fn disconnect_device_principals(&self, device_id: Option<&str>) -> usize {
-        let clients = self.clients.lock().unwrap();
-        let mut count = 0;
-        for client in clients.values() {
-            if !client.is_connected() || !client.is_device_or_relay() {
-                continue;
-            }
-            if let Some(expected) = device_id {
-                if client.authenticated_device_id().as_deref() != Some(expected) {
-                    continue;
-                }
-            }
-            client.send(protocol::encode_error(
-                protocol::ERR_KICKED,
-                "credential revoked",
-            ));
-            client.disconnect();
-            count += 1;
-        }
-        let mut master = self.master_id.lock().unwrap();
-        Self::reconcile_master_locked(&clients, &mut master, true, true);
-        drop(master);
-        self.reconcile_state_locked(&clients);
-        count
-    }
-
-    /// Disconnect only sockets authenticated with one exact runtime
-    /// credential generation. A newly re-paired generation with the same
-    /// stable device ID is not affected by stale self-unpair cleanup.
-    pub(crate) fn disconnect_device_generation(
-        &self,
-        device_id: &str,
-        generation: uuid::Uuid,
-    ) -> usize {
-        let clients = self.clients.lock().unwrap();
-        let mut count = 0;
-        for client in clients.values() {
-            if !client.is_connected() || !client.matches_device_generation(device_id, generation) {
-                continue;
-            }
-            client.send(protocol::encode_error(
-                protocol::ERR_KICKED,
-                "credential revoked",
-            ));
-            client.disconnect();
-            count += 1;
-        }
-        let mut master = self.master_id.lock().unwrap();
-        Self::reconcile_master_locked(&clients, &mut master, true, true);
-        drop(master);
-        self.reconcile_state_locked(&clients);
-        count
     }
 
     /// Disconnect only WebSockets authenticated by one retired owner-token
@@ -1340,43 +1198,6 @@ impl Session {
         } else {
             (String::new(), false)
         }
-    }
-
-    /// Disconnect all device-authenticated or relay clients.
-    /// Sends ERR_KICKED and promotes next master if needed.
-    pub fn disconnect_remote_clients(&self) -> usize {
-        let clients = self.clients.lock().unwrap();
-        let mut count = 0;
-        for client in clients.values() {
-            if client.is_connected() && client.is_device_or_relay() {
-                client.send(protocol::encode_error(protocol::ERR_KICKED, "kicked"));
-                client.disconnect();
-                count += 1;
-            }
-        }
-        let mut master = self.master_id.lock().unwrap();
-        Self::reconcile_master_locked(&clients, &mut master, true, true);
-        drop(master);
-        self.reconcile_state_locked(&clients);
-        count
-    }
-
-    /// Kick all clients from a specific IP. Returns count of kicked.
-    pub fn kick_by_ip(&self, ip: &str) -> usize {
-        let clients = self.clients.lock().unwrap();
-        let mut count = 0;
-        for client in clients.values() {
-            if client.is_connected() && client.is_device_or_relay() && client.remote_addr == ip {
-                client.send(protocol::encode_error(protocol::ERR_KICKED, "kicked"));
-                client.disconnect();
-                count += 1;
-            }
-        }
-        let mut master = self.master_id.lock().unwrap();
-        Self::reconcile_master_locked(&clients, &mut master, true, true);
-        drop(master);
-        self.reconcile_state_locked(&clients);
-        count
     }
 }
 
@@ -1453,58 +1274,6 @@ impl RingBuffer {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// 长命令完成的耗时阈值(毫秒)——命令耗时达到/超过此值才合成一条 `CmdDone`
-/// 通知事件。当前写死 30 秒,后续可做成用户可配置项(见通知设计文档 Phase 2)。
-const CMD_DONE_THRESHOLD_MS: u64 = 30_000;
-
-/// 从一批 `OscEvent` 中挑出「值得通知」的事件,转换为待发布到桌面事件总线的 `DesktopEvent`。
-///
-/// 纯函数,便于单测(不依赖 run loop / EventBus 实例)。`id` 用
-/// `uuid::Uuid::new_v4()`——与项目里生成会话 id / client id / pairing nonce id
-/// 的既有随机源一致,不引入新依赖。
-///
-/// 覆盖两类事件:
-/// - `OscEvent::Notify`(程序显式通知,OSC 9/777)→ 原样转发。
-/// - `OscEvent::ShellState`(OSC 7768,precmd 携带的命令耗时)→ 耗时达到
-///   `CMD_DONE_THRESHOLD_MS` 且命令非空(排除空回车)才合成 `CmdDone`;
-///   `duration_ms` 缺失(旧格式/未启用 preexec 计时)或耗时不足阈值均不产出。
-fn notify_events_to_publish(
-    events: &[crate::server::osc_filter::OscEvent],
-    session_id: &str,
-    session_title: &str,
-) -> Vec<DesktopEvent> {
-    events
-        .iter()
-        .filter_map(|e| match e {
-            crate::server::osc_filter::OscEvent::Notify { title, body } => {
-                Some(DesktopEvent::Notify {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    session_id: session_id.to_string(),
-                    session_title: session_title.to_string(),
-                    title: title.clone(),
-                    body: body.clone(),
-                })
-            }
-            crate::server::osc_filter::OscEvent::ShellState {
-                exit,
-                cmd,
-                duration_ms: Some(ms),
-                ..
-            } if *ms >= CMD_DONE_THRESHOLD_MS && !cmd.trim().is_empty() => {
-                Some(DesktopEvent::CmdDone {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    session_id: session_id.to_string(),
-                    session_title: session_title.to_string(),
-                    cmd: cmd.clone(),
-                    exit: *exit,
-                    duration_ms: *ms,
-                })
-            }
-            _ => None,
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1548,181 +1317,6 @@ mod tests {
 
     /// `notify_events_to_publish` 只挑出 Notify,忽略其它 OscEvent 变体,
     /// 且 session_id/title/body 原样带过去。
-    #[test]
-    fn notify_events_to_publish_filters_notify_only() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![
-            OscEvent::Cwd {
-                cwd: "/tmp".to_string(),
-            },
-            OscEvent::Notify {
-                title: "标题".to_string(),
-                body: "正文".to_string(),
-            },
-            OscEvent::Progress {
-                state: 1,
-                percent: 50,
-            },
-        ];
-
-        let published = notify_events_to_publish(&events, "sess-1", "会话A");
-        assert_eq!(published.len(), 1, "只应挑出 Notify 这一条");
-        match &published[0] {
-            DesktopEvent::Notify {
-                session_id,
-                session_title,
-                title,
-                body,
-                id,
-            } => {
-                assert_eq!(session_id, "sess-1");
-                assert_eq!(session_title, "会话A");
-                assert_eq!(title, "标题");
-                assert_eq!(body, "正文");
-                assert!(!id.is_empty(), "id 应非空");
-            }
-            other => panic!("expected Notify, got {:?}", other),
-        }
-    }
-
-    /// 多个 Notify 应各自生成一条 DesktopEvent,且 id 互不相同。
-    #[test]
-    fn notify_events_to_publish_multiple_notify_get_distinct_ids() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![
-            OscEvent::Notify {
-                title: "A".to_string(),
-                body: "a".to_string(),
-            },
-            OscEvent::Notify {
-                title: "B".to_string(),
-                body: "b".to_string(),
-            },
-        ];
-
-        let published = notify_events_to_publish(&events, "sess-2", "会话B");
-        assert_eq!(published.len(), 2);
-        let ids: Vec<&str> = published
-            .iter()
-            .map(|e| match e {
-                DesktopEvent::Notify { id, .. } => id.as_str(),
-                _ => unreachable!(),
-            })
-            .collect();
-        assert_ne!(ids[0], ids[1], "两条 Notify 的 id 应不同");
-    }
-
-    /// 空/无 Notify 的事件批应返回空 Vec。
-    #[test]
-    fn notify_events_to_publish_empty_when_no_notify() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![OscEvent::Cwd {
-            cwd: "/".to_string(),
-        }];
-        assert!(notify_events_to_publish(&events, "sess-3", "会话C").is_empty());
-        assert!(notify_events_to_publish(&[], "sess-3", "会话C").is_empty());
-    }
-
-    /// ShellState 耗时达到/超过阈值(30s)且命令非空 → 应产出一条 CmdDone,字段正确。
-    #[test]
-    fn notify_events_to_publish_shell_state_over_threshold_emits_cmd_done() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![OscEvent::ShellState {
-            exit: 0,
-            cwd: "/tmp".to_string(),
-            cmd: "make build".to_string(),
-            duration_ms: Some(CMD_DONE_THRESHOLD_MS),
-        }];
-
-        let published = notify_events_to_publish(&events, "sess-4", "会话D");
-        assert_eq!(published.len(), 1, "耗时达到阈值应产出一条 CmdDone");
-        match &published[0] {
-            DesktopEvent::CmdDone {
-                id,
-                session_id,
-                session_title,
-                cmd,
-                exit,
-                duration_ms,
-            } => {
-                assert!(!id.is_empty(), "id 应非空");
-                assert_eq!(session_id, "sess-4");
-                assert_eq!(session_title, "会话D");
-                assert_eq!(cmd, "make build");
-                assert_eq!(*exit, 0);
-                assert_eq!(*duration_ms, CMD_DONE_THRESHOLD_MS);
-            }
-            other => panic!("expected CmdDone, got {:?}", other),
-        }
-    }
-
-    /// ShellState 耗时低于阈值 → 不产出 CmdDone。
-    #[test]
-    fn notify_events_to_publish_shell_state_under_threshold_emits_nothing() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![OscEvent::ShellState {
-            exit: 0,
-            cwd: "/tmp".to_string(),
-            cmd: "ls".to_string(),
-            duration_ms: Some(CMD_DONE_THRESHOLD_MS - 1),
-        }];
-
-        assert!(
-            notify_events_to_publish(&events, "sess-5", "会话E").is_empty(),
-            "耗时不足阈值不应产出通知"
-        );
-    }
-
-    /// ShellState 无 duration_ms(旧格式/未计时)→ 不产出 CmdDone。
-    #[test]
-    fn notify_events_to_publish_shell_state_without_duration_emits_nothing() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![OscEvent::ShellState {
-            exit: 0,
-            cwd: "/tmp".to_string(),
-            cmd: "make build".to_string(),
-            duration_ms: None,
-        }];
-
-        assert!(
-            notify_events_to_publish(&events, "sess-6", "会话F").is_empty(),
-            "duration_ms 缺失不应产出通知"
-        );
-    }
-
-    /// ShellState 命令为空(空回车)即使耗时够也不应产出 CmdDone。
-    #[test]
-    fn notify_events_to_publish_shell_state_empty_cmd_emits_nothing() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![OscEvent::ShellState {
-            exit: 0,
-            cwd: "/tmp".to_string(),
-            cmd: "".to_string(),
-            duration_ms: Some(CMD_DONE_THRESHOLD_MS * 2),
-        }];
-
-        assert!(
-            notify_events_to_publish(&events, "sess-7", "会话G").is_empty(),
-            "空命令(空回车)不应产出通知"
-        );
-
-        // 纯空白命令同样应被视为空。
-        let events_whitespace = vec![OscEvent::ShellState {
-            exit: 0,
-            cwd: "/tmp".to_string(),
-            cmd: "   ".to_string(),
-            duration_ms: Some(CMD_DONE_THRESHOLD_MS * 2),
-        }];
-        assert!(notify_events_to_publish(&events_whitespace, "sess-7", "会话G").is_empty());
-    }
-
     // ── conn_gen 守卫 / 跨代次清理 ──
     //
     // ws.rs 须在回放之前捕获 conn_gen,否则 cleanup 会用被 reconnect bump 的代次误拆重连连接。
@@ -1895,60 +1489,20 @@ mod tests {
                 ring_buffer_size,
                 log_dir: String::new(),
             },
-            EventBus::new(),
         ))
     }
 
-    #[test]
-    fn relay_synthetic_loopback_cannot_enter_private_session() {
-        let session = ring_session("private-relay", 4096);
-        session.set_private(true);
-        let (relay, _rx) = Client::new(
-            "relay-client".into(),
-            "127.0.0.1".into(),
-            ClientRole::Viewer,
-            ClientSecurityContext::test_device(
-                crate::server::auth::TrustedIngress::Relay,
-                "phone-a",
-            ),
-        );
-        assert_eq!(
-            session.add_client(Arc::new(relay)),
-            Err("session is private".to_string())
-        );
-    }
-
-    #[test]
-    fn targeted_revoke_disconnects_only_matching_device_and_keeps_local_owner() {
-        let session = ring_session("revoke-device", 4096);
-        let (owner, _) = ws_client(&session, "owner");
-        for (client_id, device_id) in [("phone-a", "device-a"), ("phone-b", "device-b")] {
-            let (client, _) = Client::new(
-                client_id.into(),
-                "127.0.0.1".into(),
-                ClientRole::Viewer,
-                ClientSecurityContext::test_device(
-                    crate::server::auth::TrustedIngress::Relay,
-                    device_id,
-                ),
-            );
-            session.add_client(Arc::new(client)).unwrap();
+    fn owner_security(generation: uuid::Uuid) -> ClientSecurityContext {
+        ClientSecurityContext {
+            ingress: crate::server::auth::TrustedIngress::DirectLoopback,
+            principal: crate::server::auth::AuthPrincipal::Owner { generation },
         }
-
-        assert_eq!(session.disconnect_device_principals(Some("device-a")), 1);
-        let clients = session.clients.lock().unwrap();
-        assert!(owner.is_connected());
-        assert!(!clients.get("phone-a").unwrap().is_connected());
-        assert!(clients.get("phone-b").unwrap().is_connected());
     }
 
     #[test]
     fn reconnect_identity_mismatch_cannot_disconnect_existing_client() {
         let session = ring_session("reconnect-identity", 4096);
-        let security_a = ClientSecurityContext::test_device(
-            crate::server::auth::TrustedIngress::Relay,
-            "device-a",
-        );
+        let security_a = owner_security(uuid::Uuid::new_v4());
         let (client, _) = Client::new(
             "phone".into(),
             "127.0.0.1".into(),
@@ -1957,10 +1511,7 @@ mod tests {
         );
         let client = Arc::new(client);
         session.add_client(client.clone()).unwrap();
-        let security_b = ClientSecurityContext::test_device(
-            crate::server::auth::TrustedIngress::Relay,
-            "device-b",
-        );
+        let security_b = owner_security(uuid::Uuid::new_v4());
         assert!(session
             .reconnect_client(
                 "phone",

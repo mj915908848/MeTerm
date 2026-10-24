@@ -594,7 +594,6 @@ impl TransferManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::events::EventBus;
     use crate::server::session::{AdaptivePipeline, SessionConfig};
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -612,7 +611,6 @@ mod tests {
                 ring_buffer_size: 4096,
                 log_dir: String::new(),
             },
-            EventBus::new(),
         ))
     }
 
