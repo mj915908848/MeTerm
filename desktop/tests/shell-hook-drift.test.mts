@@ -20,14 +20,13 @@ import { readFileSync } from 'node:fs';
  *
  * This is a test, not a refactor, on purpose: merging the installers requires
  * unifying `pty_unix.rs`'s rc-file generation with the one-line `eval` forms,
- * and two of the four (pwsh, and the fish branch) cannot be *driven end to end*
- * here — `pwsh` is absent everywhere, and the fish payload is emitted from a
- * prompt event that no test in this repo reaches. Pinning the contract keeps
+ * and one of the four (pwsh) cannot be *driven end to end* here — `pwsh` is
+ * absent everywhere. Pinning the contract keeps
  * today's duplication safe and makes any future divergence a red test instead of
  * a silent behaviour change. Run `shell-hook-duration.test.mts` alongside it —
  * that one really executes the zsh/bash hooks through real shells — and
- * `shell-hook-injection.test.mts`, which parses and installs the fish branch for
- * real whenever a `fish` binary is on PATH (it is not, in CI).
+ * `shell-hook-command-report.test.mts`, which runs every zsh/bash installer
+ * through real shells and checks the command and exit code it reports.
  */
 
 const SRC = (rel: string): string => readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8');
@@ -233,25 +232,23 @@ for (const emitter of VERIFIABLE) {
 }
 
 /**
- * The emitters that are deliberately still 3-field. Neither is driven end to end
- * here: `pwsh` has no binary anywhere, and the fish payload comes out of a prompt
- * event no test reaches (the fish *branch* is at least parsed and installed for
- * real by `shell-hook-injection.test.mts` when a `fish` binary exists — which it
- * does not in CI). A syntax error inside an injected hook is masked — the OSC
- * 7766 detect marker fires *before* the `eval`, so `hookInjected` would flip true
- * while the hook is dead. Pinning the exact counts means promoting one of these
- * to 4 fields, or adding a new unverifiable emitter, has to be a conscious edit
- * to this table.
+ * The emitters that are deliberately still 3-field, which are not driven end to end
+ * here: `pwsh` has no binary anywhere. (fish is not hooked at all any more; the
+ * fish shapes stay in the table so a payload sneaking back in is caught.) A
+ * syntax error inside an injected hook is masked — the OSC 7766 detect marker
+ * fires *before* the `eval`, so `hookInjected` would flip true while the hook is
+ * dead. Pinning the exact counts means promoting one of these to 4 fields, or
+ * adding a new unverifiable emitter, has to be a conscious edit to this table.
  */
 test('the only 3-field emitters left are the unverifiable shells', () => {
-  assert.equal(count(AI_SHELL, OSC7768_3FIELD), 1, 'ai-tools-shell.ts fish branch (post-exec form)');
-  assert.equal(count(AI_SHELL, OSC7768_FISH_TAIL), 1, 'ai-tools-shell.ts fish branch (first-prompt form)');
+  assert.equal(count(AI_SHELL, OSC7768_3FIELD), 0, 'fish is no longer hooked');
+  assert.equal(count(AI_SHELL, OSC7768_FISH_TAIL), 0, 'fish is no longer hooked');
   assert.equal(count(AI_SHELL, OSC7768_PWSH_TS), 1, 'ai-tools-shell.ts powershell branch');
   assert.equal(count(PTY_WINDOWS, OSC7768_PWSH_RS), 1, 'pty_windows.rs pwsh hook');
   assert.equal(count(PTY_WINDOWS, OSC7768_4FIELD), 0, 'pty_windows.rs has no duration timer yet');
 
   // The zsh/bash-only installers must not carry a 3-field payload at all.
-  // (ai-tools-shell.ts is excluded: it also holds the fish/powershell branches
+  // (ai-tools-shell.ts is excluded: it also holds the powershell branch
   // pinned above, so a 3-field printf is expected *somewhere* in that file.)
   for (const source of [PTY_UNIX, SSH]) {
     for (const threeField of [OSC7768_3FIELD, OSC7768_FISH_TAIL]) {

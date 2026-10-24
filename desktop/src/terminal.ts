@@ -551,7 +551,7 @@ class TerminalRegistryClass {
       _hasUserInput: false,
       _transferGrace: false,
       _oscMarkerResolvers: new Map(),
-      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', promptRow: -1, promptCol: 0 },
+      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', agentCommand: '', promptRow: -1, promptCol: 0 },
     };
 
     if (isMacPlatform && webglAddon) {
@@ -1047,6 +1047,7 @@ class TerminalRegistryClass {
     // on `hookInjected` — the hookless completion paths use the screen tail
     // instead. See ShellPhase in terminal-types.ts.
     mt.shellState.phase = 'agent_executing';
+    mt.shellState.agentCommand = command.trim();
     // PowerShell does not support Ctrl+U (unix-line-discard); skip prefix to avoid ^U echo.
     const prefix = shellType === 'powershell' ? '' : '\x15';
     // Terminator: use CR (\r) to emulate a real Enter keypress, which
@@ -1271,7 +1272,7 @@ class TerminalRegistryClass {
       _hasUserInput: false,
       _transferGrace: true,
       _oscMarkerResolvers: new Map(),
-      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', promptRow: -1, promptCol: 0 },
+      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', agentCommand: '', promptRow: -1, promptCol: 0 },
     };
 
     // OSC handlers are processed by Rust OscFilter → MSG_OSC_EVENT → handleOscEvents.

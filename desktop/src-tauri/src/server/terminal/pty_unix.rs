@@ -401,9 +401,13 @@ fn create_zsh_hooks(dir: &std::path::Path) {
          zmodload zsh/datetime 2>/dev/null\n\
          __meterm_cmd_start=''\n\
          __meterm_cmd_running=0\n\
+         __meterm_cmd=''\n\
          __meterm_preexec(){\n\
            # 标记本轮提示周期确实执行过命令,避免空回车误报上一条命令耗时\n\
            __meterm_cmd_running=1\n\
+           # $1 就是这次执行的命令行。空格开头的(用户不想留历史 / AI 发的命令)不上报;\n\
+           # 空回车、Ctrl+C 不触发 preexec,所以 precmd 报空命令,不再重复上一条。\n\
+           case \"$1\" in ' '*) __meterm_cmd='' ;; *) __meterm_cmd=\"$1\" ;; esac\n\
            if [ -n \"$EPOCHREALTIME\" ]; then\n\
              __meterm_cmd_start=\"$EPOCHREALTIME\"\n\
            else\n\
@@ -412,14 +416,13 @@ fn create_zsh_hooks(dir: &std::path::Path) {
          }\n\
          __meterm_precmd(){\n\
            local e=$?\n\
-           local c\n\
+           local c=''\n\
            local dur=0\n\
            if [ -z \"$__meterm_hook_ready\" ]; then\n\
              export __meterm_hook_ready=1\n\
              printf '\\033]7766;meterm_init;1\\007'\n\
-             c=''\n\
            else\n\
-             c=$(fc -ln -1 2>/dev/null)\n\
+             [ \"$__meterm_cmd_running\" = \"1\" ] && c=\"$__meterm_cmd\"\n\
              if [ \"$__meterm_cmd_running\" = \"1\" ] && [ -n \"$__meterm_cmd_start\" ]; then\n\
                if [ -n \"$EPOCHREALTIME\" ]; then\n\
                  dur=$(( (EPOCHREALTIME - __meterm_cmd_start) * 1000 ))\n\
@@ -432,6 +435,7 @@ fn create_zsh_hooks(dir: &std::path::Path) {
              fi\n\
            fi\n\
            __meterm_cmd_running=0\n\
+           __meterm_cmd=''\n\
            printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' \"$__meterm_tok\" \"$e\" \"$PWD\" \"$c\" \"$dur\"\n\
          }\n\
          autoload -Uz add-zsh-hook 2>/dev/null && { add-zsh-hook preexec __meterm_preexec; add-zsh-hook precmd __meterm_precmd; }\n\
@@ -463,16 +467,20 @@ fn create_bash_hooks(dir: &std::path::Path) {
          __meterm_cmd_start=''\n\
          __meterm_cmd_running=0\n\
          __meterm_in_prompt=0\n\
+         __meterm_cmd=''\n\
+         __meterm_hist_n=''\n\
          __meterm_preexec(){\n\
            # DEBUG trap 每条简单命令都触发,包括 PROMPT_COMMAND 自身(尤其是空提示符回车时,\n\
            # 没有用户命令可执行,DEBUG 仍会在调用 __meterm_precmd 前触发一次)。\n\
            # 用 $BASH_COMMAND 精确识别并排除\"即将执行的是我们自己的 precmd\"这种情况,\n\
            # 而不是依赖时间重合——否则空回车会被误记为一次耗时几乎为 0 的伪命令。\n\
+           # 用户自己的 PROMPT_COMMAND 夹在 precmd 和 prompt_end 之间,由 in_prompt 挡住。\n\
            [ -n \"$COMP_LINE\" ] && return\n\
-           case \"$BASH_COMMAND\" in __meterm_precmd*) return ;; esac\n\
+           case \"$BASH_COMMAND\" in __meterm_precmd*|__meterm_prompt_end*) return ;; esac\n\
            [ \"$__meterm_in_prompt\" = \"1\" ] && return\n\
            [ \"$__meterm_cmd_running\" = \"1\" ] && return\n\
            __meterm_cmd_running=1\n\
+           __meterm_cmd=\"$BASH_COMMAND\"\n\
            if [ -n \"$EPOCHREALTIME\" ]; then\n\
              __meterm_cmd_start=\"$EPOCHREALTIME\"\n\
            else\n\
@@ -485,15 +493,29 @@ fn create_bash_hooks(dir: &std::path::Path) {
          if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi\n\
          __meterm_precmd(){\n\
            local e=$?\n\
-           local c\n\
+           local c=''\n\
            local dur=0\n\
+           local h n\n\
            __meterm_in_prompt=1\n\
+           # 在 PROMPT_COMMAND 里 `fc -ln -1` 会把最新一条当成 fc 自己跳过,拿到的是上一条;\n\
+           # 改读 `history 1`,并用历史序号判断这一轮有没有新命令(空回车、空格开头的命令\n\
+           # 序号都不变,报空命令)。\n\
+           h=$(HISTTIMEFORMAT= builtin history 1 2>/dev/null)\n\
+           h=\"${h#\"${h%%[^[:space:]]*}\"}\"\n\
+           n=\"${h%%[[:space:]]*}\"\n\
+           h=\"${h#\"$n\"}\"\n\
+           h=\"${h#\"${h%%[^[:space:]]*}\"}\"\n\
            if [ -z \"$__meterm_hook_ready\" ]; then\n\
              export __meterm_hook_ready=1\n\
              printf '\\033]7766;meterm_init;0\\007'\n\
-             c=''\n\
            else\n\
-             c=$(fc -ln -1 2>/dev/null)\n\
+             if [ \"$n\" != \"$__meterm_hist_n\" ]; then\n\
+               c=\"$h\"\n\
+             elif [ \"$__meterm_cmd_running\" = \"1\" ] && [ -n \"$__meterm_cmd\" ]; then\n\
+               # HISTCONTROL=ignoredups 时重复的命令不进历史、序号不变;DEBUG trap\n\
+               # 记下的命令和最新一条对得上,说明确实是它又执行了一次\n\
+               case \"$h\" in \"$__meterm_cmd\"|\"$__meterm_cmd \"*) c=\"$h\" ;; esac\n\
+             fi\n\
              if [ \"$__meterm_cmd_running\" = \"1\" ] && [ -n \"$__meterm_cmd_start\" ]; then\n\
                if [ -n \"$EPOCHREALTIME\" ]; then\n\
                  # bash 的 $(( )) 只支持整数运算,EPOCHREALTIME 形如 秒.微秒(固定6位小数)\n\
@@ -510,15 +532,20 @@ fn create_bash_hooks(dir: &std::path::Path) {
                [ \"$dur\" -lt 0 ] 2>/dev/null && dur=0\n\
              fi\n\
            fi\n\
+           __meterm_hist_n=\"$n\"\n\
            __meterm_cmd_running=0\n\
+           __meterm_cmd=''\n\
            printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' \"$__meterm_tok\" \"$e\" \"$PWD\" \"$c\" \"$dur\"\n\
-           __meterm_in_prompt=0\n\
+           # 把退出码交还给排在后面的用户 PROMPT_COMMAND(starship 等靠它显示失败标记)\n\
+           return $e\n\
          }\n\
+         __meterm_prompt_end(){ __meterm_in_prompt=0; }\n\
          # PROMPT_COMMAND 可以就地扩写,但 bash 5.1+ 允许它是数组,而标量赋值会把整个\n\
          # 数组换掉(用户第 2..n 项静默消失),所以按它本来的形态扩写。\n\
+         # precmd 排最前(拿到命令真实的 $?),prompt_end 排最后(用户的条目跑完才重新计时)。\n\
          case \"$(declare -p PROMPT_COMMAND 2>/dev/null)\" in\n\
-           'declare -a'*) PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\") ;;\n\
-           *) PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;;\n\
+           'declare -a'*) PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\" __meterm_prompt_end) ;;\n\
+           *) PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND};__meterm_prompt_end\" ;;\n\
          esac\n\
          export HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\"\n",
     );
@@ -631,7 +658,9 @@ mod tests {
             "本地 bashrc 须识别数组形态的 PROMPT_COMMAND"
         );
         assert!(
-            bashrc.contains("PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\")"),
+            bashrc.contains(
+                "PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\" __meterm_prompt_end)"
+            ),
             "数组分支须保留用户已有元素"
         );
         // Agent 镜像产物(M2):hooks JSON + 转发脚本落地,.bashrc 末尾追加 claude 包装函数。
