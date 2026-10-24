@@ -146,6 +146,13 @@
   text-overflow: ellipsis;
   min-width: 0;
 }
+/* A long label (an SSH error message) ends in "…"; the tooltip has it all. */
+.capsule-connection .status-label {
+  min-width: 0;
+  max-width: min(60vw, 520px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 /* Clickable (→ reconnect) only while there is something to reconnect. */
 .capsule-connection.clickable {
   cursor: pointer;

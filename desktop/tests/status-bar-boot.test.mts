@@ -52,6 +52,7 @@ function harness(waitForMeTerm: () => Promise<{ port: number; token: string }>):
   const build = new Function(
     'waitForMeTerm',
     'StatusBar',
+    't',
     `let metermReady = false, port = 0, authToken = '';
      const setPort = (v) => { port = v; };
      const setAuthToken = (v) => { authToken = v; };
@@ -66,6 +67,7 @@ function harness(waitForMeTerm: () => Promise<{ port: number; token: string }>):
       setConnection: (status: string, label?: string) => { bar.push(`setConnection:${status}:${label ?? ''}`); },
       setError: (message: string) => { bar.push(`setError:${message}`); },
     },
+    (key: string) => (key === 'statusStartFailed' ? 'Failed to start meterm' : key),
   );
 
   return { ...api, bar, waits: () => waits, state: api.state };

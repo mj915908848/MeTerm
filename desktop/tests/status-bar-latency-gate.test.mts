@@ -65,6 +65,7 @@ class El {
   set innerHTML(value: string) { this.#html = value; this.children = []; }
 
   get firstChild(): El | null { return this.children[0] ?? null; }
+  get parentNode(): El | null { return this.parent; }
   get nextSibling(): El | null {
     if (!this.parent) return null;
     const index = this.parent.children.indexOf(this);
@@ -126,6 +127,7 @@ interface Harness {
   pings: string[];
   collapsed(): boolean;
   firePong(sessionId: string, rtt: number): void;
+  fire(type: string, detail: unknown): void;
   tick(): void;
   flushTimers(rounds?: number): void;
 }
@@ -172,7 +174,7 @@ function boot(): Harness {
     clearInterval: () => {},
     console,
     require: (specifier: string) => {
-      if (specifier === './i18n') return { t: (key: string) => key };
+      if (specifier === './i18n') return { t: (key: string) => key, tf: (key: string, vars: Record<string, unknown>) => `${key} ${JSON.stringify(vars)}` };
       throw new Error(`unexpected import ${specifier}`);
     },
   });
@@ -192,6 +194,9 @@ function boot(): Harness {
     collapsed: () => container.classList.contains('status-collapsed'),
     firePong: (sessionId: string, rtt: number) => {
       for (const handler of listeners['status-bar-pong'] ?? []) handler({ detail: { sessionId, rtt } });
+    },
+    fire: (type: string, detail: unknown) => {
+      for (const handler of listeners[type] ?? []) handler({ detail });
     },
     tick: () => { for (const fn of intervals) fn(); },
     // Fading a capsule out is itself a scheduled step that ends in
@@ -248,18 +253,18 @@ test('a reading never outlives the bar it belongs to', () => {
   assert.equal(h.collapsed(), false);
 
   h.firePong('ssh-1', 12);
-  assert.match(h.statusBar.getConnectionTooltip(), /Latency: 12ms/);
+  assert.match(h.statusBar.getConnectionTooltip(), /statusTooltipLatency {"ms":12}/);
   assert.ok(find(h.container, 'capsule-latency'), 'the reading is on screen while the bar is');
 
   // Transfer done → capsule fades → bar collapses.
   h.statusBar.setTransfer(null);
   h.flushTimers();
   assert.equal(h.collapsed(), true);
-  assert.doesNotMatch(h.statusBar.getConnectionTooltip(), /Latency/,
+  assert.doesNotMatch(h.statusBar.getConnectionTooltip(), /statusTooltipLatency/,
     'the number goes with the bar, so the next reveal cannot pass it off as current');
 
   h.firePong('ssh-1', 99);
-  assert.doesNotMatch(h.statusBar.getConnectionTooltip(), /Latency/,
+  assert.doesNotMatch(h.statusBar.getConnectionTooltip(), /statusTooltipLatency/,
     'a pong already in flight must not repopulate the window behind the collapsed bar');
 });
 
@@ -271,11 +276,11 @@ test('only the on-screen session\'s pongs are samples', () => {
 
   // A background tab's keepalive pong (a local shell, say) is not this host.
   h.firePong('local-7', 0);
-  assert.doesNotMatch(h.statusBar.getConnectionTooltip(), /Latency/);
+  assert.doesNotMatch(h.statusBar.getConnectionTooltip(), /statusTooltipLatency/);
 
   h.firePong('ssh-1', 80);
   h.firePong('other-ssh', 400);
-  assert.match(h.statusBar.getConnectionTooltip(), /Latency: 80ms/,
+  assert.match(h.statusBar.getConnectionTooltip(), /statusTooltipLatency {"ms":80}/,
     'another session\'s reading must not be averaged in');
 });
 
@@ -305,4 +310,54 @@ test('a healthy connection capsule does not offer a reconnect', () => {
 
   h.statusBar.setConnection('reconnecting', 'bruceli@192.168.0.150');
   assert.equal(capsule.classList.contains('clickable'), true);
+});
+
+test('a paused transfer does not hold the bar open', () => {
+  const h = boot();
+  h.statusBar.setConnection('connected', 'bruceli@192.168.0.150');
+  h.fire('status-bar-transfer', { sessionId: 'ssh-1', id: 'd1', type: 'download', progress: 40, status: 'inprogress' });
+  assert.equal(h.collapsed(), false);
+
+  h.fire('status-bar-transfer', { sessionId: 'ssh-1', id: 'd1', type: 'download', progress: 40, status: 'paused' });
+  h.flushTimers();
+  assert.equal(h.collapsed(), true, 'nothing is moving any more');
+  assert.equal(find(h.container, 'capsule-transfer'), null, 'and no "Done" flash for a pause');
+
+  h.fire('status-bar-transfer', { sessionId: 'ssh-1', id: 'd1', type: 'download', progress: 45, status: 'inprogress' });
+  assert.equal(h.collapsed(), false, 'resuming brings it back');
+});
+
+test('a finished batch reads as Done, not "0 files 100%"', () => {
+  const h = boot();
+  h.fire('status-bar-transfer', { sessionId: 'ssh-1', id: 'u1', type: 'upload', progress: 90, status: 'inprogress' });
+  h.fire('status-bar-transfer', { sessionId: 'ssh-1', id: 'u1', type: 'upload', progress: 100, status: 'completed' });
+  const capsule = find(h.container, 'capsule-transfer');
+  assert.ok(capsule);
+  assert.match(capsule.innerHTML, /statusTransferDone/);
+  assert.doesNotMatch(capsule.innerHTML, /"count":0/);
+});
+
+test('a capsule asked back while it is still fading out is not lost', () => {
+  const h = boot();
+  h.statusBar.setConnection('connected', 'bruceli@192.168.0.150');
+  h.statusBar.setAIActive(true, 'tab-1');
+  h.statusBar.setAIActive(false, 'tab-1');
+  // Run only the 300ms exit delay; the fade itself is still pending.
+  h.flushTimers(1);
+  h.statusBar.setAIActive(true, 'tab-1');
+  h.flushTimers();
+  assert.equal(h.collapsed(), false);
+  assert.ok(find(h.container, 'capsule-ai'), 'the running turn must still show its capsule');
+});
+
+test('left capsules keep a fixed order whatever comes first', () => {
+  const h = boot();
+  h.statusBar.setConnection('connected', 'bruceli@192.168.0.150');
+  h.statusBar.setAIActive(true, 'tab-1');
+  h.statusBar.setSessionCount(3);
+  h.firePong('ssh-1', 20);       // latency after sessions
+  h.statusBar.setPane(1, 2);     // pane last
+  const left = h.container.children.find((c: El) => c.className.includes('status-left'))!;
+  const names = left.children.map((c: El) => c.className.split(' ').find((n) => n.startsWith('capsule-')));
+  assert.deepEqual(names, ['capsule-connection', 'capsule-pane', 'capsule-latency', 'capsule-sessions']);
 });

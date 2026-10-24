@@ -25,7 +25,7 @@ import { icon } from './icons';
 import { t } from './i18n';
 import { initTabDrag } from './tab-drag';
 import { invoke } from '@tauri-apps/api/core';
-import { activateTab, showHomeView, statusLabel } from './view-manager';
+import { activateTab, showHomeView, statusLabel, connectionLabelFor } from './view-manager';
 import {
   pendingMasterRequests,
   reclaimSessionIds,
@@ -180,8 +180,7 @@ export function renderTabs(): void {
       TabManager.activate(tab.id);
       await activateTab(tab.id);
       const activeSessionId = TabManager.getActiveSessionId();
-      const sshCfg = activeSessionId ? sshConfigMap.get(activeSessionId) : undefined;
-      StatusBar.setConnection(tab.status, sshCfg ? `${sshCfg.username}@${sshCfg.host}` : 'Local');
+      StatusBar.setConnection(tab.status, connectionLabelFor(activeSessionId));
       renderTabs();
     };
 
@@ -208,8 +207,7 @@ export function renderTabs(): void {
         const newActiveTab = TabManager.tabs.find(t => t.id === TabManager.activeTabId);
         if (newActiveTab) {
           const activeSessionId = TabManager.getActiveSessionId();
-          const sshCfg = activeSessionId ? sshConfigMap.get(activeSessionId) : undefined;
-          StatusBar.setConnection(newActiveTab.status, sshCfg ? `${sshCfg.username}@${sshCfg.host}` : 'Local');
+          StatusBar.setConnection(newActiveTab.status, connectionLabelFor(activeSessionId));
         }
       } else {
         showHomeView();

@@ -59,6 +59,7 @@ class El {
   set innerHTML(value: string) { this.#html = value; this.children = []; }
 
   get firstChild(): El | null { return this.children[0] ?? null; }
+  get parentNode(): El | null { return this.parent; }
   get nextSibling(): El | null {
     if (!this.parent) return null;
     const index = this.parent.children.indexOf(this);
@@ -155,7 +156,7 @@ function boot(): Harness {
     clearInterval,
     console,
     require: (specifier: string) => {
-      if (specifier === './i18n') return { t: (key: string) => key };
+      if (specifier === './i18n') return { t: (key: string) => key, tf: (key: string, vars: Record<string, unknown>) => `${key} ${JSON.stringify(vars)}` };
       throw new Error(`unexpected import ${specifier}`);
     },
   });

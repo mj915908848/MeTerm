@@ -36,7 +36,7 @@ import {
   activateTab,
   showHomeView, hideHomeView, showGalleryView, hideGalleryView,
   openSettings,
-  syncPaneStatusBar, syncConnectionStatusBar,
+  syncPaneStatusBar, syncConnectionStatusBar, connectionLabelFor,
 } from './view-manager';
 import {
   createNewSession,
@@ -365,9 +365,7 @@ export function setupDomEventListeners(): void {
     if (matchedTab) {
       TabManager.activate(matchedTab.id);
       await activateTab(matchedTab.id);
-      const selSessionId = customEvent.detail;
-      const selSshCfg = sshConfigMap.get(selSessionId);
-      StatusBar.setConnection('connected', selSshCfg ? `${selSshCfg.username}@${selSshCfg.host}` : 'Local');
+      StatusBar.setConnection(matchedTab.status, connectionLabelFor(customEvent.detail));
       renderTabs();
       renderToolbarActions();
     }
