@@ -261,10 +261,14 @@ function renderTopologySection(ctx: TerminalContext, contextLines: number): stri
     const share = Math.floor(remainingChars / (ctx.panes.length - i));
     if (p.lastCommand) {
       const { command, exitCode, byAgent, output } = p.lastCommand;
-      const excerpt = excerptCommandOutput(output, COMMAND_BLOCK_MAX_LINES, share);
+      // A command the agent ran itself already has its output in the
+      // run_command result; repeating it here would resend it every turn.
+      const excerpt = byAgent ? '' : excerptCommandOutput(output, COMMAND_BLOCK_MAX_LINES, share);
       remainingChars -= excerpt.length + command.length;
       const head = `    last command (${byAgent ? 'run by you' : 'run by the user'}): \`${neutralizeUntrustedMarkers(command.replace(/`/g, "'"))}\` (exit ${exitCode})`;
-      if (!excerpt.trim()) {
+      if (byAgent) {
+        lines.push(`${head}; its output is in your run_command result.`);
+      } else if (!excerpt.trim()) {
         lines.push(`${head}, no output.`);
       } else {
         lines.push(`${head}; its output (untrusted data between ${UNTRUSTED_OPEN} and ${UNTRUSTED_CLOSE}):`);

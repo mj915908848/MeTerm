@@ -58,7 +58,9 @@ import {
 } from './ai-permission-rules';
 import { classifyTerminalInput, type TerminalSubmit } from './ai-terminal-submit';
 import { emptyReplyNotice, outputTruncatedNotice, stepLimitNotice } from './ai-tool-i18n';
-import { commandLooksMutating, newSelfCheckState, noteToolCall, selfCheckNote, stepsLeftAfterReply } from './ai-self-check';
+import {
+  commandLooksMutating, newSelfCheckState, noteToolCall, resultLooksFailed, selfCheckNote, stepsLeftAfterReply,
+} from './ai-self-check';
 
 import { parseToolArguments } from './ai-provider-wire';
 import { addUsage, type TokenUsage } from './ai-token-usage';
@@ -825,6 +827,7 @@ export class ToolAgent {
             this.messages,
             compactProvider,
             compactCtl.signal,
+            (usage) => { this.runUsage = addUsage(this.runUsage, usage); },
           );
           if (summarized) {
             const beforeMessageCount = this.messages.length;
@@ -880,7 +883,11 @@ export class ToolAgent {
       });
       const hasTools = useTools && toolSpecs.length > 0;
       const systemPrompt = buildSystemPrompt(ctx, hasTools, {
-        todoBlock: this.todoState.renderForSystemPrompt(),
+        // A plan finished in an earlier request is history, not context for
+        // this one; the board keeps showing it, the prompt drops it.
+        todoBlock: planUpdatedAt > 0 || this.todoState.get().some((it) => it.status !== 'completed')
+          ? this.todoState.renderForSystemPrompt()
+          : '',
         attachmentsBlock: this.renderAttachmentsBlock(),
         contextLines,
         // Models skip todo_write on tasks that look like a series of
@@ -933,8 +940,11 @@ export class ToolAgent {
         }
 
         // ── No tool calls → fix code blocks, then done ──
+        // Only the tool-less prompt asks for one command per bash block;
+        // an agent report may hold heredocs, loops or config snippets, which
+        // splitting line by line would break.
         if (!response.toolCalls || response.toolCalls.length === 0) {
-          const fixed = fixCodeBlocks(response.text);
+          const fixed = hasTools ? response.text : fixCodeBlocks(response.text);
           this.messages.push({
             role: 'assistant',
             content: fixed,
@@ -1277,7 +1287,7 @@ export class ToolAgent {
             // compound or sudo read-only commands, so look at the command too.
             const changes = (handler as ToolHandler).requiresConfirm(decision.args)
               && (toolCall.function.name !== 'run_command' || commandLooksMutating(String(decision.args.command ?? '')));
-            noteToolCall(selfCheck, toolCall.function.name, changes, out.isError);
+            noteToolCall(selfCheck, toolCall.function.name, changes, out.isError || resultLooksFailed(out.result));
             if (toolCall.function.name === 'todo_write' && !out.isError) planUpdatedAt = iteration;
 
             // ── Repeat-action loop detection ──
@@ -1623,7 +1633,7 @@ export class ToolAgent {
         this.abortController.signal,
       );
       this.runUsage = addUsage(this.runUsage, response.usage);
-      const text = fixCodeBlocks(response.text).trim();
+      const text = response.text.trim();
       if (!text) return fallback;
       this.messages.push({
         role: 'assistant',

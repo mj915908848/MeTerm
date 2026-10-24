@@ -16,12 +16,12 @@ test('long output keeps whole lines, favours the tail, and can be read back', ()
   assert.ok(shown.length < 3400);
   assert.match(shown, /^line 1\n/);
   assert.match(shown, /line 1000$/);
-  const id = /saved as "(out-\d+)"/.exec(shown)![1];
+  const id = /saved as "(out-[a-z0-9]+-\d+)"/.exec(shown)![1];
   const gap = /lines (\d+)-(\d+) of 1000 omitted/.exec(shown)!;
   assert.ok(Number(gap[1]) < 501 && Number(gap[2]) > 501);
   assert.doesNotMatch(shown, /disk full/);
   assert.equal(readStoredOutput(id, { pattern: 'error' }), '501: ERROR: disk full');
-  assert.match(readStoredOutput(id, { offset: 500, limit: 2 }), /^line 500\nERROR: disk full\n\n--- "out-\d+" lines 500-501 of 1000\. Next: offset=502\. ---$/);
+  assert.match(readStoredOutput(id, { offset: 500, limit: 2 }), /^line 500\nERROR: disk full\n\n--- "out-[a-z0-9]+-\d+" lines 500-501 of 1000\. Next: offset=502\. ---$/);
   assert.match(readStoredOutput(id, { pattern: '(' }), /^Error: invalid pattern/);
 });
 
@@ -30,4 +30,18 @@ test('the store evicts the oldest outputs', () => {
   const first = saveOutput('a');
   for (let i = 0; i < 30; i++) saveOutput('b');
   assert.match(readStoredOutput(first, {}), /^Error: no stored output/);
+});
+
+test('read_output caps a result by characters, and ids carry a per-launch tag', () => {
+  clearStoredOutputs();
+  const big = Array.from({ length: 5000 }, (_, i) => `line ${i + 1} ${'x'.repeat(80)}`).join('\n');
+  const id = saveOutput(big);
+  assert.match(id, /^out-[a-z0-9]{4}-\d+$/);
+  const range = readStoredOutput(id, { offset: 1, limit: 100_000 });
+  assert.ok(range.length < 17000, `range is ${range.length} chars`);
+  const next = /lines 1-(\d+) of 5000\. Next: offset=(\d+)\./.exec(range)!;
+  assert.equal(Number(next[2]), Number(next[1]) + 1);
+  const hits = readStoredOutput(id, { pattern: 'line', limit: 100_000 });
+  assert.ok(hits.length < 17000, `matches are ${hits.length} chars`);
+  assert.match(hits, /more matches not shown/);
 });

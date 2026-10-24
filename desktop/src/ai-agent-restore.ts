@@ -131,6 +131,9 @@ export function buildRestoredMessages(entries: readonly ConvEntry[]): ChatMessag
     switch (entry.type) {
       case 'user':
         flushToolBatch();
+        // A reply shown before the user cut in (or before the automatic
+        // self-check) is still part of what the model said.
+        if (pendingText) pushAssistantText(pendingText);
         pendingText = '';
         pendingReasoning = '';
         messages.push({ role: 'user', content: userContent(entry) });
@@ -140,14 +143,25 @@ export function buildRestoredMessages(entries: readonly ConvEntry[]): ChatMessag
         // Reasoning belongs to the message that follows it. Close any batch
         // opened before it first, so tool results stay adjacent to their calls.
         flushToolBatch();
-        pendingText = entry.content || '';
-        pendingReasoning = entry.reasoning || '';
+        if (entry.content) {
+          if (pendingText) pushAssistantText(pendingText);
+          pendingText = entry.content;
+          pendingReasoning = entry.reasoning || '';
+        } else {
+          // Reasoning-only entry (written just before the final reply):
+          // an earlier reply text of the turn stays pending.
+          pendingReasoning = entry.reasoning || pendingReasoning;
+        }
         break;
 
-      case 'assistant':
+      case 'assistant': {
         flushToolBatch();
-        if (entry.content) pushAssistantText(entry.content);
+        // An earlier reply of the same turn (see 'user') joins this one, so
+        // the transcript does not get two assistant messages in a row.
+        const content = [pendingText, entry.content].filter(Boolean).join('\n\n');
+        if (content) pushAssistantText(content);
         break;
+      }
 
       case 'tool_call': {
         const id = `${RESTORED_TOOL_CALL_ID_PREFIX}${callSeq++}`;

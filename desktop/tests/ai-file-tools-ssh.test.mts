@@ -16,7 +16,7 @@ const noSftp: Invoke = async (command) => {
   throw 'SFTP not available for this session';
 };
 
-function sshFileTools(invoke: Invoke = noSftp, cwd = '', env: NodeJS.ProcessEnv = process.env) {
+function sshFileTools(invoke: Invoke = noSftp, cwd = '', env: NodeJS.ProcessEnv = process.env, shellInput = 'shell') {
   const file = new URL('../src/ai-tools-file.ts', import.meta.url);
   const source = ts.createSourceFile('ai-tools-file.ts', readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true);
   const names = new Set(['fmtError', 'sftpUnavailable', 'formatReadResult', 'createReadFileTool', 'createWriteFileTool', 'createEditFileTool', 'wantsSudo', 'sudoUnsupported', 'withSudoTemp']);
@@ -31,7 +31,7 @@ function sshFileTools(invoke: Invoke = noSftp, cwd = '', env: NodeJS.ProcessEnv 
     compilerOptions: { target: ts.ScriptTarget.ES2021, module: ts.ModuleKind.CommonJS },
   }).outputText;
   const sudoNames = ['commitSucceeded', 'describeSudoFailure', 'parseTempPath', 'removeTempCommand', 'sudoCommitCommand', 'sudoStageCommand', 'tempFileCommand'] as const;
-  const tools = new Function('executeViaTerminal', 'invoke', 'resolveLocalToolPath', 'quoteRemotePath', 'resolveSftpPath', 'hasSensitivePathComponent', ...sudoNames,
+  const tools = new Function('executeViaTerminal', 'invoke', 'resolveLocalToolPath', 'quoteRemotePath', 'resolveSftpPath', 'hasSensitivePathComponent', 'readShellInputState', ...sudoNames,
     `${code}\nreturn { read: createReadFileTool(), write: createWriteFileTool(), edit: createEditFileTool() };`,
   )(
     async (_sessionId: string, command: string) => {
@@ -47,6 +47,7 @@ function sshFileTools(invoke: Invoke = noSftp, cwd = '', env: NodeJS.ProcessEnv 
     quoteRemotePath,
     resolveSftpPath,
     () => false,
+    () => ({ kind: shellInput }),
     ...sudoNames.map(name => sudoFile[name]),
   );
   const context = { isSSH: true, sessionId: 'test-ssh', shellType: 'bash', cwd };
@@ -141,6 +142,26 @@ test('SSH file tools go over SFTP when it is available, with ~ and cwd resolved'
   assert.equal(calls[2][1].replaceAll, false);
 });
 
+test('read_file caps a result by characters, not only by lines', async () => {
+  const longLines = Array.from({ length: 200 }, (_, i) => `${i + 1} ${'x'.repeat(500)}`).join('\n');
+  const { read, context } = sshFileTools(async () => (
+    { content: longLines, size: longLines.length, is_binary: false, too_large: false, truncated: true, total_lines: 900 }
+  ), '/srv');
+  const shown = await read.execute({ path: '/srv/big.log' }, context);
+  assert.ok(shown.length < 17000, `result is ${shown.length} chars`);
+  const footer = /--- Showing lines 1-(\d+) of 900 .*offset=(\d+)\. ---$/.exec(shown)!;
+  assert.ok(footer, shown.slice(-200));
+  assert.equal(Number(footer[2]), Number(footer[1]) + 1);
+
+  const oneLine = 'y'.repeat(100_000);
+  const { read: readOne } = sshFileTools(async () => (
+    { content: oneLine, size: oneLine.length, is_binary: false, too_large: false, truncated: false, total_lines: 1 }
+  ), '/srv');
+  const cut = await readOne.execute({ path: '/srv/min.js' }, context);
+  assert.ok(cut.length < 17000);
+  assert.match(cut, /Line 1 is longer than 16000 characters and was cut\..*offset=2\. ---$/);
+});
+
 test('SSH edit_file reports a non-unique match instead of guessing', async () => {
   const { edit, context } = sshFileTools(async () => { throw 'old_string occurs 2 times in the file.'; });
   assert.match(await edit.execute({ path: '/a', old_string: 'x', new_string: 'y' }, context), /^Error editing file: old_string occurs 2 times/);
@@ -201,6 +222,20 @@ test('sudo file tools explain a password prompt instead of hanging', async () =>
     const { edit, context } = sshFileTools(localSftp, '', fakeSudoEnv(dir, true));
     const result = await edit.execute({ path: target, old_string: 'x', new_string: 'y', sudo: true }, context);
     assert.match(result, /sudo needs a password.*sudo -v/s);
+    assert.equal(readFileSync(target, 'utf8'), 'x');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('sudo file tools refuse to type into a full-screen program', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meterm-sudo-'));
+  try {
+    const target = join(dir, 'a.conf');
+    writeFileSync(target, 'x');
+    const { edit, context } = sshFileTools(localSftp, '', fakeSudoEnv(dir), 'tui');
+    const result = await edit.execute({ path: target, old_string: 'x', new_string: 'y', sudo: true }, context);
+    assert.match(result, /^Error: sudo=true needs the shell prompt, but a full-screen program/);
     assert.equal(readFileSync(target, 'utf8'), 'x');
   } finally {
     rmSync(dir, { recursive: true, force: true });
