@@ -308,7 +308,7 @@ MeTerm/
 
 | Layer | Technologies |
 |-------|-------------|
-| **Backend** | Rust, Axum, Tokio, xpty (cross-platform PTY), russh (SSH/SFTP terminal path), ssh2/libssh2 (desktop SSH file transfer) |
+| **Backend** | Rust, Axum, Tokio, xpty (cross-platform PTY), russh / russh-sftp (SSH terminal and file transfer) |
 | **Frontend** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
 | **Desktop** | Tauri v2 (Rust + TypeScript), reqwest, keyring |
 | **Control Broker** | Standalone Rust process/protocol core; platform service adapters are not release-ready |
