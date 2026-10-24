@@ -994,25 +994,40 @@ fn shell_integration_hook(token: &str) -> String {
     format!(" __meterm_tok='{token}';{SHELL_INTEGRATION_HOOK}")
 }
 
-pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meterm_cmd_running=0; __meterm_in_prompt=0; \
+pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meterm_cmd_running=0; __meterm_in_prompt=0; __meterm_cmd=''; __meterm_hist_n=''; \
                 __meterm_preexec(){ \
+                if [ -n \"${ZSH_VERSION:-}\" ]; then \
+                case \"$1\" in ' '*) __meterm_cmd='' ;; *) __meterm_cmd=\"$1\" ;; esac; \
+                else \
                 [ -n \"${COMP_LINE:-}\" ] && return; \
-                case \"${BASH_COMMAND:-}\" in __meterm_precmd*) return ;; esac; \
+                case \"${BASH_COMMAND:-}\" in __meterm_precmd*|__meterm_prompt_end*) return ;; esac; \
                 [ \"${__meterm_in_prompt:-0}\" = 1 ] && return; \
                 [ \"${__meterm_cmd_running:-0}\" = 1 ] && return; \
+                __meterm_cmd=\"${BASH_COMMAND:-}\"; \
+                fi; \
                 __meterm_cmd_running=1; \
                 if [ -n \"${EPOCHREALTIME:-}\" ]; then __meterm_cmd_start=\"$EPOCHREALTIME\"; \
                 else __meterm_cmd_start=\"${EPOCHSECONDS:-$SECONDS}\"; fi; \
                 }; \
                 __meterm_precmd(){ \
-                local e=$?; local c; local dur=0; \
+                local e=$?; local c=''; local dur=0; local h=''; local n=''; \
                 __meterm_in_prompt=1; \
+                if [ -n \"${BASH_VERSION:-}\" ]; then \
+                h=$(HISTTIMEFORMAT= builtin history 1 2>/dev/null); \
+                h=\"${h#\"${h%%[^[:space:]]*}\"}\"; n=\"${h%%[[:space:]]*}\"; \
+                h=\"${h#\"$n\"}\"; h=\"${h#\"${h%%[^[:space:]]*}\"}\"; \
+                fi; \
                 if [ -z \"${__meterm_hook_ready:-}\" ]; then \
                 export __meterm_hook_ready=1; \
                 if [ -n \"${ZSH_VERSION:-}\" ]; then printf '\\033]7766;meterm_init;1\\007'; \
                 elif [ -n \"${BASH_VERSION:-}\" ]; then printf '\\033]7766;meterm_init;0\\007'; fi; \
-                c=''; \
-                else c=$(fc -ln -1 2>/dev/null); \
+                else \
+                if [ -n \"${ZSH_VERSION:-}\" ]; then \
+                [ \"${__meterm_cmd_running:-0}\" = 1 ] && c=\"$__meterm_cmd\"; \
+                elif [ \"$n\" != \"$__meterm_hist_n\" ]; then c=\"$h\"; \
+                elif [ \"${__meterm_cmd_running:-0}\" = 1 ] && [ -n \"$__meterm_cmd\" ]; then \
+                case \"$h\" in \"$__meterm_cmd\"|\"$__meterm_cmd \"*) c=\"$h\" ;; esac; \
+                fi; \
                 if [ \"${__meterm_cmd_running:-0}\" = 1 ] && [ -n \"${__meterm_cmd_start:-}\" ]; then \
                 if [ -n \"${ZSH_VERSION:-}\" ]; then \
                 if [ -n \"${EPOCHREALTIME:-}\" ]; then dur=$(( (EPOCHREALTIME - __meterm_cmd_start) * 1000 )); dur=${dur%%.*}; fi; \
@@ -1023,23 +1038,25 @@ pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meter
                 dur=$(( (10#$__e_sec - 10#$__s_sec) * 1000 + (10#$__e_usec - 10#$__s_usec) / 1000 )); \
                 else dur=$(( (${EPOCHSECONDS:-$SECONDS} - ${__meterm_cmd_start%%.*}) * 1000 )); fi; \
                 fi; \
-                case \"$dur\" in ''|*[!0-9-]*) dur=0 ;; esac; \
+                case \"$dur\" in ''|*[^0-9-]*) dur=0 ;; esac; \
                 [ \"$dur\" -lt 0 ] 2>/dev/null && dur=0; \
                 fi; fi; \
-                __meterm_cmd_running=0; __meterm_in_prompt=0; \
+                __meterm_hist_n=\"$n\"; __meterm_cmd_running=0; __meterm_cmd=''; \
                 printf '\\033]7;file://%s%s\\007' \"$(hostname)\" \"$PWD\"; \
                 printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' \"${__meterm_tok:-}\" \"$e\" \"$PWD\" \"$c\" \"$dur\"; \
+                return $e; \
                 }; \
+                __meterm_prompt_end(){ __meterm_in_prompt=0; }; \
                 if [ -n \"${ZSH_VERSION:-}\" ]; then \
                 zmodload zsh/datetime 2>/dev/null; \
                 autoload -Uz add-zsh-hook 2>/dev/null && { add-zsh-hook preexec __meterm_preexec; add-zsh-hook precmd __meterm_precmd; }; \
                 elif [ -n \"${BASH_VERSION:-}\" ]; then \
                 if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi; \
                 case \"$(declare -p PROMPT_COMMAND 2>/dev/null)\" in 'declare -a'*) \
-                eval 'PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\")' ;; \
-                *) PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;; esac; fi; \
+                eval 'PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\" __meterm_prompt_end)' ;; \
+                *) PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND};__meterm_prompt_end\" ;; esac; fi; \
                 if [ -n \"${ZSH_VERSION:-}\" ]; then setopt HIST_IGNORE_SPACE 2>/dev/null; \
-                elif [ -n \"${BASH_VERSION:-}\" ]; then export HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\"; fi; \
+                elif [ -n \"${BASH_VERSION:-}\" ]; then export HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\"; history -d $HISTCMD 2>/dev/null; fi; \
                 printf '\\033[A\\033[2K\\r'; stty echo\n";
 
 #[cfg(test)]
@@ -1116,11 +1133,13 @@ mod hook_tests {
             "an array PROMPT_COMMAND must be extended element-wise"
         );
         assert!(
-            HOOK.contains("PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\")"),
+            HOOK.contains(
+                "PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\" __meterm_prompt_end)"
+            ),
             "the array branch must keep every existing element"
         );
         assert!(
-            HOOK.contains("PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\""),
+            HOOK.contains("PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND};__meterm_prompt_end\""),
             "the scalar branch must keep prepending to the existing string"
         );
     }

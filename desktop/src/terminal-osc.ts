@@ -80,10 +80,17 @@ export function handleOscEvents(
         break;
       }
       case 'shell': {
+        // The hook reports an empty command when nothing new ran (empty Enter,
+        // Ctrl-C) and for space-prefixed lines, which is how the agent sends its
+        // own commands: those are named from what the agent sent, and kept out
+        // of the user's command history.
+        const byAgent = mt.shellState.phase === 'agent_executing';
+        const cmd = ev.cmd ?? '';
         mt.shellState.lastExitCode = ev.exit ?? 0;
         mt.shellState.cwd = ev.cwd ?? '';
-        mt.shellState.lastCommand = ev.cmd ?? '';
-        recordPrompt(mt, ev.cmd ?? '', ev.exit ?? 0, mt.shellState.phase === 'agent_executing');
+        mt.shellState.lastCommand = byAgent ? '' : cmd;
+        recordPrompt(mt, cmd || (byAgent ? mt.shellState.agentCommand : ''), ev.exit ?? 0, byAgent);
+        mt.shellState.agentCommand = '';
         mt.shellState.phase = 'ready';
         mt.shellState.hookInjected = true;
         mt.shellState.promptRow = mt.terminal.buffer.active.baseY + mt.terminal.buffer.active.cursorY;

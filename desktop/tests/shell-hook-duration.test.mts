@@ -66,13 +66,18 @@ function syntaxErrorIn(shell: string, script: string): string | null {
   }
 }
 
+/** zsh has no prompt-end step; bash defines one. */
+const PROMPT_END = 'typeset -f __meterm_prompt_end >/dev/null 2>&1 && __meterm_prompt_end';
+
 /** Run the hook for real, once, and return the last OSC 7768 payload. */
 function lastShellStatePayload(shell: string, hook: string, sleepSeconds: number): string {
   // The first precmd only announces the init marker (no command has run yet),
-  // so burn it, then time one real command.
+  // so burn it, then time one real command. A real bash prompt runs
+  // `__meterm_prompt_end` after the user's PROMPT_COMMAND entries; without it the
+  // DEBUG-trap preexec still thinks it is inside the prompt and never starts.
   const drive = [
     hook,
-    '__meterm_precmd >/dev/null',
+    `__meterm_precmd >/dev/null; ${PROMPT_END}`,
     `__meterm_preexec; sleep ${sleepSeconds}; __meterm_precmd`,
   ].join('\n');
   const out = execFileSync(shell, ['-c', drive], { encoding: 'utf8' });
@@ -184,8 +189,9 @@ test('hooks still report the real exit code', () => {
   const hook = buildShellHook('bash');
   const drive = [
     hook,
-    '__meterm_precmd >/dev/null',
-    '__meterm_preexec; (exit 7); __meterm_precmd',
+    `__meterm_precmd >/dev/null; ${PROMPT_END}`,
+    // precmd hands the status on (`return $e`), so the script exits with it.
+    '__meterm_preexec; (exit 7); __meterm_precmd || true',
   ].join('\n');
   const out = execFileSync(shell, ['-c', drive], { encoding: 'utf8' });
   const payloads = out.split('\x1b').filter((c) => c.includes(']7768;')).map((c) => c.split('\x07')[0]);

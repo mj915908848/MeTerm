@@ -44,10 +44,8 @@ export function recordPrompt(mt: ManagedTerminal, command: string, exitCode: num
     const old = state.block;
     let block = old;
     const cmd = command.trim();
-    // `fc -ln -1` repeats the previous command after an empty Enter; a
-    // prompt directly below the last one means nothing ran.
-    const emptyEnter = !!prev && now.line - prev.line <= 1 && !!old && old.command === cmd;
-    if (cmd && prev && prev.line >= 0 && !emptyEnter) {
+    // The hook reports an empty command when nothing ran (empty Enter, Ctrl-C).
+    if (cmd && prev && prev.line >= 0) {
       block = { command: cmd, exitCode, byAgent, start: prev, end: now };
     }
     const keep = new Set<IMarker>([now, ...(block ? [block.start, block.end] : [])]);

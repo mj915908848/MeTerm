@@ -96,6 +96,7 @@ function harness(opts: HarnessOptions = {}) {
        injectShellHook, injectionBlocked, buildShellHook,
        hookState: _injectionState, BACKOFF: HOOK_RETRY_BACKOFF_MS, TIMEOUT: HOOK_INJECTION_TIMEOUT_MS,
        hostIdentity: _hostIdentity, FOREIGN_CODE: HOOK_FOREIGN_HOST_CODE,
+       UNSUPPORTED_CODE: HOOK_UNSUPPORTED_SHELL_CODE,
        HOST_IDENTITY_EXPR,
      };`,
   )(
@@ -129,6 +130,7 @@ function harness(opts: HarnessOptions = {}) {
     hookState: Map<string, { failures: number; blocked: number; startedAt: number; retryTimer: number | null }>;
     hostIdentity: Map<string, { status: string; value?: string }>;
     FOREIGN_CODE: number;
+    UNSUPPORTED_CODE: number;
     BACKOFF: number[];
     TIMEOUT: number;
     HOST_IDENTITY_EXPR: string;
@@ -456,7 +458,6 @@ test('the injected hook carries the session OSC 7768 token', async () => {
   const line = h.inputs[0];
   // Inside `eval '...'`, so the hook's own quotes come out as '\''.
   assert.equal(line.split("__meterm_tok='\\''Tok-_123'\\''").length - 1, 2, 'zsh and bash branches');
-  assert.ok(line.includes("set -g __meterm_tok '\\''Tok-_123'\\''"), 'fish branch');
   assert.ok(!line.includes('7768;%d'), 'no 7768 payload without the token field');
 
   const bare = harness();
@@ -496,9 +497,9 @@ test('an identified host guards the command with its identity', async () => {
   );
   assert.equal(
     (h.inputs[0].match(/sh -c '/g) ?? []).length,
-    3,
+    2,
     'the check is delegated to a POSIX `sh` — a shell every dialect can drive — and it has to ride '
-    + 'along in *every* branch (`zsh`, `bash`, `fish`), since only the foreground shell knows which '
+    + 'along in *every* installing branch (`zsh`, `bash`), since only the foreground shell knows which '
     + 'one it is. A branch that ships without it is a branch that installs on a nested ssh\'s host',
   );
   assert.match(
@@ -537,6 +538,16 @@ test('the identity is asked once per session and reused by every later attempt',
   assert.equal(h.inputs.length, 2, 'the retry really did re-inject');
   assert.deepEqual(h.probeCalls, ['ssh_host_identity:s1'], 'the answer is reused, not re-asked per attempt');
   assert.ok(h.inputs[1].includes("meterm 'abc123|mac|boot-7'"), 'and the retry is guarded too');
+});
+
+test('a fish shell answers "unsupported" and the chain stops without marking the hook', async () => {
+  const h = harness();
+  h.mod.injectShellHook('s1');
+  await h.settle();
+  latestMarker(h)[1](h.mod.UNSUPPORTED_CODE);
+
+  assert.equal(h.mt.shellState.hookInjected, false, 'fish gets no hook');
+  assert.equal(h.timers.size, 0, 'and is not asked again');
 });
 
 test('a foreign-host report stops the chain instead of retrying into it', async () => {
@@ -692,7 +703,6 @@ test('the hook lands on our own host and never on a stranger', async () => {
   const branch = {
     bash: { code: '0', probe: 'declare -F __meterm_precmd >/dev/null && echo LANDED || echo ABSENT' },
     zsh: { code: '1', probe: '(( $+functions[__meterm_precmd] )) && echo LANDED || echo ABSENT' },
-    fish: { code: '2', probe: 'functions -q __meterm_postcmd; and echo LANDED; or echo ABSENT' },
   } as const;
 
   for (const [shellType, spec] of Object.entries(branch)) {
@@ -732,6 +742,19 @@ test('the hook lands on our own host and never on a stranger', async () => {
       [String(FOREIGN_CODE)],
       `${shellType} must answer a mismatch with the foreign-host code and nothing else`,
     );
+  }
+});
+
+test('fish runs the line silently, installs nothing and answers "unsupported"', async () => {
+  const fish = availableShell(SHELLS.find(([name]) => name === 'fish')![1]);
+  if (!fish) return;
+  for (const identity of [null, 'some-other-host|elsewhere|boot-0']) {
+    const run = spawnSync(fish, ['-c', `${await generatedCommand(identity)}\nfunctions -q __meterm_precmd; and echo LANDED; or echo ABSENT`], {
+      encoding: 'utf8', timeout: 30_000,
+    });
+    assert.match(run.stdout ?? '', /ABSENT/);
+    assert.deepEqual(detectCodes(`${run.stdout ?? ''}`), [String(harness().mod.UNSUPPORTED_CODE)]);
+    assert.equal((run.stderr ?? '').trim(), '', `fish must not print a syntax error: ${run.stderr}`);
   }
 });
 

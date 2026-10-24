@@ -89,8 +89,10 @@ export interface ManagedTerminal {
      * prompt-shaped screen tail as evidence (the prompt may be the OLD one).
      */
     lastUserInputAt: number;
-    /** Last executed command reported by shell hook (fc -ln -1) */
+    /** Last command the user ran, as reported by the shell hook ('' when none / sent by the agent) */
     lastCommand: string;
+    /** The command `sendAgentCommand` typed, until the hook reports the prompt after it */
+    agentCommand: string;
     /** Absolute row where the current prompt starts (set by OSC 7768 shell event) */
     promptRow: number;
     /** Column where user input begins (after prompt text, set by OSC 7768 shell event) */
