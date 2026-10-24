@@ -40,7 +40,7 @@ export interface TerminalTheme {
   brightWhite: string;
 }
 
-export type ColorScheme = 'auto' | 'dark' | 'darker' | 'navy' | 'light' | 'neo-brutalism' | 'neo-brutalism-rounded';
+export type ColorScheme = 'auto' | 'dark' | 'darker' | 'navy' | 'light';
 
 export const THEMES: Record<string, TerminalTheme> = {
   midnight: {
@@ -243,32 +243,6 @@ export const THEMES: Record<string, TerminalTheme> = {
     brightCyan: '#8fbcbb',
     brightWhite: '#eceff4',
   },
-
-  neoBrutalism: {
-    name: 'Neo-Brutalism',
-    type: 'light',
-    background: '#FFFEF0',
-    foreground: '#1A1A2E',
-    cursor: '#E94560',
-    cursorAccent: '#FFFEF0',
-    selectionBackground: 'rgba(255, 217, 61, 0.5)',
-    black: '#1A1A2E',
-    red: '#E94560',
-    green: '#06D6A0',
-    yellow: '#FFD93D',
-    blue: '#118AB2',
-    magenta: '#9B59B6',
-    cyan: '#0ABAB5',
-    white: '#E8E8E8',
-    brightBlack: '#4A4A68',
-    brightRed: '#FF6B6B',
-    brightGreen: '#A8E6CF',
-    brightYellow: '#FFED8A',
-    brightBlue: '#4ECDC4',
-    brightMagenta: '#BB86FC',
-    brightCyan: '#72EFDD',
-    brightWhite: '#FFFFFF',
-  },
 };
 
 // Mapping from dark theme to its light counterpart
@@ -288,7 +262,7 @@ export interface AppSettings {
   theme: string;
   /** Terminal theme used while the appearance is dark. */
   terminalThemeDark: string;
-  /** Terminal theme used while the appearance is light (Neo-Brutalism has its own). */
+  /** Terminal theme used while the appearance is light. */
   terminalThemeLight: string;
   colorScheme: ColorScheme;
   opacity: number;
@@ -405,10 +379,6 @@ export interface AppSettings {
   cmdCompletionEnabled: boolean;
   /** Auto-inject shell hook on SSH/remote sessions for command history & AI Agent */
   shellHookInjection: boolean;
-  /** PiP window scale percentage (10-50) */
-  pipScale: number;
-  /** PiP scale relative to screen size instead of window size */
-  pipScaleByScreen: boolean;
   /** Auto-create a new local session on app startup */
   autoNewSession: boolean;
   /** Enter key sends to Agent by default (instead of terminal) */
@@ -421,8 +391,6 @@ export interface AppSettings {
   sidebarWidth: number;
   /** Default file open method for editable files: built-in editor or system default */
   fileOpenPreference: 'builtin' | 'system';
-  /** Neo-Brutalism custom palette overrides (hex colors keyed by --nb-* token) */
-  nbCustomColors?: Record<string, string>;
 }
 
 const SETTINGS_KEY = SETTINGS_STORAGE_KEY;
@@ -508,8 +476,6 @@ const DEFAULT_SETTINGS: AppSettings = {
   tldrEnabled: false,
   cmdCompletionEnabled: false,
   shellHookInjection: false,
-  pipScale: 30,
-  pipScaleByScreen: false,
   autoNewSession: false,
   aiEnterSendsToAgent: false,
   cjkFontFamily: '',
@@ -598,9 +564,21 @@ export function loadSettings(): AppSettings {
         needsSave = true;
       }
 
-      // Fields that no longer exist: a never-wired image opacity and the
-      // device name from the removed LAN sharing.
-      for (const dead of ['backgroundImageOpacity', 'deviceName']) {
+      // Migration: the Neo-Brutalism appearance was removed. It was a light
+      // appearance, so fall back to the plain light one.
+      if (parsed.colorScheme === 'neo-brutalism' || parsed.colorScheme === 'neo-brutalism-rounded') {
+        settings.colorScheme = 'light';
+        needsSave = true;
+      }
+      if (settings.theme === 'neoBrutalism') {
+        settings.theme = getEffectiveTheme(settings);
+        needsSave = true;
+      }
+
+      // Fields that no longer exist: a never-wired image opacity, the device
+      // name from the removed LAN sharing, the Neo-Brutalism palette and the
+      // picture-in-picture scale.
+      for (const dead of ['backgroundImageOpacity', 'deviceName', 'nbCustomColors', 'pipScale', 'pipScaleByScreen']) {
         if (dead in parsed) {
           delete (settings as unknown as Record<string, unknown>)[dead];
           needsSave = true;
@@ -654,21 +632,17 @@ export function getSystemIsDark(): boolean {
 
 export function resolveIsDark(colorScheme: ColorScheme): boolean {
   if (colorScheme === 'auto') return getSystemIsDark();
-  if (colorScheme === 'neo-brutalism' || colorScheme === 'neo-brutalism-rounded') return false;
   return colorScheme === 'dark' || colorScheme === 'darker' || colorScheme === 'navy';
 }
 
 /** Native window background color to prevent white flash before HTML loads. */
 export function windowBgColor(colorScheme: string, resolvedTheme: string): [number, number, number, number] {
   if (colorScheme === 'darker') return [0x12, 0x12, 0x14, 255];
-  if (colorScheme === 'neo-brutalism' || colorScheme === 'neo-brutalism-rounded') return [0xff, 0xfe, 0xf0, 255];
   if (resolvedTheme === 'light') return [0xf5, 0xf5, 0xf5, 255];
   return [0x2d, 0x2d, 0x2d, 255];
 }
 
 export function getEffectiveTheme(settings: AppSettings): string {
-  // Neo-Brutalism has a dedicated terminal theme that should always be used
-  if (settings.colorScheme === 'neo-brutalism' || settings.colorScheme === 'neo-brutalism-rounded') return 'neoBrutalism';
   return resolveIsDark(settings.colorScheme)
     ? validTerminalTheme(settings.terminalThemeDark, 'dark')
     : validTerminalTheme(settings.terminalThemeLight, 'light');
@@ -676,7 +650,7 @@ export function getEffectiveTheme(settings: AppSettings): string {
 
 /** `key` when it names a terminal theme of `type`, else that type's default. */
 function validTerminalTheme(key: string | undefined, type: ThemeType): string {
-  return key && THEMES[key]?.type === type && key !== 'neoBrutalism'
+  return key && THEMES[key]?.type === type
     ? key
     : type === 'dark' ? 'default' : 'defaultLight';
 }
@@ -686,15 +660,15 @@ function validTerminalTheme(key: string | undefined, type: ThemeType): string {
  * theme: it fills its own slot and its pair (or the default) the other.
  */
 export function splitTerminalTheme(theme: string): [string, string] {
-  const type = theme !== 'neoBrutalism' ? THEMES[theme]?.type : undefined;
+  const type = THEMES[theme]?.type;
   if (type === 'dark') return [theme, validTerminalTheme(DARK_LIGHT_PAIRS[theme], 'light')];
   if (type === 'light') return [validTerminalTheme(DARK_LIGHT_PAIRS[theme], 'dark'), theme];
   return ['default', 'defaultLight'];
 }
 
-/** Terminal themes offered for one appearance. Neo-Brutalism's is not offered: that appearance sets it. */
+/** Terminal themes offered for one appearance. */
 export function getThemesForType(type: ThemeType): [string, TerminalTheme][] {
-  return Object.entries(THEMES).filter(([key, theme]) => theme.type === type && key !== 'neoBrutalism');
+  return Object.entries(THEMES).filter(([, theme]) => theme.type === type);
 }
 
 export function applyTheme(terminal: { options: { theme: TerminalTheme } }, themeName: string): void {
@@ -710,8 +684,6 @@ export function getColorSchemeBg(colorScheme: ColorScheme): string {
     case 'darker': return '#000000';
     case 'navy': return '#010309';
     case 'light': return '#f8f8f8';
-    case 'neo-brutalism':
-    case 'neo-brutalism-rounded': return '#FFFEF0';
     default: return '#1e1e1e';
   }
 }

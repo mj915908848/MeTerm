@@ -32,7 +32,7 @@ body {
   overflow: hidden;
   /* The canvas the sidebar + terminal float on as inset cards. Goes transparent
      under vibrancy (gaps show desktop blur — can't tint behind the translucent
-     terminal without over-darkening it). Disabled in fullscreen/PiP. */
+     terminal without over-darkening it). Disabled in fullscreen. */
   background: rgba(var(--bg-canvas, 24, 24, 25), var(--app-window-opacity, 1));
 }
 

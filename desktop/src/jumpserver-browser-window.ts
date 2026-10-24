@@ -14,7 +14,6 @@ import { getCurrentWindow, LogicalSize, LogicalPosition } from '@tauri-apps/api/
 import { revealAfterPaint } from './window-utils';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { applyNbPalette } from './nb-palette';
 import {
   type AccountsResult,
   type AssetsResult,
@@ -173,8 +172,6 @@ function resolveThemeAttr(colorScheme: string): string {
   if (colorScheme === 'darker') return 'darker';
   if (colorScheme === 'navy') return 'navy';
   if (colorScheme === 'light') return 'light';
-  if (colorScheme === 'neo-brutalism') return 'neo-brutalism';
-  if (colorScheme === 'neo-brutalism-rounded') return 'neo-brutalism-rounded';
   if (colorScheme === 'auto') return resolveIsDark('auto') ? 'dark' : 'light';
   return 'dark';
 }
@@ -220,7 +217,6 @@ export function initJumpServerBrowserWindow(): void {
   const settings = loadSettings();
   setLanguage(settings.language);
   document.documentElement.dataset.theme = resolveThemeAttr(settings.colorScheme);
-  applyNbPalette(settings.colorScheme);
   // Apply same opacity as main window
   const opacityVal = Math.max(20, Math.min(100, settings.opacity ?? 100)) / 100;
   document.documentElement.style.setProperty('--app-window-opacity', `${opacityVal}`);
@@ -273,7 +269,6 @@ export function initJumpServerBrowserWindow(): void {
     const updated = loadSettings();
     setLanguage(updated.language);
     document.documentElement.dataset.theme = resolveThemeAttr(updated.colorScheme);
-    applyNbPalette(updated.colorScheme);
     const nativeTheme = resolveThemeAttr(updated.colorScheme) === 'light' ? 'light' as const : 'dark' as const;
     void getCurrentWindow().setTheme(nativeTheme);
     // Sync opacity

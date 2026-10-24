@@ -62,15 +62,13 @@ import {
 import {
   port, authToken, metermReady, setPort, setAuthToken, setMetermReady,
   settings, setSettings,
-  isHomeView, isGalleryView, isPipMode,
+  isHomeView, isGalleryView,
   sshConfigMap, sessionProgressMap,
   isMacPlatform, isWindowsPlatform,
   setLastFocusedMainWindowLabel,
 } from './app-state';
-import { togglePip } from './pip';
 import { flushMainWindowGeometry, trackMainWindowGeometry } from './window-geometry';
 import { restoreActiveJumpServersFromStorage } from './jumpserver-handler';
-import { applyNbPalette } from './nb-palette';
 import { requestEditorCloseBeforeLastMainWindow } from './last-main-editor-close';
 import { waitForEditorReady } from './file-editor-bridge';
 import {
@@ -279,7 +277,6 @@ export function setupDomEventListeners(): void {
 
   // Window resize handler
   window.addEventListener('resize', () => {
-    if (isPipMode) return; // PiP: don't trigger terminal resize
     updateWindowAspectRatio();
     TerminalRegistry.resizeAll();
     syncTabMarqueeState();
@@ -470,7 +467,7 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     void emit('main-window-focused', { label: currentWindowLabel });
     // Normal app foregrounding does not necessarily fire visibilitychange.
     // Repair only xterm's macOS renderer here; PTY/TUI SIGWINCH recovery stays
-    // scoped to actual sleep/lock and PiP transitions.
+    // scoped to actual sleep/lock.
     if (isMacPlatform && metermReady) {
       TerminalRegistry.refreshRenderingAfterFocus();
     }
@@ -541,11 +538,6 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     }
     await invoke('allow_window_close', { windowLabel: currentWindowLabel });
     await getCurrentWindow().close();
-  });
-
-  void listen<{ target_window: string }>('menu-pip-toggle', (event) => {
-    if (!isForThisWindow(event.payload)) return;
-    void togglePip();
   });
 
   void listen<{ target_window: string }>('menu-show-home', (event) => {
@@ -730,7 +722,7 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     const terminalPanelEl = getTerminalPanelEl();
     const previous = settings;
     setSettings(loadSettings());
-    // Dragging an opacity or PiP slider sends a stream of these. Reloading fonts,
+    // Dragging an opacity slider sends a stream of these. Reloading fonts,
     // re-theming every terminal and rebuilding the home view for each one made
     // the drag stutter, so purely visual changes take the short path.
     if (isLiveAppearanceOnly(changedSettingKeys(previous, settings))) {
@@ -749,12 +741,7 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     applyBackgroundImage(settings, terminalPanelEl);
     void applyVibrancy(settings.enableVibrancy);
     applyUiFont(settings.uiFontFamily);
-    // setSettings is async (awaits loadFont) and re-sets all terminal
-    // themes at the end. NB palette must run AFTER it finishes so our
-    // custom terminal bg/fg aren't clobbered.
-    void TerminalRegistry.setSettings(settings).then(() => {
-      applyNbPalette(settings.colorScheme);
-    });
+    void TerminalRegistry.setSettings(settings);
     void syncTrayLanguage();
     renderTabs();
     renderToolbarActions();

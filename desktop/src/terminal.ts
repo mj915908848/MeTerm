@@ -869,24 +869,13 @@ class TerminalRegistryClass {
     });
   }
 
-  /** Cancel all pending debounce and settle timers to prevent interference. */
-  cancelPendingResizeTimers(): void {
-    this.terminals.forEach((mt) => {
-      if (mt.resizeDebounce !== null) {
-        clearTimeout(mt.resizeDebounce);
-        mt.resizeDebounce = null;
-      }
-      mt.settleTimers.forEach((t) => clearTimeout(t));
-      mt.settleTimers = [];
-    });
-  }
-
   /**
-   * Force xterm.js + TUI apps to fully redraw after PiP exit.
+   * Force xterm.js + TUI apps to fully redraw (after system wake or a
+   * mouse-mode restore).
    *
    * POSIX ioctl(TIOCSWINSZ) only generates SIGWINCH when the PTY
-   * size actually changes. During PiP the PTY dimensions are frozen,
-   * so on exit the cols/rows are identical to what the PTY already has.
+   * size actually changes. After wake the cols/rows are usually
+   * identical to what the PTY already has.
    * Sending the same size produces no SIGWINCH and the TUI never redraws.
    *
    * Fix: send cols-1 to the backend first (real PTY size change → SIGWINCH),

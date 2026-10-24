@@ -1072,8 +1072,6 @@ html.platform-macos .settings-panel-sidebar > .settings-content {
 }
 .settings-card > .settings-section > :not(label:first-child) { min-width: 0; }
 .settings-card .settings-slider { width: 100%; }
-.settings-card > .settings-section-block { display: block; }
-.settings-card > .settings-section-block > label:first-child { margin-bottom: 8px; }
 .settings-card .settings-btn-row { margin: 0; }
 .settings-card > .settings-section-io > .settings-ssh-io-status { grid-column: 1 / -1; min-height: 0; margin: 0; }
 .settings-card > .settings-section-io > .settings-ssh-io-status:not(:empty) { margin-top: 6px; }

@@ -12,7 +12,6 @@ function harness() {
   };
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
-  const state = { isPipMode: false };
   const sandbox = {
     exports: {} as Record<string, (...args: any[]) => Promise<void>>,
     require: (name: string) => {
@@ -21,7 +20,7 @@ function harness() {
         // Mirrors the real merge-into-latest behaviour of updateSettings().
         updateSettings: (patch: Record<string, unknown>) => { stored = { ...stored, ...patch }; return stored; },
       };
-      if (name === './app-state') return state;
+      if (name === './app-state') return {};
       if (name === './window-geometry-core') return {
         windowGeometryRole: () => 'owner',
         readStoredGeometry: () => null,
@@ -44,7 +43,7 @@ function harness() {
     isMaximized: async () => false,
   };
   return {
-    start: () => sandbox.exports.persistMainWindowGeometry(win), release, state,
+    start: () => sandbox.exports.persistMainWindowGeometry(win), release,
     patch: (patch: Record<string, unknown>) => { stored = { ...stored, ...patch }; },
     read: () => stored,
   };
@@ -70,15 +69,6 @@ test('disabling remembering during IPC prevents the pending geometry write', asy
   assert.equal(h.read().windowWidth, 1000);
 });
 
-test('entering PiP during IPC prevents saving the transient frame', async () => {
-  const h = harness();
-  const saving = h.start();
-  h.state.isPipMode = true;
-  h.release();
-  await saving;
-  assert.equal(h.read().windowWidth, 1000);
-});
-
 function overlappingHarness() {
   let stored: Record<string, unknown> = { rememberWindowSize: true, windowWidth: 1000, windowHeight: 700 };
   const releases: (() => void)[] = [];
@@ -86,7 +76,7 @@ function overlappingHarness() {
     exports: {} as Record<string, (...args: any[]) => Promise<void>>,
     require: (name: string) => {
       if (name === './themes') return { loadSettings: () => ({ ...stored }), updateSettings: (patch: Record<string, unknown>) => { stored = { ...stored, ...patch }; return stored; } };
-      if (name === './app-state') return { isPipMode: false };
+      if (name === './app-state') return {};
       if (name === './window-geometry-core') return { windowGeometryRole: () => 'owner', readStoredGeometry: () => null, mergeGeometry: (_: unknown, o: unknown) => o };
       return {};
     },

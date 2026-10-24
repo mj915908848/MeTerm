@@ -45,10 +45,6 @@ export const activeJumpServers = new Map<string, JumpServerConfig>();
 export let lastFocusedMainWindowLabel = 'main';
 export function setLastFocusedMainWindowLabel(label: string): void { lastFocusedMainWindowLabel = label; }
 
-// ── PiP (Picture-in-Picture) mode ──
-export let isPipMode = false;
-export function setIsPipMode(v: boolean): void { isPipMode = v; }
-
 // ── Platform detection ──
 export const ua = navigator.userAgent.toLowerCase();
 export const isWindowsPlatform = ua.includes('windows');

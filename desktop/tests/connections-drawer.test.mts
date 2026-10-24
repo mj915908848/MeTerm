@@ -335,7 +335,7 @@ test('the toolbar button and ⌘⇧O / Ctrl+Shift+O open the drawer', () => {
   assert.match(shortcuts, /key === 'o' && event\.shiftKey[\s\S]{0,200}toggleConnectionsDrawer\(\)/);
   assert.ok(
     shortcuts.indexOf("key === 'o' && event.shiftKey") < shortcuts.indexOf('if (!isMac) {'),
-    'the shortcut must work while the terminal has focus on Windows, like PiP',
+    'the shortcut must work while the terminal has focus on Windows',
   );
 });
 

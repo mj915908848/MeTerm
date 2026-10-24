@@ -1,5 +1,5 @@
 import { encodeResize } from './protocol';
-import { isWindowsPlatform, isPipMode } from './app-state';
+import { isWindowsPlatform } from './app-state';
 import { sendToTerminal } from './terminal-transport';
 import { isMirrored, relayoutMirror } from './viewer-mirror';
 import type { ManagedTerminal } from './terminal-types';
@@ -86,11 +86,6 @@ export function doResizeInternal(
   // buffer reflow artifacts from rapid intermediate sizes.
   // resizeAll() after drag end handles the final resize.
   if (document.body.classList.contains('split-resizing')) {
-    return;
-  }
-
-  // PiP mode: freeze pty dimensions — CSS transform handles visual scaling
-  if (isPipMode) {
     return;
   }
 

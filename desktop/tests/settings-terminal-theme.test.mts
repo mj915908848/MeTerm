@@ -17,10 +17,10 @@ const code = ts.transpileModule(
 
 const THEMES = {
   default: { type: 'dark' }, defaultLight: { type: 'light' }, dracula: { type: 'dark' },
-  solarized: { type: 'dark' }, solarizedLight: { type: 'light' }, neoBrutalism: { type: 'light' },
+  solarized: { type: 'dark' }, solarizedLight: { type: 'light' },
 };
 const PAIRS = { default: 'defaultLight', defaultLight: 'default', solarized: 'solarizedLight', solarizedLight: 'solarized' };
-const resolveIsDark = (scheme: string) => scheme !== 'light' && !scheme.startsWith('neo-brutalism');
+const resolveIsDark = (scheme: string) => scheme !== 'light';
 const { getEffectiveTheme, splitTerminalTheme } = new Function('THEMES', 'DARK_LIGHT_PAIRS', 'resolveIsDark',
   code + ';return { getEffectiveTheme, splitTerminalTheme };')(THEMES, PAIRS, resolveIsDark);
 
@@ -30,17 +30,16 @@ test('each appearance keeps its own terminal theme', () => {
   assert.equal(getEffectiveTheme({ ...s, colorScheme: 'light' }), 'solarizedLight');
   // Back to dark: the dark choice was never overwritten.
   assert.equal(getEffectiveTheme({ ...s, colorScheme: 'dark' }), 'dracula');
-  assert.equal(getEffectiveTheme({ ...s, colorScheme: 'neo-brutalism' }), 'neoBrutalism');
 });
 
 test('a theme of the wrong type falls back to that appearance default', () => {
   assert.equal(getEffectiveTheme({ terminalThemeDark: 'defaultLight', terminalThemeLight: 'dracula', colorScheme: 'dark' }), 'default');
-  assert.equal(getEffectiveTheme({ terminalThemeDark: 'x', terminalThemeLight: 'neoBrutalism', colorScheme: 'light' }), 'defaultLight');
+  assert.equal(getEffectiveTheme({ terminalThemeDark: 'x', terminalThemeLight: 'missing', colorScheme: 'light' }), 'defaultLight');
 });
 
 test('upgrading seeds both slots from the single old theme', () => {
   assert.deepEqual(splitTerminalTheme('dracula'), ['dracula', 'defaultLight']);
   assert.deepEqual(splitTerminalTheme('solarizedLight'), ['solarized', 'solarizedLight']);
-  assert.deepEqual(splitTerminalTheme('neoBrutalism'), ['default', 'defaultLight']);
+  assert.deepEqual(splitTerminalTheme('missing'), ['default', 'defaultLight']);
   assert.deepEqual(splitTerminalTheme(''), ['default', 'defaultLight']);
 });

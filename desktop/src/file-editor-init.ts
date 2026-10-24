@@ -11,7 +11,6 @@ import { loadSettings, resolveIsDark } from './themes';
 import { initLanguage, setLanguage } from './i18n';
 import { applyVibrancy } from './appearance';
 import appIconUrl from '../src-tauri/icons/icon.svg';
-import { applyNbPalette } from './nb-palette';
 
 const ua = navigator.userAgent.toLowerCase();
 const isWindowsPlatform = ua.includes('windows');
@@ -21,8 +20,6 @@ function resolveThemeAttr(colorScheme: string): string {
   if (colorScheme === 'darker') return 'darker';
   if (colorScheme === 'navy') return 'navy';
   if (colorScheme === 'light') return 'light';
-  if (colorScheme === 'neo-brutalism') return 'neo-brutalism';
-  if (colorScheme === 'neo-brutalism-rounded') return 'neo-brutalism-rounded';
   if (colorScheme === 'auto') return resolveIsDark('auto') ? 'dark' : 'light';
   return 'dark';
 }
@@ -37,7 +34,6 @@ export function initEditorWindowShell(): void {
   const settings = loadSettings();
   setLanguage(settings.language);
   document.documentElement.dataset.theme = resolveThemeAttr(settings.colorScheme);
-  applyNbPalette(settings.colorScheme);
   void applyVibrancy(settings.enableVibrancy);
   document.documentElement.classList.toggle('platform-windows', isWindowsPlatform);
 
@@ -165,7 +161,6 @@ export function initEditorWindowShell(): void {
   void listen('settings-changed', () => {
     const s = loadSettings();
     document.documentElement.dataset.theme = resolveThemeAttr(s.colorScheme);
-    applyNbPalette(s.colorScheme);
     void applyVibrancy(s.enableVibrancy);
   });
 

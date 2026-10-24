@@ -23,7 +23,6 @@ import { createNewSession, closeAllSessions, createNewWindowNearCurrent } from '
 import { renderTabs } from './tab-renderer';
 import { settings, isHomeView, isGalleryView, isWindowsPlatform, isMacPlatform, activeJumpServers } from './app-state';
 import { toggleJumpServerPanel, isJumpServerPanelOpen, showJsConnectionContextMenu } from './jumpserver-panel';
-import { isPipActive, togglePip } from './pip';
 import { DrawerManager } from './drawer';
 import { AICapsuleManager } from './ai-capsule';
 import { toggleFileManager, isFileManagerOpen } from './file-manager-toggle';
@@ -146,10 +145,6 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
   addItem(t('settings'), () => {
     openSettings();
   });
-  addItem(
-    isPipActive() ? t('toolbarExitPictureInPicture') : t('toolbarPictureInPicture'),
-    async () => { await togglePip(); },
-  );
   addDivider();
   addItem(
     t('appMenuImportConnections'),
@@ -394,8 +389,8 @@ export function renderToolbarActions(): void {
     }
   }
 
-  // Always-on-top (pin) button: only show when there are terminal tabs and NOT in PiP
-  if (TabManager.tabs.length > 0 && !isPipActive()) {
+  // Always-on-top (pin) button: only show when there are terminal tabs
+  if (TabManager.tabs.length > 0) {
     const aotBtn = document.createElement('button');
     aotBtn.className = `toolbar-icon-btn always-on-top-btn${isAlwaysOnTop ? ' active' : ''}`;
     aotBtn.type = 'button';
@@ -403,19 +398,6 @@ export function renderToolbarActions(): void {
     aotBtn.innerHTML = `<span class="tab-icon">${icon('pin')}</span>`;
     aotBtn.onclick = () => { void toggleAlwaysOnTop(); };
     toolbarRightEl.appendChild(aotBtn);
-  }
-
-  // PiP button: only show when there are terminal tabs
-  if (TabManager.tabs.length > 0 || isPipActive()) {
-    const pipBtn = document.createElement('button');
-    pipBtn.className = `toolbar-icon-btn pip-pin-btn${isPipActive() ? ' active' : ''}`;
-    pipBtn.type = 'button';
-    pipBtn.title = isPipActive()
-      ? t('toolbarExitPictureInPicture')
-      : t('toolbarPictureInPicture');
-    pipBtn.innerHTML = `<span class="tab-icon">${icon('pip')}</span>`;
-    pipBtn.onclick = () => { void togglePip(); };
-    toolbarRightEl.appendChild(pipBtn);
   }
 
   // Settings is reachable from the connection sidebar footer, the macOS menu

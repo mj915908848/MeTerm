@@ -22,7 +22,6 @@ import {
   settings, setSettings,
 } from './app-state';
 import { showQuickHelp } from './tldr-card';
-import { togglePip, isPipActive } from './pip';
 import { toggleConnectionsDrawer } from './connections-drawer';
 import { loadSettings, updateSettings } from './themes';
 
@@ -57,20 +56,8 @@ export function setupKeyboardShortcuts(): void {
 
     const key = event.key.toLowerCase();
 
-    // PiP toggle (Cmd/Ctrl+Shift+P) — must be checked BEFORE the Windows
-    // terminal-focus guard below, because Ctrl+Shift+P doesn't conflict
-    // with any TUI app and must work even when the terminal is focused.
-    if (key === 'p' && event.shiftKey) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      void togglePip();
-      return;
-    }
-
     // Connections drawer (Cmd/Ctrl+Shift+O). Before the Windows terminal-focus
-    // guard for the same reason as PiP: the shortcut is meant to work from the
-    // terminal. Plain Ctrl+O (no Shift) still reaches the terminal.
+    // guard below because the shortcut is meant to work from the terminal. Plain Ctrl+O (no Shift) still reaches the terminal.
     if (key === 'o' && event.shiftKey && !event.altKey) {
       event.preventDefault();
       event.stopPropagation();
@@ -251,10 +238,6 @@ export function setupKeyboardShortcuts(): void {
       }
       return;
     }
-
-    // PiP mode: block all other shortcuts except Cmd+W (close) and
-    // Cmd/Ctrl+Shift+P (PiP toggle, handled above the terminal-focus guard)
-    if (isPipActive()) return;
 
     // ⌘⇧H or Ctrl+Shift+H: tldr quick help
     if (key === 'h' && event.shiftKey && settings.tldrEnabled) {

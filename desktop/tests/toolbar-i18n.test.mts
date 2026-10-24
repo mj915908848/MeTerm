@@ -33,8 +33,6 @@ const TOOLBAR_KEYS = [
   'toolbarAiAgent',
   'toolbarAlwaysOnTop',
   'toolbarUnpinFromTop',
-  'toolbarPictureInPicture',
-  'toolbarExitPictureInPicture',
   'windowMinimize',
   'windowMaximize',
   'windowRestore',

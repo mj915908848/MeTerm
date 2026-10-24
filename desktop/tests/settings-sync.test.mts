@@ -6,15 +6,15 @@ import { changedSettingKeys, createTrailingThrottle, isLiveAppearanceOnly, SETTI
 const read = (file: string) => readFileSync(new URL('../src/' + file, import.meta.url), 'utf8');
 
 test('changedSettingKeys compares values, including nested ones', () => {
-  const a = { opacity: 90, fontSize: 14, nbCustomColors: { '--nb-bg': '#fff' } } as any;
-  assert.deepEqual(changedSettingKeys(a, { ...a, nbCustomColors: { '--nb-bg': '#fff' } }), []);
+  const a = { opacity: 90, fontSize: 14, aiProviders: [{ id: 'openai', baseUrl: 'a' }] } as any;
+  assert.deepEqual(changedSettingKeys(a, { ...a, aiProviders: [{ id: 'openai', baseUrl: 'a' }] }), []);
   assert.deepEqual(changedSettingKeys(a, { ...a, opacity: 80 }), ['opacity']);
-  assert.deepEqual(changedSettingKeys(a, { ...a, nbCustomColors: { '--nb-bg': '#000' } }), ['nbCustomColors']);
+  assert.deepEqual(changedSettingKeys(a, { ...a, aiProviders: [{ id: 'openai', baseUrl: 'b' }] }), ['aiProviders']);
 });
 
 test('only purely visual changes skip the full settings refresh', () => {
   assert.equal(isLiveAppearanceOnly(['opacity']), true);
-  assert.equal(isLiveAppearanceOnly(['opacity', 'aiBarOpacity', 'pipScale']), true);
+  assert.equal(isLiveAppearanceOnly(['opacity', 'aiBarOpacity', 'backgroundImageStrength']), true);
   assert.equal(isLiveAppearanceOnly(['opacity', 'fontSize']), false);
   // An event with no visible change (e.g. only credentials) keeps the full path.
   assert.equal(isLiveAppearanceOnly([]), false);
