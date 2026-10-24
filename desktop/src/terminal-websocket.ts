@@ -22,6 +22,7 @@ import { IpcTransport } from './terminal-transport';
 import { feedThumbnail } from './terminal-thumbnail-feed';
 import type { AppSettings } from './themes';
 import type { ManagedTerminal } from './terminal-types';
+import { trackPromptEnd } from './terminal-command-block';
 
 /** Streaming decoders for AI output listeners, one per terminal. */
 /** Mirrors protocol::PONG_RTT_UNKNOWN on the Rust side. */
@@ -89,7 +90,8 @@ export function handleIncomingMessage(
       outListeners.forEach(cb => cb(text));
     }
 
-    mt.terminal.write(outData);
+    if (mt.shellState.promptOpen) mt.terminal.write(outData, () => trackPromptEnd(mt));
+    else mt.terminal.write(outData);
     feedThumbnail(mt, outData);
 
     if (!mt.hasOscTitle) {

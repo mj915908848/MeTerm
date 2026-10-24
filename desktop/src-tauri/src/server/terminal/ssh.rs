@@ -990,9 +990,29 @@ pub async fn test_connection(config: &SshConfig) -> Result<SshAuthUsed, String> 
 /// The hook line for one session: [`SHELL_INTEGRATION_HOOK`] preceded by the
 /// session's OSC 7768 token in a plain (unexported) shell variable, so commands
 /// the shell runs cannot read it. The token is base64url — safe in single quotes.
+///
+/// The line lands in whatever login shell the host has, and fish and tcsh
+/// cannot parse sh syntax: typed bare, fish printed `Unsupported use of '='`
+/// and tcsh `Bad : modifier in $`. So the hook travels as one single-quoted
+/// `eval` argument, which every one of these shells can parse, and only runs
+/// when [`HOOK_SHELL_GUARD`] says the shell is bash or zsh. The guard is a
+/// plain command with a quoted script, with no variable in the outer line (tcsh
+/// aborts on an undefined one). Restoring echo stays outside the `eval`, so it
+/// runs in every shell.
 fn shell_integration_hook(token: &str) -> String {
-    format!(" __meterm_tok='{token}';{SHELL_INTEGRATION_HOOK}")
+    let body = format!(" __meterm_tok='{token}';{SHELL_INTEGRATION_HOOK}");
+    format!(
+        " sh -c '{HOOK_SHELL_GUARD}' && eval '{}'; printf '\\033[A\\033[2K\\r'; stty echo\n",
+        body.replace('\'', "'\\''")
+    )
 }
+
+/// Exits 0 when the shell that started it (`$PPID`) is bash or zsh. `ps -o comm=
+/// -p` is POSIX; BusyBox has no `-p`, so `/proc` is the fallback. When neither
+/// answers, the hook runs as it did before the guard existed.
+pub(crate) const HOOK_SHELL_GUARD: &str =
+    "c=$(ps -o comm= -p \"$PPID\" 2>/dev/null || cat \"/proc/$PPID/comm\" 2>/dev/null); \
+                case \"${c##*/}\" in \"\") exit 0 ;; *bash|*zsh) exit 0 ;; esac; exit 1";
 
 pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meterm_cmd_running=0; __meterm_in_prompt=0; __meterm_cmd=''; __meterm_hist_n=''; \
                 __meterm_preexec(){ \
@@ -1056,8 +1076,7 @@ pub(crate) const SHELL_INTEGRATION_HOOK: &str = " __meterm_cmd_start=''; __meter
                 eval 'PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\" __meterm_prompt_end)' ;; \
                 *) PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND};__meterm_prompt_end\" ;; esac; fi; \
                 if [ -n \"${ZSH_VERSION:-}\" ]; then setopt HIST_IGNORE_SPACE 2>/dev/null; \
-                elif [ -n \"${BASH_VERSION:-}\" ]; then export HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\"; history -d $HISTCMD 2>/dev/null; fi; \
-                printf '\\033[A\\033[2K\\r'; stty echo\n";
+                elif [ -n \"${BASH_VERSION:-}\" ]; then export HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\"; history -d $HISTCMD 2>/dev/null; fi";
 
 #[cfg(test)]
 mod hook_tests {
@@ -1084,9 +1103,9 @@ mod hook_tests {
     #[test]
     fn ssh_hook_line_carries_the_session_token() {
         let line = super::shell_integration_hook("Ab-_9");
-        assert!(line.starts_with(" __meterm_tok='Ab-_9'; __meterm_cmd_start=''"));
+        assert!(line.starts_with(" sh -c '"));
+        assert!(line.contains("eval ' __meterm_tok='\\''Ab-_9'\\''; __meterm_cmd_start="));
         assert!(!line.contains("export __meterm_tok"));
-        assert!(line.ends_with(HOOK));
     }
 
     /// A duration can only be reported if something timestamps the command
@@ -1148,10 +1167,13 @@ mod hook_tests {
     /// or the session stays mute.
     #[test]
     fn ssh_hook_restores_echo() {
+        let line = super::shell_integration_hook("t");
         assert!(
-            HOOK.trim_end().ends_with("stty echo"),
-            "hook must end with `stty echo`"
+            line.trim_end()
+                .ends_with("'; printf '\\033[A\\033[2K\\r'; stty echo"),
+            "the line must end with `stty echo`, outside the eval"
         );
+        assert_eq!(line.matches('\n').count(), 1, "one line, sent once");
     }
 
     /// The history-hygiene policy has to match the local hook (`pty_unix.rs`)
@@ -1195,6 +1217,35 @@ mod hook_tests {
                 String::from_utf8_lossy(&out.stderr)
             );
         }
+        // The line as sent has to parse in the login shells the hook skips too,
+        // or they print a syntax error at every login.
+        let line = super::shell_integration_hook("t");
+        for (sh, flag) in [
+            ("sh", "-n"),
+            ("bash", "-n"),
+            ("zsh", "-n"),
+            ("fish", "--no-execute"),
+            ("tcsh", "-n"),
+        ] {
+            let Ok(out) = Command::new(sh)
+                .args([flag, "-c", line.trim_end()])
+                .output()
+            else {
+                continue;
+            };
+            assert!(
+                out.status.success() && out.stderr.is_empty(),
+                "{sh} rejected the hook line: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+        let Ok(out) = Command::new("sh")
+            .args(["-n", "-c", super::HOOK_SHELL_GUARD])
+            .output()
+        else {
+            return;
+        };
+        assert!(out.status.success(), "sh rejected the shell guard");
     }
 }
 

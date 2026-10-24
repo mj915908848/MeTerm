@@ -77,7 +77,7 @@ const OSC7768_4FIELD = '\\\\033]7768;k=%s;%d;%s;%s;%d\\\\007'; // printf form, t
 const OSC7768_3FIELD = '\\\\033]7768;k=%s;%d;%s;%s\\\\007'; // printf form WITHOUT duration_ms
 const OSC7768_FISH_TAIL = '\\\\033]7768;k=%s;%d;%s;\\\\007'; // fish's first-prompt form (2 fields)
 const OSC7768_PWSH_TS = ']7768;k=$($global:__mtTok);$e;$(Get-Location);$c';
-const OSC7768_PWSH_RS = "']7768;k=' + $global:__mtTok + ';' + $e + ';' + (Get-Location) + ';' + $c";
+const OSC7768_PWSH_RS = "']7768;k=' + $global:__mtTok + ';' + $e + ';' + (Get-Location) + ';' + $c + ';' + $d";
 
 /** Count non-overlapping occurrences of a literal. */
 function count(haystack: string, needle: string): number {
@@ -232,25 +232,21 @@ for (const emitter of VERIFIABLE) {
 }
 
 /**
- * The emitters that are deliberately still 3-field, which are not driven end to end
- * here: `pwsh` has no binary anywhere. (fish is not hooked at all any more; the
- * fish shapes stay in the table so a payload sneaking back in is caught.) A
- * syntax error inside an injected hook is masked — the OSC 7766 detect marker
- * fires *before* the `eval`, so `hookInjected` would flip true while the hook is
- * dead. Pinning the exact counts means promoting one of these to 4 fields, or
- * adding a new unverifiable emitter, has to be a conscious edit to this table.
+ * No emitter is 3-field any more: pwsh reads its duration from the history entry
+ * (`pty_windows.rs`), the SSH PowerShell branch was dead code and is gone, and
+ * fish is not hooked at all (its shapes stay in the table so a payload sneaking
+ * back in is caught).
  */
-test('the only 3-field emitters left are the unverifiable shells', () => {
+test('every OSC 7768 emitter carries duration_ms', () => {
   assert.equal(count(AI_SHELL, OSC7768_3FIELD), 0, 'fish is no longer hooked');
   assert.equal(count(AI_SHELL, OSC7768_FISH_TAIL), 0, 'fish is no longer hooked');
-  assert.equal(count(AI_SHELL, OSC7768_PWSH_TS), 1, 'ai-tools-shell.ts powershell branch');
-  assert.equal(count(PTY_WINDOWS, OSC7768_PWSH_RS), 1, 'pty_windows.rs pwsh hook');
-  assert.equal(count(PTY_WINDOWS, OSC7768_4FIELD), 0, 'pty_windows.rs has no duration timer yet');
-
-  // The zsh/bash-only installers must not carry a 3-field payload at all.
-  // (ai-tools-shell.ts is excluded: it also holds the powershell branch
-  // pinned above, so a 3-field printf is expected *somewhere* in that file.)
-  for (const source of [PTY_UNIX, SSH]) {
+  assert.equal(count(AI_SHELL, OSC7768_PWSH_TS), 0, 'no remote PowerShell hook is injected');
+  assert.equal(count(PTY_WINDOWS, OSC7768_PWSH_RS), 1, 'pty_windows.rs pwsh hook sends $d (duration)');
+  assert.ok(
+    PTY_WINDOWS.includes('$h.EndExecutionTime - $h.StartExecutionTime'),
+    'the pwsh duration comes from the history entry of the command that just ran',
+  );
+  for (const source of [PTY_UNIX, SSH, AI_SHELL]) {
     for (const threeField of [OSC7768_3FIELD, OSC7768_FISH_TAIL]) {
       assert.equal(count(source, threeField), 0, 'no 3-field printf payload is allowed here');
     }

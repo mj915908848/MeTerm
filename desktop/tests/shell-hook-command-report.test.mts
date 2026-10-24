@@ -70,7 +70,7 @@ const LOCAL_ZSHRC = rustLiteral('src-tauri/src/server/terminal/pty_unix.rs', 'di
 /** Each installer's hook text, stripped of the line that sources the user's rc. */
 const INSTALLERS: Record<'bash' | 'zsh', Array<[string, string]>> = {
   bash: [
-    ['local rc (pty_unix.rs)', LOCAL_BASHRC.replace(/^.*source "\$HOME\/\.bashrc".*$/m, '')],
+    ['local rc (pty_unix.rs)', LOCAL_BASHRC.replace(/# ── user config ──[\s\S]*# ── end user config ──/, '')],
     ['ssh hook (ssh.rs)', SSH_HOOK.replace(/stty echo\s*$/, '')],
     ['injected hook (ai-tools-shell.ts)', buildShellHook('bash')],
   ],

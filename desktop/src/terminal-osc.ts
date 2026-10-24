@@ -5,7 +5,7 @@ import { DrawerManager } from './drawer';
 import { sendToTerminal } from './terminal-transport';
 import { readText as clipboardReadText, writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
 import type { ManagedTerminal } from './terminal-types';
-import { recordPrompt } from './terminal-command-block';
+import { recordPrompt, trackPromptEnd } from './terminal-command-block';
 
 export interface OscHandlerCallbacks {
   /** Called when shell state transitions to idle (OSC 7768) */
@@ -69,7 +69,9 @@ export function handleOscEvents(
           if (!isNaN(code) && code >= 0 && code < shellTypes.length) {
             callbacks.onShellTypeDetected?.(mt.id, shellTypes[code]);
           }
-          mt.shellState.hookInjected = true;
+          // Not proof of a hook on its own: OSC 7766 carries no token, so any
+          // output (`cat` of a log) can print it. Every hook sends its tokened
+          // 7768 right after, and that is what marks the session hooked.
         } else {
           const resolver = mt._oscMarkerResolvers.get(id);
           if (resolver) {
@@ -93,8 +95,10 @@ export function handleOscEvents(
         mt.shellState.agentCommand = '';
         mt.shellState.phase = 'ready';
         mt.shellState.hookInjected = true;
-        mt.shellState.promptRow = mt.terminal.buffer.active.baseY + mt.terminal.buffer.active.cursorY;
-        mt.shellState.promptCol = mt.terminal.buffer.active.cursorX;
+        // The hook reports before the shell prints its prompt, so the cursor is
+        // not where input begins yet: follow it until the user types.
+        mt.shellState.promptOpen = true;
+        mt.terminal.write('', () => trackPromptEnd(mt));
         // Only prefetch local directories — SSH sessions use SFTP via 'cwd' handler
         if (includePrefetch && ev.cwd && !DrawerManager.getServerInfo(mt.id)) {
           prefetchDirCache(ev.cwd);
