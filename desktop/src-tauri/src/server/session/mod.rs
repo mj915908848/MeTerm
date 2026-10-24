@@ -184,9 +184,6 @@ impl AdaptivePipeline {
     }
 }
 
-/// Callback for [`Session::on_shell_prompt`]; receives the prompt's exit code.
-pub(crate) type ShellPromptCallback = Arc<dyn Fn(i32) + Send + Sync>;
-
 /// A terminal session.
 pub struct Session {
     pub id: String,
@@ -268,13 +265,6 @@ pub struct Session {
     /// Upload control channels keyed by transferId (supports parallel uploads).
     pub upload_ctrls: tokio::sync::Mutex<HashMap<u32, tokio::sync::mpsc::Sender<UploadSignal>>>,
 
-    /// 7768 兜底回调槽(agent 镜像 Task D):镜像态下顶层 shell 回 prompt(OSC 7768)即
-    /// claude 可能已退出,run loop 经 [`Self::dispatch_shell_prompt`] 把 7768 首字段的
-    /// exit code(`$?`)传给本槽回调(FIX-4:挂起/退出的判别在回调侧,见 agent/hook.rs;
-    /// agent/hook.rs 升格时设置、清理时置 None;Arc 便于 clone 后锁外调用,守卫忽略的
-    /// 调用不消耗回调)。非镜像态恒 None。
-    pub(crate) on_shell_prompt: Mutex<Option<ShellPromptCallback>>,
-
     /// OSC filter — intercepts MeTerm OSC sequences from terminal output.
     osc_filter: Mutex<crate::server::osc_filter::OscFilter>,
 
@@ -332,7 +322,6 @@ impl Session {
             upload_path_leases: transfer::UploadPathLeaseRegistry::new(),
             download_registry: Arc::new(downloads::DownloadRegistry::new(&cancel)),
             upload_ctrls: tokio::sync::Mutex::new(HashMap::new()),
-            on_shell_prompt: Mutex::new(None),
             current_cwd: Mutex::new(None),
             osc_filter: Mutex::new(crate::server::osc_filter::OscFilter::new()),
             cancel,
@@ -355,28 +344,20 @@ impl Session {
             .is_some_and(|creator| creator.allows_device(device_id, generation))
     }
 
-    /// run loop 的 OSC 7768 → 回调槽接线(FIX-6:抽成方法便于单测,锁定「ShellState 事件
-    /// 必须携带 exit code 调回调」的真实通路):每个 `ShellState` 事件把 7768 首字段的
-    /// exit code(`$?`)传给 `on_shell_prompt` 回调,非 ShellState 事件不触发。
-    /// clone 后**锁外**调用:回调内部要拿 mirrors registry 锁,不得与槽锁交叠
-    /// (锁序论证见 agent/hook.rs `MirrorRegistry::cleanup`)。
     /// The OSC 7768 hook token of this session's terminal, for hooks injected
     /// later from the frontend (see `ai-tools-shell.ts`). `None` = not enforced.
     pub fn osc_token(&self) -> Option<String> {
         self.osc_filter.lock().unwrap().token().map(str::to_string)
     }
 
+    /// run loop 的 OSC 7768 / OSC 7 → `current_cwd` 接线。
     pub(crate) fn dispatch_shell_prompt(&self, events: &[crate::server::osc_filter::OscEvent]) {
         for e in events {
             match e {
-                crate::server::osc_filter::OscEvent::ShellState { exit, cwd, .. } => {
+                crate::server::osc_filter::OscEvent::ShellState { cwd, .. } => {
                     // fix13:7768 precmd 携带 cwd,旁路记录(Git tab 的 repo 根定位)。
                     if !cwd.is_empty() {
                         *self.current_cwd.lock().unwrap() = Some(cwd.clone());
-                    }
-                    let cb = self.on_shell_prompt.lock().unwrap().clone();
-                    if let Some(cb) = cb {
-                        cb(*exit);
                     }
                 }
                 // OSC 7(file://host/path)同样上报 cwd(无 7768 集成的 shell 兜底)。
@@ -743,8 +724,6 @@ impl Session {
                                     {
                                         session.event_bus.publish(desktop_event);
                                     }
-                                    // Task D:镜像态下顶层 shell 回 prompt(OSC 7768)= claude
-                                    // 可能已退出,接线抽在 dispatch_shell_prompt(FIX-6 可单测)。
                                     session.dispatch_shell_prompt(&events);
                                 }
                             }
@@ -976,74 +955,6 @@ impl Session {
             chunk.push(protocol::MSG_OUTPUT);
             chunk.extend_from_slice(&data[offset..end]);
             if !self.send_to_client_generation(&client.id, expected_conn_gen, chunk) {
-                return;
-            }
-            offset = end;
-        }
-    }
-
-    /// [`flush_ring_buffer`] 的**背压变体**:内容/语义与其完全一致(RIS 复位 + 模式重放 +
-    /// MSG_OUTPUT 分片),唯一区别是逐块用 [`Client::send_async`](client::Client::send_async)
-    /// 发送——priority 通道满时**等待 writer 排空**,而非 [`Client::send`](client::Client::send)
-    /// 的 `Full → disconnect() + 截断`。
-    ///
-    /// 为什么镜像 WS attach 路径必须用它:Mirror 分支先 `entry.attach()`(背压回放 agent 历史),
-    /// 可能把 1024 槽 priority 通道填到**正好满**;紧接着若再用非阻塞 `flush_ring_buffer` 回放终端
-    /// 环形缓冲,首块就撞 `TrySendError::Full → disconnect()`,丢弃 client + 截断回放 → 手机大历史 +
-    /// 慢 sink 下**永久重连环**(正是 attach 背压化消灭的 Critical bug 的终端缓冲镜像版)。改用背压
-    /// 发送后,通道满则挂起等 writer 排空,绝不 disconnect、绝不截断。
-    ///
-    /// **不持锁跨 await**:先在锁内只做快照(读环形缓冲全量 + 当前模式重放序列),释放锁后再 await
-    /// 发送(仿 [`attach_client`](crate::server::agent::manager) 的做法),避免持 std Mutex 跨 `.await`
-    /// 阻塞 run loop 的 `append_to_ring_buffer`。**前提**:调用方须已 spawn writer 并发排空 priority
-    /// 通道(WS 侧 writer-before-attach),否则背压 await 会死等;IPC 下行无背压容量限制,不适用此路径。
-    pub async fn flush_ring_buffer_async(&self, client: &Client, expected_conn_gen: u64) {
-        // BUG-2 守卫(终端回放镜像版,对照 `attach_client` agent/manager.rs:326/358):捕获本次连接
-        // 代次。背压化让本 flush 成了跨多个 `.await` 的长任务;被同 client_id 的 reconnect 顶替后
-        // `send_async` 会重读已换成新通道的 downstream(reconnect 后 connected=true),把陈旧终端回放帧
-        // (首块 RIS 复位 + 后续 MSG_OUTPUT)灌进新连接 → 与新 handler 自己的 attach+flush 回放交错、
-        // 终端页乱码。故起始捕获 gen,各发送前比对 `conn_gen() == gen`,不等(被 reconnect bump)即 abort。
-        // 锁内只做快照:读环形缓冲全量 + 当前模式重放序列,随即释放锁(绝不持锁跨 await)。
-        let (data, mode_seq) = {
-            let data = self.ring_buf.lock().unwrap().read_all();
-            let mode_seq = self.mode_tracker.lock().unwrap().replay_seq();
-            (data, mode_seq)
-        };
-        if data.is_empty() && mode_seq.is_empty() {
-            return;
-        }
-
-        const CHUNK_SIZE: usize = 4096;
-
-        // First chunk: RIS + 模式重放 + 内容头部(背压发送,满则等 writer 排空)。
-        let ris = b"\x1bc";
-        let first_end = CHUNK_SIZE.min(data.len());
-        let mut msg = Vec::with_capacity(1 + ris.len() + mode_seq.len() + first_end);
-        msg.push(protocol::MSG_OUTPUT);
-        msg.extend_from_slice(ris);
-        msg.extend_from_slice(&mode_seq);
-        msg.extend_from_slice(&data[..first_end]);
-        // BUG-2:首块发送前校验代次,被 reconnect 顶替则放弃回放(不发首块,尤其不发含 RIS 的复位帧)。
-        if !client
-            .send_async_for_generation(expected_conn_gen, msg)
-            .await
-        {
-            return; // client 已掉线(通道关闭)——停止回放,不再徒劳发送
-        }
-
-        // Remaining chunks
-        let mut offset = first_end;
-        while offset < data.len() {
-            let end = (offset + CHUNK_SIZE).min(data.len());
-            let mut chunk = Vec::with_capacity(1 + (end - offset));
-            chunk.push(protocol::MSG_OUTPUT);
-            chunk.extend_from_slice(&data[offset..end]);
-            // BUG-2:每块发送前校验代次,被 reconnect 顶替则立即 abort,把陈旧帧污染新通道的窗口
-            // 收敛到最多一块(前一块 send_async 期间才可能发生 bump)。
-            if !client
-                .send_async_for_generation(expected_conn_gen, chunk)
-                .await
-            {
                 return;
             }
             offset = end;
@@ -1812,12 +1723,9 @@ mod tests {
         assert!(notify_events_to_publish(&events_whitespace, "sess-7", "会话G").is_empty());
     }
 
-    // ── conn_gen 守卫 / 跨代次清理(镜像回放终审 merge-blocker 回归)──
+    // ── conn_gen 守卫 / 跨代次清理 ──
     //
-    // 两处根因同属一个 conn_gen 奇偶性问题:先前已给 agent 历史回放(attach_client)
-    // 补了精确一次守卫(BUG-1/BUG-2),但 M5 背压回放把同款破口放大到镜像**终端页**回放:
-    // ①flush_ring_buffer_async 缺 conn_gen 守卫(与 attach_client 的 BUG-2 对偶);
-    // ②ws.rs 在长回放**之后**才捕获 conn_gen,cleanup 用到被 bump 的代次误拆重连连接。
+    // ws.rs 须在回放之前捕获 conn_gen,否则 cleanup 会用被 reconnect bump 的代次误拆重连连接。
     use super::client::WsReceivers;
     use std::time::Duration;
 
@@ -2063,84 +1971,6 @@ mod tests {
             .is_err());
         assert!(client.is_connected());
         assert_eq!(client.conn_gen(), 0);
-    }
-
-    /// 【缺陷 A 回归 · flush_ring_buffer_async 缺 conn_gen 守卫】
-    /// 场景:镜像终端页大环形缓冲背压回放中,同 client_id 重连(reconnect bump conn_gen + 换新通道)。
-    /// 被顶替的旧 flush 必须在下一个 conn_gen 校验点 abort:停止发送——否则次块 `send_async` 重读已换成
-    /// 新通道的 downstream,把陈旧终端回放帧(RIS 复位 + MSG_OUTPUT)灌进重连后的新连接 → 终端页乱码。
-    /// 对照 `attach_client` 的 BUG-2 守卫(agent/manager.rs:326/358)——本测试是其终端回放路径镜像版。
-    #[tokio::test]
-    async fn flush_ring_buffer_async_aborts_when_conn_gen_bumps_midway() {
-        // ring 需装下 > 4096 字节 → flush 产 ≥2 个 MSG_OUTPUT 分片,给「首块发出后、次块发出前」留校验点。
-        let session = ring_session("flush-gen-guard", 16384);
-        // 8192 字节纯 'X'(无转义序列 → 模式重放序列为空)→ flush 产 2 个 4096 分片。
-        session.append_to_ring_buffer(&vec![b'X'; 8192]);
-
-        let (client, rx) = ws_client(&session, "phone");
-        let WsReceivers { priority_rx, .. } = rx; // 旧通道 rx(H0)
-        let gen0 = client.conn_gen();
-
-        // 预填旧 priority 通道到满(1024 槽 = PRIORITY_SEND_CHANNEL_SIZE),使 flush 首块 send_async 背压挂起。
-        const CH_CAP: usize = 1024;
-        for _ in 0..CH_CAP {
-            assert!(
-                client.send_async(vec![0xEE]).await,
-                "预填应成功(容量内不阻塞)"
-            );
-        }
-
-        // spawn flush:捕获 gen0 → 快照 → 首块 send_async 撞满通道 → 挂起(生产上等 writer 排空)。
-        let session2 = session.clone();
-        let client2 = client.clone();
-        let flush_task = tokio::spawn(async move {
-            session2.flush_ring_buffer_async(&client2, gen0).await;
-        });
-
-        // 让 flush 跑到首块背压挂起(仿 attach_aborts_when_conn_gen_bumps_midway)。
-        for _ in 0..64 {
-            tokio::task::yield_now().await;
-        }
-
-        // 回放中途同 client_id reconnect:换新通道 + connected=true + conn_gen bump。旧 flush 被顶替。
-        let new_rx = client
-            .reconnect(
-                "127.0.0.1:9999".into(),
-                ClientSecurityContext::direct_loopback_owner(),
-            )
-            .unwrap();
-        let WsReceivers {
-            priority_rx: mut new_prx,
-            ..
-        } = new_rx; // 新通道 rx(H1)
-        assert_ne!(client.conn_gen(), gen0, "reconnect 应 bump conn_gen");
-
-        // 排空旧通道:放行预填帧 + flush 挂起的首块 send 完成 → flush 进入次块前的 conn_gen 校验 → abort。
-        let drainer = tokio::spawn(async move {
-            let mut prx = priority_rx;
-            while let Ok(Some(_)) =
-                tokio::time::timeout(Duration::from_millis(200), prx.recv()).await
-            {}
-        });
-
-        // flush 应很快 abort 返回,不 hang。
-        tokio::time::timeout(Duration::from_secs(5), flush_task)
-            .await
-            .expect("flush 应在 conn_gen 变化后 abort,不应 hang")
-            .unwrap();
-
-        // 关键断言:被顶替的旧 flush 绝不把陈旧终端回放帧灌进重连后的新通道。
-        // 无守卫时次块 send_async 重读新通道 downstream → 新通道收到 MSG_OUTPUT(leaked==1),断言失败。
-        let mut leaked = 0;
-        while new_prx.try_recv().is_ok() {
-            leaked += 1;
-        }
-        assert_eq!(
-            leaked, 0,
-            "conn_gen 守卫应拦下次块——陈旧终端回放帧绝不灌进 reconnect 后的新通道"
-        );
-
-        drainer.abort();
     }
 
     /// 【缺陷 B 回归 · remove_client 跨代次不误拆】

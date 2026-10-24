@@ -71,15 +71,11 @@ fn get_platform_priority() -> Vec<&'static str> {
     {
         vec!["osx", "common"]
     }
-    #[cfg(target_os = "linux")]
-    {
-        vec!["linux", "common"]
-    }
     #[cfg(target_os = "windows")]
     {
         vec!["windows", "common"]
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         vec!["common"]
     }

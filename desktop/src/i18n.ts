@@ -53,9 +53,6 @@ export interface Translations {
   sshTabTitleTerminal: string;
 
   settings: string;
-  settingsTabAppearance: string;
-  settingsTabTerminal: string;
-  settingsTabGeneral: string;
   settingsPageAppearance: string;
   settingsPageTerminal: string;
   settingsPageFileManager: string;
@@ -119,7 +116,6 @@ export interface Translations {
   reconnect: string;
   active: string;
   language: string;
-  closeSession: string;
   contextMenuNewTerminal: string;
   contextMenuHome: string;
   contextMenuSettings: string;
@@ -130,7 +126,6 @@ export interface Translations {
   hideToTrayTipTitle: string;
   hideToTrayTipBody: string;
   hideToTrayTipDontShow: string;
-  hideToTrayTipOk: string;
   hideToTrayTipHideNow: string;
   hideToTrayTipCancel: string;
   hideToTrayTipRemember: string;
@@ -138,11 +133,9 @@ export interface Translations {
   confirmCloseAllSessions: string;
   confirmCloseWindowWithSessions: string;
   confirmQuitAllWindows: string;
-  confirmHideToTrayWithSessions: string;
   aboutDialogTitle: string;
   aboutDialogBody: string;
   shortcutsDialogTitle: string;
-  shortcutsDialogBody: string;
   shortcutNewTerminal: string;
   shortcutCloseSession: string;
   shortcutClearTerminal: string;
@@ -197,29 +190,21 @@ export interface Translations {
   pipScale: string;
   pipScaleByScreen: string;
   sessionsGallery: string;
-  sshConnect: string;
   sshHost: string;
   sshPort: string;
   sshUsername: string;
-  sshAuthMethod: string;
   sshPassword: string;
   sshPrivateKey: string;
   sshConnectBtn: string;
-  sshDisconnect: string;
-  sshConnecting: string;
-  sshConnected: string;
   sshFailed: string;
   sshAuthPassword: string;
   sshAuthKey: string;
   sshSavedConnections: string;
-  sshNoSavedConnections: string;
-  sshQuickConnect: string;
   sshNewConnection: string;
   sshDeleteConnection: string;
   sshConnectionName: string;
   sshSaveConnection: string;
   sshTestConnection: string;
-  sshProxy: string;
   advancedOptions: string;
   sshProxyType: string;
   sshProxyNone: string;
@@ -237,7 +222,6 @@ export interface Translations {
   sshAuthFailedTitle: string;
   sshAuthFailedMsg: string;
   sshAuthFailedRetry: string;
-  sshPasswordUpdated: string;
   sshKeyBrowse: string;
   sshKeyBrowseTitle: string;
   sshKeyPlaceholderDefault: string;
@@ -251,23 +235,16 @@ export interface Translations {
   sshAuthUsedAgentBody: string;
   sshAuthUsedDefaultTitle: string;
   sshAuthUsedDefaultBody: string;
-  drawerTabFiles: string;
   // File sidebar
-  sidebarRefresh: string;
-  sidebarNewFolder: string;
-  sidebarUpload: string;
-  sidebarToggleHidden: string;
   sidebarLockRoot: string;
   sidebarUnlockRoot: string;
   sidebarSwitchView: string;
-  sidebarNewFolderPrompt: string;
   sidebarItems: string;
   sidebarInfoDirs: string;
   sidebarInfoFiles: string;
   sidebarMoveTitle: string;
   sidebarMoveConfirm: string;
   sidebarMoveCancel: string;
-  sidebarMoveDest: string;
   sidebarEmptyDir: string;
   sidebarTreeMore: string;
   fileManager: string;
@@ -284,7 +261,6 @@ export interface Translations {
   ctxMenuUploadToCurrent: string;
   ctxMenuNewFile: string;
   ctxMenuNewFolder: string;
-  ctxMenuCopyPath: string;
   ctxMenuCopyAbsPath: string;
   ctxMenuTerminalOps: string;
   ctxMenuCopyTo: string;
@@ -303,8 +279,6 @@ export interface Translations {
   ctxMenuRefresh: string;
   ctxMenuShowHidden: string;
   serverInfoToggle: string;
-  serverInfoHost: string;
-  serverInfoUser: string;
   serverInfoOS: string;
   serverInfoKernel: string;
   serverInfoUptime: string;
@@ -321,11 +295,6 @@ export interface Translations {
   serverInfoResources: string;
   serverInfoSwapOff: string;
   connectionsWindowTitle: string;
-  connectionsWindowHint: string;
-  connectionsWindowSettings: string;
-  connectionsWindowOpenFailed: string;
-  connectionMoveToGroup: string;
-  connectionClearSelection: string;
   connectionGroupEmptyHint: string;
   connectionDeleteFailedTitle: string;
   connectionDeleteFailedBody: string;
@@ -357,23 +326,15 @@ export interface Translations {
   noShellsFound: string;
   defaultShell: string;
   defaultShellSetting: string;
-  contextMenuIntegration: string;
   systemDefault: string;
-  homeSavedConnections: string;
   homeEditConnection: string;
-  homeShowMore: string;
-  homeShowLess: string;
-  homeRecentConnections: string;
   aiCapsule: string;
   aiBarOpacity: string;
   aiSendCommand: string;
   aiSendPrompt: string;
-  aiModelSelect: string;
-  aiPlaceholderInput: string;
   aiPlaceholderCmd: string;
   aiPlaceholderAgent: string;
   aiCollapse: string;
-  aiExpand: string;
   aiLayoutSide: string;
   aiLayoutBottom: string;
   aiHistory: string;
@@ -384,7 +345,6 @@ export interface Translations {
   aiTimeJustNow: string;
   aiCopyCommand: string;
   settingsTabAI: string;
-  aiProvider: string;
   aiGroupProviders: string;
   aiGroupReply: string;
   aiGroupAgent: string;
@@ -409,10 +369,8 @@ export interface Translations {
   aiChatHistoryLimitAll: string;
   aiGroupAdvanced: string;
   aiAdvancedSummary: string;
-  aiPreset: string;
   aiApiKey: string;
   aiBaseUrl: string;
-  aiModelName: string;
   aiTemperature: string;
   aiTemperatureHint: string;
   aiMaxTokens: string;
@@ -456,19 +414,11 @@ export interface Translations {
   aiPermissionRuleToolRequired: string;
   aiAuditLog: string;
   aiAuditLogOpen: string;
-  aiAuditLogEmpty: string;
-  aiAuditLogClose: string;
-  aiAuditLogClear: string;
-  aiAuditLogReload: string;
-  aiAuditLogClearConfirm: string;
   aiNotifyWaitingTitle: string;
   aiNotifyCompleteTitle: string;
   aiNotifyCompleteBody: string;
   aiNotifyErrorTitle: string;
   aiNotifyErrorBody: string;
-  aiTestConnection: string;
-  aiTestSuccess: string;
-  aiTestFailed: string;
   aiTesting: string;
   aiNewChat: string;
   aiClearChat: string;
@@ -492,7 +442,6 @@ export interface Translations {
   aiStopGenerating: string;
   aiSendToAgentConfirm: string;
   aiSendToAgentDontAsk: string;
-  aiSendToAgentYes: string;
   aiSendToAgentNo: string;
   aiPlaceholderAgentMode: string;
   aiCtxCopy: string;
@@ -503,7 +452,6 @@ export interface Translations {
   aiModelAutoDesc: string;
   aiAddProvider: string;
   aiDeleteProvider: string;
-  aiProviderProtocol: string;
   aiFetchModels: string;
   aiFetching: string;
   aiFetchSuccess: string;
@@ -519,7 +467,6 @@ export interface Translations {
   aiProviderNoModelsEnabled: string;
   aiProviderEdit: string;
   aiProviderDone: string;
-  aiSearxng: string;
   aiSearxngUrl: string;
   aiSearxngUrlPlaceholder: string;
   aiSearxngAuth: string;
@@ -540,19 +487,13 @@ export interface Translations {
   splitHorizontal: string;
   splitVertical: string;
   closePane: string;
-  pairingToken: string;
-  homeMobilePairing: string;
   masterRequestTitle: string;
   masterRequestMessage: string;
   masterRequestApprove: string;
   masterRequestDeny: string;
-  reclaimControl: string;
   reclaimClickHint: string;
   reclaimSpaceHint: string;
-  shareLink: string;
-  shareLinkCopied: string;
   settingsTabAbout: string;
-  aboutVersion: string;
   aboutDescription: string;
   aboutGitHub: string;
   aboutGitee: string;
@@ -580,35 +521,16 @@ export interface Translations {
   sshExportMissingCredential: string;
   sshExportMobileUnsupported: string;
   sshNoConnectionsToExport: string;
-  remoteSecureTransportRequired: string;
-  remoteScanComingSoon: string;
-  remoteSessionAutoRefresh: string;
-  remoteDeleteConnection: string;
   sshHostKeyUnknownTitle: string;
   sshHostKeyUnknownMsg: string;
   sshHostKeyType: string;
   sshHostKeyFingerprint: string;
   sshHostKeyTrust: string;
   sshHostKeyMismatchMsg: string;
-  remotePairing: string;
-  remotePairApproved: string;
-  remotePairDenied: string;
-  remotePairTimeout: string;
-  remoteScanBtn: string;
-  remoteScanStop: string;
-  customToken: string;
-  kickSuccess: string;
-  deviceCardKickDevice: string;
-  kickDeviceConfirm: string;
-  kickDeviceSuccess: string;
-  kickedByHost: string;
   kickedOverlayMsg: string;
   closeTab: string;
-  confirmBanIp: string;
-  banIpYes: string;
   enableTerminalNotifications: string;
   jsBypassProxy: string;
-  remoteTypeBadge: string;
   aiChatHistory: string;
   aiChatHistoryEmpty: string;
   aiChatHistoryTitle: string;
@@ -708,26 +630,9 @@ export interface Translations {
   aiConfirmMoreChars: string;
   aiWaitDefaultReason: string;
   commonCopied: string;
-  updateAvailable: string;
-  updateNow: string;
-  updateLater: string;
-  updateDownloading: string;
-  updateFinishing: string;
-  updateRestarting: string;
-  updateHint: string;
-  updateFailed: string;
-  updateFailedHint: string;
-  updateModalTitle: string;
-  updateReleaseNotes: string;
-  checkUpdates: string;
-  checkUpdatesUpToDate: string;
-  checkUpdatesChecking: string;
-  updateModalClose: string;
-  hideUpdateIcon: string;
   openFileManager: string;
   navigateConfirmMsg: string;
   navigateCancel: string;
-  navigateConfirm: string;
   fileLinkHint: string;
   fileLinkOpenLocal: string;
   fileLinkOpenInDrawer: string;
@@ -741,7 +646,6 @@ export interface Translations {
   tldrEnable: string;
   tldrNoData: string;
   tldrUpdating: string;
-  tldrLastUpdated: string;
   tldrUpdateNow: string;
   tldrPageCount: string;
   tldrExamples: string;
@@ -815,17 +719,12 @@ export interface Translations {
   homeNewJumpServer: string;
   jsSaveAndConnect: string;
   homeSearchPlaceholder: string;
-  homeGroupDefault: string;
   homeGroupUngrouped: string;
-  homeGroupManage: string;
   homeGroupNew: string;
   homeGroupRename: string;
   homeGroupDelete: string;
   homeGroupDeleteConfirm: string;
   homeGroupMoveToGroup: string;
-  homeGroupNodeCount: string;
-  homeGroupResizeHint: string;
-  homeGroupColor: string;
   homeGroupColorClear: string;
   homeGroupCollapse: string;
   homeGroupExpand: string;
@@ -835,14 +734,10 @@ export interface Translations {
   homeRecentActivity: string;
   homeRecentRemove: string;
   homeFooterVersion: string;
-  homeFooterGitHub: string;
-  homeNoConnections: string;
-  homeSearchHint: string;
   homeSearchConnections: string;
   homeSearchWeb: string;
   homeSearchTldr: string;
   homeSearching: string;
-  homeSearchLoadMore: string;
   homeSearchPerPage: string;
   homeNoResults: string;
   editorLargeFileWarning: string;
@@ -851,7 +746,6 @@ export interface Translations {
   editorSaving: string;
   editorSaved: string;
   editorSaveFailed: string;
-  editorDisconnected: string;
   editorReadOnly: string;
   editorLoading: string;
   editorMdPreview: string;
@@ -908,9 +802,6 @@ const translations: Record<Language, Translations> = {
     sshSavedConnectionsHint: 'Exported files contain passwords and private keys in plain text, so you are asked to verify first. Importing replaces connections with the same name',
     appName: 'MeTerm',
     settings: 'Settings',
-    settingsTabAppearance: 'Appearance',
-    settingsTabTerminal: 'Terminal',
-    settingsTabGeneral: 'General',
     settingsPageAppearance: 'Appearance',
     settingsPageTerminal: 'Terminal',
     settingsPageFileManager: 'File Manager',
@@ -974,7 +865,6 @@ const translations: Record<Language, Translations> = {
     reconnect: 'Reconnect',
     active: 'Active',
     language: 'Language',
-    closeSession: 'Close Session',
     contextMenuNewTerminal: 'New Terminal',
     contextMenuHome: 'Home',
     contextMenuSettings: 'Settings',
@@ -985,7 +875,6 @@ const translations: Record<Language, Translations> = {
     hideToTrayTipTitle: 'Hide to tray?',
     hideToTrayTipBody: 'Hide the window to system tray? Click the tray icon to reopen.',
     hideToTrayTipDontShow: "Don't show again",
-    hideToTrayTipOk: 'Got it',
     hideToTrayTipHideNow: 'Hide now',
     hideToTrayTipCancel: 'Cancel',
     hideToTrayTipRemember: 'Remember this choice?',
@@ -993,11 +882,9 @@ const translations: Record<Language, Translations> = {
     confirmCloseAllSessions: 'Close all sessions now?',
     confirmCloseWindowWithSessions: 'This window has active sessions. Close window and end all sessions?',
     confirmQuitAllWindows: 'Close all windows and sessions? This will quit the application.',
-    confirmHideToTrayWithSessions: 'Active sessions detected. Hide window to tray?',
     aboutDialogTitle: 'About',
     aboutDialogBody: 'A lightweight multi-session terminal client.',
     shortcutsDialogTitle: 'Keyboard Shortcuts',
-    shortcutsDialogBody: '',
     shortcutNewTerminal: 'New Terminal',
     shortcutCloseSession: 'Close Current Session',
     shortcutClearTerminal: 'Clear Terminal',
@@ -1064,29 +951,21 @@ const translations: Record<Language, Translations> = {
     pipScale: 'Scale',
     pipScaleByScreen: 'Relative to Screen Size',
     sessionsGallery: 'Sessions',
-    sshConnect: 'SSH Connection',
     sshHost: 'Host',
     sshPort: 'Port',
     sshUsername: 'Username',
-    sshAuthMethod: 'Auth Method',
     sshPassword: 'Password',
     sshPrivateKey: 'Private Key Path',
     sshConnectBtn: 'Connect',
-    sshDisconnect: 'Disconnect',
-    sshConnecting: 'Connecting...',
-    sshConnected: 'Connected',
     sshFailed: 'Connection Failed',
     sshAuthPassword: 'Password',
     sshAuthKey: 'Public Key',
     sshSavedConnections: 'Saved Connections',
-    sshNoSavedConnections: 'No saved connections',
-    sshQuickConnect: 'Quick Connect',
     sshNewConnection: 'New Connection',
     sshDeleteConnection: 'Delete',
     sshConnectionName: 'Connection Name',
     sshSaveConnection: 'Save',
     sshTestConnection: 'Test',
-    sshProxy: 'Proxy',
     advancedOptions: 'Advanced Options',
     sshProxyType: 'Proxy Type',
     sshProxyNone: 'Direct',
@@ -1104,7 +983,6 @@ const translations: Record<Language, Translations> = {
     sshAuthFailedTitle: 'Authentication Failed',
     sshAuthFailedMsg: 'The saved password may have changed. Please enter the new password for {username}@{host}:',
     sshAuthFailedRetry: 'Reconnect',
-    sshPasswordUpdated: 'Password updated and saved.',
     sshKeyBrowse: 'Browse for private key file',
     sshKeyBrowseTitle: 'Select private key',
     sshKeyPlaceholderDefault: '~/.ssh/id_rsa  (leave empty to auto-detect)',
@@ -1118,22 +996,15 @@ const translations: Record<Language, Translations> = {
     sshAuthUsedAgentBody: 'Authentication succeeded using a key from your running ssh-agent.',
     sshAuthUsedDefaultTitle: 'Connected via default key',
     sshAuthUsedDefaultBody: 'Authentication succeeded using a key in ~/.ssh/.',
-    drawerTabFiles: 'Files',
-    sidebarRefresh: 'Refresh',
-    sidebarNewFolder: 'New folder',
-    sidebarUpload: 'Upload',
-    sidebarToggleHidden: 'Toggle hidden files',
     sidebarLockRoot: 'Unlock to follow terminal directory',
     sidebarUnlockRoot: 'Lock current directory',
     sidebarSwitchView: 'Switch view',
-    sidebarNewFolderPrompt: 'Enter folder name:',
     sidebarItems: 'items',
     sidebarInfoDirs: 'folders',
     sidebarInfoFiles: 'files',
     sidebarMoveTitle: 'Move {count} item(s)?',
     sidebarMoveConfirm: 'Move',
     sidebarMoveCancel: 'Cancel',
-    sidebarMoveDest: 'Destination',
     sidebarEmptyDir: 'Empty',
     sidebarTreeMore: '{n} more, click to load',
     fileManager: 'File Manager',
@@ -1150,7 +1021,6 @@ const translations: Record<Language, Translations> = {
     ctxMenuUploadToCurrent: 'Upload to Current Path',
     ctxMenuNewFile: 'New File',
     ctxMenuNewFolder: 'New Folder',
-    ctxMenuCopyPath: 'Copy Path',
     ctxMenuCopyAbsPath: 'Copy Absolute Path',
     ctxMenuTerminalOps: 'Terminal Commands',
     ctxMenuCopyTo: 'Copy To...',
@@ -1169,8 +1039,6 @@ const translations: Record<Language, Translations> = {
     ctxMenuRefresh: 'Refresh',
     ctxMenuShowHidden: 'Show Hidden Files',
     serverInfoToggle: 'Server Info',
-    serverInfoHost: 'Host',
-    serverInfoUser: 'User',
     serverInfoOS: 'OS',
     serverInfoKernel: 'Kernel',
     serverInfoUptime: 'Uptime',
@@ -1187,11 +1055,6 @@ const translations: Record<Language, Translations> = {
     serverInfoResources: 'Resources',
     serverInfoSwapOff: 'Off',
     connectionsWindowTitle: 'Connections',
-    connectionsWindowHint: 'Click a connection to open it. ⌘/Ctrl-click to select several, then drag them onto a group.',
-    connectionsWindowSettings: 'Settings',
-    connectionsWindowOpenFailed: 'Could not open the connections window.',
-    connectionMoveToGroup: 'Move to group',
-    connectionClearSelection: 'Clear',
     connectionGroupEmptyHint: 'Drag connections here',
     connectionDeleteFailedTitle: 'Could not delete connection',
     connectionDeleteFailedBody: 'The connection is still in the list. See the console for details.',
@@ -1223,23 +1086,15 @@ const translations: Record<Language, Translations> = {
     noShellsFound: 'No shells found',
     defaultShell: 'default',
     defaultShellSetting: 'Default Shell',
-    contextMenuIntegration: 'Add "Open in MeTerm" to context menu',
     systemDefault: 'System Default',
-    homeSavedConnections: 'Saved Connections',
     homeEditConnection: 'Edit',
-    homeShowMore: 'Show More',
-    homeShowLess: 'Show Less',
-    homeRecentConnections: 'Recent',
     aiCapsule: 'MeAgent',
     aiBarOpacity: 'AI Input Bar Opacity',
     aiSendCommand: 'Send Command',
     aiSendPrompt: 'Send Prompt',
-    aiModelSelect: 'Model',
-    aiPlaceholderInput: 'Type a command or prompt...',
     aiPlaceholderCmd: 'Command ',
     aiPlaceholderAgent: ' Ask MeAgent... ',
     aiCollapse: 'Collapse',
-    aiExpand: 'Expand',
     aiLayoutSide: 'Sidebar',
     aiLayoutBottom: 'Bottom',
     aiHistory: 'History',
@@ -1250,7 +1105,6 @@ const translations: Record<Language, Translations> = {
     aiTimeJustNow: 'just now',
     aiCopyCommand: 'Copy command',
     settingsTabAI: 'AI',
-    aiProvider: 'Provider',
     aiGroupProviders: 'Model Services',
     aiGroupReply: 'Replies',
     aiGroupAgent: 'Agent',
@@ -1275,10 +1129,8 @@ const translations: Record<Language, Translations> = {
     aiChatHistoryLimitAll: 'All conversations',
     aiGroupAdvanced: 'Advanced',
     aiAdvancedSummary: 'Temperature, conversation history limit, terminal lines',
-    aiPreset: 'Quick Select',
     aiApiKey: 'API Key',
     aiBaseUrl: 'API Base URL',
-    aiModelName: 'Model',
     aiTemperature: 'Temperature',
     aiTemperatureHint: 'Higher values give more varied answers. Ignored by Claude Opus 4.7 and later and by OpenAI reasoning models.',
     aiMaxTokens: 'Max reply length',
@@ -1320,11 +1172,6 @@ const translations: Record<Language, Translations> = {
     aiPermissionRuleToolRequired: 'Enter a tool name (* matches all tools).',
     aiAuditLog: 'Activity log',
     aiAuditLogOpen: 'Open',
-    aiAuditLogEmpty: '(No audit entries yet)',
-    aiAuditLogClose: 'Close',
-    aiAuditLogClear: 'Clear log',
-    aiAuditLogReload: 'Reload',
-    aiAuditLogClearConfirm: 'Clear all audit entries? This cannot be undone.',
     aiNotifyWaitingTitle: 'AI agent needs your attention',
     aiNotifyCompleteTitle: 'AI agent finished',
     aiNotifyCompleteBody: 'The agent turn completed.',
@@ -1332,9 +1179,6 @@ const translations: Record<Language, Translations> = {
     aiNotifyErrorBody: 'The agent encountered an unrecoverable error.',
     aiAgentMaxIterations: 'Max steps per run',
     aiAgentUnlimited: 'Unlimited',
-    aiTestConnection: 'Test Connection',
-    aiTestSuccess: 'Connection successful!',
-    aiTestFailed: 'Connection failed',
     aiTesting: 'Testing...',
     aiNewChat: 'New Chat',
     aiClearChat: 'Clear Chat',
@@ -1358,7 +1202,6 @@ const translations: Record<Language, Translations> = {
     aiStopGenerating: 'Stop',
     aiSendToAgentConfirm: 'This looks like a prompt. Send to MeAgent?',
     aiSendToAgentDontAsk: "Don't ask again, always send to MeAgent",
-    aiSendToAgentYes: 'Send to Agent',
     aiSendToAgentNo: 'Send to Terminal',
     aiPlaceholderAgentMode: ' MeAgent ',
     aiCtxCopy: 'Copy',
@@ -1369,7 +1212,6 @@ const translations: Record<Language, Translations> = {
     aiModelAutoDesc: 'Use default model for current provider',
     aiAddProvider: 'Add Provider',
     aiDeleteProvider: 'Delete',
-    aiProviderProtocol: 'Protocol',
     aiFetchModels: 'Fetch Models',
     aiFetching: 'Fetching...',
     aiFetchSuccess: 'models loaded',
@@ -1385,7 +1227,6 @@ const translations: Record<Language, Translations> = {
     aiProviderNoModelsEnabled: 'No models enabled',
     aiProviderEdit: 'Edit',
     aiProviderDone: 'Done',
-    aiSearxng: 'Web Search (SearXNG)',
     aiSearxngUrl: 'SearXNG URL',
     aiSearxngUrlPlaceholder: 'https://searx.example.org',
     aiSearxngAuth: 'Sign-in',
@@ -1406,17 +1247,12 @@ const translations: Record<Language, Translations> = {
     splitHorizontal: 'Split Horizontal',
     splitVertical: 'Split Vertical',
     closePane: 'Close Pane',
-    pairingToken: 'Token',
-    homeMobilePairing: 'Mobile Pairing',
     masterRequestTitle: 'Control Request',
     masterRequestMessage: 'A remote viewer wants to take control of the terminal.',
     masterRequestApprove: 'Approve',
     masterRequestDeny: 'Deny',
-    reclaimControl: 'Reclaim Control',
     reclaimClickHint: 'Click to reclaim control',
     reclaimSpaceHint: '(Press Space to reclaim)',
-    shareLink: 'Copy Share Link',
-    shareLinkCopied: 'Link Copied!',
     sshExportConnections: 'Export Connections',
     sshImportConnections: 'Import Connections',
     sshExportSuccess: 'Connections exported successfully',
@@ -1429,35 +1265,16 @@ const translations: Record<Language, Translations> = {
     sshExportMissingCredential: '{count} connection(s) have no portable password/private key and cannot be used offline on mobile',
     sshExportMobileUnsupported: '{count} connection(s) were exported but current mobile direct SSH import will reject their proxy, credential format, or size',
     sshNoConnectionsToExport: 'No connections to export',
-    remoteSecureTransportRequired: 'Remote credentials require HTTPS/WSS. Plaintext LAN connections are blocked.',
-    remoteScanComingSoon: 'LAN scan coming soon',
-    remoteSessionAutoRefresh: 'Auto Refresh',
-    remoteDeleteConnection: 'Delete',
     sshHostKeyUnknownTitle: 'Unknown Host Key',
     sshHostKeyUnknownMsg: 'The authenticity of host "{hostname}" cannot be established. Do you want to trust this host and continue connecting?',
     sshHostKeyType: 'Key Type',
     sshHostKeyFingerprint: 'Fingerprint',
     sshHostKeyTrust: 'Trust & Connect',
     sshHostKeyMismatchMsg: 'WARNING: Host key for {hostname} has CHANGED! This may indicate a man-in-the-middle attack. Key type: {keyType}, Fingerprint: {fingerprint}. Connection refused.',
-    remotePairing: 'Requesting pairing...',
-    remotePairApproved: 'Pairing approved!',
-    remotePairDenied: 'Pairing denied',
-    remotePairTimeout: 'Pairing request timed out',
-    remoteScanBtn: 'Scan',
-    remoteScanStop: 'Stop',
-    customToken: 'Custom Token',
-    kickSuccess: 'Kicked',
-    deviceCardKickDevice: 'Kick Device',
-    kickDeviceConfirm: 'Kick all connections from this device?',
-    kickDeviceSuccess: 'Device kicked',
-    kickedByHost: 'Kicked',
     kickedOverlayMsg: 'You have been disconnected by the host.',
     closeTab: 'Close Tab',
-    confirmBanIp: 'Also ban this device\'s IP address?',
-    banIpYes: 'Ban IP',
     enableTerminalNotifications: 'Allow Programs to Send Notifications',
     jsBypassProxy: 'Bypass system proxy (for internal JumpServer)',
-    remoteTypeBadge: 'Remote',
     aiChatHistory: 'Chat History',
     aiChatHistoryEmpty: 'No chat history',
     aiChatHistoryTitle: 'Chat History',
@@ -1557,26 +1374,9 @@ const translations: Record<Language, Translations> = {
     aiConfirmMoreChars: '… (+{n} chars)',
     aiWaitDefaultReason: 'User input required',
     commonCopied: 'Copied!',
-    updateAvailable: 'New version {version} is available',
-    updateNow: 'Update Now',
-    updateLater: 'Later',
-    updateDownloading: 'Downloading {pct}%',
-    updateFinishing: 'Installing...',
-    updateRestarting: 'Restarting...',
-    updateHint: 'The app will restart automatically after installation.',
-    updateFailed: 'Update Failed',
-    updateFailedHint: 'Please try again later or download the latest version manually.',
-    updateModalTitle: 'Update to {version}',
-    updateReleaseNotes: 'Release Notes',
-    checkUpdates: 'Check for Updates',
-    checkUpdatesUpToDate: "You're up to date",
-    checkUpdatesChecking: 'Checking for updates…',
-    updateModalClose: 'Close',
-    hideUpdateIcon: 'Hide title bar update icon',
     openFileManager: 'Open File Manager',
     navigateConfirmMsg: 'Open file manager and navigate to {path}?',
     navigateCancel: 'Cancel',
-    navigateConfirm: 'Open',
     fileLinkHint: '{mod}+Click to open {name}',
     fileLinkOpenLocal: 'Open with Default App',
     fileLinkOpenInDrawer: 'Open in File Manager',
@@ -1648,17 +1448,12 @@ const translations: Record<Language, Translations> = {
     homeNewJumpServer: 'JumpServer',
     jsSaveAndConnect: 'Save & Connect',
     homeSearchPlaceholder: 'Search connections, commands or docs',
-    homeGroupDefault: 'Default',
     homeGroupUngrouped: 'Recent',
-    homeGroupManage: 'Manage Groups',
     homeGroupNew: 'New Group',
     homeGroupRename: 'Rename',
     homeGroupDelete: 'Delete Group',
     homeGroupDeleteConfirm: 'Delete this group? Connections will be moved to Recent.',
     homeGroupMoveToGroup: 'Move to Group',
-    homeGroupNodeCount: '{count} Nodes',
-    homeGroupResizeHint: 'Drag to resize — double-click to restore the default width',
-    homeGroupColor: 'Color',
     homeGroupColorClear: 'Clear Color',
     homeGroupCollapse: 'Collapse',
     homeGroupExpand: 'Expand',
@@ -1668,18 +1463,13 @@ const translations: Record<Language, Translations> = {
     homeRecentActivity: 'Recent Activity',
     homeRecentRemove: 'Remove from history',
     homeFooterVersion: 'MeTerm v{version}',
-    homeFooterGitHub: 'GitHub',
-    homeNoConnections: 'No connections yet',
-    homeSearchHint: 'Type to search connections, web, and command docs',
     homeSearchConnections: 'Connections',
     homeSearchWeb: 'Web Search',
     homeSearchTldr: 'Command Docs',
     homeSearching: 'Searching...',
-    homeSearchLoadMore: 'Load more',
     homeSearchPerPage: '/page',
     homeNoResults: 'No results',
     settingsTabAbout: 'About',
-    aboutVersion: 'Version',
     aboutDescription: 'A lightweight multi-session terminal client.',
     aboutGitHub: 'GitHub',
     aboutGitee: 'Gitee',
@@ -1700,7 +1490,6 @@ const translations: Record<Language, Translations> = {
     tldrEnable: 'Enable tldr command help',
     tldrNoData: 'No help data available. Click "Update Now" to download.',
     tldrUpdating: 'Updating help data…',
-    tldrLastUpdated: 'Last updated: {date}',
     tldrUpdateNow: 'Update Now',
     tldrPageCount: '{count} commands indexed',
     tldrExamples: 'Examples',
@@ -1715,7 +1504,6 @@ const translations: Record<Language, Translations> = {
     editorSaving: 'Saving...',
     editorSaved: 'Saved',
     editorSaveFailed: 'Save failed',
-    editorDisconnected: 'Session disconnected',
     editorReadOnly: 'Read-only',
     editorLoading: 'Loading...',
     editorMdPreview: 'Preview',
@@ -1770,9 +1558,6 @@ const translations: Record<Language, Translations> = {
     sshSavedConnectionsHint: '导出文件包含密码和私钥明文，导出前会要求验证身份。导入会覆盖同名连接',
     appName: 'MeTerm',
     settings: '设置',
-    settingsTabAppearance: '外观',
-    settingsTabTerminal: '终端',
-    settingsTabGeneral: '通用',
     settingsPageAppearance: '外观',
     settingsPageTerminal: '终端',
     settingsPageFileManager: '文件管理器',
@@ -1836,7 +1621,6 @@ const translations: Record<Language, Translations> = {
     reconnect: '重新连接',
     active: '当前',
     language: '语言',
-    closeSession: '关闭会话',
     contextMenuNewTerminal: '新建终端',
     contextMenuHome: '主页',
     contextMenuSettings: '设置',
@@ -1847,7 +1631,6 @@ const translations: Record<Language, Translations> = {
     hideToTrayTipTitle: '隐藏到系统托盘？',
     hideToTrayTipBody: '将窗口隐藏到系统托盘？点击托盘图标可重新打开。',
     hideToTrayTipDontShow: '不再提示',
-    hideToTrayTipOk: '知道了',
     hideToTrayTipHideNow: '隐藏到状态栏',
     hideToTrayTipCancel: '取消',
     hideToTrayTipRemember: '记住选项？',
@@ -1855,11 +1638,9 @@ const translations: Record<Language, Translations> = {
     confirmCloseAllSessions: '确认关闭所有会话吗？',
     confirmCloseWindowWithSessions: '此窗口有活跃的会话。关闭窗口将结束所有会话，是否继续？',
     confirmQuitAllWindows: '关闭所有窗口及会话？这将退出应用程序。',
-    confirmHideToTrayWithSessions: '检测到有活跃会话，是否将窗口隐藏到状态栏？',
     aboutDialogTitle: '关于',
     aboutDialogBody: '轻量的多会话终端客户端。',
     shortcutsDialogTitle: '快捷键',
-    shortcutsDialogBody: '',
     shortcutNewTerminal: '新建终端',
     shortcutCloseSession: '关闭当前会话',
     shortcutClearTerminal: '清屏',
@@ -1926,29 +1707,21 @@ const translations: Record<Language, Translations> = {
     pipScale: '缩放比例',
     pipScaleByScreen: '按屏幕大小计算',
     sessionsGallery: '会话总览',
-    sshConnect: 'SSH 连接',
     sshHost: '主机地址',
     sshPort: '端口',
     sshUsername: '用户名',
-    sshAuthMethod: '认证方式',
     sshPassword: '密码',
     sshPrivateKey: '私钥路径',
     sshConnectBtn: '连接',
-    sshDisconnect: '断开连接',
-    sshConnecting: '连接中...',
-    sshConnected: '已连接',
     sshFailed: '连接失败',
     sshAuthPassword: '密码认证',
     sshAuthKey: '公钥认证',
     sshSavedConnections: '已保存的连接',
-    sshNoSavedConnections: '暂无保存的连接',
-    sshQuickConnect: '快速连接',
     sshNewConnection: '新建连接',
     sshDeleteConnection: '删除',
     sshConnectionName: '连接名称',
     sshSaveConnection: '保存',
     sshTestConnection: '测试连接',
-    sshProxy: '代理',
     advancedOptions: '高级选项',
     sshProxyType: '代理类型',
     sshProxyNone: '直连',
@@ -1966,7 +1739,6 @@ const translations: Record<Language, Translations> = {
     sshAuthFailedTitle: '认证失败',
     sshAuthFailedMsg: '保存的密码可能已变更，请输入 {username}@{host} 的新密码：',
     sshAuthFailedRetry: '重新连接',
-    sshPasswordUpdated: '密码已更新并保存。',
     sshKeyBrowse: '浏览私钥文件',
     sshKeyBrowseTitle: '选择私钥',
     sshKeyPlaceholderDefault: '~/.ssh/id_rsa  (留空可自动检测)',
@@ -1980,22 +1752,15 @@ const translations: Record<Language, Translations> = {
     sshAuthUsedAgentBody: '使用 ssh-agent 中的密钥完成了认证。',
     sshAuthUsedDefaultTitle: '已通过默认密钥连接',
     sshAuthUsedDefaultBody: '使用 ~/.ssh/ 下的默认密钥完成了认证。',
-    drawerTabFiles: '文件',
-    sidebarRefresh: '刷新',
-    sidebarNewFolder: '新建文件夹',
-    sidebarUpload: '上传',
-    sidebarToggleHidden: '显示/隐藏文件',
     sidebarLockRoot: '解锁以跟随终端目录',
     sidebarUnlockRoot: '锁定当前目录',
     sidebarSwitchView: '切换视图',
-    sidebarNewFolderPrompt: '请输入文件夹名称：',
     sidebarItems: '项',
     sidebarInfoDirs: '个文件夹',
     sidebarInfoFiles: '个文件',
     sidebarMoveTitle: '移动 {count} 个项目？',
     sidebarMoveConfirm: '移动',
     sidebarMoveCancel: '取消',
-    sidebarMoveDest: '目标位置',
     sidebarEmptyDir: '空目录',
     sidebarTreeMore: '还有 {n} 项,点击加载',
     fileManager: '文件管理',
@@ -2012,7 +1777,6 @@ const translations: Record<Language, Translations> = {
     ctxMenuUploadToCurrent: '上传到当前路径',
     ctxMenuNewFile: '新建文件',
     ctxMenuNewFolder: '新建文件夹',
-    ctxMenuCopyPath: '复制路径',
     ctxMenuCopyAbsPath: '复制绝对路径',
     ctxMenuTerminalOps: '终端操作',
     ctxMenuCopyTo: '复制到...',
@@ -2031,8 +1795,6 @@ const translations: Record<Language, Translations> = {
     ctxMenuRefresh: '刷新',
     ctxMenuShowHidden: '显示隐藏文件',
     serverInfoToggle: '服务器信息',
-    serverInfoHost: '主机',
-    serverInfoUser: '用户',
     serverInfoOS: '系统',
     serverInfoKernel: '内核',
     serverInfoUptime: '运行',
@@ -2049,11 +1811,6 @@ const translations: Record<Language, Translations> = {
     serverInfoResources: '资源',
     serverInfoSwapOff: '未启用',
     connectionsWindowTitle: '连接',
-    connectionsWindowHint: '点击连接即打开会话。⌘/Ctrl 点击可多选，再拖到分组上即可移动。',
-    connectionsWindowSettings: '设置',
-    connectionsWindowOpenFailed: '无法打开连接窗口。',
-    connectionMoveToGroup: '移动到分组',
-    connectionClearSelection: '取消选择',
     connectionGroupEmptyHint: '拖放连接到此处',
     connectionDeleteFailedTitle: '删除连接失败',
     connectionDeleteFailedBody: '该连接仍保留在列表中，详情见控制台。',
@@ -2085,23 +1842,15 @@ const translations: Record<Language, Translations> = {
     noShellsFound: '未找到可用的 Shell',
     defaultShell: '默认',
     defaultShellSetting: '默认 Shell',
-    contextMenuIntegration: '添加"在 MeTerm 中打开"到右键菜单',
     systemDefault: '跟随系统',
-    homeSavedConnections: '已保存的连接',
     homeEditConnection: '编辑',
-    homeShowMore: '展开更多',
-    homeShowLess: '收起',
-    homeRecentConnections: '最近连接',
     aiCapsule: 'MeAgent',
     aiBarOpacity: 'AI 输入栏透明度',
     aiSendCommand: '发送命令',
     aiSendPrompt: '发送提示词',
-    aiModelSelect: '模型',
-    aiPlaceholderInput: '输入命令或提示词...',
     aiPlaceholderCmd: '命令 ',
     aiPlaceholderAgent: ' 询问 MeAgent... ',
     aiCollapse: '收起',
-    aiExpand: '展开',
     aiLayoutSide: '侧边栏',
     aiLayoutBottom: '底部',
     aiHistory: '历史',
@@ -2112,7 +1861,6 @@ const translations: Record<Language, Translations> = {
     aiTimeJustNow: '刚刚',
     aiCopyCommand: '复制命令',
     settingsTabAI: 'AI',
-    aiProvider: '服务商',
     aiGroupProviders: '模型服务',
     aiGroupReply: '回复',
     aiGroupAgent: 'Agent',
@@ -2137,10 +1885,8 @@ const translations: Record<Language, Translations> = {
     aiChatHistoryLimitAll: '全部保留',
     aiGroupAdvanced: '高级',
     aiAdvancedSummary: '温度、对话历史上限、附带终端行数',
-    aiPreset: '快速选择',
     aiApiKey: 'API 密钥',
     aiBaseUrl: 'API 地址',
-    aiModelName: '模型',
     aiTemperature: '温度',
     aiTemperatureHint: '越高回答越发散。Claude Opus 4.7 及以后的模型和 OpenAI 推理模型会忽略这一项。',
     aiMaxTokens: '单次回复上限',
@@ -2182,11 +1928,6 @@ const translations: Record<Language, Translations> = {
     aiPermissionRuleToolRequired: '请输入工具名（* 匹配所有工具）。',
     aiAuditLog: '操作记录',
     aiAuditLogOpen: '打开',
-    aiAuditLogEmpty: '(暂无审计记录)',
-    aiAuditLogClose: '关闭',
-    aiAuditLogClear: '清空日志',
-    aiAuditLogReload: '刷新',
-    aiAuditLogClearConfirm: '确定清空所有审计记录?此操作不可撤销。',
     aiNotifyWaitingTitle: 'AI Agent 需要确认',
     aiNotifyCompleteTitle: 'AI Agent 已完成',
     aiNotifyCompleteBody: 'Agent 已完成当前任务。',
@@ -2194,9 +1935,6 @@ const translations: Record<Language, Translations> = {
     aiNotifyErrorBody: 'Agent 执行中止,请查看详情。',
     aiAgentMaxIterations: '最多连续执行步数',
     aiAgentUnlimited: '无限制',
-    aiTestConnection: '测试连接',
-    aiTestSuccess: '连接成功！',
-    aiTestFailed: '连接失败',
     aiTesting: '测试中...',
     aiNewChat: '新对话',
     aiClearChat: '清空对话',
@@ -2220,7 +1958,6 @@ const translations: Record<Language, Translations> = {
     aiStopGenerating: '停止',
     aiSendToAgentConfirm: '这看起来是提示词，发送给 MeAgent？',
     aiSendToAgentDontAsk: '不再询问，默认发送至 MeAgent',
-    aiSendToAgentYes: '发送给 Agent',
     aiSendToAgentNo: '发送到终端',
     aiPlaceholderAgentMode: ' MeAgent ',
     aiCtxCopy: '复制',
@@ -2231,7 +1968,6 @@ const translations: Record<Language, Translations> = {
     aiModelAutoDesc: '使用当前服务商的默认模型',
     aiAddProvider: '添加提供商',
     aiDeleteProvider: '删除',
-    aiProviderProtocol: '协议',
     aiFetchModels: '拉取模型',
     aiFetching: '拉取中...',
     aiFetchSuccess: '个模型已加载',
@@ -2247,7 +1983,6 @@ const translations: Record<Language, Translations> = {
     aiProviderNoModelsEnabled: '未启用模型',
     aiProviderEdit: '编辑',
     aiProviderDone: '完成',
-    aiSearxng: '网络搜索 (SearXNG)',
     aiSearxngUrl: 'SearXNG 地址',
     aiSearxngUrlPlaceholder: 'https://searx.example.org',
     aiSearxngAuth: '认证',
@@ -2268,17 +2003,12 @@ const translations: Record<Language, Translations> = {
     splitHorizontal: '水平分屏',
     splitVertical: '垂直分屏',
     closePane: '关闭面板',
-    pairingToken: '令牌',
-    homeMobilePairing: '手机配对',
     masterRequestTitle: '控制权申请',
     masterRequestMessage: '一个远程观察者请求控制终端。',
     masterRequestApprove: '同意',
     masterRequestDeny: '拒绝',
-    reclaimControl: '夺回控制权',
     reclaimClickHint: '点击取消远控',
     reclaimSpaceHint: '(空格取消远控)',
-    shareLink: '复制分享链接',
-    shareLinkCopied: '链接已复制!',
     sshExportConnections: '导出连接',
     sshImportConnections: '导入连接',
     sshExportSuccess: '连接导出成功',
@@ -2291,35 +2021,16 @@ const translations: Record<Language, Translations> = {
     sshExportMissingCredential: '其中 {count} 个连接没有可迁移的密码或私钥，无法在手机离线直连',
     sshExportMobileUnsupported: '其中 {count} 个连接已导出，但其代理、凭据格式或大小不受当前手机直连导入支持',
     sshNoConnectionsToExport: '没有可导出的连接',
-    remoteSecureTransportRequired: '远程凭据必须通过 HTTPS/WSS 传输，已拦截局域网明文连接。',
-    remoteScanComingSoon: '局域网扫描即将推出',
-    remoteSessionAutoRefresh: '自动刷新',
-    remoteDeleteConnection: '删除',
     sshHostKeyUnknownTitle: '未知主机密钥',
     sshHostKeyUnknownMsg: '无法验证主机 "{hostname}" 的真实性。是否信任此主机并继续连接？',
     sshHostKeyType: '密钥类型',
     sshHostKeyFingerprint: '指纹',
     sshHostKeyTrust: '信任并连接',
     sshHostKeyMismatchMsg: '警告：主机 {hostname} 的密钥已变更！这可能表示中间人攻击。密钥类型：{keyType}，指纹：{fingerprint}。连接已拒绝。',
-    remotePairing: '正在请求配对...',
-    remotePairApproved: '配对已通过!',
-    remotePairDenied: '配对被拒绝',
-    remotePairTimeout: '配对请求超时',
-    remoteScanBtn: '扫描',
-    remoteScanStop: '停止',
-    customToken: '自定义 Token',
-    kickSuccess: '已踢出',
-    deviceCardKickDevice: '踢出设备',
-    kickDeviceConfirm: '确定踢出该设备的所有连接？',
-    kickDeviceSuccess: '设备已踢出',
-    kickedByHost: '已被踢出',
     kickedOverlayMsg: '你已被主机断开连接。',
     closeTab: '关闭标签',
-    confirmBanIp: '是否同时封禁该设备的 IP 地址？',
-    banIpYes: '封禁 IP',
     enableTerminalNotifications: '允许程序发送系统通知',
     jsBypassProxy: '绕过系统代理（内网 JumpServer）',
-    remoteTypeBadge: '远程',
     aiChatHistory: '对话历史',
     aiChatHistoryEmpty: '暂无对话历史',
     aiChatHistoryTitle: '对话历史',
@@ -2419,26 +2130,9 @@ const translations: Record<Language, Translations> = {
     aiConfirmMoreChars: '…（还有 {n} 个字符）',
     aiWaitDefaultReason: '需要用户输入',
     commonCopied: '已复制!',
-    updateAvailable: '新版本 {version} 已发布',
-    updateNow: '立即更新',
-    updateLater: '稍后',
-    updateDownloading: '下载中 {pct}%',
-    updateFinishing: '安装中...',
-    updateRestarting: '重启中...',
-    updateHint: '安装完成后应用将自动重启。',
-    updateFailed: '更新失败',
-    updateFailedHint: '请稍后重试，或手动下载最新版本。',
-    updateModalTitle: '更新至 {version}',
-    updateReleaseNotes: '更新说明',
-    checkUpdates: '检查更新',
-    checkUpdatesUpToDate: '当前已是最新版本',
-    checkUpdatesChecking: '正在检查更新…',
-    updateModalClose: '关闭',
-    hideUpdateIcon: '关闭标题栏更新按钮',
     openFileManager: '打开文件管理器',
     navigateConfirmMsg: '是否打开文件管理器并跳转到 {path}？',
     navigateCancel: '取消',
-    navigateConfirm: '打开',
     fileLinkHint: '{mod}+点击打开 {name}',
     fileLinkOpenLocal: '用本机关联程序打开',
     fileLinkOpenInDrawer: '在文件管理器中打开',
@@ -2510,17 +2204,12 @@ const translations: Record<Language, Translations> = {
     homeNewJumpServer: 'JumpServer',
     jsSaveAndConnect: '保存并连接',
     homeSearchPlaceholder: '搜索连接、指令或文档',
-    homeGroupDefault: '默认',
     homeGroupUngrouped: '最近',
-    homeGroupManage: '管理分组',
     homeGroupNew: '新建分组',
     homeGroupRename: '重命名',
     homeGroupDelete: '删除分组',
     homeGroupDeleteConfirm: '删除该分组？连接将移至最近。',
     homeGroupMoveToGroup: '移动到分组',
-    homeGroupNodeCount: '{count} 个节点',
-    homeGroupResizeHint: '拖动调整宽度，双击恢复默认宽度',
-    homeGroupColor: '颜色',
     homeGroupColorClear: '清除颜色',
     homeGroupCollapse: '折叠',
     homeGroupExpand: '展开',
@@ -2530,18 +2219,13 @@ const translations: Record<Language, Translations> = {
     homeRecentActivity: '最近活跃',
     homeRecentRemove: '从历史记录中移除',
     homeFooterVersion: 'MeTerm v{version}',
-    homeFooterGitHub: 'GitHub',
-    homeNoConnections: '暂无连接',
-    homeSearchHint: '输入关键词搜索连接、网页和命令文档',
     homeSearchConnections: '连接',
     homeSearchWeb: '网络搜索',
     homeSearchTldr: '命令文档',
     homeSearching: '搜索中...',
-    homeSearchLoadMore: '加载更多',
     homeSearchPerPage: '/页',
     homeNoResults: '无结果',
     settingsTabAbout: '关于',
-    aboutVersion: '版本',
     aboutDescription: '轻量的多会话终端客户端。',
     aboutGitHub: 'GitHub',
     aboutGitee: 'Gitee',
@@ -2562,7 +2246,6 @@ const translations: Record<Language, Translations> = {
     tldrEnable: '启用 tldr 命令帮助',
     tldrNoData: '暂无帮助数据，请点击"立即更新"下载。',
     tldrUpdating: '正在更新帮助数据…',
-    tldrLastUpdated: '上次更新：{date}',
     tldrUpdateNow: '立即更新',
     tldrPageCount: '已索引 {count} 个命令',
     tldrExamples: '示例',
@@ -2577,7 +2260,6 @@ const translations: Record<Language, Translations> = {
     editorSaving: '保存中...',
     editorSaved: '已保存',
     editorSaveFailed: '保存失败',
-    editorDisconnected: '会话已断开',
     editorReadOnly: '只读',
     editorLoading: '加载中...',
     editorMdPreview: '预览',

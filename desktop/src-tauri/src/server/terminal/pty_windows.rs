@@ -31,16 +31,7 @@ impl ConPtyTerminal {
     ///
     /// PowerShell hook injection: adds `-NoExit -Command "..."` for OSC 7 CWD tracking.
     /// cmd.exe: sets PROMPT for OSC 7 CWD tracking.
-    ///
-    /// `envs`:调用方额外注入的环境变量(agent 终端镜像 M1 的 METERM_* hook env)。
-    /// Windows 原生 shell 是本机进程,loopback 可达,故与 unix 一样直接注入。
-    pub fn new(
-        shell: &str,
-        cwd: &str,
-        cols: u16,
-        rows: u16,
-        envs: &[(String, String)],
-    ) -> Result<Self, String> {
+    pub fn new(shell: &str, cwd: &str, cols: u16, rows: u16) -> Result<Self, String> {
         let pty_system = xpty::native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -115,11 +106,6 @@ impl ConPtyTerminal {
             cmd.cwd(cwd);
         }
         cmd.env("TERM", "xterm-256color");
-
-        // 调用方注入的环境变量(agent 镜像 hook env 等)。
-        for (k, v) in envs {
-            cmd.env(k, v);
-        }
 
         let mut reader = pair
             .master

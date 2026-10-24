@@ -50,11 +50,7 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
     // 桌面级事件总线(终端通知 Phase 1):先建好,注入 SessionManager(→ 每个 Session),
     // 再原样存进 ServerState——同一条 channel,SessionManager 与 ServerState 各持一份 clone。
     let event_bus = EventBus::new();
-    // hook secret 注册表:先建好注入 SessionManager(reap 清理会话 secret),再存进 ServerState
-    // (同源 clone)——修 M1 的 reap secret 泄漏。
-    let hook_secrets = HookSecretRegistry::new();
-    let session_manager =
-        SessionManager::new(session_config, event_bus.clone(), hook_secrets.clone());
+    let session_manager = SessionManager::new(session_config, event_bus.clone());
     let pairing_manager = PairingManager::new(
         authenticator.clone(),
         session_manager.clone(),
@@ -88,10 +84,6 @@ pub async fn start(config: ServerConfig) -> Result<Arc<ServerState>, String> {
         device_id,
         event_bus,
         presence: PresenceRegistry::new(),
-        agents: agent::AgentManager::new(),
-        hook_secrets,
-        mirrors: agent::MirrorRegistry::new(),
-        permission_bridge: agent::PermissionBridge::new(),
     });
 
     let addr = format!("127.0.0.1:{}", port);

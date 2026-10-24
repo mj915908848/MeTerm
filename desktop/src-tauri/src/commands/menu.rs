@@ -1,12 +1,9 @@
 #[cfg(target_os = "macos")]
 use tauri::menu::Submenu;
-use tauri::State;
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
     AppHandle, Manager,
 };
-
-use crate::AppLifecycleState;
 
 pub fn tray_label(language: &str, key: &str) -> &'static str {
     match (language, key) {
@@ -33,26 +30,6 @@ pub fn tray_label(language: &str, key: &str) -> &'static str {
         (_, "check_updates") => "Check for Updates",
         (_, "pip_toggle") => "Picture-in-Picture",
         _ => "",
-    }
-}
-
-/// Build the "Check for Updates" menu item label, appending a badge dot
-/// when a pending update version is known.
-pub fn build_check_updates_label(language: &str, pending_version: Option<&str>) -> String {
-    let base = tray_label(language, "check_updates");
-    match pending_version {
-        Some(v) => format!("{} ● (v{})", base, v),
-        None => base.to_string(),
-    }
-}
-
-/// Same as build_check_updates_label but for the native app menu bar.
-#[cfg(target_os = "macos")]
-fn build_check_updates_app_label(language: &str, pending_version: Option<&str>) -> String {
-    let base = app_label(language, "check_updates");
-    match pending_version {
-        Some(v) => format!("{} ● (v{})", base, v),
-        None => base.to_string(),
     }
 }
 
@@ -109,9 +86,9 @@ pub fn app_label(language: &str, key: &str) -> &'static str {
     }
 }
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(not(target_os = "macos"))]
 pub fn set_app_menu_language(app: &AppHandle, _language: &str) -> Result<(), String> {
-    // Windows/Linux use custom in-app menu in the toolbar.
+    // Windows uses a custom in-app menu in the toolbar.
     // Remove native menu so no system menubar/accelerators are shown.
     // This operation should be idempotent; if the menu is already removed,
     // we keep going instead of treating it as a hard failure.
@@ -123,9 +100,6 @@ pub fn set_app_menu_language(app: &AppHandle, _language: &str) -> Result<(), Str
 
 #[cfg(target_os = "macos")]
 pub fn set_app_menu_language(app: &AppHandle, language: &str) -> Result<(), String> {
-    let pending_version = app
-        .try_state::<crate::AppLifecycleState>()
-        .and_then(|s| s.pending_update());
     let app_settings_item = MenuItem::with_id(
         app,
         "settings",
@@ -364,11 +338,10 @@ pub fn set_app_menu_language(app: &AppHandle, language: &str) -> Result<(), Stri
         Some("CmdOrCtrl+/"),
     )
     .map_err(|e| e.to_string())?;
-    let check_updates_label = build_check_updates_app_label(language, pending_version.as_deref());
     let help_check_updates_item = MenuItem::with_id(
         app,
         "check_updates",
-        check_updates_label.as_str(),
+        app_label(language, "check_updates"),
         true,
         None::<&str>,
     )
@@ -408,7 +381,6 @@ pub fn set_tray_language(app: AppHandle, language: String) -> Result<(), String>
     // Store the language in app state
     let lifecycle = app.state::<crate::AppLifecycleState>();
     lifecycle.set_language(language.clone());
-    let pending_version = lifecycle.pending_update();
 
     let tray = app
         .tray_by_id("main-tray")
@@ -496,11 +468,10 @@ pub fn set_tray_language(app: AppHandle, language: String) -> Result<(), String>
     )
     .map_err(|e| e.to_string())?;
 
-    let check_updates_label = build_check_updates_label(&language, pending_version.as_deref());
     let check_updates_item = MenuItem::with_id(
         &app,
         "check_updates",
-        check_updates_label.as_str(),
+        tray_label(&language, "check_updates"),
         true,
         None::<&str>,
     )
@@ -534,17 +505,4 @@ pub fn set_tray_language(app: AppHandle, language: String) -> Result<(), String>
     tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     set_app_menu_language(&app, &language)?;
     Ok(())
-}
-
-/// Called from the frontend when an update is found (or cleared).
-/// Updates the tray and native menu bar to show/hide the badge indicator.
-#[tauri::command]
-pub fn set_update_badge(
-    app: AppHandle,
-    state: State<'_, AppLifecycleState>,
-    version: Option<String>,
-) -> Result<(), String> {
-    state.set_pending_update(version);
-    let lang = state.current_language();
-    set_tray_language(app, lang)
 }

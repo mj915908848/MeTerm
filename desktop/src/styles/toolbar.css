@@ -58,8 +58,7 @@
   pointer-events: none; /* let empty space pass through to drag layer */
 }
 
-html.platform-windows .editor-tabs-area,
-html.platform-linux .editor-tabs-area {
+html.platform-windows .editor-tabs-area {
   padding-left: 8px;
 }
 
@@ -96,22 +95,19 @@ html.platform-linux .editor-tabs-area {
   margin-left: 84px;
 }
 
-/* Windows/Linux: no leading offset needed (macOS uses 84px for traffic lights) */
-html.platform-windows #window-toolbar-left,
-html.platform-linux #window-toolbar-left {
+/* Windows: no leading offset needed (macOS uses 84px for traffic lights) */
+html.platform-windows #window-toolbar-left {
   margin-left: 0;
 }
 
-/* Windows/Linux: remove right padding so window controls sit flush at the edge */
-html.platform-windows #window-toolbar,
-html.platform-linux #window-toolbar {
+/* Windows: remove right padding so window controls sit flush at the edge */
+html.platform-windows #window-toolbar {
   padding-right: 0;
 }
 
-/* Windows/Linux: window controls must fill the full toolbar height.
+/* Windows: window controls must fill the full toolbar height.
    The win-control-btn elements have height: 32px and are center-aligned. */
-html.platform-windows #window-toolbar-right,
-html.platform-linux #window-toolbar-right {
+html.platform-windows #window-toolbar-right {
   align-self: stretch;
   align-items: center;
 }
@@ -564,20 +560,6 @@ html[data-theme="light"] .win-close-btn:hover {
   line-height: 1;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
-/* Update available icon in toolbar */
-.toolbar-update-btn {
-  color: var(--accent, #4c7eff) !important;
-  position: relative;
-}
-.toolbar-update-btn svg {
-  animation: update-spin-once 1.2s ease-out 0.5s 1 forwards;
-}
-@keyframes update-spin-once {
-  0% { transform: rotate(0deg); }
-  60% { transform: rotate(360deg); }
-  100% { transform: rotate(360deg); }
-}
-
 @keyframes title-marquee {
   0% {
     transform: translateX(0);

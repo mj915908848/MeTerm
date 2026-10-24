@@ -919,7 +919,6 @@ pub(crate) async fn device_scope_middleware(
 
 /// Constant-time byte comparison to prevent timing attacks on token validation.
 /// Mirrors Go's `subtle.ConstantTimeCompare`.
-/// `pub(crate)` 供 hook secret 注册表复用同一套常量时间比较(见 `hook_secret`)。
 pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;

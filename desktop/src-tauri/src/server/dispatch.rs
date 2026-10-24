@@ -613,24 +613,6 @@ pub async fn dispatch_message(
                 }
             }
         }
-        // agent 会话上行:发消息(0x51)。master-gated;解析 + 注入镜像会话底层 PTY
-        // 都在 upstream::handle_agent_input 内(多行提交回车内部 tokio::spawn 延迟注入,不在此 await)。
-        protocol::MSG_AGENT_INPUT => {
-            if !authority.can_control() {
-                deny_not_master(session, &authority);
-                return;
-            }
-            super::agent::upstream::handle_agent_input(session, &authority, payload, state);
-        }
-        // agent 会话上行:审批 / 打断(0x52)。master-gated;解析 + 打断注入 PTY / 审批
-        // 决策回投审批桥(均不阻塞 WS 读循环)都在 upstream::handle_agent_control 内。
-        protocol::MSG_AGENT_CONTROL => {
-            if !authority.can_control() {
-                deny_not_master(session, &authority);
-                return;
-            }
-            super::agent::upstream::handle_agent_control(session, &authority, payload, state);
-        }
         _ => {}
     }
 }

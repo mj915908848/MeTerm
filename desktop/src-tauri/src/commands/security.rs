@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
-
 // ─── Native-only cleanup for insecure legacy Keychain ACLs ───
 
 // 只有 macOS 和测试用到 / used on macOS and in tests only
@@ -130,185 +127,6 @@ mod macos_service_scrub {
     }
 }
 
-// ─── One-time localStorage migration from old bundle ID ───
-
-const LEGACY_UI_PREFERENCE_KEYS: &[&str] = &[
-    "meterm-language",
-    "meterm-hide-update-icon",
-    "meterm-hide-to-tray-pref",
-    "meterm-pairing-autoclose",
-    "meterm-ai-bar-collapsed",
-    "meterm-ai-layout-mode",
-    "meterm-ai-side-width",
-    "meterm-js-panel-width",
-    "meterm-js-browser-docked",
-    "meterm-editor-font-size",
-    "meterm-editor-window-size",
-];
-const MAX_LEGACY_PREFERENCE_BYTES: usize = 8 * 1024;
-static LEGACY_STORAGE_CONSUMED: OnceLock<Mutex<bool>> = OnceLock::new();
-
-fn should_consume_legacy_ui_preferences(debug_build: bool) -> bool {
-    // The signed development bundle itself uses com.meterm.dev. Treating that
-    // live WebKit store as a legacy Release source would delete its own state
-    // and retrigger migrations on every launch.
-    !debug_build
-}
-
-/// One-shot, main-window-only migration for a strict list of non-secret UI
-/// preferences. Only exact allowlisted UI rows are consumed; credential/history
-/// rows remain untouched for an explicit recovery or cleanup flow. A second
-/// call in the same process returns no data. Debug is always a no-op because
-/// com.meterm.dev is its current, not legacy, WebKit store.
-#[tauri::command]
-pub async fn consume_legacy_ui_preferences(
-    window: tauri::WebviewWindow,
-) -> Result<Option<HashMap<String, String>>, String> {
-    if window.label() != "main" {
-        return Err("legacy preference migration is main-window startup only".to_string());
-    }
-    if !should_consume_legacy_ui_preferences(cfg!(debug_assertions)) {
-        return Ok(None);
-    }
-    let mut consumed = LEGACY_STORAGE_CONSUMED
-        .get_or_init(|| Mutex::new(false))
-        .lock()
-        .map_err(|_| "legacy preference migration is unavailable".to_string())?;
-    if *consumed {
-        return Ok(None);
-    }
-
-    let home = dirs::home_dir().ok_or("cannot determine home directory")?;
-    let old_base = home.join("Library/WebKit/com.meterm.dev/WebsiteData/Default");
-    if !old_base.exists() {
-        *consumed = true;
-        return Ok(None);
-    }
-
-    let mut databases = Vec::new();
-    for entry in walkdir::WalkDir::new(&old_base)
-        .max_depth(8)
-        .follow_links(false)
-        .into_iter()
-        .filter_map(Result::ok)
-    {
-        if entry.file_type().is_file() && entry.file_name() == "localstorage.sqlite3" {
-            databases.push(entry.into_path());
-            if databases.len() > 32 {
-                return Err("too many legacy localStorage databases".to_string());
-            }
-        }
-    }
-
-    let mut result = HashMap::new();
-    for path in databases {
-        result.extend(consume_sqlite_localstorage(&path)?);
-    }
-    *consumed = true;
-    if result.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(result))
-    }
-}
-
-fn consume_sqlite_localstorage(path: &std::path::Path) -> Result<HashMap<String, String>, String> {
-    use rusqlite::OptionalExtension;
-
-    let mut conn = rusqlite::Connection::open_with_flags(
-        path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-    )
-    .map_err(|_| "failed to open legacy localStorage".to_string())?;
-    conn.pragma_update(None, "secure_delete", "ON")
-        .map_err(|_| "failed to secure legacy localStorage".to_string())?;
-    let transaction = conn
-        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-        .map_err(|_| "failed to lock legacy localStorage".to_string())?;
-    let mut result = HashMap::new();
-
-    for key in LEGACY_UI_PREFERENCE_KEYS {
-        let raw = transaction
-            .query_row(
-                "SELECT value FROM ItemTable WHERE key = ?1 LIMIT 1",
-                [key],
-                |row| decode_localstorage_value(row.get_ref(0)?),
-            )
-            .optional()
-            .map_err(|_| "failed to read legacy localStorage".to_string())?;
-        if let Some(Ok(value)) = raw {
-            if let Some(value) = validate_legacy_preference(key, value) {
-                result.insert((*key).to_string(), value);
-            }
-        }
-        transaction
-            .execute("DELETE FROM ItemTable WHERE key = ?1", [key])
-            .map_err(|_| "failed to consume legacy UI preference".to_string())?;
-    }
-    transaction
-        .commit()
-        .map_err(|_| "failed to commit legacy localStorage migration".to_string())?;
-    let _ = conn.pragma_update(None, "wal_checkpoint", "TRUNCATE");
-    Ok(result)
-}
-
-fn decode_localstorage_value(
-    value: rusqlite::types::ValueRef<'_>,
-) -> rusqlite::Result<Result<String, ()>> {
-    let decoded = match value {
-        rusqlite::types::ValueRef::Text(bytes) if bytes.len() <= MAX_LEGACY_PREFERENCE_BYTES => {
-            std::str::from_utf8(bytes)
-                .map(str::to_string)
-                .map_err(|_| ())
-        }
-        rusqlite::types::ValueRef::Blob(bytes)
-            if bytes.len() <= MAX_LEGACY_PREFERENCE_BYTES && bytes.len() % 2 == 0 =>
-        {
-            let utf16 = bytes
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|pair| u16::from_le_bytes(*pair))
-                .collect::<Vec<_>>();
-            String::from_utf16(&utf16).map_err(|_| ())
-        }
-        _ => Err(()),
-    };
-    Ok(decoded)
-}
-
-fn validate_legacy_preference(key: &str, value: String) -> Option<String> {
-    match key {
-        "meterm-language" if matches!(value.as_str(), "en" | "zh") => Some(value),
-        "meterm-hide-update-icon" if value == "1" => Some(value),
-        "meterm-hide-to-tray-pref" if value == "always_hide" => Some(value),
-        "meterm-pairing-autoclose" if matches!(value.as_str(), "true" | "false") => Some(value),
-        "meterm-ai-bar-collapsed" if matches!(value.as_str(), "0" | "1") => Some(value),
-        "meterm-ai-layout-mode" if matches!(value.as_str(), "bottom" | "side") => Some(value),
-        "meterm-ai-side-width" | "meterm-js-panel-width" => value
-            .parse::<u16>()
-            .ok()
-            .filter(|width| (100..=4_000).contains(width))
-            .map(|width| width.to_string()),
-        "meterm-js-browser-docked" if matches!(value.as_str(), "true" | "false") => Some(value),
-        "meterm-editor-font-size" => value
-            .parse::<u8>()
-            .ok()
-            .filter(|size| (10..=24).contains(size))
-            .map(|size| size.to_string()),
-        "meterm-editor-window-size" => {
-            let parsed = serde_json::from_str::<serde_json::Value>(&value).ok()?;
-            let width = parsed.get("width")?.as_u64()?;
-            let height = parsed.get("height")?.as_u64()?;
-            if !(320..=8_192).contains(&width) || !(240..=8_192).contains(&height) {
-                return None;
-            }
-            Some(serde_json::json!({ "width": width, "height": height }).to_string())
-        }
-        _ => None,
-    }
-}
-
 // ─── Proxy settings ───
 
 #[tauri::command]
@@ -347,20 +165,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn legacy_preference_allowlist_rejects_secret_bearing_keys() {
-        assert!(validate_legacy_preference("meterm-language", "zh".to_string()).is_some());
-        for key in [
-            "meterm-settings",
-            "meterm-ssh-connections",
-            "meterm-remote-connections",
-            "meterm-jumpserver-connections",
-            "meterm-ai-history",
-        ] {
-            assert!(validate_legacy_preference(key, "secret".to_string()).is_none());
-        }
-    }
-
-    #[test]
     fn maintenance_scrub_excludes_current_and_per_connection_migration_services() {
         for service in [
             "com.meterm.app.ssh",
@@ -380,7 +184,6 @@ mod tests {
         let services = insecure_legacy_keychain_services_for_build(true);
         assert_eq!(services, DEBUG_INSECURE_LEGACY_KEYCHAIN_SERVICES);
         assert!(services.is_empty());
-        assert!(!should_consume_legacy_ui_preferences(true));
     }
 
     #[test]
@@ -389,74 +192,5 @@ mod tests {
             insecure_legacy_keychain_services_for_build(false),
             RELEASE_INSECURE_LEGACY_KEYCHAIN_SERVICES
         );
-        assert!(should_consume_legacy_ui_preferences(false));
-    }
-
-    #[test]
-    fn sqlite_consume_returns_only_safe_preferences_and_preserves_other_rows() {
-        let path = std::env::temp_dir().join(format!(
-            "meterm-legacy-localstorage-{}.sqlite3",
-            uuid::Uuid::new_v4()
-        ));
-        let conn = rusqlite::Connection::open(&path).unwrap();
-        conn.execute(
-            "CREATE TABLE ItemTable (key TEXT PRIMARY KEY, value BLOB)",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO ItemTable (key, value) VALUES (?1, ?2)",
-            ("meterm-language", "zh"),
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO ItemTable (key, value) VALUES (?1, ?2)",
-            (
-                "meterm-editor-window-size",
-                r#"{"width":900,"height":700,"token":"secret"}"#,
-            ),
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO ItemTable (key, value) VALUES (?1, ?2)",
-            ("meterm-ssh-connections", r#"{"password":"secret"}"#),
-        )
-        .unwrap();
-        drop(conn);
-
-        let migrated = consume_sqlite_localstorage(&path).unwrap();
-        assert_eq!(
-            migrated.get("meterm-language").map(String::as_str),
-            Some("zh")
-        );
-        assert_eq!(
-            serde_json::from_str::<serde_json::Value>(
-                migrated.get("meterm-editor-window-size").unwrap()
-            )
-            .unwrap(),
-            serde_json::json!({ "width": 900, "height": 700 })
-        );
-        assert!(!migrated.contains_key("meterm-ssh-connections"));
-        assert!(!migrated.values().any(|value| value.contains("secret")));
-
-        let conn = rusqlite::Connection::open(&path).unwrap();
-        let remaining: u64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM ItemTable WHERE key GLOB 'meterm-*'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(remaining, 1);
-        let preserved: String = conn
-            .query_row(
-                "SELECT value FROM ItemTable WHERE key = 'meterm-ssh-connections'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert!(preserved.contains("secret"));
-        drop(conn);
-        let _ = std::fs::remove_file(path);
     }
 }

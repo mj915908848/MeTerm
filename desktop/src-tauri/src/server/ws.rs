@@ -228,24 +228,8 @@ async fn handle_ws(
         let _ = writer_done_tx.send(());
     });
 
-    // 6. 回放历史(在 writer 之后):agent 会话带背压回放 MSG_AGENT_EVENT 帧——attach 逐帧
-    //    `send_async`(通道满则等 writer 排空,不丢不断连),回放全部完成后原子把本 client 登记进
-    //    attached 集合;fan-out 只投递给 attached、不走 broadcast——由此对晚 attach 的 client
-    //    精确一次、有序(见 agent::manager 模块说明)。终端会话回放 PTY 环形缓冲(原逻辑)。
-    if let Some(entry) = state.agents.get(&session_id) {
-        // agent 会话:回放 AI 历史(attach 背压逐帧,writer 已在步骤5 spawn 并发排空)。
-        entry.attach(&client).await;
-        // Mirror 会话(方案甲)底层是带 PTY 的 local-shell:除 AI 历史外,再回放终端环形缓冲,
-        // 使终端页与 AI 页在同一连接上都拿到历史。两类帧走同一 priority 通道,手机端按 opcode
-        // (MSG_OUTPUT / 0x50)分流,先后顺序不影响正确性。**必须用背压变体**
-        // `flush_ring_buffer_async`:attach 的背压回放可能把 priority 通道填到正好满,若这里再用
-        // 非阻塞 `flush_ring_buffer` 首块就撞 Full → disconnect + 截断 → 大历史/慢 sink 下永久重连环
-        // (attach 背压化消灭的 Critical bug 的终端缓冲镜像版)。背压 flush 满则等 writer 排空、绝不断连;
-        // flush 同样在 writer 之后(步骤5),故背压前提成立。
-        session.flush_ring_buffer_async(&client, conn_gen).await;
-    } else {
-        session.flush_ring_buffer(&client, conn_gen);
-    }
+    // 6. 回放终端环形缓冲(在 writer 之后)。
+    session.flush_ring_buffer(&client, conn_gen);
 
     // 7. Bidirectional message loop
     // (conn_gen 已在 step2 之后捕获 H0 自己的代次 G0——见上方说明,cleanup 用它精确一次清理。)

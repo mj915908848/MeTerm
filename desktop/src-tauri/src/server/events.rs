@@ -53,29 +53,6 @@ pub enum DesktopEvent {
         exit: i32,
         duration_ms: u64,
     },
-
-    /// agent 会话一轮结束(`AgentEvent::TurnComplete`);手机侧提示"该轮已完成"。
-    #[serde(rename = "agent_turn_done")]
-    AgentTurnDone {
-        /// 每条事件唯一 id(手机通知身份 / 去重),生成自 `Uuid::new_v4`。
-        id: String,
-        session_id: String,
-        /// 会话标题,语义同 `Notify::session_title`。
-        session_title: String,
-    },
-
-    /// agent 会话需要用户审批(`AgentEvent::PermissionRequest`);
-    /// 手机侧提示"需要审批",`title` = 待审批工具标题(来自 `AgentEvent::PermissionRequest.title`)。
-    #[serde(rename = "agent_needs_approval")]
-    AgentNeedsApproval {
-        /// 每条事件唯一 id(手机通知身份 / 去重),生成自 `Uuid::new_v4`。
-        id: String,
-        session_id: String,
-        /// 会话标题,语义同 `Notify::session_title`。
-        session_title: String,
-        /// 待审批工具标题。
-        title: String,
-    },
 }
 
 /// 桌面事件总线 — `broadcast::Sender` 的轻量封装。
@@ -510,29 +487,5 @@ mod tests {
         assert_eq!(json["cmd"], "make build");
         assert_eq!(json["exit"], 0);
         assert_eq!(json["duration_ms"], 30_000);
-
-        let turn_done = DesktopEvent::AgentTurnDone {
-            id: "id-3".to_string(),
-            session_id: "sess-3".to_string(),
-            session_title: "会话C".to_string(),
-        };
-        let json = serde_json::to_value(&turn_done).unwrap();
-        assert_eq!(json["t"], "agent_turn_done");
-        assert_eq!(json["id"], "id-3");
-        assert_eq!(json["session_id"], "sess-3");
-        assert_eq!(json["session_title"], "会话C");
-
-        let needs_approval = DesktopEvent::AgentNeedsApproval {
-            id: "id-4".to_string(),
-            session_id: "sess-4".to_string(),
-            session_title: "会话D".to_string(),
-            title: "`ls -la`".to_string(),
-        };
-        let json = serde_json::to_value(&needs_approval).unwrap();
-        assert_eq!(json["t"], "agent_needs_approval");
-        assert_eq!(json["id"], "id-4");
-        assert_eq!(json["session_id"], "sess-4");
-        assert_eq!(json["session_title"], "会话D");
-        assert_eq!(json["title"], "`ls -la`");
     }
 }

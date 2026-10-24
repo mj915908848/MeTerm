@@ -11,9 +11,9 @@ pub fn register_context_menu() -> Result<(), String> {
     {
         register_windows_context_menu()
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        Err("Context menu registration is not supported on Linux yet".into())
+        Err("Context menu registration is not supported on this platform".into())
     }
 }
 
@@ -28,9 +28,9 @@ pub fn unregister_context_menu() -> Result<(), String> {
     {
         unregister_windows_context_menu()
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        Err("Context menu registration is not supported on Linux yet".into())
+        Err("Context menu registration is not supported on this platform".into())
     }
 }
 
@@ -49,7 +49,7 @@ pub fn is_context_menu_registered() -> bool {
             .open_subkey(r"Directory\shell\MeTerm")
             .is_ok()
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         false
     }

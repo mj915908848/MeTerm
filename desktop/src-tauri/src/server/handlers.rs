@@ -133,11 +133,6 @@ pub struct CreateSessionRequest {
     pub cols: u16,
     #[serde(default = "default_rows")]
     pub rows: u16,
-    /// 显式新建镜像会话(M7):置 true 则给 PTY 注入 METERM_AUTO_CLAUDE=1,
-    /// rc 守卫在加载完成后自动跑 `claude`,新会话开箱即镜像。缺省 false(零行为变化)。
-    /// serde 默认忽略未知字段,旧桌面收手机发的 auto_claude 只是忽略(退化普通终端),前后兼容。
-    #[serde(default)]
-    pub auto_claude: bool,
 }
 
 fn default_cols() -> u16 {
@@ -147,49 +142,21 @@ fn default_rows() -> u16 {
     24
 }
 
-/// 在基础 hook envs 之上按 `auto_claude` 追加 `METERM_AUTO_CLAUDE=1` 标志(显式新建镜像会话用)。
-///
-/// 抽成纯函数便于单测——`create_session` 需真起 PTY 难以直接测。
-/// `auto_claude=false` 时零行为变化(不追加任何 env),保证零 token / 前后兼容。
-fn apply_auto_claude_env(
-    mut envs: Vec<(String, String)>,
-    auto_claude: bool,
-) -> Vec<(String, String)> {
-    if auto_claude {
-        envs.push(("METERM_AUTO_CLAUDE".to_string(), "1".to_string()));
-    }
-    envs
-}
-
 pub async fn create_session(
     Extension(state): Extension<Arc<ServerState>>,
     body: Option<Json<CreateSessionRequest>>,
 ) -> impl IntoResponse {
     eprintln!("[handler] create_session called, body={:?}", body.is_some());
-    let (shell, cwd, cols, rows, auto_claude) = if let Some(Json(req)) = body {
-        (req.shell, req.cwd, req.cols, req.rows, req.auto_claude)
+    let (shell, cwd, cols, rows) = if let Some(Json(req)) = body {
+        (req.shell, req.cwd, req.cols, req.rows)
     } else {
-        // 无 body 分支:auto_claude=false(退化普通终端)。
-        (String::new(), String::new(), 80, 24, false)
+        (String::new(), String::new(), 80, 24)
     };
 
     let session = state.session_manager.create();
 
-    // agent 终端镜像地基(M1):给 local-shell 注入 hook 环境变量。
-    // 每会话生成随机 secret 登记注册表,组装 3 个 METERM_* env 透传给 PTY。
-    // 所有 local-shell 会话都注入(零副作用:不起 claude 就没 hook 回报);SSH 不注入。
-    let secret = super::generate_token();
-    state
-        .hook_secrets
-        .register(session.id.clone(), secret.clone());
-    let envs = super::hook_secret::hook_envs(&session.id, state.port, &secret);
-    // 显式新建镜像会话(M7):auto_claude=true 时追加 METERM_AUTO_CLAUDE=1,
-    // rc 守卫在加载完成后自动跑 claude;false 时零行为变化(不追加)。
-    let envs = apply_auto_claude_env(envs, auto_claude);
-
     // Start the terminal via LocalShellExecutor
-    let executor =
-        super::executor::local::LocalShellExecutor::new(shell, cwd, cols, rows).with_envs(envs);
+    let executor = super::executor::local::LocalShellExecutor::new(shell, cwd, cols, rows);
     match executor.start().await {
         Ok(terminal) => {
             // Start terminal I/O loop (read output → broadcast, receive input → write)
@@ -197,7 +164,7 @@ pub async fn create_session(
         }
         Err(e) => {
             eprintln!("[meterm] terminal start failed: {}", e);
-            // 终端未起来,原子回收临时可见的 session 与 hook secret。
+            // 终端未起来,原子回收临时可见的 session。
             state.session_manager.discard_unstarted(&session.id);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -255,9 +222,6 @@ pub async fn list_sessions(
                 "ssh_host": ssh_host,
                 "ssh_username": ssh_username,
                 "ssh_port": ssh_port,
-                // agent 镜像标记(方案甲 M3,wire 契约冻结、M8 手机已按此解码):
-                // agents 表有 entry 即 true(表中只有镜像会话)。
-                "agent_mirror": state.agents.get(&s.id).is_some(),
             })
         })
         .collect();
@@ -291,8 +255,6 @@ pub async fn get_session(
                 "executor_type": s.executor_type.lock().unwrap().clone(),
                 "has_local_client": s.has_connected_loopback_client(),
                 "created_at": format_system_time(&s.created_at_system),
-                // agent 镜像标记(方案甲 M3):与 list_sessions 同一映射。
-                "agent_mirror": state.agents.get(&s.id).is_some(),
             })),
         ),
         None => (
@@ -321,12 +283,6 @@ pub async fn delete_session(
     }
     match state.session_manager.delete(&id) {
         Ok(()) => {
-            // 会话销毁,清除其 hook secret(agent 镜像 M1);非 local-shell 会话无登记则 no-op。
-            state.hook_secrets.remove(&id);
-            // 清除镜像状态并取消 tailer(agent 镜像 M3);无镜像则 no-op。
-            state.mirrors.remove_and_cancel(&id);
-            // 作废该会话在飞审批(P2 审批桥):sender drop → hook handler 空响应回落 TUI。
-            state.permission_bridge.drain_session(&id);
             // 会话删除成功,通知 presence 订阅者(手机端)实时刷新列表。
             state.event_bus.publish(DesktopEvent::SessionsChanged);
             (StatusCode::OK, Json(serde_json::json!({ "ok": true })))

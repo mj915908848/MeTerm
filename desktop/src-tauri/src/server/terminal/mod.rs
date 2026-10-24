@@ -4,7 +4,6 @@
 //! to pseudo-terminals (PTY) and SSH sessions.
 
 #[cfg(unix)]
-pub mod hook_files;
 pub mod mouse_windows;
 #[cfg(any(unix, windows))]
 mod pty_input;

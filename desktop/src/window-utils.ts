@@ -45,7 +45,6 @@ export interface UtilityWindowOptions {
 
 const UTILITY_WINDOW_URLS: Readonly<Record<string, RegExp>> = {
   about: /^\?window=about$/,
-  updater: /^\?window=updater$/,
   'jumpserver-browser': /^\?window=jumpserver-browser$/,
   editor: /^\?window=editor$/,
   settings: /^\?window=settings(?:&tab=[A-Za-z0-9_-]{1,64})?$/,
@@ -64,7 +63,7 @@ function validateUtilityWindowOptions(opts: UtilityWindowOptions): void {
 }
 
 /**
- * Create a utility window (settings, updater, about, etc.).
+ * Create a utility window (settings, about, etc.).
  *
  * On macOS/Linux: uses the Rust `create_transparent_window` command so the
  * native `.transparent(true)` builder flag is propagated correctly by WKWebView.

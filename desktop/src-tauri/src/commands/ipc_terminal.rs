@@ -85,19 +85,8 @@ pub async fn ipc_connect_session(
         return Err("IPC terminal output channel closed during role setup".to_string());
     }
 
-    // 回放历史:agent 会话带背压回放 MSG_AGENT_EVENT 帧,终端会话回放 PTY 环形缓冲。
-    // 与 ws.rs::handle_ws 同序同法:client 已在 add_client 时入 session.clients,attach 逐帧
-    // `send_async` 回放后原子登记进 attached,fan-out 只投给 attached——不这样 agent 会话的 IPC
-    // 观看端永不进 attached、收不到任何 live 帧。IPC 下行是 Tauri Channel(无背压容量限制),
-    // `send_async` 即时返回,故无需像 WS 那样先起 writer 排空通道。
-    if let Some(entry) = state.agents.get(&session_id) {
-        entry.attach(&client).await;
-        // Mirror 会话底层带 PTY:AI 历史(attach)之外再回放终端环形缓冲(见 ws.rs 同段说明)。
-        // IPC 下行是 Tauri Channel(无背压容量限制),两类帧顺序不影响正确性。
-        session.flush_ring_buffer(&client, conn_gen);
-    } else {
-        session.flush_ring_buffer(&client, conn_gen);
-    }
+    // 回放 PTY 环形缓冲。
+    session.flush_ring_buffer(&client, conn_gen);
     if session.current_client_connection(&id, conn_gen).is_none() {
         session.remove_client(&id, conn_gen);
         return Err("IPC terminal output channel closed during replay".to_string());

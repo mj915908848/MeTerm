@@ -5,7 +5,6 @@
 //! `meterm-server` binary did, so the TypeScript frontend keeps working
 //! without any changes.
 
-pub mod agent;
 pub mod auth;
 mod auth_body;
 pub mod ban;
@@ -28,14 +27,12 @@ pub mod file_search;
 pub mod files_http;
 pub mod git_handlers;
 pub mod handlers;
-pub mod hook_secret;
 pub mod jumpserver;
 pub mod osc_filter;
 pub mod pairing;
 pub mod pop;
 pub(crate) mod private_file;
 pub mod protocol;
-pub mod recording;
 pub mod secret_vault;
 pub mod server_info;
 pub mod session;
@@ -58,7 +55,6 @@ use auth::Authenticator;
 use ban::BanManager;
 use connections::ConnectionRegistry;
 use events::{EventBus, PresenceRegistry};
-use hook_secret::HookSecretRegistry;
 use pairing::PairingManager;
 use session::manager::SessionManager;
 use session::SessionConfig;
@@ -119,18 +115,6 @@ pub struct ServerState {
     pub event_bus: EventBus,
     /// presence 客户端注册表:记录当前在线的 presence 连接,供后续 P3 推送判定用。
     pub presence: PresenceRegistry,
-    /// agent 会话注册表(方案甲镜像):`session_id -> AgentEntry`(下行帧历史 +
-    /// fan-out 任务)。也是「某会话是不是 agent 会话」的唯一真相。
-    pub agents: agent::AgentManager,
-    /// hook secret 注册表(agent 终端镜像 M1):`session_id -> secret`。local-shell 会话
-    /// 创建时随机生成 secret 注入 PTY env,并登记于此;M3 的 hook 回报端点凭此常量时间校验。
-    pub hook_secrets: HookSecretRegistry,
-    /// 镜像状态注册表(agent 终端镜像 M3):`PTY session_id -> 镜像状态`(claude 会话身份 +
-    /// transcript tailer 柄)。每 PTY 会话至多一个镜像 entry;claude 换会话只换 tailer 不换 entry。
-    pub mirrors: agent::MirrorRegistry,
-    /// 审批桥 pending 注册表(P2):`request_id -> 在飞审批`。PermissionRequest hook 同步
-    /// 阻塞挂此,手机 0x52 决策经 upstream 回投;超时/claude 退出自清,回落 TUI 弹窗。
-    pub permission_bridge: agent::PermissionBridge,
 }
 
 impl ServerState {
@@ -425,27 +409,8 @@ fn build_router(state: Arc<ServerState>) -> Router {
         })
     };
 
-    let hook_guard = middleware::from_fn({
-        let state = state.clone();
-        move |request, next| {
-            let state = state.clone();
-            async move { agent::hook_guard::authorize_before_body(state, request, next).await }
-        }
-    });
-
     // Routes that DON'T require authentication
-    let public_routes = Router::new()
-        .route("/api/ping", get(handlers::ping))
-        // agent 镜像 hook 上报(方案甲 M3):public——M2 转发脚本无 Bearer;
-        // 端点自带 loopback + per-session secret 双闸(fail-closed,不受 lan_sharing 影响)。
-        .route(
-            "/api/agent-hook",
-            post(agent::hook::agent_hook)
-                .layer(axum::extract::DefaultBodyLimit::max(
-                    agent::hook::AGENT_HOOK_BODY_LIMIT,
-                ))
-                .layer(hook_guard),
-        );
+    let public_routes = Router::new().route("/api/ping", get(handlers::ping));
 
     // Resource-specific routes are split before the common authentication
     // layer so every device capability has one auditable boundary.
@@ -679,9 +644,6 @@ pub fn create_dummy_state() -> ServerState {
     let auth = Arc::new(Authenticator::new(String::new()));
     let bm = Arc::new(BanManager::new(None));
     let event_bus = EventBus::new();
-    // hook secret 注册表:先建好注入 SessionManager(reap 时据此清理会话 secret),再原样存进
-    // ServerState(同源 clone,仿 event_bus 注入模式)——修 M1 的 reap secret 泄漏。
-    let hook_secrets = HookSecretRegistry::new();
     let sm = SessionManager::new(
         SessionConfig {
             session_ttl: std::time::Duration::from_secs(300),
@@ -690,7 +652,6 @@ pub fn create_dummy_state() -> ServerState {
             log_dir: String::new(),
         },
         event_bus.clone(),
-        hook_secrets.clone(),
     );
     let pm = PairingManager::new(auth.clone(), sm.clone(), bm.clone());
     ServerState {
@@ -714,10 +675,6 @@ pub fn create_dummy_state() -> ServerState {
         device_id: uuid::Uuid::new_v4().to_string(),
         event_bus,
         presence: PresenceRegistry::new(),
-        agents: agent::AgentManager::new(),
-        hook_secrets,
-        mirrors: agent::MirrorRegistry::new(),
-        permission_bridge: agent::PermissionBridge::new(),
     }
 }
 

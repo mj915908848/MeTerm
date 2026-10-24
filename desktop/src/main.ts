@@ -5,7 +5,6 @@ import './styles/toolbar.css';
 import './styles/status-bar.css';
 import './styles/overlay-scrollbar.css';
 import './styles/terminal.css';
-import './styles/update.css';
 import './styles/home.css';
 import './styles/settings.css';
 import './styles/ssh-modal.css';
@@ -45,7 +44,6 @@ import { applyNbPalette, listenForNbPaletteChanges } from './nb-palette';
 import { setHomeViewSettings } from './home';
 import { setGalleryViewSettings, setGalleryProgressGetter } from './gallery';
 import { initSettingsWindow } from './settings-window';
-import { initUpdaterWindow } from './updater-window';
 import { initAboutWindow } from './about-window';
 import { initJumpServerBrowserWindow } from './jumpserver-browser-window';
 import { initEditorWindowShell } from './file-editor-init';
@@ -116,10 +114,6 @@ async function init(): Promise<void> {
     initSettingsWindow();
     return;
   }
-  if (params.get('window') === 'updater') {
-    initUpdaterWindow();
-    return;
-  }
   if (params.get('window') === 'about') {
     initAboutWindow();
     return;
@@ -136,10 +130,6 @@ async function init(): Promise<void> {
     return;
   }
 
-  // Release may import and consume only 11 strictly validated, non-secret UI
-  // preference keys from the old Dev database. Debug is always a no-op; all
-  // credential/history rows remain untouched for explicit recovery/cleanup.
-  if (getCurrentWindow().label === 'main') await consumeLegacyUiPreferences();
   // Only the primary window may perform the one-shot native migration. Normal
   // `window-*` launches consume non-sensitive cached presence flags and never
   // touch the settings Keychain during startup.
@@ -337,29 +327,6 @@ async function init(): Promise<void> {
 
   // Post-ready event listeners (updater, etc.)
   setupPostReadyEventListeners(currentWindowLabel);
-}
-
-/**
- * Consume the native migration's strict non-secret UI-preference allowlist.
- * The command cannot be used as a generic old localStorage reader.
- */
-async function consumeLegacyUiPreferences(): Promise<void> {
-  try {
-    const data = await invoke<Record<string, string> | null>('consume_legacy_ui_preferences');
-    if (!data) return;
-    let count = 0;
-    for (const [key, value] of Object.entries(data)) {
-      if (localStorage.getItem(key) === null) {
-        localStorage.setItem(key, value);
-        count++;
-      }
-    }
-    if (count > 0) {
-      console.log(`[migration] Imported ${count} legacy UI preferences`);
-    }
-  } catch (e) {
-    console.warn('[migration] Failed to consume legacy UI preferences:', e);
-  }
 }
 
 init().catch((err) => {

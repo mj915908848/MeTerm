@@ -57,8 +57,7 @@
   position: relative;
 }
 
-html.platform-windows .editor-tabs-area,
-html.platform-linux .editor-tabs-area {
+html.platform-windows .editor-tabs-area {
   padding-left: 8px;
 }
 
@@ -112,7 +111,6 @@ html.platform-linux .editor-tabs-area {
 .editor-content .cm-scroller {
   overflow: auto;
 }
-
 
 .editor-loading,
 .editor-error {
