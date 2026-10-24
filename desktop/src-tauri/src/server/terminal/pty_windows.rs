@@ -76,7 +76,9 @@ impl ConPtyTerminal {
             // "success". Both are put back before the user's own prompt runs
             // (`Write-Error -ErrorAction Ignore` is the only way to set `$?` false).
             // The history Id tells a new command from an empty Enter, which would
-            // otherwise report the previous command again.
+            // otherwise report the previous command again. The same history entry
+            // carries the start and end times, so the duration needs no timer of
+            // its own (without it the "long command finished" push never fired).
             if basename.contains("pwsh") || basename.contains("powershell") {
                 // The 7768 token arrives via env and is moved into a global so
                 // child processes do not inherit it (see `Terminal::osc_token`).
@@ -86,12 +88,13 @@ impl ConPtyTerminal {
                     $__ok=$?; $__lec=$global:LASTEXITCODE; \
                     [Console]::Write([string][char]27 + ']7;file:///' + (Get-Location).ProviderPath.Replace('\\','/') + [char]7); \
                     $e = if ($__ok) {0} elseif ($__lec) {[int]$__lec} else {1}; \
-                    $c=''; $h=$null; try{$h=Get-History -Count 1}catch{}; $hid=if($h){$h.Id}else{0}; \
+                    $c=''; $d=0; $h=$null; try{$h=Get-History -Count 1}catch{}; $hid=if($h){$h.Id}else{0}; \
                     if(-not $env:__meterm_hook_ready){$env:__meterm_hook_ready='1'; \
                     [Console]::Write([string][char]27 + ']7766;meterm_init;3' + [char]7)} \
-                    elseif($hid -ne $global:__mtHid){$c=$h.CommandLine}; \
+                    elseif($hid -ne $global:__mtHid){$c=$h.CommandLine; \
+                    try{$d=[int64]($h.EndExecutionTime - $h.StartExecutionTime).TotalMilliseconds}catch{}; if($d -lt 0){$d=0}}; \
                     $global:__mtHid=$hid; \
-                    [Console]::Write([string][char]27 + ']7768;k=' + $global:__mtTok + ';' + $e + ';' + (Get-Location) + ';' + $c + [char]7); \
+                    [Console]::Write([string][char]27 + ']7768;k=' + $global:__mtTok + ';' + $e + ';' + (Get-Location) + ';' + $c + ';' + $d + [char]7); \
                     $global:LASTEXITCODE=$__lec; if(-not $__ok){Write-Error '' -ErrorAction Ignore}; \
                     if($global:__mtOrig){return & $global:__mtOrig}else{return ''} } }";
                 cmd.arg("-NoExit");

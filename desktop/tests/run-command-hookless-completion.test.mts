@@ -37,6 +37,8 @@ function waitHarness(overrides: {
   hookInjected?: boolean;
   lastExitCode?: number;
   lastUserInputAt?: number;
+  /** HOOK_LOST_AFTER_SILENCE_MS; long by default so the other tests never reach it. */
+  hookLostMs?: number;
 } = {}) {
   const outputs = new Set<(data: string) => void>();
   const idles = new Set<() => void>();
@@ -60,6 +62,7 @@ function waitHarness(overrides: {
   const create = new Function(
     'TerminalRegistry', 'stripAnsi', 'detectInteractiveState', 'endsWithShellPrompt',
     'shouldCompleteFromPromptTail', 'userTypedRecently', 'exitCodeFromHook', 'EXIT_CODE_UNKNOWN',
+    'HOOK_LOST_AFTER_SILENCE_MS',
     `${sourceOf('ai-tools-shell.ts', 'isAlternateScreen')}
      ${sourceOf('ai-tools-shell.ts', 'detectorToStatus')}
      ${sourceOf('ai-tools-shell.ts', 'runWaitLoop')}
@@ -68,6 +71,7 @@ function waitHarness(overrides: {
   const runWaitLoop = create(
     registry, (s: string) => s, () => ({ state: 'active' }), endsWithShellPromptStub,
     shouldCompleteFromPromptTail, userTypedRecently, exitCodeFromHook, EXIT_CODE_UNKNOWN,
+    overrides.hookLostMs ?? 60_000,
   ) as (
     sessionId: string,
     options: { timeoutSec: number; detectAfterSilenceMs: number; giveUpAfterSilenceMs: number },
@@ -109,6 +113,20 @@ test('a live shell hook outranks the prompt tail (no stale exit code)', async ()
   const result = await pending;
   assert.equal(result.status, 'idle_no_signal', 'must not read the tail as a completion');
   assert.equal(result.exitCode, 7, 'the hook-reported code survives the give-up path');
+});
+
+test('a hook that stays quiet at a prompt is taken for gone, and the session falls back', async () => {
+  // `exec zsh` or a shell inside tmux: back at a prompt, but nothing sends 7768
+  // any more. The session used to stay "hooked" for good, so every command sat
+  // out the full silence window and then reported a stale exit code.
+  const h = waitHarness({ hookInjected: true, lastExitCode: 7, hookLostMs: 100 });
+  const pending = h.runWaitLoop('s1', { ...fastOptions, giveUpAfterSilenceMs: 2_000 });
+  for (const emit of h.outputs) emit(`README.md\n${PROMPT}`);
+
+  const result = await pending;
+  assert.equal(h.terminal.shellState.hookInjected, false, 'the session is hookless now');
+  assert.equal(result.status, 'completed');
+  assert.equal(result.exitCode, EXIT_CODE_UNKNOWN, 'and says it cannot know the exit code');
 });
 
 test('the shell hook completing the wait reports its own exit code', async () => {

@@ -790,3 +790,29 @@ test('the history-control export reaches bash and zsh, but not fish', async () =
     );
   }
 });
+
+/**
+ * `exec zsh`, `exec bash` and a shell inside tmux inherit the exported
+ * `__meterm_hook_ready` but none of the hook. The injection used to take that
+ * variable for "already hooked" and skip, so such a shell could never get the
+ * hook back; it now asks the shell itself, and still skips one that has it.
+ */
+test('a shell that inherited the ready flag without the hook gets hooked; a hooked one is left alone', async () => {
+  const branch = {
+    bash: { code: '0', probe: 'declare -F __meterm_precmd >/dev/null && echo LANDED || echo ABSENT' },
+    zsh: { code: '1', probe: '(( $+functions[__meterm_precmd] )) && echo LANDED || echo ABSENT' },
+  } as const;
+  for (const [shellType, spec] of Object.entries(branch)) {
+    const shell = availableShell(SHELLS.find(([name]) => name === shellType)![1]);
+    if (!shell) continue;
+    const line = await generatedCommand(null);
+    const inherited = spawnSync(shell, ['-c', `${line}\n${spec.probe}`], {
+      encoding: 'utf8', timeout: 30_000, env: { ...process.env, __meterm_hook_ready: '1' },
+    });
+    assert.match(inherited.stdout ?? '', /LANDED/, `${shellType}: the inherited flag must not block the hook`);
+    assert.deepEqual(detectCodes(inherited.stdout ?? ''), [spec.code]);
+
+    const twice = spawnSync(shell, ['-c', `${line}\n${line}`], { encoding: 'utf8', timeout: 30_000 });
+    assert.deepEqual(detectCodes(twice.stdout ?? ''), [spec.code], `${shellType}: a hooked shell is not hooked again`);
+  }
+});

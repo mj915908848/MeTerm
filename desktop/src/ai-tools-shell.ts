@@ -123,13 +123,8 @@ export function withSessionPtyLock<T>(
  * `PROMPT_COMMAND` entries, which is why the extension below follows the shape
  * the variable already has (bash 5.1+ arrays included).
  *
- * `powershell` deliberately still emits 3 fields: a syntax error in an injected
- * hook is *masked* (the 7766 detect marker fires before the `eval`, so
- * `hookInjected` would flip true while the hook is dead), so the extra field is
- * only worth adding where the hook can be *run*, not merely read, and `pwsh` is
- * neither run nor verified anywhere.
- *
- * fish is not supported (too rare to be worth a third dialect); the injected
+ * Only zsh and bash are injected. A remote PowerShell gets no hook (the local
+ * Windows one is installed by `pty_windows.rs`), and fish is not supported (too rare to be worth a third dialect); the injected
  * line only has to *parse* there — see `HOOK_UNSUPPORTED_SHELL_CODE`.
  */
 function buildShellHook(shellType: string, token = ''): string {
@@ -155,17 +150,6 @@ function buildShellHook(shellType: string, token = ''): string {
         `printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' "\${__meterm_tok:-}" "$e" "$PWD" "$c" "$dur"; };`,
         `zmodload zsh/datetime 2>/dev/null;`,
         `autoload -Uz add-zsh-hook 2>/dev/null&&{ add-zsh-hook preexec __meterm_preexec; add-zsh-hook precmd __meterm_precmd; }`,
-      ].join('');
-    case 'powershell':
-      return [
-        `$global:__mtTok='${token}';`,
-        `function prompt {`,
-        `$e=$LASTEXITCODE;`,
-        `if (-not $env:__meterm_hook_ready){$env:__meterm_hook_ready='1';$c=''}`,
-        `else{$c=(Get-History -Count 1).CommandLine};`,
-        `[Console]::Write("$([char]0x1b)]7768;k=$($global:__mtTok);$e;$(Get-Location);$c$([char]7)");`,
-        `return "PS> "`,
-        `}`,
       ].join('');
     default: // bash
       return [
@@ -258,6 +242,12 @@ interface HookInjectionState {
 
 /** Delays between attempts. Length + 1 = total attempts (1 initial + 3 retries). */
 const HOOK_RETRY_BACKOFF_MS = [5_000, 15_000, 60_000];
+
+/**
+ * How long a hooked session may sit at a prompt after an agent command without
+ * the hook reporting it before the session is treated as hookless.
+ */
+const HOOK_LOST_AFTER_SILENCE_MS = 10_000;
 
 /** How long the handshake waits for the 7766 detect marker. */
 const HOOK_INJECTION_TIMEOUT_MS = 3000;
@@ -393,7 +383,7 @@ function probeHostIdentityThenInject(sessionId: string): void {
  * as a bare shell prompt (`active`) — so this cannot catch that case, and typing
  * into it with the injection would land on the wrong host. The note that used to
  * stand here claimed "the attempt still fails the handshake, so the cost is a lost
- * attempt"; that is wrong. The remote shell has no `__meterm_hook_ready`, so it
+ * attempt"; that is wrong. The remote shell has no hook installed, so it
  * runs the command happily and its 7766 marker comes straight back through the
  * PTY: the handshake *succeeds*. This session would be marked hooked while the
  * hook lives on the other host, its cwd / exit codes / durations would describe
@@ -660,13 +650,18 @@ function _injectShellHookImpl(
     : `${hostGuardCommand(expectedHost, detectId)} && `;
 
   // Single-line polyglot: `test -n` guards ensure only the matching branch runs.
-  // __meterm_hook_ready guard: skip if Go sidecar already installed the hook.
+  // Skipped where a hook is already installed (local rc, the SSH hook line). That
+  // is asked of `__meterm_cmd_running`, which every hook sets and never exports,
+  // not of the exported `__meterm_hook_ready`: a shell started by `exec zsh` or
+  // inside tmux inherits that one without the hook, and could never be hooked
+  // again. It is cleared so the new hook announces itself like a fresh one.
+  const notHooked = 'test -z "$__meterm_cmd_running" && unset __meterm_hook_ready &&';
   const body = [
-    ` test -n "$ZSH_VERSION" && ${guard}test -z "$__meterm_hook_ready" &&`,
+    ` test -n "$ZSH_VERSION" && ${guard}${notHooked}`,
     `printf '\\033]7766;${detectId};1\\007' &&`,
     `eval '${escapeShellSingle(zshHook)}' &&`,
     `setopt HIST_IGNORE_SPACE 2>/dev/null;`,
-    `test -n "$BASH_VERSION" && ${guard}test -z "$__meterm_hook_ready" &&`,
+    `test -n "$BASH_VERSION" && ${guard}${notHooked}`,
     `printf '\\033]7766;${detectId};0\\007' &&`,
     `eval '${escapeShellSingle(bashHook)}' &&`,
     `history -d $HISTCMD 2>/dev/null;`,
@@ -723,7 +718,7 @@ function _injectShellHookImpl(
       clearHookRetry(sessionId);
       return;
     }
-    // The marker is emitted inside the `test -z "$__meterm_hook_ready"` guard,
+    // The marker is emitted behind the "not hooked yet" guard,
     // so receiving one means a shell branch really ran. (The old `code !== -1`
     // test was dead: resolver() coerces NaN to 0, so code ∈ {0,1,8,9} — 8 and 9
     // are handled above and never reach this line.)
@@ -951,6 +946,15 @@ function runWaitLoop(
         // prompt-shaped tail would hand us the PREVIOUS command's exit
         // code instead of this one's.
         const tailIsPrompt = endsWithShellPrompt(outputBuffer);
+        // Back at a prompt for a while and still no 7768: the hook is gone
+        // (`exec zsh`, a shell inside tmux, a nested shell that has none).
+        // Without this the session stayed "hooked" for good, and every command
+        // waited out the full silence before giving up. The next 7768 marks it
+        // hooked again.
+        if (hookAlive() && tailIsPrompt && silentMs >= HOOK_LOST_AFTER_SILENCE_MS && !userTypedJustNow()) {
+          const mt = TerminalRegistry.get(sessionId);
+          if (mt) mt.shellState.hookInjected = false;
+        }
         if (shouldCompleteFromPromptTail({
           hookInjected: hookAlive(),
           recentUserInput: userTypedJustNow(),

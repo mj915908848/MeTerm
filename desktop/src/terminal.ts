@@ -551,7 +551,7 @@ class TerminalRegistryClass {
       _hasUserInput: false,
       _transferGrace: false,
       _oscMarkerResolvers: new Map(),
-      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', agentCommand: '', promptRow: -1, promptCol: 0 },
+      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', agentCommand: '', promptRow: -1, promptCol: 0, promptOpen: false },
     };
 
     if (isMacPlatform && webglAddon) {
@@ -698,6 +698,7 @@ class TerminalRegistryClass {
       _dedupTime = now;
       mt._hasUserInput = true;
       mt.shellState.lastUserInputAt = Date.now();
+      mt.shellState.promptOpen = false;
       // NOTE: the legacy state machine also moved `phase` to 'user_active' here
       // (Enter at a ready prompt) and tagged `lastInputSource`. Both were
       // write-only — nothing ever read them — so they are gone: they made the
@@ -1048,6 +1049,7 @@ class TerminalRegistryClass {
     // instead. See ShellPhase in terminal-types.ts.
     mt.shellState.phase = 'agent_executing';
     mt.shellState.agentCommand = command.trim();
+    mt.shellState.promptOpen = false;
     // PowerShell does not support Ctrl+U (unix-line-discard); skip prefix to avoid ^U echo.
     const prefix = shellType === 'powershell' ? '' : '\x15';
     // Terminator: use CR (\r) to emulate a real Enter keypress, which
@@ -1067,6 +1069,7 @@ class TerminalRegistryClass {
   sendInput(sessionId: string, text: string): void {
     const mt = this.terminals.get(sessionId);
     if (!mt) return;
+    mt.shellState.promptOpen = false;
     const payload = new TextEncoder().encode(text);
     sendToTerminal(mt, encodeMessage(MsgInput, payload));
   }
@@ -1272,7 +1275,7 @@ class TerminalRegistryClass {
       _hasUserInput: false,
       _transferGrace: true,
       _oscMarkerResolvers: new Map(),
-      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', agentCommand: '', promptRow: -1, promptCol: 0 },
+      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', agentCommand: '', promptRow: -1, promptCol: 0, promptOpen: false },
     };
 
     // OSC handlers are processed by Rust OscFilter → MSG_OSC_EVENT → handleOscEvents.
@@ -1294,6 +1297,7 @@ class TerminalRegistryClass {
       _dedupTime = now;
       mt._hasUserInput = true;
       mt.shellState.lastUserInputAt = Date.now();
+      mt.shellState.promptOpen = false;
       // See the create() path: `phase`/'lastInputSource' transitions were
       // removed — write-only state that misled readers into trusting `phase`
       // on sessions where the hook cannot maintain it.

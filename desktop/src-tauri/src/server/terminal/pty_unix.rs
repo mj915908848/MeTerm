@@ -134,6 +134,9 @@ impl PtyTerminal {
                 // Build Stage 2 inner command
                 let inner_cmd = if basename == "bash" {
                     if let Some(ref dir) = hook_dir {
+                        // Stage 2 is a non-login shell; the proxy rc reads the
+                        // login files instead (see create_bash_hooks).
+                        cmd.env("METERM_BASH_LOGIN", "1");
                         // GNU long options (--rcfile) must precede short options (-i) for bash 3.2
                         format!(
                             "export TERM=xterm-256color; exec {} --rcfile {}/.bashrc -i",
@@ -482,7 +485,27 @@ fn create_bash_hooks(dir: &std::path::Path) {
     let _ = std::fs::write(
         dir.join(".bashrc"),
         "# MeTerm: proxy user bashrc + install PROMPT_COMMAND hook\n\
-         [[ -f \"$HOME/.bashrc\" ]] && source \"$HOME/.bashrc\"\n\
+         # ── user config ──\n\
+         # macOS 上 Terminal.app/iTerm 开的是登录 shell,只读 ~/.bash_profile(及 /etc/bashrc\n\
+         # 的默认提示符),很多人的别名和提示符只写在那里。这里的交互 shell 是第二阶段的\n\
+         # 非登录 shell,所以照登录 shell 的顺序读;profile 没提到 .bashrc 时再补读它,\n\
+         # 免得只在 .bashrc 里配置的人丢东西。\n\
+         if [[ -n \"${METERM_BASH_LOGIN:-}\" ]]; then\n\
+           unset METERM_BASH_LOGIN\n\
+           [[ -r /etc/bashrc ]] && source /etc/bashrc\n\
+           __meterm_profile=''\n\
+           for __meterm_f in \"$HOME/.bash_profile\" \"$HOME/.bash_login\" \"$HOME/.profile\"; do\n\
+             if [[ -f \"$__meterm_f\" ]]; then __meterm_profile=\"$__meterm_f\"; break; fi\n\
+           done\n\
+           [[ -n \"$__meterm_profile\" ]] && source \"$__meterm_profile\"\n\
+           if [[ -f \"$HOME/.bashrc\" ]] && { [[ -z \"$__meterm_profile\" ]] || ! grep -q '\\.bashrc' \"$__meterm_profile\" 2>/dev/null; }; then\n\
+             source \"$HOME/.bashrc\"\n\
+           fi\n\
+           unset __meterm_profile __meterm_f\n\
+         else\n\
+           [[ -f \"$HOME/.bashrc\" ]] && source \"$HOME/.bashrc\"\n\
+         fi\n\
+         # ── end user config ──\n\
          \n\
          # ── MeTerm shell hook (DEBUG trap 近似 preexec + PROMPT_COMMAND 近似 precmd,记录命令耗时) ──\n\
          __meterm_tok=\"${METERM_OSC_TOKEN:-}\"\n\
