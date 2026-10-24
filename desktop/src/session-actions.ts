@@ -9,6 +9,7 @@
  * - createNewWindowNearCurrent()
  */
 
+import { t } from './i18n';
 import { waitForMeTerm } from './connection';
 import { TabManager } from './tabs';
 import { TerminalRegistry } from './terminal';
@@ -24,7 +25,7 @@ import {
   removeKickedOverlay, removeReconnectOverlay,
   reclaimSessionIds,
 } from './overlays';
-import { activateTab, showHomeView } from './view-manager';
+import { activateTab, showHomeView, connectionLabelFor } from './view-manager';
 import {
   port, authToken, metermReady, setPort, setAuthToken, setMetermReady,
   settings,
@@ -90,7 +91,7 @@ export async function createNewSession(shell?: string, cwd?: string): Promise<vo
       DrawerManager.create(sessionId, 'local');
     }
     await activateTab(TabManager.activeTabId);
-    StatusBar.setConnection('connected', 'Local');
+    StatusBar.setConnection('connected', connectionLabelFor(sessionId));
   }
   _renderTabs();
 }
@@ -119,7 +120,7 @@ export async function ensureMeTermReady(): Promise<boolean> {
     return true;
   } catch (err) {
     setMetermReady(false);
-    StatusBar.setError(`Failed to start meterm: ${String(err)}`);
+    StatusBar.setError(`${t('statusStartFailed')}: ${String(err)}`);
     return false;
   }
 }

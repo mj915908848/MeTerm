@@ -10,7 +10,7 @@ import { DrawerManager } from './drawer';
 import { AICapsuleManager } from './ai-capsule';
 import { SplitPaneManager, getAllLeaves, countLeaves, findLeafById, getAdjacentLeaf } from './split-pane';
 import { StatusBar } from './status-bar';
-import { activateTab, showHomeView, openSettings } from './view-manager';
+import { activateTab, showHomeView, openSettings, connectionLabelFor } from './view-manager';
 import { createNewSession, doSplitPane } from './session-actions';
 import { renderTabs } from './tab-renderer';
 import {
@@ -167,8 +167,7 @@ export function setupKeyboardShortcuts(): void {
             const newActiveTab = TabManager.tabs.find(t => t.id === TabManager.activeTabId);
             if (newActiveTab) {
               const activeSessionId = TabManager.getActiveSessionId();
-              const sshCfg = activeSessionId ? sshConfigMap.get(activeSessionId) : undefined;
-              StatusBar.setConnection(newActiveTab.status, sshCfg ? `${sshCfg.username}@${sshCfg.host}` : 'Local');
+              StatusBar.setConnection(newActiveTab.status, connectionLabelFor(activeSessionId));
             }
           } else {
             showHomeView();

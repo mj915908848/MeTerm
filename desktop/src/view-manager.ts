@@ -219,7 +219,7 @@ export function connectionLabelFor(sessionId: string | null): string {
   if (ssh) return `${ssh.username}@${ssh.host}`;
   const js = sessionId ? jumpServerConfigMap.get(sessionId) : undefined;
   if (js) return `${js.account.username}@${js.asset.address}`;
-  return 'Local';
+  return t('statusLocal');
 }
 
 let lastSyncedConnection: { sessionId: string; status: string } | null = null;

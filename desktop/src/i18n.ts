@@ -105,6 +105,17 @@ export interface Translations {
   ended: string;
   sessionNotFound: string;
   disconnected: string;
+  statusLocal: string;
+  statusError: string;
+  statusPaneLabel: string;
+  statusPaneTitle: string;
+  statusTransferFiles: string;
+  statusTransferFile: string;
+  statusTransferDone: string;
+  statusTooltipStatus: string;
+  statusTooltipLatency: string;
+  statusTooltipSessions: string;
+  statusStartFailed: string;
   reconnect: string;
   active: string;
   language: string;
@@ -949,6 +960,17 @@ const translations: Record<Language, Translations> = {
     ended: 'Ended',
     sessionNotFound: 'Session not found',
     disconnected: 'Disconnected',
+    statusLocal: 'Local',
+    statusError: 'Error',
+    statusPaneLabel: 'Pane · {total}',
+    statusPaneTitle: 'Pane {n} of {total}',
+    statusTransferFiles: '{count} files',
+    statusTransferFile: '{count} file',
+    statusTransferDone: 'Done',
+    statusTooltipStatus: 'Status: {value}',
+    statusTooltipLatency: 'Latency: {ms}ms',
+    statusTooltipSessions: 'Tabs: {count}',
+    statusStartFailed: 'Failed to start meterm',
     reconnect: 'Reconnect',
     active: 'Active',
     language: 'Language',
@@ -1800,6 +1822,17 @@ const translations: Record<Language, Translations> = {
     ended: '已结束',
     sessionNotFound: '会话未找到',
     disconnected: '已断开',
+    statusLocal: '本地',
+    statusError: '错误',
+    statusPaneLabel: '窗格 · {total}',
+    statusPaneTitle: '第 {n} 个窗格，共 {total} 个',
+    statusTransferFiles: '{count} 个文件',
+    statusTransferFile: '{count} 个文件',
+    statusTransferDone: '完成',
+    statusTooltipStatus: '状态：{value}',
+    statusTooltipLatency: '延迟：{ms}ms',
+    statusTooltipSessions: '标签：{count}',
+    statusStartFailed: '启动 meterm 失败',
     reconnect: '重新连接',
     active: '当前',
     language: '语言',
