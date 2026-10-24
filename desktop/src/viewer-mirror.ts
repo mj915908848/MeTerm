@@ -4,7 +4,7 @@
  * 手机接管后 PTY 按手机尺寸排版,桌面 xterm 仍是全尺寸 → 输出按手机宽度换行,
  * 显示错乱。这里把桌面 xterm resize 到主控的实际 cols/rows,再用 CSS transform
  * 等比缩放并在容器内居中(letterbox)——与手机端 viewer 的 _layoutSyncedTerminal
- * 同一策略,也与桌面 PiP 模式"冻结 PTY + CSS 缩放"先例一致。
+ * 同一策略。
  *
  * 触发链:
  *  - master-lost           → enterMirror(标记;尺寸等服务端下行 0x03)

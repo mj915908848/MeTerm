@@ -259,7 +259,6 @@ fn normalize_menu_id(raw: &str) -> Option<&'static str> {
         "import_connections" => Some("import_connections"),
         "export_connections" => Some("export_connections"),
         "check_updates" => Some("check_updates"),
-        "pip_toggle" => Some("pip_toggle"),
         _ => None,
     }
 }
@@ -643,12 +642,6 @@ fn dispatch_menu_action(app: &tauri::AppHandle, action: &str) {
                 },
             );
         }
-        "pip_toggle" => {
-            let payload = WindowEvent {
-                target_window: window_label.clone(),
-            };
-            let _ = app.emit("menu-pip-toggle", payload);
-        }
         _ => {}
     }
 }
@@ -838,7 +831,6 @@ pub fn run() {
             let show_home_item = MenuItem::with_id(app, "show_home", "Show Home", true, None::<&str>)?;
             let new_terminal_item = MenuItem::with_id(app, "new_terminal", "New Terminal", true, None::<&str>)?;
             let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-            let pip_toggle_item = MenuItem::with_id(app, "pip_toggle", "Picture-in-Picture", true, None::<&str>)?;
             let import_connections_item = MenuItem::with_id(app, "import_connections", "Import Connections", true, None::<&str>)?;
             let export_connections_item = MenuItem::with_id(app, "export_connections", "Export Connections", true, None::<&str>)?;
             let close_all_sessions_item = MenuItem::with_id(app, "close_all_sessions", "Close All Sessions", true, None::<&str>)?;
@@ -856,7 +848,6 @@ pub fn run() {
                     &show_home_item,
                     &new_terminal_item,
                     &settings_item,
-                    &pip_toggle_item,
                     &separator2,
                     &import_connections_item,
                     &export_connections_item,

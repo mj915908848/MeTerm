@@ -821,15 +821,6 @@ class DrawerManagerClass {
     return this.drawers.get(sessionId) ?? null;
   }
 
-  /** Return session IDs of all currently open drawers. */
-  getOpenSessionIds(): string[] {
-    const ids: string[] = [];
-    this.drawers.forEach((instance, sessionId) => {
-      if (instance.isOpen) ids.push(sessionId);
-    });
-    return ids;
-  }
-
   getDrawerHeight(sessionId: string): number {
     const instance = this.drawers.get(sessionId);
     if (!instance || !instance.isOpen) return 0;

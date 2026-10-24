@@ -14,7 +14,6 @@ import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { revealAfterPaint } from './window-utils';
 import { readText as clipboardReadText } from '@tauri-apps/plugin-clipboard-manager';
 import { applyVibrancy } from './appearance';
-import { applyNbPalette } from './nb-palette';
 import { changedSettingKeys, createTrailingThrottle, SETTINGS_PANEL_KEYS } from './settings-sync';
 
 const ua = navigator.userAgent.toLowerCase();
@@ -25,15 +24,12 @@ function resolveThemeAttr(colorScheme: string): string {
   if (colorScheme === 'darker') return 'darker';
   if (colorScheme === 'navy') return 'navy';
   if (colorScheme === 'light') return 'light';
-  if (colorScheme === 'neo-brutalism') return 'neo-brutalism';
-  if (colorScheme === 'neo-brutalism-rounded') return 'neo-brutalism-rounded';
   if (colorScheme === 'auto') return resolveIsDark('auto') ? 'dark' : 'light';
   return 'dark';
 }
 
 function applyTheme(settings: AppSettings): void {
   document.documentElement.dataset.theme = resolveThemeAttr(settings.colorScheme);
-  applyNbPalette(settings.colorScheme);
 }
 
 function createCustomTitleBar(): HTMLElement {

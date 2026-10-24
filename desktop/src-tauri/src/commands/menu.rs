@@ -17,7 +17,6 @@ pub fn tray_label(language: &str, key: &str) -> &'static str {
         ("zh", "import_connections") => "导入连接",
         ("zh", "export_connections") => "导出连接",
         ("zh", "check_updates") => "检查更新",
-        ("zh", "pip_toggle") => "画中画",
         (_, "new_window") => "New Window",
         (_, "show_home") => "Show Home",
         (_, "new_terminal") => "New Terminal",
@@ -28,7 +27,6 @@ pub fn tray_label(language: &str, key: &str) -> &'static str {
         (_, "import_connections") => "Import Connections",
         (_, "export_connections") => "Export Connections",
         (_, "check_updates") => "Check for Updates",
-        (_, "pip_toggle") => "Picture-in-Picture",
         _ => "",
     }
 }
@@ -58,7 +56,6 @@ pub fn app_label(language: &str, key: &str) -> &'static str {
         ("zh", "show_about") => "关于 MeTerm",
         ("zh", "show_shortcuts") => "快捷键",
         ("zh", "check_updates") => "检查更新",
-        ("zh", "pip_toggle") => "画中画",
         (_, "app") => "App",
         (_, "file") => "File",
         (_, "edit") => "Edit",
@@ -81,7 +78,6 @@ pub fn app_label(language: &str, key: &str) -> &'static str {
         (_, "show_about") => "About MeTerm",
         (_, "show_shortcuts") => "Keyboard Shortcuts",
         (_, "check_updates") => "Check for Updates",
-        (_, "pip_toggle") => "Picture-in-Picture",
         _ => "",
     }
 }
@@ -247,14 +243,6 @@ pub fn set_app_menu_language(app: &AppHandle, language: &str) -> Result<(), Stri
         None::<&str>,
     )
     .map_err(|e| e.to_string())?;
-    let view_pip_item = MenuItem::with_id(
-        app,
-        "pip_toggle",
-        app_label(language, "pip_toggle"),
-        true,
-        Some("CmdOrCtrl+Shift+P"),
-    )
-    .map_err(|e| e.to_string())?;
     let view_reload_item = MenuItem::with_id(
         app,
         "reload",
@@ -268,12 +256,7 @@ pub fn set_app_menu_language(app: &AppHandle, language: &str) -> Result<(), Stri
         app,
         app_label(language, "view"),
         true,
-        &[
-            &view_show_home_item,
-            &view_pip_item,
-            &view_sep,
-            &view_reload_item,
-        ],
+        &[&view_show_home_item, &view_sep, &view_reload_item],
     )
     .map_err(|e| e.to_string())?;
 
@@ -459,15 +442,6 @@ pub fn set_tray_language(app: AppHandle, language: String) -> Result<(), String>
     )
     .map_err(|e| e.to_string())?;
 
-    let pip_toggle_item = MenuItem::with_id(
-        &app,
-        "pip_toggle",
-        tray_label(&language, "pip_toggle"),
-        true,
-        None::<&str>,
-    )
-    .map_err(|e| e.to_string())?;
-
     let check_updates_item = MenuItem::with_id(
         &app,
         "check_updates",
@@ -488,7 +462,6 @@ pub fn set_tray_language(app: AppHandle, language: String) -> Result<(), String>
             &show_home_item,
             &new_terminal_item,
             &settings_item,
-            &pip_toggle_item,
             &separator2,
             &import_connections_item,
             &export_connections_item,

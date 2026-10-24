@@ -10,8 +10,6 @@ export const LIVE_APPEARANCE_KEYS: ReadonlySet<string> = new Set([
   'backgroundImageStrength',
   'aiBarOpacity',
   'enableVibrancy',
-  'pipScale',
-  'pipScaleByScreen',
 ]);
 
 /**
@@ -31,7 +29,7 @@ export const SETTINGS_PANEL_KEYS: ReadonlySet<string> = new Set([
   'aiSaveChatHistory', 'aiChatHistoryLimit',
   'searxngUrl', 'searxngUsername', 'searxngEnabled', 'fileLinkSkipConfirm',
   'enableVibrancy', 'tldrEnabled', 'cmdCompletionEnabled', 'shellHookInjection',
-  'pipScale', 'pipScaleByScreen', 'autoNewSession', 'nbCustomColors', 'fileOpenPreference',
+  'autoNewSession', 'fileOpenPreference',
 ]);
 
 /** Top-level keys whose values differ between two settings snapshots. */

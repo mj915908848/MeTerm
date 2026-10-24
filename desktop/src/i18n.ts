@@ -9,8 +9,6 @@ export interface Translations {
   terminalThemeDarkHint: string;
   terminalThemeLight: string;
   terminalThemeLightHint: string;
-  terminalThemeNb: string;
-  terminalThemeNbHint: string;
   uiFontHint: string;
   opacityHint: string;
   vibrancyHint: string;
@@ -33,8 +31,6 @@ export interface Translations {
   sshTabTitleHint: string;
   enableThumbnailHint: string;
   previewRefreshRateHint: string;
-  pipScaleHint: string;
-  pipScaleByScreenHint: string;
   contextMenuIntegrationMac: string;
   contextMenuIntegrationWin: string;
   autoOpenAiOnConnectHint: string;
@@ -65,7 +61,6 @@ export interface Translations {
   settingsGroupTerminalBehavior: string;
   settingsGroupTabs: string;
   settingsGroupWindow: string;
-  settingsGroupPip: string;
   settingsGroupSystem: string;
   settingsGroupOnConnect: string;
   settingsSearchPlaceholder: string;
@@ -153,42 +148,8 @@ export interface Translations {
   colorSchemeDarker: string;
   colorSchemeNavy: string;
   colorSchemeLight: string;
-  colorSchemeNeoBrutalism: string;
-  colorSchemeNeoBrutalismRounded: string;
-  nbPaletteTitle: string;
-  nbBg: string;
-  nbText: string;
-  nbBorder: string;
-  nbShadow: string;
-  nbAccent: string;
-  nbHighlight: string;
-  nbSuccess: string;
-  nbInfo: string;
-  nbDanger: string;
-  nbSurfaceAlt: string;
-  nbReset: string;
-  nbPresetSunset: string;
-  nbPresetOcean: string;
-  nbPresetSakura: string;
-  nbPresetForest: string;
-  nbPresetLavender: string;
-  nbPresetMidnight: string;
-  nbPresetCyber: string;
-  nbPresetAbyss: string;
-  nbPresetCandy: string;
-  nbPresetRetro: string;
-  nbPresetNord: string;
-  nbPresetDracula: string;
-  nbPresetSolarized: string;
-  nbPresetOnyx: string;
-  nbPresetEmber: string;
-  nbPresetMatrix: string;
-  nbPresetStealth: string;
-  nbPresetMocha: string;
   rememberWindowSize: string;
   rememberDrawerLayout: string;
-  pipScale: string;
-  pipScaleByScreen: string;
   sessionsGallery: string;
   sshHost: string;
   sshPort: string;
@@ -302,8 +263,6 @@ export interface Translations {
   toolbarHome: string;
   toolbarAlwaysOnTop: string;
   toolbarUnpinFromTop: string;
-  toolbarPictureInPicture: string;
-  toolbarExitPictureInPicture: string;
   windowMinimize: string;
   windowMaximize: string;
   windowRestore: string;
@@ -770,8 +729,6 @@ const translations: Record<Language, Translations> = {
     terminalThemeDarkHint: 'Used when the appearance is dark',
     terminalThemeLight: 'Light Terminal Colors',
     terminalThemeLightHint: 'Used when the appearance is light. With Auto, both are used',
-    terminalThemeNb: 'Terminal Colors',
-    terminalThemeNbHint: 'Set by the Neo-Brutalism appearance',
     uiFontHint: 'Tabs, menus and windows like this one. Does not affect the terminal',
     opacityHint: 'Below 100% the desktop shows through',
     vibrancyHint: 'Blurs the desktop that shows through. No visible effect at 100% window opacity',
@@ -794,8 +751,6 @@ const translations: Record<Language, Translations> = {
     sshTabTitleHint: 'The connection name, or the title programs on the server set',
     enableThumbnailHint: 'Adds a Session Overview button to the toolbar that shows every session as a thumbnail',
     previewRefreshRateHint: 'Shorter is more live and uses more power',
-    pipScaleHint: 'Size of the PiP window relative to the original',
-    pipScaleByScreenHint: 'When off, relative to the main window',
     contextMenuIntegrationMac: 'Add "Open in MeTerm" to the Finder context menu',
     contextMenuIntegrationWin: 'Add "Open in MeTerm" to the Explorer context menu',
     autoOpenAiOnConnectHint: 'After an SSH connection succeeds',
@@ -814,7 +769,6 @@ const translations: Record<Language, Translations> = {
     settingsGroupTerminalBehavior: 'Behavior',
     settingsGroupTabs: 'Tabs',
     settingsGroupWindow: 'Startup & Window',
-    settingsGroupPip: 'Picture in Picture',
     settingsGroupSystem: 'System Integration',
     settingsGroupOnConnect: 'After Connecting',
     settingsSearchPlaceholder: 'Search settings',
@@ -902,38 +856,6 @@ const translations: Record<Language, Translations> = {
     colorSchemeDarker: 'Midnight',
     colorSchemeNavy: 'Deep Navy',
     colorSchemeLight: 'Light',
-    colorSchemeNeoBrutalism: 'Neo-Brutalism',
-    colorSchemeNeoBrutalismRounded: 'Neo-Brutalism (Rounded)',
-    nbPaletteTitle: 'Neo-Brutalism Palette',
-    nbBg: 'Background',
-    nbText: 'Text',
-    nbBorder: 'Border',
-    nbShadow: 'Shadow',
-    nbAccent: 'Accent',
-    nbHighlight: 'Highlight',
-    nbSuccess: 'Success',
-    nbInfo: 'Info',
-    nbDanger: 'Danger',
-    nbSurfaceAlt: 'Surface Alt',
-    nbReset: 'Reset Palette',
-    nbPresetSunset: '🌅 Sunset',
-    nbPresetOcean: '🌊 Ocean',
-    nbPresetSakura: '🌸 Sakura',
-    nbPresetForest: '🌲 Forest',
-    nbPresetLavender: '💜 Lavender',
-    nbPresetMidnight: '🌙 Midnight',
-    nbPresetCyber: '👾 Cyberpunk',
-    nbPresetAbyss: '🌀 Abyss',
-    nbPresetCandy: '🍬 Candy',
-    nbPresetRetro: '📺 Retro',
-    nbPresetNord: '❄️ Nord',
-    nbPresetDracula: '🧛 Dracula',
-    nbPresetSolarized: '☀️ Solarized',
-    nbPresetOnyx: '🖤 Onyx',
-    nbPresetEmber: '🔥 Ember',
-    nbPresetMatrix: '💚 Matrix',
-    nbPresetStealth: '🥷 Stealth',
-    nbPresetMocha: '☕ Mocha',
     rememberWindowSize: 'Remember Window Position and Size',
     connectionSort: 'Sort connections',
     connectionSortDefault: 'Default order',
@@ -948,8 +870,6 @@ const translations: Record<Language, Translations> = {
     sshTabTitleTerminal: 'Dynamic terminal title',
 
     rememberDrawerLayout: 'Remember Drawer Height',
-    pipScale: 'Scale',
-    pipScaleByScreen: 'Relative to Screen Size',
     sessionsGallery: 'Sessions',
     sshHost: 'Host',
     sshPort: 'Port',
@@ -1062,8 +982,6 @@ const translations: Record<Language, Translations> = {
     toolbarHome: 'Home',
     toolbarAlwaysOnTop: 'Always on top',
     toolbarUnpinFromTop: 'Unpin from top',
-    toolbarPictureInPicture: 'Picture-in-Picture',
-    toolbarExitPictureInPicture: 'Exit Picture-in-Picture',
     windowMinimize: 'Minimize',
     windowMaximize: 'Maximize',
     windowRestore: 'Restore',
@@ -1526,8 +1444,6 @@ const translations: Record<Language, Translations> = {
     terminalThemeDarkHint: '外观为深色时使用',
     terminalThemeLight: '浅色终端配色',
     terminalThemeLightHint: '外观为浅色时使用。外观选「自动」时两个都会用到',
-    terminalThemeNb: '终端配色',
-    terminalThemeNbHint: '由新粗野主义主题决定',
     uiFontHint: '标签、菜单、设置窗口等界面文字，不影响终端',
     opacityHint: '低于 100% 时能透出桌面',
     vibrancyHint: '让透出的桌面变模糊。窗口透明度为 100% 时看不出效果',
@@ -1550,8 +1466,6 @@ const translations: Record<Language, Translations> = {
     sshTabTitleHint: '用连接名，或用服务器上程序设置的标题',
     enableThumbnailHint: '工具栏显示「会话总览」按钮，用缩略图查看所有会话',
     previewRefreshRateHint: '越短越实时，也越耗电',
-    pipScaleHint: '画中画窗口相对原窗口的大小',
-    pipScaleByScreenHint: '关闭时按主窗口大小计算',
     contextMenuIntegrationMac: '在访达右键菜单中添加「在 MeTerm 中打开」',
     contextMenuIntegrationWin: '在资源管理器右键菜单中添加「在 MeTerm 中打开」',
     autoOpenAiOnConnectHint: '连接 SSH 主机成功后',
@@ -1570,7 +1484,6 @@ const translations: Record<Language, Translations> = {
     settingsGroupTerminalBehavior: '行为',
     settingsGroupTabs: '标签页',
     settingsGroupWindow: '启动与窗口',
-    settingsGroupPip: '画中画',
     settingsGroupSystem: '系统集成',
     settingsGroupOnConnect: '连接后',
     settingsSearchPlaceholder: '搜索设置',
@@ -1658,38 +1571,6 @@ const translations: Record<Language, Translations> = {
     colorSchemeDarker: '纯黑',
     colorSchemeNavy: '深海蓝',
     colorSchemeLight: '浅色',
-    colorSchemeNeoBrutalism: '新粗野主义',
-    colorSchemeNeoBrutalismRounded: '新粗野主义 (圆角)',
-    nbPaletteTitle: '新粗野主义配色',
-    nbBg: '主背景',
-    nbText: '主文字',
-    nbBorder: '边框',
-    nbShadow: '阴影',
-    nbAccent: '强调色',
-    nbHighlight: '高亮色',
-    nbSuccess: '成功',
-    nbInfo: '信息',
-    nbDanger: '危险',
-    nbSurfaceAlt: '辅助背景',
-    nbReset: '重置配色',
-    nbPresetSunset: '🌅 日落',
-    nbPresetOcean: '🌊 海洋',
-    nbPresetSakura: '🌸 樱花',
-    nbPresetForest: '🌲 森林',
-    nbPresetLavender: '💜 薰衣草',
-    nbPresetMidnight: '🌙 午夜',
-    nbPresetCyber: '👾 赛博朋克',
-    nbPresetAbyss: '🌀 深渊',
-    nbPresetCandy: '🍬 糖果',
-    nbPresetRetro: '📺 复古',
-    nbPresetNord: '❄️ 极光',
-    nbPresetDracula: '🧛 德古拉',
-    nbPresetSolarized: '☀️ 曝光',
-    nbPresetOnyx: '🖤 玛瑙黑',
-    nbPresetEmber: '🔥 余烬',
-    nbPresetMatrix: '💚 矩阵',
-    nbPresetStealth: '🥷 隐匿',
-    nbPresetMocha: '☕ 摩卡',
     rememberWindowSize: '记住窗口位置和大小',
     connectionSort: '组内排序',
     connectionSortDefault: '默认顺序',
@@ -1704,8 +1585,6 @@ const translations: Record<Language, Translations> = {
     sshTabTitleTerminal: '终端动态标题',
 
     rememberDrawerLayout: '记住抽屉高度',
-    pipScale: '缩放比例',
-    pipScaleByScreen: '按屏幕大小计算',
     sessionsGallery: '会话总览',
     sshHost: '主机地址',
     sshPort: '端口',
@@ -1818,8 +1697,6 @@ const translations: Record<Language, Translations> = {
     toolbarHome: '主页',
     toolbarAlwaysOnTop: '窗口置顶',
     toolbarUnpinFromTop: '取消置顶',
-    toolbarPictureInPicture: '画中画',
-    toolbarExitPictureInPicture: '退出画中画',
     windowMinimize: '最小化',
     windowMaximize: '最大化',
     windowRestore: '还原',

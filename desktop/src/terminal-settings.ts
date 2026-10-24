@@ -30,17 +30,7 @@ export function applySettingsToTerminal(mt: ManagedTerminal, settings: AppSettin
   const needsTransparency = isWindowsPlatform || opacity < 1 || hasBackgroundImage;
   const bgColor = hasBackgroundImage ? 'rgba(0,0,0,0)' : (opacity < 1 ? hexToRgba(bgHex, opacity) : bgHex);
   mt.terminal.options.allowTransparency = needsTransparency;
-  // Apply NB custom palette overrides if active
-  let finalTheme = { ...theme, background: bgColor };
-  if (settings.colorScheme === 'neo-brutalism' || settings.colorScheme === 'neo-brutalism-rounded') {
-    const nbc = settings.nbCustomColors;
-    if (nbc) {
-      if (nbc['--nb-bg']) finalTheme.background = nbc['--nb-bg'];
-      if (nbc['--nb-text']) finalTheme.foreground = nbc['--nb-text'];
-      if (nbc['--nb-accent']) finalTheme.cursor = nbc['--nb-accent'];
-    }
-  }
-  mt.terminal.options.theme = finalTheme;
+  mt.terminal.options.theme = { ...theme, background: bgColor };
   // Padding color fix: match container background to the canvas color so the
   // padding areas don't show a mismatched color from the parent.
   // When bg image is active, keep transparent so image shows through padding areas.

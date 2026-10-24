@@ -22,7 +22,7 @@
 
 import { availableMonitors, getCurrentWindow, type Window as TauriWindow } from '@tauri-apps/api/window';
 import { LogicalPosition, LogicalSize } from '@tauri-apps/api/dpi';
-import { isPipMode, isWindowsPlatform } from './app-state';
+import { isWindowsPlatform } from './app-state';
 import { loadSettings, updateSettings, type AppSettings } from './themes';
 import {
   fitGeometryToScreen,
@@ -46,7 +46,7 @@ let saveGeneration = 0;
 /**
  * Logical size is what `setSize(new LogicalSize())` consumes, so physical values
  * read back from the window are converted with the same factor the rest of the
- * app already uses (see pip.ts / jumpserver-panel.ts).
+ * app already uses (see jumpserver-panel.ts).
  */
 function deviceFactor(): number {
   return window.devicePixelRatio || 1;
@@ -101,8 +101,6 @@ async function observeGeometry(win: TauriWindow): Promise<ObservedWindowGeometry
 export async function persistMainWindowGeometry(win: TauriWindow = getCurrentWindow()): Promise<void> {
   if (windowGeometryRole(win.label) !== 'owner') return;
   const generation = ++saveGeneration;
-  // PiP geometry is transient by design; pip.ts restores the pre-PiP frame itself.
-  if (isPipMode) return;
   // Native macOS fullscreen resizes the window to the whole display; that frame
   // must never become the "preferred" size. fullscreen-mac.ts mirrors
   // isFullscreen() onto the `fs-mac` class; this reads the class rather than
@@ -121,7 +119,7 @@ export async function persistMainWindowGeometry(win: TauriWindow = getCurrentWin
   // Geometry reads cross IPC; a newer save or preference change may supersede them.
   if (generation !== saveGeneration) return;
   const settings = loadSettings();
-  if (!settings.rememberWindowSize || isPipMode
+  if (!settings.rememberWindowSize
       || document.documentElement.classList.contains('fs-mac')) return;
   const next = mergeGeometry(storedGeometryOf(settings), observed);
   updateSettings({

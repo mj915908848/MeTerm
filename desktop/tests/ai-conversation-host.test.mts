@@ -31,10 +31,8 @@ test('preview uses opaque RGB theme surface, not bare channel variables', () => 
   assert.match(preview, /background:\s*rgb\(var\(--bg-primary/);
   assert.doesNotMatch(preview, /background:\s*var\(--bg-primary/);
   assert.doesNotMatch(css, /\.ai-history-preview-overlay\s*\{/);
-  for (const theme of ['themes.css', 'neo-brutalism.css']) {
-    const source = readFileSync(new URL(`../src/styles/${theme}`, import.meta.url), 'utf8');
-    assert.match(source, /--bg-primary:\s*\d+,\s*\d+,\s*\d+/);
-  }
+  const themes = readFileSync(new URL('../src/styles/themes.css', import.meta.url), 'utf8');
+  assert.match(themes, /--bg-primary:\s*\d+,\s*\d+,\s*\d+/);
 });
 
 test('side history preview stays inline, preserves active task and returns to the same list', () => {

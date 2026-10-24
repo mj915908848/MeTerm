@@ -114,8 +114,7 @@ html.platform-windows #window-toolbar-right {
 
 /* Title-bar action & icon buttons + tabs: borderless, icon-first.
    No persistent button box — state is conveyed by icon/text color
-   (and a bottom underline for the active tab). Neo-Brutalism overrides
-   every one of these with !important and keeps its boxed look unchanged. */
+   (and a bottom underline for the active tab). */
 .toolbar-action-btn,
 .title-tab,
 .toolbar-icon-btn {
