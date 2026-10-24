@@ -15,8 +15,7 @@ import { applyNbPalette } from './nb-palette';
 
 const ua = navigator.userAgent.toLowerCase();
 const isWindowsPlatform = ua.includes('windows');
-const isMacPlatform = ua.includes('macintosh') || ua.includes('mac os');
-const needsCustomControls = isWindowsPlatform || (!isMacPlatform && !isWindowsPlatform);
+const needsCustomControls = isWindowsPlatform;
 
 function resolveThemeAttr(colorScheme: string): string {
   if (colorScheme === 'darker') return 'darker';
@@ -41,7 +40,6 @@ export function initEditorWindowShell(): void {
   applyNbPalette(settings.colorScheme);
   void applyVibrancy(settings.enableVibrancy);
   document.documentElement.classList.toggle('platform-windows', isWindowsPlatform);
-  document.documentElement.classList.toggle('platform-linux', needsCustomControls && !isWindowsPlatform);
 
   // Hide main app UI
   const app = document.getElementById('app');
@@ -49,14 +47,7 @@ export function initEditorWindowShell(): void {
 
   document.body.classList.add('editor-window-mode');
 
-  // Linux CSD: wrap all content for rounded corners
-  const isLinux = needsCustomControls && !isWindowsPlatform;
-  const wrapper = isLinux ? document.createElement('div') : null;
-  if (wrapper) {
-    wrapper.className = 'linux-csd-content';
-    document.body.appendChild(wrapper);
-  }
-  const editorAppendTarget = wrapper || document.body;
+  const editorAppendTarget = document.body;
 
   // Tab bar — same pattern as #window-toolbar in index.html
   const tabBar = document.createElement('div');

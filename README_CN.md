@@ -8,7 +8,6 @@
 
 [![Build macOS](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-macos.yml?style=flat-square&logo=apple&label=macOS)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-macos.yml)
 [![Build Windows](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-windows.yml?style=flat-square&logo=windows&label=Windows)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-windows.yml)
-[![Build Linux](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-linux.yml?style=flat-square&logo=linux&label=Linux)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-linux.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/paidaxingyo666/MeTerm?style=flat-square&color=brightgreen)](https://github.com/paidaxingyo666/MeTerm/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/paidaxingyo666/MeTerm/total?style=flat-square&color=orange)](https://github.com/paidaxingyo666/MeTerm/releases)
@@ -93,8 +92,6 @@
 | macOS | Apple Silicon (arm64) | ✅ 已支持 |
 | macOS | Intel (x86_64) | ✅ 已支持 |
 | Windows | x64 | ✅ 已支持 |
-| Linux | x64 (amd64) | ✅ 已支持（仅测试 Ubuntu 24.04） |
-| Linux | arm64 | ✅ 已支持（仅测试 Ubuntu 24.04） |
 
 ---
 
@@ -104,8 +101,6 @@
   <a href="https://github.com/paidaxingyo666/MeTerm/releases/latest"><img src="https://img.shields.io/badge/macOS-下载-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS 下载"></a>
   &nbsp;&nbsp;
   <a href="https://github.com/paidaxingyo666/MeTerm/releases/latest"><img src="https://img.shields.io/badge/Windows-下载-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 下载"></a>
-  &nbsp;&nbsp;
-  <a href="https://github.com/paidaxingyo666/MeTerm/releases/latest"><img src="https://img.shields.io/badge/Linux-下载-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux 下载"></a>
 </p>
 
 | 平台 | 安装包 |
@@ -113,11 +108,6 @@
 | macOS (Apple Silicon) | `MeTerm_x.x.x_aarch64.dmg` |
 | macOS (Intel) | `MeTerm_x.x.x_x64.dmg` |
 | Windows (x64) | `MeTerm_x.x.x_x64-setup.exe` |
-| Linux (amd64) | `.deb` / `.AppImage` / `.rpm` |
-| Linux (arm64) | `.deb` / `.AppImage` / `.rpm` |
-
-> [!NOTE]
-> **Linux**：目前仅在 **Ubuntu 24.04** 上测试通过，其他发行版暂未测试，欢迎反馈问题。
 
 > [!NOTE]
 > **macOS**：公开的 v0.2.11 构建已完成 Developer ID 签名、公证和装订。此后的每个待发布候选仍须
@@ -167,7 +157,7 @@ xattr -cr "/Applications/MeTerm.app"
 |------|------|----------|
 | **Node.js** | 20+ | [nodejs.org](https://nodejs.org/) 或 `brew install node` |
 | **Rust** | latest stable | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| **Make** | — | macOS 自带；Linux: `sudo apt install build-essential` |
+| **Make** | — | macOS 自带 |
 
 ### 启动开发环境
 
@@ -293,7 +283,6 @@ MeTerm/
 │               ├── auth        # Bearer token 认证
 │               └── ...
 ├── control-broker/       # 独立、失败关闭的控制面协议核心（正式 scope 仍阻断）
-├── cloudflare-worker/    # CF Worker 自动更新服务
 └── scripts/              # 构建辅助脚本
 ```
 
@@ -303,9 +292,9 @@ MeTerm/
 |------|------|
 | **后端** | Rust, Axum, Tokio, xpty（跨平台 PTY）, russh（SSH/SFTP 终端链路）, ssh2/libssh2（桌面端 SSH 文件传输） |
 | **前端** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
-| **桌面** | Tauri v2 (Rust + TypeScript), reqwest, keyring, rusqlite |
+| **桌面** | Tauri v2 (Rust + TypeScript), reqwest, keyring |
 | **控制 Broker** | 独立 Rust 进程/协议核心；三平台系统服务适配尚未达到分发条件 |
-| **更新** | Tauri Updater + Cloudflare Worker |
+| **更新** | 从 GitHub Releases 手动下载 |
 
 ### 架构亮点
 
@@ -325,7 +314,6 @@ MeTerm/
 | [REST API 参考](docs/API.md) | 完整的 API 接口列表和使用示例 |
 | [二进制协议](docs/PROTOCOL.md) | WebSocket 二进制通信协议规范 |
 | [配置参考](docs/CONFIGURATION.md) | 服务端参数、客户端设置、角色系统 |
-| [会话录制](docs/RECORDING.md) | 录制格式和回放说明 |
 
 ---
 

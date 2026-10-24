@@ -8,7 +8,6 @@
 
 [![Build macOS](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-macos.yml?style=flat-square&logo=apple&label=macOS)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-macos.yml)
 [![Build Windows](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-windows.yml?style=flat-square&logo=windows&label=Windows)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-windows.yml)
-[![Build Linux](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-linux.yml?style=flat-square&logo=linux&label=Linux)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-linux.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/paidaxingyo666/MeTerm?style=flat-square&color=brightgreen)](https://github.com/paidaxingyo666/MeTerm/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/paidaxingyo666/MeTerm/total?style=flat-square&color=orange)](https://github.com/paidaxingyo666/MeTerm/releases)
@@ -93,8 +92,6 @@
 | macOS | Apple Silicon (arm64) | ✅ Supported |
 | macOS | Intel (x86_64) | ✅ Supported |
 | Windows | x64 | ✅ Supported |
-| Linux | x64 (amd64) | ✅ Supported (tested on Ubuntu 24.04) |
-| Linux | arm64 | ✅ Supported (tested on Ubuntu 24.04) |
 
 ---
 
@@ -104,8 +101,6 @@
   <a href="https://github.com/paidaxingyo666/MeTerm/releases/latest"><img src="https://img.shields.io/badge/macOS-Download-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS"></a>
   &nbsp;&nbsp;
   <a href="https://github.com/paidaxingyo666/MeTerm/releases/latest"><img src="https://img.shields.io/badge/Windows-Download-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows"></a>
-  &nbsp;&nbsp;
-  <a href="https://github.com/paidaxingyo666/MeTerm/releases/latest"><img src="https://img.shields.io/badge/Linux-Download-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Download for Linux"></a>
 </p>
 
 | Platform | Installer |
@@ -113,11 +108,6 @@
 | macOS (Apple Silicon) | `MeTerm_x.x.x_aarch64.dmg` |
 | macOS (Intel) | `MeTerm_x.x.x_x64.dmg` |
 | Windows (x64) | `MeTerm_x.x.x_x64-setup.exe` |
-| Linux (amd64) | `.deb` / `.AppImage` / `.rpm` |
-| Linux (arm64) | `.deb` / `.AppImage` / `.rpm` |
-
-> [!NOTE]
-> **Linux**: Only tested on **Ubuntu 24.04**. Other distributions have not been tested yet — feedback and bug reports are welcome.
 
 > [!NOTE]
 > **macOS**: Public v0.2.11 builds use Developer ID signing, notarization, and
@@ -172,7 +162,7 @@ xattr -cr "/Applications/MeTerm.app"
 |------------|---------|-------------|
 | **Node.js** | 20+ | [nodejs.org](https://nodejs.org/) or `brew install node` |
 | **Rust** | latest stable | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| **Make** | — | macOS built-in; Linux: `sudo apt install build-essential` |
+| **Make** | — | macOS built-in |
 
 ### Development Setup
 
@@ -311,7 +301,6 @@ MeTerm/
 │               ├── auth        # Bearer token authentication
 │               └── ...
 ├── control-broker/       # Standalone fail-closed control-plane protocol core (Release scopes blocked)
-├── cloudflare-worker/    # CF Worker auto-update service
 └── scripts/              # Build helper scripts
 ```
 
@@ -321,9 +310,9 @@ MeTerm/
 |-------|-------------|
 | **Backend** | Rust, Axum, Tokio, xpty (cross-platform PTY), russh (SSH/SFTP terminal path), ssh2/libssh2 (desktop SSH file transfer) |
 | **Frontend** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
-| **Desktop** | Tauri v2 (Rust + TypeScript), reqwest, keyring, rusqlite |
+| **Desktop** | Tauri v2 (Rust + TypeScript), reqwest, keyring |
 | **Control Broker** | Standalone Rust process/protocol core; platform service adapters are not release-ready |
-| **Update** | Tauri Updater + Cloudflare Worker |
+| **Update** | Manual download from GitHub Releases |
 
 ### Architecture Highlights
 
@@ -343,7 +332,6 @@ MeTerm/
 | [REST API Reference](docs/API.md) | Complete API endpoints and usage examples |
 | [Binary Protocol](docs/PROTOCOL.md) | WebSocket binary communication protocol spec |
 | [Configuration](docs/CONFIGURATION.md) | Server parameters, client settings, role system |
-| [Session Recording](docs/RECORDING.md) | Recording format and playback |
 
 ---
 

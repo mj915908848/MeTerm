@@ -606,7 +606,6 @@ mod tests {
     use crate::server::auth::Authenticator;
     use crate::server::ban::BanManager;
     use crate::server::events::EventBus;
-    use crate::server::hook_secret::HookSecretRegistry;
     use crate::server::session::manager::SessionManager;
     use crate::server::session::SessionConfig;
     use axum::body::Body;
@@ -666,7 +665,6 @@ mod tests {
                 log_dir: String::new(),
             },
             EventBus::new(),
-            HookSecretRegistry::new(),
         );
         let manager = PairingManager::new(auth, sessions, Arc::new(BanManager::new(None)));
         manager.set_lan_pairing_enabled(true);

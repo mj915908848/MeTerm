@@ -32,8 +32,7 @@ import {
 
 const ua = navigator.userAgent.toLowerCase();
 const isWindowsPlatform = ua.includes('windows');
-const isMacPlatform = ua.includes('macintosh') || ua.includes('mac os');
-const needsCustomControls = isWindowsPlatform || (!isMacPlatform && !isWindowsPlatform);
+const needsCustomControls = isWindowsPlatform;
 
 const JUMP_SERVER_BROWSER_CSP = [
   "default-src 'self'",
@@ -234,7 +233,6 @@ export function initJumpServerBrowserWindow(): void {
     if (el.textContent && /^body\s*\{background:/.test(el.textContent)) el.remove();
   });
   document.documentElement.classList.toggle('platform-windows', isWindowsPlatform);
-  document.documentElement.classList.toggle('platform-linux', needsCustomControls && !isWindowsPlatform);
 
   // Hide main app UI
   const app = document.getElementById('app');
@@ -242,14 +240,7 @@ export function initJumpServerBrowserWindow(): void {
 
   document.body.classList.add('js-browser-window-mode');
 
-  // Linux CSD: wrap all content for rounded corners
-  const isLinux = needsCustomControls && !isWindowsPlatform;
-  const wrapper = isLinux ? document.createElement('div') : null;
-  if (wrapper) {
-    wrapper.className = 'linux-csd-content';
-    document.body.appendChild(wrapper);
-  }
-  const appendTarget = wrapper || document.body;
+  const appendTarget = document.body;
 
   // Title bar
   if (needsCustomControls) {

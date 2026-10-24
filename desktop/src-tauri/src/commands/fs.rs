@@ -97,13 +97,8 @@ pub fn open_path(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&resolved)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = resolved;
     Ok(())
 }
 
@@ -134,28 +129,8 @@ pub fn open_text_file(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
-    #[cfg(target_os = "linux")]
-    {
-        // Try common editors in order; fall back to xdg-open.
-        let editors = ["gedit", "kate", "mousepad", "xed", "nano"];
-        let mut opened = false;
-        for editor in &editors {
-            if std::process::Command::new(editor)
-                .arg(&resolved)
-                .spawn()
-                .is_ok()
-            {
-                opened = true;
-                break;
-            }
-        }
-        if !opened {
-            std::process::Command::new("xdg-open")
-                .arg(&resolved)
-                .spawn()
-                .map_err(|e| e.to_string())?;
-        }
-    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = resolved;
     Ok(())
 }
 

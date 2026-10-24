@@ -84,13 +84,10 @@ miniz_oxide = "0.8"
 tauri-plugin-notification = "2"
 notify-rust = "4"
 tauri-plugin-single-instance = "2"
-tauri-plugin-updater = "2"
-tauri-plugin-process = "2"
 hostname = "0.4.2"
-keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 dirs = "6"
 zip = { version = "2", default-features = false, features = ["deflate"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Filesystem search (powering ai-tools-search.ts)
 walkdir = "2"
@@ -107,10 +104,6 @@ objc2-app-kit = { version = "0.2", features = [
 objc2-foundation = { version = "0.2", features = ["NSNotification", "NSString", "NSThread", "NSOperation", "block2"] }
 objc2-local-authentication = { version = "0.2", features = ["LAContext", "block2"] }
 block2 = "0.5"
-
-[target.'cfg(target_os = "linux")'.dependencies]
-gtk = "0.18"
-gdk = "0.18"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winreg = "0.55"

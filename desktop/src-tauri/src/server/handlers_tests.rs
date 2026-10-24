@@ -2,52 +2,6 @@ use super::*;
 use axum::body::Body;
 use axum::extract::Request;
 
-/// M7 显式新建镜像:auto_claude=true → envs 追加 ("METERM_AUTO_CLAUDE","1")。
-#[test]
-fn apply_auto_claude_env_true_appends_flag() {
-    let base = super::super::hook_secret::hook_envs("sess-1", 51234, "sec");
-    let out = apply_auto_claude_env(base.clone(), true);
-    assert_eq!(
-        out.len(),
-        base.len() + 1,
-        "auto_claude=true 须多追加一个 env"
-    );
-    let map: HashMap<_, _> = out.into_iter().collect();
-    assert_eq!(
-        map.get("METERM_AUTO_CLAUDE").map(String::as_str),
-        Some("1"),
-        "auto_claude=true 须注入 METERM_AUTO_CLAUDE=1"
-    );
-    assert_eq!(
-        map.get("METERM_SESSION_ID").map(String::as_str),
-        Some("sess-1")
-    );
-}
-
-/// auto_claude=false → 零行为变化,envs 不含 METERM_AUTO_CLAUDE。
-#[test]
-fn apply_auto_claude_env_false_is_noop() {
-    let base = super::super::hook_secret::hook_envs("sess-1", 51234, "sec");
-    let out = apply_auto_claude_env(base.clone(), false);
-    assert_eq!(out.len(), base.len(), "auto_claude=false 须零追加");
-    let map: HashMap<_, _> = out.into_iter().collect();
-    assert!(
-        !map.contains_key("METERM_AUTO_CLAUDE"),
-        "auto_claude=false 不得含 METERM_AUTO_CLAUDE(零行为变化)"
-    );
-}
-
-/// CreateSessionRequest 缺省 auto_claude=false(空 body 前后兼容),
-/// 且 serde 忽略未知字段(旧桌面收手机新字段退化普通终端)。
-#[test]
-fn create_session_request_defaults_and_ignores_unknown() {
-    let req: CreateSessionRequest = serde_json::from_str("{}").unwrap();
-    assert!(!req.auto_claude, "缺省 auto_claude 须为 false");
-    let req2: CreateSessionRequest =
-        serde_json::from_str(r#"{"auto_claude": true, "future_field": 42}"#).unwrap();
-    assert!(req2.auto_claude, "auto_claude=true 须解析");
-}
-
 #[test]
 fn paired_device_direct_key_auth_never_uses_desktop_key_paths_or_agent() {
     let device = AuthPrincipal::Device {

@@ -57,10 +57,9 @@ pub(crate) fn can_receive_event(
     }
     let session_id = match event {
         DesktopEvent::SessionsChanged => return true,
-        DesktopEvent::Notify { session_id, .. }
-        | DesktopEvent::CmdDone { session_id, .. }
-        | DesktopEvent::AgentTurnDone { session_id, .. }
-        | DesktopEvent::AgentNeedsApproval { session_id, .. } => session_id,
+        DesktopEvent::Notify { session_id, .. } | DesktopEvent::CmdDone { session_id, .. } => {
+            session_id
+        }
     };
     state
         .session_manager
@@ -76,10 +75,9 @@ pub(crate) fn can_device_receive_event(
 ) -> bool {
     let session_id = match event {
         DesktopEvent::SessionsChanged => return true,
-        DesktopEvent::Notify { session_id, .. }
-        | DesktopEvent::CmdDone { session_id, .. }
-        | DesktopEvent::AgentTurnDone { session_id, .. }
-        | DesktopEvent::AgentNeedsApproval { session_id, .. } => session_id,
+        DesktopEvent::Notify { session_id, .. } | DesktopEvent::CmdDone { session_id, .. } => {
+            session_id
+        }
     };
     state
         .session_manager

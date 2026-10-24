@@ -358,8 +358,7 @@ html.platform-macos .js-browser-container {
   padding-top: 28px;
 }
 
-html.platform-windows .js-browser-container,
-html.platform-linux .js-browser-container {
+html.platform-windows .js-browser-container {
   padding-top: 33px;
 }
 
@@ -953,7 +952,6 @@ html.vibrancy-active .js-panel-account-dialog {
   line-height: 1.3;
   font-style: italic;
 }
-
 
 /* Dock-in button (always visible in browser window search bar) */
 .js-dock-in-btn {

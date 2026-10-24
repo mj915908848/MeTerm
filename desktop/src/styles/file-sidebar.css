@@ -670,11 +670,6 @@ html.vibrancy-active .file-sidebar {
 
 /* ── Platform-specific ── */
 
-/* Linux CSD: bottom-left rounded corner */
-html.platform-linux .file-sidebar {
-  border-radius: 0 0 0 8px;
-}
-
 /* Native scrollbar hidden — overlay scrollbar used instead */
 
 /* ── Drag & drop move ── */

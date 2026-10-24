@@ -20,7 +20,7 @@
  *                    remembered position — and must not write the slot, or the
  *                    last window you happened to touch would silently redefine
  *                    where and how big the next launch is.
- * - `none`         — utility windows (settings / editor / about / updater /
+ * - `none`         — utility windows (settings / editor / about /
  *                    jumpserver-browser). They share the settings object but have
  *                    their own lifecycle and must stay out of this slot entirely.
  */

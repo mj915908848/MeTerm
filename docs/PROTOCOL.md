@@ -128,9 +128,6 @@ SSH、文件或业务 WebSocket。inner bearer 认证后、challenge nonce 生�
 | FileSaveRequest | 0x32 | C→S | 编辑器保存小文件 |
 | FileSearch | 0x33 | C→S | 递归搜索请求 |
 | FileSearchResp | 0x34 | S→C | 流式搜索结果 |
-| AgentEvent | 0x50 | S→C | Agent 事件 JSON |
-| AgentInput | 0x51 | C→S | Agent 输入 JSON |
-| AgentControl | 0x52 | C→S | Agent 审批/中断等控制 JSON |
 
 ## 小文件读取与消息上限
 

@@ -1113,13 +1113,6 @@
   background: var(--nb-success, #06D6A0) !important;
 }
 
-/* Update notification */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-toast {
-  border: 2px solid var(--nb-border, #000) !important;
-  box-shadow: 4px 4px 0 var(--nb-shadow, #000) !important;
-  background: var(--nb-card-bg, #fff) !important;
-}
-
 /* Server info tiles in drawer */
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .si-tile {
   border: 1.5px solid var(--nb-border, #000) !important;
@@ -1172,52 +1165,6 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
   background: var(--nb-bg, #FFFEF0) !important;
   opacity: 1 !important;
   border-right: 2px solid var(--nb-border, #000) !important;
-}
-
-
-/* ─── Update window ─────────────────────────────────────────────── */
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-banner {
-  background: var(--nb-highlight, #FFD93D) !important;
-  border-bottom: 2px solid var(--nb-border, #000) !important;
-  color: var(--nb-text, #1A1A2E) !important;
-}
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-banner-btn {
-  border: 2px solid var(--nb-border, #000) !important;
-  box-shadow: 2px 2px 0 var(--nb-shadow, #000) !important;
-  background: var(--nb-card-bg, #fff) !important;
-  color: var(--nb-text, #1A1A2E) !important;
-}
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-modal-overlay {
-  background: rgba(0, 0, 0, 0.5) !important;
-}
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-modal {
-  background: var(--nb-bg, #FFFEF0) !important;
-  border: 3px solid var(--nb-border, #000) !important;
-  box-shadow: 6px 6px 0 var(--nb-shadow, #000) !important;
-}
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-modal-btn {
-  border: 2px solid var(--nb-border, #000) !important;
-  box-shadow: 3px 3px 0 var(--nb-shadow, #000) !important;
-}
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-progress-track {
-  background: #E5E5E5 !important;
-  border: 1.5px solid var(--nb-border, #000) !important;
-}
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-progress-fill {
-  background: var(--nb-success, #06D6A0) !important;
-}
-
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-toast {
-  background: var(--nb-card-bg, #fff) !important;
-  border: 2px solid var(--nb-border, #000) !important;
-  box-shadow: 4px 4px 0 var(--nb-shadow, #000) !important;
-  color: var(--nb-text, #1A1A2E) !important;
 }
 
 
@@ -1421,7 +1368,6 @@ html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-
 
 /* Modals — reduce from 6px to 4px for less visual weight */
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .ssh-modal,
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .update-modal,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .pip-tab-select-dialog,
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .js-account-dialog {
   box-shadow: 4px 4px 0 var(--nb-shadow, #000) !important;
