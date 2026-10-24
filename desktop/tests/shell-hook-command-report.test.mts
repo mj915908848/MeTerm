@@ -75,7 +75,7 @@ const INSTALLERS: Record<'bash' | 'zsh', Array<[string, string]>> = {
     ['injected hook (ai-tools-shell.ts)', buildShellHook('bash')],
   ],
   zsh: [
-    ['local rc (pty_unix.rs)', LOCAL_ZSHRC.replace(/^.*source "\$HOME\/\.zshrc".*$/m, '')],
+    ['local rc (pty_unix.rs)', LOCAL_ZSHRC.replace(/^.*source "\$ZDOTDIR\/\.zshrc".*$/m, '')],
     ['ssh hook (ssh.rs)', SSH_HOOK.replace(/stty echo\s*$/, '')],
     ['injected hook (ai-tools-shell.ts)', buildShellHook('zsh')],
   ],

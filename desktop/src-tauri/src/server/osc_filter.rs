@@ -13,6 +13,10 @@ use serde::Serialize;
 const MAX_OSC_BODY: usize = 4096;
 /// Larger limit for OSC 52 clipboard data (1 MiB of base64 ≈ 768 KiB text).
 const MAX_OSC_BODY_CLIPBOARD: usize = 1_048_576;
+/// OSC 7768 carries the whole command line that just ran. A pasted script or
+/// heredoc easily passes 4 KiB, and a dropped 7768 leaves the agent waiting for a
+/// "command finished" that never comes, so it gets more room than the others.
+const MAX_OSC_BODY_SHELL_STATE: usize = 65_536;
 
 /// OSC numbers that MeTerm intercepts (not forwarded to frontend).
 const INTERCEPTED_OSC: &[u32] = &[7, 9, 52, 133, 777, 7766, 7768];
@@ -192,6 +196,8 @@ impl OscFilter {
                         let limit =
                             if self.osc_num == 52 || !INTERCEPTED_OSC.contains(&self.osc_num) {
                                 MAX_OSC_BODY_CLIPBOARD
+                            } else if self.osc_num == 7768 {
+                                MAX_OSC_BODY_SHELL_STATE
                             } else {
                                 MAX_OSC_BODY
                             };
@@ -649,5 +655,25 @@ mod tests {
             })
             .collect();
         assert_eq!(parsed, vec![(1, "/a".to_string()), (2, "/b".to_string())]);
+    }
+
+    #[test]
+    fn shell_state_keeps_a_command_longer_than_4k() {
+        let mut f = OscFilter::new();
+        let cmd = "x".repeat(10_000);
+        let seq = format!("\x1b]7768;0;/tmp;{cmd};5\x07");
+        let (clean, events) = f.feed(seq.as_bytes());
+        assert!(clean.is_empty());
+        match events.as_slice() {
+            [OscEvent::ShellState {
+                cmd: got,
+                duration_ms,
+                ..
+            }] => {
+                assert_eq!(got.len(), 10_000);
+                assert_eq!(*duration_ms, Some(5));
+            }
+            other => panic!("expected one ShellState, got {other:?}"),
+        }
     }
 }

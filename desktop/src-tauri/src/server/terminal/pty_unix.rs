@@ -92,6 +92,14 @@ impl PtyTerminal {
             None
         };
 
+        // zsh gets ZDOTDIR pointed at the hook dir below; the proxy rc files need
+        // the value it replaces to find the user's own config.
+        if basename == "zsh" && hook_dir.is_some() {
+            if let Some(zd) = std::env::var_os("ZDOTDIR").filter(|v| !v.is_empty()) {
+                cmd.env("METERM_USER_ZDOTDIR", zd);
+            }
+        }
+
         // Agent 镜像 hooks(M2 修复):hooks settings 绝对路径经 env 注入,不再字面写死进 rc。
         // 原实现把路径直接插进 rc 的双引号 shell 赋值 `meterm_claude_hooks="<path>"`,
         // 若路径含 `$`/`` ` ``/`"`/`\`(理论上 TMPDIR 可控)会被 shell 解释(命令替换等)。
@@ -368,13 +376,19 @@ fn create_hook_dir(shell_basename: &str) -> Option<String> {
 
 /// Create proxy zsh dotfiles that source user's originals then install MeTerm hook.
 fn create_zsh_hooks(dir: &std::path::Path) {
-    // .zshenv: proxy user's .zshenv, preserve our ZDOTDIR for .zshrc loading
+    // .zshenv: proxy user's .zshenv, preserve our ZDOTDIR for .zshrc loading.
+    // The user's own config directory is wherever zsh would have looked: the
+    // ZDOTDIR they launched with (METERM_USER_ZDOTDIR), else $HOME — and their
+    // .zshenv may move it (`export ZDOTDIR=~/.config/zsh` is the usual XDG setup),
+    // so the value it leaves behind is kept in __meterm_user_zd for the other
+    // proxies. Ignoring that used to skip such users' .zshrc entirely.
     let _ = std::fs::write(
         dir.join(".zshenv"),
         "# MeTerm: proxy user zshenv, keep ZDOTDIR for hook injection\n\
          __mt_zd=\"$ZDOTDIR\"\n\
-         ZDOTDIR=\"$HOME\"\n\
-         [[ -f \"$HOME/.zshenv\" ]] && source \"$HOME/.zshenv\"\n\
+         ZDOTDIR=\"${METERM_USER_ZDOTDIR:-$HOME}\"\n\
+         [[ -f \"$ZDOTDIR/.zshenv\" ]] && source \"$ZDOTDIR/.zshenv\"\n\
+         __meterm_user_zd=\"${ZDOTDIR:-$HOME}\"\n\
          ZDOTDIR=\"$__mt_zd\"\n\
          unset __mt_zd\n",
     );
@@ -382,18 +396,23 @@ fn create_zsh_hooks(dir: &std::path::Path) {
     // .zprofile: proxy user's .zprofile (login shell only)
     let _ = std::fs::write(
         dir.join(".zprofile"),
-        "[[ -f \"$HOME/.zprofile\" ]] && source \"$HOME/.zprofile\"\n",
+        "__mt_zd=\"$ZDOTDIR\"\n\
+         ZDOTDIR=\"$__meterm_user_zd\"\n\
+         [[ -f \"$ZDOTDIR/.zprofile\" ]] && source \"$ZDOTDIR/.zprofile\"\n\
+         ZDOTDIR=\"$__mt_zd\"\n\
+         unset __mt_zd\n",
     );
 
     // .zshrc: proxy user's .zshrc, then install precmd hook
     let _ = std::fs::write(
         dir.join(".zshrc"),
         "# MeTerm: proxy user zshrc + install precmd hook\n\
-         ZDOTDIR=\"$HOME\"\n\
+         ZDOTDIR=\"$__meterm_user_zd\"\n\
+         unset __meterm_user_zd METERM_USER_ZDOTDIR\n\
          # Fix HISTFILE: ZDOTDIR override causes zsh default HISTFILE to point at temp hook dir.\n\
          # Reset to standard default; user .zshrc can still override.\n\
-         HISTFILE=\"$HOME/.zsh_history\"\n\
-         [[ -f \"$HOME/.zshrc\" ]] && source \"$HOME/.zshrc\"\n\
+         HISTFILE=\"$ZDOTDIR/.zsh_history\"\n\
+         [[ -f \"$ZDOTDIR/.zshrc\" ]] && source \"$ZDOTDIR/.zshrc\"\n\
          \n\
          # ── MeTerm shell hook (preexec/precmd, 记录命令耗时) ──\n\
          __meterm_tok=\"${METERM_OSC_TOKEN:-}\"\n\
@@ -445,7 +464,11 @@ fn create_zsh_hooks(dir: &std::path::Path) {
     // .zlogin: proxy user's .zlogin (login shell only)
     let _ = std::fs::write(
         dir.join(".zlogin"),
-        "[[ -f \"$HOME/.zlogin\" ]] && source \"$HOME/.zlogin\"\n",
+        "__mt_zd=\"$ZDOTDIR\"\n\
+         ZDOTDIR=\"$__meterm_user_zd\"\n\
+         [[ -f \"$ZDOTDIR/.zlogin\" ]] && source \"$ZDOTDIR/.zlogin\"\n\
+         ZDOTDIR=\"$__mt_zd\"\n\
+         unset __mt_zd\n",
     );
 
     // ── Agent 镜像 hook 产物(M2)──
