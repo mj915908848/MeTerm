@@ -1,7 +1,7 @@
 //! `POST /api/sessions/ssh/saved` —— 按已存连接 id 中转建 SSH 会话。
 //!
 //! 设计稿 §4:查 `ConnectionRegistry`(S1)元数据 + 服务端钥匙串
-//! `secret_vault`(S2)密钥,组出 `SshConfig` 后复用 `handlers::create_ssh_session`
+//! `secret_vault`(S2)密钥,组出 `SshConfig` 后复用
 //! 同一套"连接 + 起会话 + 后台 SFTP"流程(`connect_and_start_ssh_session`),
 //! 响应形状保持一致(201/409 host-key challenge/稳定失败码)。
 //! `POST /api/sessions/ssh/saved/test` 走同一条 id→vault materialize 路径，
@@ -19,7 +19,6 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde::Deserialize;
 
-use super::auth::AuthPrincipal;
 use super::ServerState;
 
 #[derive(Debug)]
@@ -200,31 +199,17 @@ async fn materialize_saved_ssh_config_bounded(
 }
 
 /// 中转建会话:查 `ConnectionRegistry` 元数据 + 服务端钥匙串密钥,组
-/// `SshConfig` 后复用与 `create_ssh_session` 相同的连接/起会话流程 ——
+/// `SshConfig` 后复用 `connect_and_start_ssh_session` 的连接/起会话流程 ——
 /// 响应形状一致(201/409 host-key challenge/稳定失败码)。
 pub async fn create_ssh_session_from_saved(
     Extension(state): Extension<Arc<ServerState>>,
-    Extension(principal): Extension<AuthPrincipal>,
     Json(body): Json<CreateSshSessionFromSavedRequest>,
 ) -> impl IntoResponse {
-    if let Err(error) =
-        validate_saved_host_confirmation(&principal, body.trusted_fingerprint.as_deref())
-    {
-        eprintln!("[ssh-saved] rejected host-key confirmation: {}", error);
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": "host_key_confirmation_forbidden" })),
-        );
-    }
     let config = match materialize_saved_ssh_config_bounded(
         state.clone(),
         body.id.clone(),
         body.trusted_fingerprint,
-        if matches!(principal, AuthPrincipal::Owner { .. }) {
-            body.skip_shell_hook
-        } else {
-            None
-        },
+        body.skip_shell_hook,
     )
     .await
     {
@@ -259,38 +244,21 @@ pub async fn create_ssh_session_from_saved(
         }
     };
 
-    super::handlers::connect_and_start_ssh_session(state, principal, config).await
+    super::handlers::connect_and_start_ssh_session(state, config).await
 }
 
 /// Test a saved connection without exposing its credential bundle to WebView.
-/// The response intentionally mirrors `/api/sessions/ssh/test`: `{ok}` for a
-/// normal result, or the existing host-key challenge object for TOFU handling.
+/// The response is `{ok}` for a normal result, or the host-key challenge
+/// object for TOFU handling.
 pub async fn test_ssh_session_from_saved(
     Extension(state): Extension<Arc<ServerState>>,
-    Extension(principal): Extension<AuthPrincipal>,
     Json(body): Json<CreateSshSessionFromSavedRequest>,
 ) -> impl IntoResponse {
-    if let Err(error) =
-        validate_saved_host_confirmation(&principal, body.trusted_fingerprint.as_deref())
-    {
-        eprintln!("[ssh-saved] rejected host-key test confirmation: {}", error);
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({
-                "ok": false,
-                "error": "host_key_confirmation_forbidden"
-            })),
-        );
-    }
     let config = match materialize_saved_ssh_config_bounded(
         state.clone(),
         body.id.clone(),
         body.trusted_fingerprint,
-        if matches!(principal, AuthPrincipal::Owner { .. }) {
-            body.skip_shell_hook
-        } else {
-            None
-        },
+        body.skip_shell_hook,
     )
     .await
     {
@@ -351,18 +319,6 @@ pub async fn test_ssh_session_from_saved(
             )
         }
     }
-}
-
-fn validate_saved_host_confirmation(
-    principal: &AuthPrincipal,
-    trusted_fingerprint: Option<&str>,
-) -> Result<(), &'static str> {
-    if matches!(principal, AuthPrincipal::Device { .. })
-        && trusted_fingerprint.is_some_and(|fingerprint| !fingerprint.is_empty())
-    {
-        return Err("host_key_confirmation_forbidden");
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -450,33 +406,6 @@ mod tests {
         let config = build_ssh_config_from_saved(conn, secrets, None, None);
         assert_eq!(config.auth_method, SshAuthMethod::Key);
         assert!(config.private_key.is_empty());
-    }
-
-    #[test]
-    fn device_cannot_confirm_saved_host_key_but_saved_broker_may_use_bound_path() {
-        let device = AuthPrincipal::Device {
-            device_id: "phone".into(),
-            device_name: "Phone".into(),
-            generation: uuid::Uuid::new_v4(),
-        };
-        let owner = AuthPrincipal::Owner {
-            generation: uuid::Uuid::new_v4(),
-        };
-        assert!(validate_saved_host_confirmation(&device, None).is_ok());
-        assert_eq!(
-            validate_saved_host_confirmation(&device, Some("SHA256:abc")),
-            Err("host_key_confirmation_forbidden")
-        );
-        assert!(validate_saved_host_confirmation(&owner, Some("SHA256:abc")).is_ok());
-
-        let conn = make_conn("key", true);
-        let mut secrets = SshSecrets::default();
-        secrets.private_key_path = Some("/Users/alice/.ssh/id_ed25519".into());
-        assert!(validate_saved_credentials(&conn, &secrets).is_ok());
-        let config = build_ssh_config_from_saved(conn, secrets, None, None);
-        // The raw device route must still reject a caller-supplied desktop path.
-        assert!(super::super::handlers::validate_direct_ssh_config(&device, &config).is_err());
-        assert!(super::super::handlers::validate_direct_ssh_config(&owner, &config).is_ok());
     }
 
     #[test]

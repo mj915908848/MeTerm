@@ -21,15 +21,3 @@ export async function waitForMeTerm(maxRetries = 20, intervalMs = 300): Promise<
   }
   throw new Error('meterm not ready');
 }
-
-export function buildWsUrl(port: number, sessionId: string, clientId: string | null): string {
-  let url = `ws://127.0.0.1:${port}/ws/${encodeURIComponent(sessionId)}`;
-  if (clientId) {
-    url += `?client_id=${encodeURIComponent(clientId)}`;
-  }
-  return url;
-}
-
-export function buildWsProtocols(token: string): string[] {
-  return ['meterm.v1', `bearer.${token}`];
-}

@@ -49,9 +49,6 @@ pub const MSG_MASTER_REQUEST_NOTIFY: u8 = 0x1A;
 pub const MSG_MASTER_APPROVAL: u8 = 0x1B;
 pub const MSG_MASTER_RECLAIM: u8 = 0x1C;
 
-// Device pairing
-pub const MSG_PAIR_NOTIFY: u8 = 0x1D;
-pub const MSG_PAIR_APPROVAL: u8 = 0x1E;
 /// master 主动让出主控(手机端"停止接管"):服务端把 master 移交给
 /// 下一个合适客户端(优先桌面 ipc/loopback)。payload 为空。
 pub const MSG_MASTER_RELEASE: u8 = 0x1F;
@@ -177,25 +174,6 @@ pub fn encode_master_approval(
     buf.push(if approved { 1 } else { 0 });
     buf.extend_from_slice(&requester_conn_gen.to_be_bytes());
     buf.extend_from_slice(requester_id.as_bytes());
-    buf
-}
-
-/// Encode a pair notification (JSON).
-pub fn encode_pair_notify(pair_id: &str, device_info: &str, remote_addr: &str) -> Vec<u8> {
-    let json = serde_json::json!({
-        "pair_id": pair_id,
-        "device_info": device_info,
-        "remote_addr": remote_addr,
-    });
-    encode_message(MSG_PAIR_NOTIFY, json.to_string().as_bytes())
-}
-
-/// Encode a pair-approval message: `[0x1E][approved: u8][pair_id UTF-8]`.
-pub fn encode_pair_approval(approved: bool, pair_id: &str) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(2 + pair_id.len());
-    buf.push(MSG_PAIR_APPROVAL);
-    buf.push(if approved { 1 } else { 0 });
-    buf.extend_from_slice(pair_id.as_bytes());
     buf
 }
 

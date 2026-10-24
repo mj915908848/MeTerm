@@ -59,12 +59,7 @@ fn redact_auth_credential(mut response: AuthResponse) -> AuthResponse {
     response
 }
 
-fn owner_may_materialize(principal: &AuthPrincipal) -> bool {
-    matches!(principal, AuthPrincipal::Owner { .. })
-}
-
 fn credential_for_auth(
-    principal: &AuthPrincipal,
     binding: &JumpServerCredentialBinding,
     credential_override: Option<String>,
 ) -> Result<String, String> {
@@ -73,9 +68,6 @@ fn credential_for_auth(
             return Ok(credential);
         }
         return Err("invalid JumpServer authentication request".to_string());
-    }
-    if !owner_may_materialize(principal) {
-        return Err("stored JumpServer credentials are desktop-owner only".to_string());
     }
     let credentials = credential_broker::materialize(binding.clone())?;
     let credential = match binding.auth_method.as_str() {
@@ -105,7 +97,7 @@ pub async fn auth(
     if !valid_auth_identity(&binding.username) || !valid_display_text(&binding.org_id, 256) {
         return auth_error("invalid JumpServer authentication request".to_string());
     }
-    let password = match credential_for_auth(&principal, &binding, req.credential_override) {
+    let password = match credential_for_auth(&binding, req.credential_override) {
         Ok(password) => password,
         Err(error) => return auth_error(error),
     };
@@ -164,7 +156,7 @@ pub async fn token_auth(
         Ok(_) => return auth_error("invalid JumpServer authentication method".to_string()),
         Err(error) => return auth_error(error),
     };
-    let token = match credential_for_auth(&principal, &binding, req.credential_override) {
+    let token = match credential_for_auth(&binding, req.credential_override) {
         Ok(token) if valid_bearer_token(&token) => token,
         Ok(_) => return auth_error("invalid JumpServer authentication request".to_string()),
         Err(error) => return auth_error(error),

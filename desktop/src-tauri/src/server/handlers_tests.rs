@@ -1,38 +1,4 @@
 use super::*;
-use axum::body::Body;
-use axum::extract::Request;
-
-#[test]
-fn paired_device_direct_key_auth_never_uses_desktop_key_paths_or_agent() {
-    let device = AuthPrincipal::Device {
-        device_id: "phone".into(),
-        device_name: "Phone".into(),
-        generation: uuid::Uuid::new_v4(),
-    };
-    let owner = AuthPrincipal::Owner {
-        generation: uuid::Uuid::new_v4(),
-    };
-    for private_key in ["", "~/.ssh/id_ed25519", "/Users/alice/.ssh/id_rsa"] {
-        let config = parse_ssh_config(&serde_json::json!({
-            "host": "server.example",
-            "username": "alice",
-            "auth_method": "key",
-            "private_key": private_key,
-        }))
-        .unwrap();
-        assert!(validate_direct_ssh_config(&device, &config).is_err());
-        assert!(validate_direct_ssh_config(&owner, &config).is_ok());
-    }
-
-    let inline = parse_ssh_config(&serde_json::json!({
-        "host": "server.example",
-        "username": "alice",
-        "auth_method": "key",
-        "private_key": "-----BEGIN OPENSSH PRIVATE KEY-----\nplaceholder\n-----END OPENSSH PRIVATE KEY-----",
-    }))
-    .unwrap();
-    assert!(validate_direct_ssh_config(&device, &inline).is_ok());
-}
 
 #[test]
 fn ssh_transport_errors_are_reduced_to_stable_public_codes() {
@@ -112,9 +78,6 @@ fn host_key_challenge_uses_an_explicit_field_allow_list() {
 #[tokio::test]
 async fn failed_ssh_connect_never_registers_a_discoverable_session() {
     let state = Arc::new(super::super::create_dummy_state());
-    let principal = AuthPrincipal::Owner {
-        generation: state.authenticator.current_owner_generation(),
-    };
     let before = state.session_manager.list().len();
     let config = super::super::terminal::ssh::SshConfig {
         host: "127.0.0.1".into(),
@@ -134,7 +97,7 @@ async fn failed_ssh_connect_never_registers_a_discoverable_session() {
         proxy_password: String::new(),
     };
 
-    let (status, _) = connect_and_start_ssh_session(state.clone(), principal, config).await;
+    let (status, _) = connect_and_start_ssh_session(state.clone(), config).await;
 
     assert_ne!(status, StatusCode::CREATED);
     assert_eq!(state.session_manager.list().len(), before);

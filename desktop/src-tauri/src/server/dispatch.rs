@@ -40,21 +40,6 @@ fn deny_not_master(session: &Session, authority: &DispatchAuthority) {
     );
 }
 
-fn deny_owner_only(session: &Session, authority: &DispatchAuthority) {
-    let err = serde_json::json!({
-        "code": "OWNER_ONLY",
-        "message": "该管理操作仅允许本机桌面端执行",
-    });
-    session.send_to_client_generation(
-        authority.client_id(),
-        authority.conn_gen(),
-        protocol::encode_message(
-            protocol::MSG_ERROR,
-            serde_json::to_vec(&err).unwrap_or_default().as_slice(),
-        ),
-    );
-}
-
 /// Validate a file path (absolute, max 4096 chars).
 pub fn validate_path(path: &str) -> Result<(), &'static str> {
     let cleaned = path.replace("\\", "/");
@@ -157,11 +142,6 @@ pub async fn dispatch_message(
     // both connection state and the exact credential generation immediately
     // before executing any frame, not only when the socket was upgraded.
     if !security.is_current(&state.authenticator) {
-        session.remove_client(client_id, conn_gen);
-        return;
-    }
-    if !super::device_access::can_access_session(&state.authenticator, &security.principal, session)
-    {
         session.remove_client(client_id, conn_gen);
         return;
     }
@@ -574,42 +554,6 @@ pub async fn dispatch_message(
                             .await;
                         }
                     });
-                }
-            }
-        }
-        protocol::MSG_PAIR_APPROVAL => {
-            if !security.is_trusted_local_owner() {
-                deny_owner_only(session, &authority);
-                return;
-            }
-            if !authority.can_control() {
-                deny_not_master(session, &authority);
-                return;
-            }
-            if payload.len() >= 2 {
-                let approved = payload[0] == 1;
-                if let Ok(pair_id) = std::str::from_utf8(&payload[1..]) {
-                    let result = match security.principal.owner_generation() {
-                        Some(generation) if generation.is_nil() => state
-                            .pairing_manager
-                            .handle_local_approval(approved, pair_id),
-                        Some(generation) => state
-                            .pairing_manager
-                            .handle_approval(approved, pair_id, generation),
-                        None => Err("owner credential required".to_string()),
-                    };
-                    match result {
-                        Ok(Some(rotation)) => {
-                            if let Some(retired_generation) = rotation.retired_generation {
-                                state.disconnect_device_generation(
-                                    &rotation.device_id,
-                                    retired_generation,
-                                );
-                            }
-                        }
-                        Ok(None) => {}
-                        Err(error) => eprintln!("[pairing] approval failed: {}", error),
-                    }
                 }
             }
         }

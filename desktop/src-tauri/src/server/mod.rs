@@ -7,7 +7,6 @@
 
 pub mod auth;
 mod auth_body;
-pub mod ban;
 pub mod connections;
 #[cfg(all(
     debug_assertions,
@@ -15,47 +14,34 @@ pub mod connections;
     target_os = "macos"
 ))]
 pub(crate) mod dev_app_identity;
-mod device_access;
-pub mod device_admin;
-pub mod device_auth;
 pub mod dispatch;
 pub mod encoding;
-pub mod events;
 pub mod executor;
 pub mod file_handler;
 pub mod file_search;
-pub mod files_http;
-pub mod git_handlers;
 pub mod handlers;
 pub mod jumpserver;
 pub mod osc_filter;
-pub mod pairing;
-pub mod pop;
 pub(crate) mod private_file;
 pub mod protocol;
 pub mod secret_vault;
 pub mod server_info;
 pub mod session;
-pub mod ssh_connections_http;
 pub mod ssh_saved_session;
 pub mod terminal;
 mod transport;
-pub mod ws;
 
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use axum::routing::{any, delete, get, post, put};
+use axum::routing::{get, post};
 use axum::{middleware, Router};
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
 use auth::Authenticator;
-use ban::BanManager;
 use connections::ConnectionRegistry;
-use events::{EventBus, PresenceRegistry};
-use pairing::PairingManager;
 use session::manager::SessionManager;
 use session::SessionConfig;
 
@@ -84,12 +70,6 @@ impl Default for ServerConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct DeviceGenerationCleanup {
-    pub disconnected: usize,
-    pub presence_disconnected: usize,
-}
-
 /// Core shared state — replaces the old `MeTermProcess` (sidecar manager).
 pub struct ServerState {
     pub port: u16,
@@ -97,8 +77,6 @@ pub struct ServerState {
     pub config: ServerConfig,
     pub session_manager: Arc<SessionManager>,
     pub authenticator: Arc<Authenticator>,
-    pub ban_manager: Arc<BanManager>,
-    pub pairing_manager: Arc<PairingManager>,
     /// Metadata-only bindings for sessions created by the fixed JumpServer
     /// broker. Koko connection credentials never enter this registry.
     pub(crate) jumpserver_sessions: jumpserver::ssh_session::JumpServerSessionRegistry,
@@ -106,25 +84,11 @@ pub struct ServerState {
     pub connections: Arc<ConnectionRegistry>,
     /// When true, all outgoing HTTP requests bypass system proxy (direct connection).
     pub bypass_proxy: AtomicBool,
-    /// Custom device name for LAN sharing (empty = OS hostname).
-    pub device_name: std::sync::Mutex<String>,
-    /// 稳定设备 ID(UUID),跨重启/换端口/换 IP 不变——LAN 重发现与未来中继按此路由。
-    pub device_id: String,
-    /// 桌面级事件总线(终端通知 Phase 1):各会话把通知性事件 / 会话增删事件投递到此,
-    /// presence WS(`/ws-events`,后续任务接入)订阅后转发给手机。
-    pub event_bus: EventBus,
-    /// presence 客户端注册表:记录当前在线的 presence 连接,供后续 P3 推送判定用。
-    pub presence: PresenceRegistry,
 }
 
 impl ServerState {
     pub fn port(&self) -> u16 {
         self.port
-    }
-
-    /// 稳定设备 ID,见 `device_id` 字段注释。
-    pub fn device_id(&self) -> &str {
-        &self.device_id
     }
 
     pub fn is_running(&self) -> bool {
@@ -141,101 +105,10 @@ impl ServerState {
         Ok(())
     }
 
-    pub(crate) fn update_token_for_owner(
-        &self,
-        expected_generation: uuid::Uuid,
-        new_token: String,
-    ) -> Result<(), auth::OwnerMutationError> {
-        let retired_generation = self
-            .authenticator
-            .set_token_if_generation(expected_generation, new_token)?;
-        self.disconnect_owner_generation(retired_generation);
-        Ok(())
-    }
-
-    pub(crate) fn revoke_all_for_owner(
-        &self,
-        expected_generation: uuid::Uuid,
-        new_token: String,
-    ) -> Result<auth::OwnerRevokeAllOutcome, auth::OwnerMutationError> {
-        let outcome = self
-            .pairing_manager
-            .revoke_all_for_owner(expected_generation, new_token)?;
-        self.disconnect_owner_generation(outcome.retired_generation);
-        Ok(outcome)
-    }
-
-    pub(crate) fn revoke_all_for_local_owner(
-        &self,
-        new_token: String,
-    ) -> Result<auth::OwnerRevokeAllOutcome, auth::OwnerMutationError> {
-        let outcome = self.pairing_manager.revoke_all_for_local_owner(new_token)?;
-        self.disconnect_owner_generation(outcome.retired_generation);
-        Ok(outcome)
-    }
-
     fn disconnect_owner_generation(&self, retired_generation: uuid::Uuid) {
         self.session_manager
             .disconnect_owner_generation(retired_generation);
-        self.presence
-            .disconnect_owner_generation(retired_generation);
         jumpserver::remove_owner_generation(retired_generation);
-    }
-
-    pub(crate) fn disconnect_device_generation(
-        &self,
-        device_id: &str,
-        retired_generation: uuid::Uuid,
-    ) -> DeviceGenerationCleanup {
-        let disconnected = self
-            .session_manager
-            .disconnect_device_generation(device_id, retired_generation);
-        let presence_disconnected = self
-            .presence
-            .disconnect_device_generation(device_id, retired_generation);
-        jumpserver::remove_device_generation(device_id, retired_generation);
-        DeviceGenerationCleanup {
-            disconnected,
-            presence_disconnected,
-        }
-    }
-
-    pub(crate) fn disconnect_device_generations(
-        &self,
-        retired: &[device_auth::RetiredDeviceCredential],
-    ) -> DeviceGenerationCleanup {
-        retired.iter().fold(
-            DeviceGenerationCleanup::default(),
-            |mut total, credential| {
-                let cleanup =
-                    self.disconnect_device_generation(&credential.device_id, credential.generation);
-                total.disconnected += cleanup.disconnected;
-                total.presence_disconnected += cleanup.presence_disconnected;
-                total
-            },
-        )
-    }
-
-    /// Revalidate one HTTP-upgraded connection after it has entered its runtime
-    /// registry. Sharing was removed, so a direct remote socket is never kept;
-    /// relay ingress is kept only by the session framework's ingress model.
-    pub(crate) fn registered_ingress_allowed(&self, ingress: auth::TrustedIngress) -> bool {
-        matches!(
-            ingress,
-            auth::TrustedIngress::DirectLoopback | auth::TrustedIngress::Relay
-        )
-    }
-
-    /// Get the display name for this device (custom name or OS hostname).
-    pub fn display_name(&self) -> String {
-        let custom = self.device_name.lock().unwrap().clone();
-        if custom.is_empty() {
-            hostname::get()
-                .map(|h| h.to_string_lossy().to_string())
-                .unwrap_or_else(|_| "MeTerm".to_string())
-        } else {
-            custom
-        }
     }
 }
 
@@ -368,28 +241,7 @@ fn allocate_port_persistent(state_dir: &str) -> Result<u16, String> {
     Ok(port)
 }
 
-/// 持久化设备 ID(state_dir/device-id):是 LAN 重发现 + 未来公网中继按 ID 路由的身份基石,
-/// 必须跨重启/换端口/换 IP 保持不变。文件不存在或内容为空则生成新 UUID 并写回。
-/// 标准开发入口的数据目录独立；文件名仍按构建类型区分（与 preferred-port-dev 同理）。
-fn load_or_create_device_id(state_dir: &str) -> String {
-    let name = if cfg!(debug_assertions) {
-        "device-id-dev"
-    } else {
-        "device-id"
-    };
-    let id_file = format!("{}/{}", state_dir, name);
-    if let Ok(saved) = std::fs::read_to_string(&id_file) {
-        let trimmed = saved.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-    let id = uuid::Uuid::new_v4().to_string();
-    let _ = std::fs::write(&id_file, &id);
-    id
-}
-
-/// Build the complete axum router with all 24 API endpoints + WebSocket.
+/// Build the axum router for the endpoints the local frontend calls.
 fn build_router(state: Arc<ServerState>) -> Router {
     let auth_layer = middleware::from_fn({
         let auth = state.authenticator.clone();
@@ -399,80 +251,12 @@ fn build_router(state: Arc<ServerState>) -> Router {
         }
     });
 
-    let device_scope_layer = |required: device_auth::DeviceScope| {
-        middleware::from_fn({
-            let auth = state.authenticator.clone();
-            move |request, next| {
-                let auth = auth.clone();
-                async move { auth::device_scope_middleware(auth, required, request, next).await }
-            }
-        })
-    };
-
     // Routes that DON'T require authentication
     let public_routes = Router::new().route("/api/ping", get(handlers::ping));
 
-    // Resource-specific routes are split before the common authentication
-    // layer so every device capability has one auditable boundary.
-    let device_base_routes = Router::new()
-        .route("/api/auth/challenge", post(pop::issue_challenge))
-        .route("/api/sessions", get(handlers::list_sessions))
-        .route(
-            "/api/sessions/{id}",
-            get(handlers::get_session).delete(handlers::delete_session),
-        )
-        .route("/api/sessions/{id}/master", post(handlers::request_master))
-        .route("/ws/{session_id}", get(ws::ws_upgrade))
-        .route(
-            "/api/device-credential/self",
-            delete(device_admin::revoke_self),
-        );
-
-    let desktop_control_routes = Router::new()
-        .route("/api/sessions", post(handlers::create_session))
-        .route(
-            "/api/sessions/{id}/git/status",
-            get(git_handlers::git_status),
-        )
-        .route("/api/sessions/{id}/git/diff", get(git_handlers::git_diff))
-        .route("/api/sessions/{id}/git/log", get(git_handlers::git_log))
-        .route(
-            "/api/sessions/{id}/git/commit",
-            post(git_handlers::git_commit),
-        )
-        .route("/api/sessions/{id}/git/sync", post(git_handlers::git_sync))
-        .route(
-            "/api/sessions/{id}/git/branches",
-            get(git_handlers::git_branches),
-        )
-        .route("/api/sessions/{id}/git/show", get(git_handlers::git_show))
-        .route(
-            "/api/sessions/{id}/git/checkout",
-            post(git_handlers::git_checkout),
-        )
-        .route(
-            "/api/sessions/{id}/git/stage",
-            post(git_handlers::git_stage),
-        )
-        .route(
-            "/api/sessions/{id}/git/discard",
-            post(git_handlers::git_discard),
-        )
-        .route(
-            "/api/sessions/{id}/git/stash",
-            post(git_handlers::git_stash),
-        )
-        .route("/api/files/list", get(files_http::files_list))
-        .route("/api/files/download", get(files_http::files_download))
-        .route(
-            "/api/files/upload",
-            post(files_http::files_upload).layer(axum::extract::DefaultBodyLimit::disable()),
-        )
-        .route("/api/files/op", post(files_http::files_op))
-        .layer(device_scope_layer(device_auth::DeviceScope::DesktopControl));
-
-    let ssh_connect_routes = Router::new()
-        .route("/api/sessions/ssh", post(handlers::create_ssh_session))
+    // Everything else is used only by the local desktop frontend, which
+    // authenticates with the owner token.
+    let owner_routes = Router::new()
         .route(
             "/api/sessions/ssh/saved",
             post(ssh_saved_session::create_ssh_session_from_saved),
@@ -480,14 +264,6 @@ fn build_router(state: Arc<ServerState>) -> Router {
         .route(
             "/api/sessions/ssh/saved/test",
             post(ssh_saved_session::test_ssh_session_from_saved),
-        )
-        .route(
-            "/api/sessions/ssh/test",
-            post(handlers::test_ssh_connection),
-        )
-        .route(
-            "/api/ssh/connections",
-            get(ssh_connections_http::list_ssh_connections),
         )
         .route("/api/jumpserver/auth", post(jumpserver::handler::auth))
         .route("/api/jumpserver/mfa", post(jumpserver::handler::mfa))
@@ -508,40 +284,8 @@ fn build_router(state: Arc<ServerState>) -> Router {
             "/api/jumpserver/test",
             post(jumpserver::handler::test_connection),
         )
-        .layer(device_scope_layer(
-            device_auth::DeviceScope::SshDesktopConnect,
-        ));
-
-    let ssh_write_routes = Router::new()
-        .route(
-            "/api/ssh/connections",
-            post(ssh_connections_http::create_ssh_connection),
-        )
-        .route(
-            "/api/ssh/connections/{id}",
-            put(ssh_connections_http::update_ssh_connection)
-                .delete(ssh_connections_http::delete_ssh_connection),
-        )
-        .layer(device_scope_layer(
-            device_auth::DeviceScope::SshConnectionsWrite,
-        ));
-
-    let device_routes = device_base_routes
-        .merge(desktop_control_routes)
-        .merge(ssh_connect_routes)
-        .merge(ssh_write_routes)
-        .layer(auth_layer.clone());
-
-    // Desktop administration is owner-only. The auth layer runs first and
-    // injects AuthPrincipal; the inner owner layer then enforces the boundary.
-    let owner_routes = Router::new()
-        .route(
-            "/api/sessions/{id}/clients/{cid}",
-            delete(handlers::kick_client),
-        )
-        // Credential refresh is only used by the local JumpServer frontend.
-        // Keep it owner-only because the handler reuses the session's existing
-        // SSH secret while allowing the username/password fields to change.
+        // Credential refresh reuses the session's existing SSH secret while
+        // allowing the username/password fields to change.
         .route(
             "/api/sessions/{id}/refresh-sftp",
             post(jumpserver::ssh_session::refresh_jumpserver_sftp_session),
@@ -550,30 +294,6 @@ fn build_router(state: Arc<ServerState>) -> Router {
             "/api/jumpserver/ssh-session",
             post(jumpserver::ssh_session::create_jumpserver_ssh_session),
         )
-        .route("/api/clients", get(handlers::list_clients))
-        .route("/api/devices", get(handlers::list_devices))
-        .route("/api/devices/{ip}", delete(handlers::kick_device))
-        .route(
-            "/api/device-credentials",
-            get(device_admin::list_credentials),
-        )
-        .route(
-            "/api/device-credentials/{device_id}",
-            put(device_admin::update_credential_scopes).delete(device_admin::revoke_credential),
-        )
-        .route("/api/sessions/{id}/private", post(handlers::set_private))
-        .route("/api/token", post(device_admin::set_owner_token))
-        .route(
-            "/api/token/refresh",
-            post(device_admin::refresh_owner_token),
-        )
-        .route("/api/token/revoke-all", post(device_admin::revoke_all))
-        .route(
-            "/api/banned-ips",
-            get(handlers::list_bans).post(handlers::ban_ip),
-        )
-        .route("/api/banned-ips/{ip}", delete(handlers::unban_ip))
-        .layer(middleware::from_fn(auth::owner_only_middleware))
         .layer(auth_layer);
 
     let trusted_origin_guard = middleware::from_fn({
@@ -582,9 +302,7 @@ fn build_router(state: Arc<ServerState>) -> Router {
             auth::trusted_origin_middleware(server_port, request, next).await
         }
     });
-    let authed_routes = device_routes
-        .merge(owner_routes)
-        .layer(trusted_origin_guard);
+    let authed_routes = owner_routes.layer(trusted_origin_guard);
 
     let allowed_origins = [
         "tauri://localhost".parse().unwrap(),
@@ -617,13 +335,12 @@ fn build_router(state: Arc<ServerState>) -> Router {
     let router = Router::new().merge(public_routes).merge(authed_routes);
 
     // Ingress guard: sharing was removed, so direct remote sockets are never
-    // served. Relay is a separately configured authenticated ingress and must
-    // never inherit its synthetic loopback peer's privileges.
+    // served.
     let ingress_guard = middleware::from_fn(
         |req: axum::extract::Request, next: middleware::Next| async move {
             let allowed = matches!(
                 req.extensions().get::<auth::TrustedIngress>(),
-                Some(auth::TrustedIngress::DirectLoopback | auth::TrustedIngress::Relay)
+                Some(auth::TrustedIngress::DirectLoopback)
             );
             if !allowed {
                 return Err(axum::http::StatusCode::FORBIDDEN);
@@ -642,49 +359,27 @@ fn build_router(state: Arc<ServerState>) -> Router {
 /// Create a dummy ServerState (used when in-process server fails to start).
 pub fn create_dummy_state() -> ServerState {
     let auth = Arc::new(Authenticator::new(String::new()));
-    let bm = Arc::new(BanManager::new(None));
-    let event_bus = EventBus::new();
-    let sm = SessionManager::new(
-        SessionConfig {
-            session_ttl: std::time::Duration::from_secs(300),
-            reconnect_grace: std::time::Duration::from_secs(60),
-            ring_buffer_size: 256 * 1024,
-            log_dir: String::new(),
-        },
-        event_bus.clone(),
-    );
-    let pm = PairingManager::new(auth.clone(), sm.clone(), bm.clone());
+    let sm = SessionManager::new(SessionConfig {
+        session_ttl: std::time::Duration::from_secs(300),
+        reconnect_grace: std::time::Duration::from_secs(60),
+        ring_buffer_size: 256 * 1024,
+        log_dir: String::new(),
+    });
     ServerState {
         port: 0,
         ready: AtomicBool::new(false),
         config: ServerConfig::default(),
         session_manager: sm,
         authenticator: auth,
-        ban_manager: bm,
-        pairing_manager: pm,
         jumpserver_sessions: jumpserver::ssh_session::JumpServerSessionRegistry::new(),
-        // dummy state 无 app_data_dir,空路径即可(读写静默失败,与 BanManager 的 None 等价)。
+        // dummy state 无 app_data_dir,空路径即可(读写静默失败)。
         connections: Arc::new(
             ConnectionRegistry::new(std::path::PathBuf::new())
                 .expect("empty in-memory connection registry"),
         ),
         bypass_proxy: AtomicBool::new(true),
-        device_name: std::sync::Mutex::new(String::new()),
-        // dummy state 无 app_data_dir,生成一个临时性 UUID(不落盘,进程重启即变),
-        // 与其他字段的降级行为一致。
-        device_id: uuid::Uuid::new_v4().to_string(),
-        event_bus,
-        presence: PresenceRegistry::new(),
     }
 }
 
 mod startup;
 pub use startup::start;
-
-#[cfg(test)]
-#[path = "revoke_cleanup_tests.rs"]
-mod revoke_cleanup_tests;
-
-#[cfg(test)]
-#[path = "device_id_tests.rs"]
-mod device_id_tests;

@@ -382,7 +382,7 @@ function createMasterApprovalOverlayEl(sessionId: string, requesterId: string): 
       </svg>
     </div>
     <h3>${t('masterRequestTitle') || 'Control Request'}</h3>
-    <p>${t('masterRequestMessage') || 'A remote viewer wants to take control of the terminal.'}</p>
+    <p>${t('masterRequestMessage') || 'Another window wants to take control of this terminal.'}</p>
     <p class="master-approval-requester">${escapeHtml(shortId)}</p>
   `;
 

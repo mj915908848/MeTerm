@@ -111,7 +111,7 @@ mod tests {
         let principal = AuthPrincipal::Owner {
             generation: state.authenticator.current_owner_generation(),
         };
-        let session = state.session_manager.create_for_principal(&principal);
+        let session = state.session_manager.create_ssh();
         let security = ClientSecurityContext {
             ingress: TrustedIngress::DirectLoopback,
             principal,

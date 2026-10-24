@@ -121,14 +121,6 @@ impl JumpServerSessionRegistry {
     }
 }
 
-fn owner_required(principal: &AuthPrincipal) -> Result<(), String> {
-    if matches!(principal, AuthPrincipal::Owner { .. }) {
-        Ok(())
-    } else {
-        Err("desktop owner required".to_string())
-    }
-}
-
 fn valid_transient_credential(value: &str, max_bytes: usize) -> bool {
     !value.is_empty() && value.len() <= max_bytes && !value.contains('\0')
 }
@@ -252,12 +244,6 @@ pub async fn create_jumpserver_ssh_session(
     Extension(principal): Extension<AuthPrincipal>,
     Json(request): Json<CreateJumpServerSshSessionRequest>,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    if let Err(error) = owner_required(&principal) {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": error })),
-        );
-    }
     let context = match context_from_request(&request) {
         Ok(context) => context,
         Err(error) => {
@@ -292,8 +278,7 @@ pub async fn create_jumpserver_ssh_session(
     };
 
     let response =
-        super::super::handlers::connect_and_start_ssh_session(state.clone(), principal, config)
-            .await;
+        super::super::handlers::connect_and_start_ssh_session(state.clone(), config).await;
     if response.0 == StatusCode::CREATED {
         if let Some(session_id) = response.1 .0.get("id").and_then(|value| value.as_str()) {
             if let Some(session) = state.session_manager.get(session_id) {
@@ -327,12 +312,6 @@ pub async fn refresh_jumpserver_sftp_session(
     Extension(state): Extension<Arc<ServerState>>,
     Extension(principal): Extension<AuthPrincipal>,
 ) -> (StatusCode, Json<serde_json::Value>) {
-    if let Err(error) = owner_required(&principal) {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({ "error": error })),
-        );
-    }
     let Some(session) = state.session_manager.get(&session_id) else {
         return (
             StatusCode::NOT_FOUND,
