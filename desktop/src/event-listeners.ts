@@ -35,8 +35,8 @@ import { notifyUser } from './notify';
 import {
   activateTab,
   showHomeView, hideHomeView, showGalleryView, hideGalleryView,
-  openSettings, getActiveSessionProgress,
-  syncPaneStatusBar,
+  openSettings,
+  syncPaneStatusBar, syncConnectionStatusBar,
 } from './view-manager';
 import {
   createNewSession,
@@ -179,6 +179,7 @@ export function setupDomEventListeners(): void {
   TabManager.subscribe(() => {
     StatusBar.setSessionCount(TabManager.tabs.length);
     syncPaneStatusBar();
+    syncConnectionStatusBar();
     renderTabs();
     renderToolbarActions();
     if (isHomeView) {
@@ -201,7 +202,7 @@ export function setupDomEventListeners(): void {
     const mt = TerminalRegistry.get(sessionId);
     if (mt) {
       activeTab.title = mt.shellTitle || mt.title;
-      activeTab.status = mt.ended ? 'ended' : mt.ws ? 'connected' : 'disconnected';
+      activeTab.status = mt.ended ? 'ended' : (mt.ws || mt.transport?.connected) ? 'connected' : 'disconnected';
     }
 
     // Switch drawer/AI bar to focused session (side panel stays put within same tab)
@@ -330,7 +331,6 @@ export function setupDomEventListeners(): void {
     } else {
       sessionProgressMap.set(sessionId, { state, percent });
     }
-    StatusBar.setProgress(getActiveSessionProgress());
     syncTabProgressLayers();
     syncGalleryProgressBars();
   }) as EventListener);

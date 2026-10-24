@@ -154,7 +154,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
     // Start streaming
     instance.isStreaming = true;
     instance.streamBuffer = '';
-    document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: true } }));
+    document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: true, key: instance.tabId } }));
     host.updateButtonHighlight(instance);
     host.beginAssistantMessage(instance);
     host.showAgentPulse(instance);
@@ -235,7 +235,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
           instance.streamBuffer = '';
           host.updateButtonHighlight(instance);
           host.hideAgentPulse(instance);
-          document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false } }));
+          document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false, key: instance.tabId } }));
         }
       }
     } else if (instance.chatOpen) {
@@ -385,7 +385,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
             host.finalizeMessage(instance, instance.streamBuffer);
           }
         }
-        document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false } }));
+        document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false, key: instance.tabId } }));
       } else if (instance.chatOpen) {
         host.minimizeChat(instance);
       }

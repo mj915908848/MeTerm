@@ -9,20 +9,18 @@ body {
 }
 
 #app {
+  position: relative;
   display: grid;
   /* First row 38px = 32px toolbar + 6px breathing gap below the tabs (the gap
      is the toolbar's own bottom padding, so it's a continuous toolbar-colored
-     block with no seam — see #window-toolbar). */
-  grid-template-rows: 33px 24px minmax(0, 1fr);
+     block with no seam — see #window-toolbar). The status bar (#status) is
+     absolutely positioned over the content, so it takes no row: showing or
+     hiding it must not resize the terminals. */
+  grid-template-rows: 33px minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
   overflow: hidden;
   background: transparent;
-  transition: grid-template-rows 0.16s ease;
-}
-/* Status bar auto-hidden → collapse its grid row so the space is reclaimed. */
-#app.app-status-collapsed {
-  grid-template-rows: 33px 0px minmax(0, 1fr);
 }
 
 #main-content {

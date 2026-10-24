@@ -465,9 +465,11 @@
 
 /* ─── H. Status Bar ─────────────────────────────────────────────── */
 
-:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) #status {
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .status-left,
+:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .status-right {
   background: var(--nb-bg, #FFFEF0) !important;
-  border-top: 2px solid var(--nb-border, #000) !important;
+  border: 2px solid var(--nb-border, #000) !important;
+  box-shadow: 2px 2px 0 var(--nb-shadow, #000) !important;
 }
 
 :is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .status-capsule {
@@ -1148,7 +1150,8 @@
 html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]),
 html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) body,
 html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .toolbar,
-html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) #status {
+html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .status-left,
+html.vibrancy-active:is([data-theme="neo-brutalism"],[data-theme="neo-brutalism-rounded"]) .status-right {
   background: var(--nb-bg, #FFFEF0) !important;
 }
 

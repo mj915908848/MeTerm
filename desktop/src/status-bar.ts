@@ -69,12 +69,11 @@ class StatusBarClass {
   private transferCapsule: HTMLDivElement | null = null;
   private aiCapsule: HTMLDivElement | null = null;
 
+  /** Tabs whose AI run is in flight — the capsule stays while any is. */
+  private aiRunning = new Set<string>();
+
   // Active transfer tracking
   private activeTransfers = new Map<string, { type: 'upload' | 'download'; progress: number; status: string }>();
-
-  // OSC 9;4 progress layer
-  private progressLayer: HTMLDivElement | null = null;
-  private progressFill: HTMLDivElement | null = null;
 
   // Timers
   private transferHideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -141,6 +140,13 @@ class StatusBarClass {
   setConnection(status: SessionStatus | 'error', label?: string): void {
     this.state.connectionStatus = status;
     this.state.connectionLabel = label ?? this.defaultLabel(status);
+    // Called on every tab switch: drop the previous tab's latency at once.
+    const active = this.getActiveSessionId?.() ?? null;
+    if (active !== this.latencySessionId) {
+      this.latencySessionId = active;
+      this.latencyHistory = [];
+      this.state.latencyMs = null;
+    }
     this.renderConnectionCapsule();
     this.renderLatencyCapsule();
     this.updateVisibility();
@@ -193,7 +199,11 @@ class StatusBarClass {
     }
   }
 
-  setAIActive(active: boolean): void {
+  setAIActive(active: boolean, key = 'default'): void {
+    if (active) this.aiRunning.add(key);
+    else this.aiRunning.delete(key);
+    active = this.aiRunning.size > 0;
+
     // Clear any pending exit timer
     if (this.aiExitTimer !== null) {
       clearTimeout(this.aiExitTimer);
@@ -212,41 +222,6 @@ class StatusBarClass {
           this.aiCapsule = null;
         });
       }, 300);
-    }
-  }
-
-  setProgress(progress: { state: number; percent: number } | null): void {
-    if (!this.container) return;
-
-    if (!progress || progress.state === 0) {
-      if (this.progressLayer) {
-        this.progressLayer.remove();
-        this.progressLayer = null;
-        this.progressFill = null;
-      }
-      return;
-    }
-
-    if (!this.progressLayer) {
-      this.progressLayer = document.createElement('div');
-      this.progressLayer.className = 'osc-progress-layer';
-      this.progressFill = document.createElement('div');
-      this.progressFill.className = 'osc-progress-fill';
-      this.progressLayer.appendChild(this.progressFill);
-      this.container.insertBefore(this.progressLayer, this.container.firstChild);
-    }
-
-    const fill = this.progressFill!;
-    fill.classList.remove('normal', 'error', 'indeterminate');
-    if (progress.state === 1) {
-      fill.classList.add('normal');
-      fill.style.width = `${progress.percent}%`;
-    } else if (progress.state === 2) {
-      fill.classList.add('error');
-      fill.style.width = `${progress.percent}%`;
-    } else if (progress.state === 3) {
-      fill.classList.add('indeterminate');
-      fill.style.width = '100%';
     }
   }
 
@@ -277,6 +252,9 @@ class StatusBarClass {
       this.connectionCapsule = document.createElement('div');
       this.connectionCapsule.className = 'status-capsule capsule-connection';
       this.connectionCapsule.addEventListener('click', () => {
+        // A healthy session has nothing to reconnect; offering the
+        // "disconnected — reconnect" overlay over it would be a lie.
+        if (!this.canReconnect()) return;
         document.dispatchEvent(new CustomEvent('status-bar-reconnect'));
       });
       this.leftZone.insertBefore(
@@ -293,6 +271,12 @@ class StatusBarClass {
       `<span class="status-dot ${dotClass}"></span>` +
       `<span>${label}</span>`;
     this.connectionCapsule.title = this.getConnectionTooltip();
+    this.connectionCapsule.classList.toggle('clickable', this.canReconnect());
+  }
+
+  private canReconnect(): boolean {
+    const s = this.state.connectionStatus;
+    return s === 'disconnected' || s === 'ended' || s === 'error' || s === 'reconnecting';
   }
 
   private renderPaneCapsule(): void {
@@ -468,7 +452,11 @@ class StatusBarClass {
    * fixture: it is on screen while something is in flight or wrong —
    * connecting, reconnecting, a failure, a file transfer, a running AI turn —
    * and retracts to 0 the rest of the time. A healthy session that just sits
-   * there is not an event, so its 24px row goes back to #app.
+   * there is not an event, so it fades out.
+   *
+   * It floats over the top of the content area instead of taking a grid row:
+   * a row that grows and shrinks would resize every terminal (and send the
+   * remote a SIGWINCH) each time an AI turn or transfer starts or ends.
    *
    * Collapsing is also the signal to stop *measuring*: the 5s ping only exists
    * to feed the latency capsule next to the connection label, so with the bar
@@ -492,8 +480,6 @@ class StatusBarClass {
     this.visible = show;
 
     this.container.classList.toggle('status-collapsed', !show);
-    // Also collapse the #app grid row so the reserved 24px space is reclaimed.
-    document.getElementById('app')?.classList.toggle('app-status-collapsed', !show);
 
     if (!show) {
       // Nothing on screen to describe — stop accumulating latency (the 5s
@@ -512,6 +498,8 @@ class StatusBarClass {
 
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private latencyHistory: number[] = [];
+  /** Session the samples in latencyHistory belong to. */
+  private latencySessionId: string | null = null;
   private getActiveSessionId: (() => string | null) | null = null;
   private sendPingFn: ((sessionId: string) => void) | null = null;
 
@@ -533,6 +521,14 @@ class StatusBarClass {
       // the window — letting this one back in would leave a stale number
       // waiting to be shown the next time the bar reappears.
       if (!this.visible) return;
+      // Background tabs' keepalive pongs arrive here too; only the session
+      // on screen is being measured, and a switch starts a fresh average.
+      const active = this.getActiveSessionId?.() ?? null;
+      if (!active || e.detail.sessionId !== active) return;
+      if (this.latencySessionId !== active) {
+        this.latencySessionId = active;
+        this.latencyHistory = [];
+      }
       this.latencyHistory.push(e.detail.rtt);
       if (this.latencyHistory.length > 5) this.latencyHistory.shift();
       const avg = Math.round(this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length);
@@ -556,6 +552,12 @@ class StatusBarClass {
     // get dropped by the server's 90s idle rule.)
     if (!this.visible) return;
     const sessionId = this.getActiveSessionId();
+    if (sessionId !== this.latencySessionId) {
+      // Don't keep showing the previous tab's number until the first pong.
+      this.latencySessionId = sessionId;
+      this.latencyHistory = [];
+      if (this.state.latencyMs !== null) this.setLatency(null);
+    }
     if (sessionId) {
       this.sendPingFn(sessionId);
     }
@@ -614,8 +616,8 @@ class StatusBarClass {
   // ── AI Event Listener ──────────────────────────────────────
 
   private listenForAI(): void {
-    this.aiListener = ((e: CustomEvent<{ active: boolean }>) => {
-      this.setAIActive(e.detail.active);
+    this.aiListener = ((e: CustomEvent<{ active: boolean; key?: string }>) => {
+      this.setAIActive(e.detail.active, e.detail.key);
     }) as EventListener;
     document.addEventListener('status-bar-ai', this.aiListener);
   }
@@ -643,13 +645,8 @@ class StatusBarClass {
       this.aiExitTimer = null;
     }
 
-    if (this.progressLayer) {
-      this.progressLayer.remove();
-      this.progressLayer = null;
-      this.progressFill = null;
-    }
-
     this.activeTransfers.clear();
+    this.aiRunning.clear();
     this.connectionCapsule = null;
     this.latencyCapsule = null;
     this.sessionsCapsule = null;

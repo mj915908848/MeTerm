@@ -46,7 +46,8 @@ html.fs-mac.platform-macos.vibrancy-active .editor-tab-bar {
 }
 
 html.fs-mac.platform-macos.vibrancy-active .status-bar-container,
-html.fs-mac.platform-macos.vibrancy-active #status {
+html.fs-mac.platform-macos.vibrancy-active #status .status-left,
+html.fs-mac.platform-macos.vibrancy-active #status .status-right {
   background: rgb(var(--bg-status)) !important;
 }
 
