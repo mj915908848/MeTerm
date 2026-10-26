@@ -58,6 +58,11 @@ export interface SSHConnectionConfig {
   port: number;
   username: string;
   authMethod: 'password' | 'key';
+  /**
+   * When this connection was first saved (ms since epoch), for "sort by date
+   * added". Kept across edits; entries saved by older builds have none.
+   */
+  addedAt?: number;
   /** Explicit owner choice to use desktop ssh-agent/default identities. */
   usesDesktopKeyLadder?: boolean;
   password?: string;
@@ -247,11 +252,15 @@ export async function addConnection(config: SSHConnectionConfig): Promise<void> 
   await syncUpsert(config);
   const registryId = existingConnectionId(config.name);
   const connections = loadSavedConnections();
-  const stripped = stripSecrets({ ...config, serverConnectionId: registryId });
   const existing = connections.findIndex((c) => (
     c.name === config.name
     || Boolean(registryId && c.serverConnectionId === registryId)
   ));
+  const stripped = stripSecrets({
+    ...config,
+    serverConnectionId: registryId,
+    addedAt: existing >= 0 ? connections[existing].addedAt : Date.now(),
+  });
   if (existing >= 0) {
     connections[existing] = stripped;
   } else {
@@ -328,11 +337,14 @@ export async function importConnectionsFromJSON(json: string): Promise<{ count: 
     const localId = existing.find(item => item.name === conn.name)?.serverConnectionId;
     const localConfig = { ...conn, serverConnectionId: localId, id: undefined };
     await syncUpsert(localConfig);
+    const idx = existing.findIndex((c) => c.name === conn.name);
     const stripped = stripSecrets({
       ...localConfig,
       serverConnectionId: existingConnectionId(conn.name),
+      // The local entry's date wins; the file's is only trusted as a number.
+      addedAt: idx >= 0 ? existing[idx].addedAt
+        : typeof conn.addedAt === 'number' && Number.isFinite(conn.addedAt) ? conn.addedAt : Date.now(),
     });
-    const idx = existing.findIndex((c) => c.name === conn.name);
     if (idx >= 0) {
       existing[idx] = stripped;
     } else {

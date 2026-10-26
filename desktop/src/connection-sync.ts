@@ -473,6 +473,9 @@ export function toSSHConnectionConfig(
   // (there is no UI for it), and honoring the cloud copy resurrected a
   // stale `true` that permanently overrode the toggle.
   if (saved.multiplex_sftp) cfg.multiplexSftp = saved.multiplex_sftp;
+  // The date added is local: keep the entry's own, stamp one that is new here.
+  if (!existing) cfg.addedAt = Date.now();
+  else if (existing.addedAt !== undefined) cfg.addedAt = existing.addedAt;
   return cfg;
 }
 
