@@ -57,7 +57,6 @@ xpty = "0.3"
 # and RSA key support, and avoid the aws-lc default backend.
 russh = { version = "0.61.1", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = { path = "crates/russh-sftp" }
-ssh2 = { version = "0.9.5", features = ["vendored-openssl"] }
 
 
 # Character encoding conversion
