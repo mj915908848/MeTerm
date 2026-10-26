@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import {
-  connectionAddress,
+  connectionSortFields,
   setGroupSort,
   sortGroupConnections,
 } from '../src/connection-sort.ts';
 
 /**
  * The connections drawer and the home page both list a group's rows, and the two
- * lists have to agree on the order: switching a group to "IP ascending" in one
+ * lists have to agree on the order: switching a group to "name descending" in one
  * has to reorder the other. Both render through home-side.ts, so the wiring
  * checks below are that both use that renderer and that it sorts.
  *
@@ -36,27 +36,20 @@ const sortSource = read('../src/connection-sort.ts');
 /** Read from the source so the test cannot disagree with the app's own name. */
 const UNGROUPED_BUCKET = /const UNGROUPED_GROUP = '([^']+)'/.exec(sortSource)?.[1] ?? '';
 
-const row = (host: string, name = host) => ({ name, raw: { host, port: 22 } });
+const row = (name: string, addedAt?: number) => ({ name, raw: { host: '10.0.0.1', port: 22, addedAt } });
 
 test('a group is ordered by the mode saved for that group', () => {
-  const items = [row('10.0.0.10'), row('10.0.0.2'), row('2.0.0.1')];
+  const items = [row('b', 300), row('c', 100), row('a', 200)];
 
-  setGroupSort('prod', 'ip-asc');
-  assert.deepEqual(
-    sortGroupConnections(items, 'prod', 'zh-CN').map(x => x.name),
-    ['2.0.0.1', '10.0.0.2', '10.0.0.10'],
-  );
+  setGroupSort('prod', 'name-desc');
+  assert.deepEqual(sortGroupConnections(items, 'prod', 'zh-CN').map(x => x.name), ['c', 'b', 'a']);
 
-  setGroupSort('prod', 'default');
-  assert.deepEqual(
-    sortGroupConnections(items, 'prod', 'zh-CN'),
-    items,
-    'default has to keep the saved order',
-  );
+  setGroupSort('prod', 'added-asc');
+  assert.deepEqual(sortGroupConnections(items, 'prod', 'zh-CN').map(x => x.name), ['c', 'a', 'b']);
 });
 
 test('null addresses the ungrouped bucket the list actually keys', () => {
-  const items = [row('10.0.0.1', 'b'), row('10.0.0.2', 'a')];
+  const items = [row('b'), row('a')];
 
   setGroupSort(UNGROUPED_BUCKET, 'name-asc');
   assert.deepEqual(
@@ -66,18 +59,15 @@ test('null addresses the ungrouped bucket the list actually keys', () => {
   );
 });
 
-test('JumpServer configs are addressed by sshHost/sshPort', () => {
+test('SSH and JumpServer configs both carry their date added in raw.addedAt', () => {
   assert.deepEqual(
-    connectionAddress({ name: 'js', raw: { sshHost: '10.0.0.9', sshPort: 2222 } }),
-    { name: 'js', host: '10.0.0.9', port: 2222 },
+    connectionSortFields({ name: 'js', raw: { sshHost: '10.0.0.9', sshPort: 2222, addedAt: 5 } }),
+    { name: 'js', addedAt: 5 },
   );
+  assert.deepEqual(connectionSortFields({ name: 'old', raw: { host: '10.0.0.1' } }), { name: 'old', addedAt: undefined });
   assert.deepEqual(
-    connectionAddress({ name: 'ssh', raw: { host: '10.0.0.1', port: 22 } }),
-    { name: 'ssh', host: '10.0.0.1', port: 22 },
-  );
-  assert.deepEqual(
-    connectionAddress({ name: 'broken', raw: undefined }),
-    { name: 'broken', host: '', port: 0 },
+    connectionSortFields({ name: 'broken', raw: undefined }),
+    { name: 'broken', addedAt: undefined },
     'a row with no raw config must not throw in the middle of a sort',
   );
 });

@@ -30,6 +30,8 @@ export interface JumpServerConfig {
   proxyPort?: number;
   proxyUsername?: string;
   proxyPassword?: string;
+  /** When first saved (ms since epoch), for "sort by date added"; older entries have none. */
+  addedAt?: number;
 }
 
 export interface JumpServerAsset {
@@ -171,6 +173,7 @@ export function saveJumpServerConfigs(configs: JumpServerConfig[]): void {
     proxyHost: c.proxyHost,
     proxyPort: c.proxyPort,
     proxyUsername: c.proxyUsername,
+    addedAt: c.addedAt,
   }));
   localStorage.setItem(JS_CONNECTIONS_KEY, JSON.stringify(stripped));
 }
@@ -201,7 +204,10 @@ export async function addJumpServerConfig(config: JumpServerConfig, previousName
     }
   }
 
-  const metadata = stripJumpServerCredentialFields(config);
+  const metadata = stripJumpServerCredentialFields({
+    ...config,
+    addedAt: idx >= 0 ? configs[idx].addedAt : Date.now(),
+  });
   if (idx >= 0) {
     configs[idx] = metadata;
   } else {
