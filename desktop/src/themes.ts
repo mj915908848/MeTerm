@@ -391,6 +391,26 @@ export interface AppSettings {
   sidebarWidth: number;
   /** Default file open method for editable files: built-in editor or system default */
   fileOpenPreference: 'builtin' | 'system';
+  /** Lines kept above the screen in each terminal. */
+  terminalScrollback: number;
+  terminalCursorStyle: 'block' | 'bar' | 'underline';
+  terminalCursorBlink: boolean;
+  /** Copy a terminal selection to the clipboard as soon as it is made. */
+  copyOnSelect: boolean;
+  /** Right click in the terminal: the app menu, or copy the selection / paste (PuTTY style). */
+  terminalRightClick: 'menu' | 'paste';
+  /** macOS: Option sends Meta (Esc prefix) instead of typing special characters. */
+  macOptionIsMeta: boolean;
+  /** Saved command snippets, sent from the snippet palette. */
+  commandSnippets: CommandSnippet[];
+}
+
+export interface CommandSnippet {
+  id: string;
+  name: string;
+  command: string;
+  /** Press Enter after inserting the command. */
+  run: boolean;
 }
 
 const SETTINGS_KEY = SETTINGS_STORAGE_KEY;
@@ -482,6 +502,13 @@ const DEFAULT_SETTINGS: AppSettings = {
   fileManagerMode: 'drawer',
   sidebarWidth: 240,
   fileOpenPreference: 'builtin',
+  terminalScrollback: 5000,
+  terminalCursorStyle: 'block',
+  terminalCursorBlink: true,
+  copyOnSelect: false,
+  terminalRightClick: 'menu',
+  macOptionIsMeta: false,
+  commandSnippets: [],
 };
 
 export function loadSettings(): AppSettings {

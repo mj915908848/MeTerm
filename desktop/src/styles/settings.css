@@ -1152,3 +1152,53 @@ html.platform-macos .settings-panel-sidebar > .settings-content {
 }
 [data-theme="light"] .settings-card input[type="checkbox"]:checked { background: var(--accent); }
 [data-theme="light"] .settings-card .settings-slider { background: rgba(0, 0, 0, 0.12); }
+
+/* ── Settings › Terminal › Snippets (settings-snippets.ts) ── */
+.settings-card > .snippet-settings { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; }
+.snippet-settings-intro { font-size: 11px; line-height: 1.45; color: var(--text-muted); }
+.snippet-settings-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+}
+.snippet-settings-text { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.snippet-settings-name { flex: none; max-width: 40%; font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snippet-settings-command {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.snippet-settings-btn {
+  flex: none;
+  background: transparent;
+  border: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.snippet-settings-btn:hover:not(:disabled) { color: var(--text-primary); background: rgba(255, 255, 255, 0.08); }
+.snippet-settings-btn:disabled { opacity: 0.3; cursor: default; }
+.snippet-settings-btn.danger:hover,
+.snippet-settings-btn.danger.armed { color: #ff6b6b; background: rgba(255, 107, 107, 0.12); }
+.snippet-settings-add { align-self: flex-start; margin-top: 2px; }
+.snippet-editor { display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+.snippet-editor-command {
+  height: auto;
+  min-height: 60px;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  resize: vertical;
+}
+.snippet-editor-actions { display: flex; align-items: center; gap: 8px; }
+.snippet-editor-run { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); cursor: pointer; }
+.snippet-editor-save:disabled { opacity: 0.4; cursor: default; }

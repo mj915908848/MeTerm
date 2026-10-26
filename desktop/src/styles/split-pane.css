@@ -409,3 +409,29 @@ body.split-resizing .split-resize-handle.split-resize-vertical ~ * {
 [data-theme="light"] .ai-bar-model-dropdown { border-color: rgba(0, 0, 0, 0.10); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); }
 
 
+
+/* ── Broadcast input (terminal-broadcast.ts): amber frame + label on every pane ── */
+.split-root.broadcast-input .split-pane::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 105;
+  border: 1.5px solid #f59e0b;
+  border-radius: 6px;
+  pointer-events: none;
+}
+.split-root.broadcast-input .split-pane::before {
+  content: var(--broadcast-label, "Broadcast");
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  z-index: 106;
+  padding: 1px 8px;
+  border-radius: 0 0 5px 5px;
+  background: #f59e0b;
+  color: #1a1a1a;
+  font-size: 10px;
+  font-weight: 600;
+  pointer-events: none;
+}

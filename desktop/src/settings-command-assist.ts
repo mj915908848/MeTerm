@@ -8,7 +8,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 type TldrStatus = { initialized: boolean; page_count: number; last_updated: number | null };
 
-function switchRow(id: string, text: string, checked: boolean, onChange: (on: boolean) => void, hint?: string): HTMLLabelElement {
+export function switchRow(id: string, text: string, checked: boolean, onChange: (on: boolean) => void, hint?: string): HTMLLabelElement {
   const row = document.createElement('label');
   row.className = 'settings-switch-row';
   const span = document.createElement('span');
