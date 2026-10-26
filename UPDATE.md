@@ -12,6 +12,10 @@
 
 ### 新功能 / 优化
 
+- **终端查找** — macOS 用 ⌘F，Windows 用 Ctrl+Shift+F（Ctrl+F 留给 shell）；查找栏在窗格右上角，支持区分大小写、正则、上一个 / 下一个和匹配计数，右键菜单也有入口。
+- **终端行为设置** — 设置 › 终端 › 行为：回滚行数（1k–100k，原来固定 5000）、光标样式和闪烁、选中即复制、右键改为复制 / 粘贴（按住 Shift 仍出菜单），以及 macOS 上把 Option 当作 Meta 键。
+- **命令片段** — 在 设置 › 终端 › 命令片段 中管理常用命令；⌘/Ctrl+Shift+S 或右键菜单打开面板，可筛选，Enter 发送、⌥/Alt+Enter 只插入不执行；多行命令不会被拆开执行。
+- **分屏同步输入** — ⌘/Ctrl+Shift+I 或右键菜单按标签开关；开启后同一标签的所有窗格同时收到输入和粘贴，窗格有琥珀色边框提示；AI 发出的命令不会广播。
 - **AI 提示词精简** — 规则去重并重新分组；被拒绝的操作不会绕开去做；「看看」「查一下」这类请求只查看、给建议，不改动；完成前只验证一次就汇报；不再长时间 sleep 等待；crontab 只追加不覆盖；回复更短；中断服务前先说明会影响什么。
 - **AI 写 /etc 改为每次询问** — write_file / edit_file 写 /etc 下的文件从「直接拒绝」改为「每次确认」，可以在确认卡片里逐行审阅，不必绕到 `sudo tee`；.ssh 和 .env 仍然拒绝。
 - **SSH 文件传输更快更稳** — 上传下载直接复用会话已有的 SFTP 连接，不再每次单独建连和认证；上传按 4 MiB 分块流水线写入；会话刚连上 SFTP 还在初始化时，传输最多等待 15 秒。
@@ -26,7 +30,7 @@
 ### 验证
 
 - 合并前均通过 CI：前端构建与测试、Rust fmt / clippy / 测试（macOS 与 Windows）。
-- 正式安装包、真实 SSH 连接以及 Windows 真机尚未完整手动验证；部分 Shell Hook 改动只在 Linux 上的 bash / zsh / pwsh 验证过。
+- 正式安装包、真实 SSH 连接以及 Windows 真机尚未完整手动验证；部分 Shell Hook 改动只在 Linux 上的 bash / zsh / pwsh 验证过；终端查找、命令片段、同步输入等新功能尚未在真机上验证。
 
 ---
 
@@ -42,6 +46,10 @@
 
 ### What's New / Improvements
 
+- **Find in terminal** — Cmd+F on macOS, Ctrl+Shift+F on Windows (Ctrl+F stays with the shell); a find bar at the pane's top right with case, regex, next / previous and a match count, also in the right-click menu.
+- **Terminal behavior settings** — Settings › Terminal › Behavior: scrollback (1k–100k, was fixed at 5000), cursor style and blink, copy on select, right click to copy / paste (Shift+right click still opens the menu), and on macOS Option as Meta.
+- **Command snippets** — Manage saved commands in Settings › Terminal › Snippets; Cmd/Ctrl+Shift+S or the right-click menu opens a filterable palette, Enter sends, Alt/Option+Enter inserts without running; multi-line commands are not split.
+- **Synced input across panes** — Cmd/Ctrl+Shift+I or the right-click menu toggles it per tab; typing and pastes go to every pane in the tab, marked with an amber border; commands from the AI agent are not broadcast.
 - **Leaner AI prompt** — Rules deduplicated and regrouped; refused actions are not routed around; look-only requests ("take a look", "check") report and suggest without changing anything; the agent verifies once before reporting done; no long sleeps; crontab is appended, never replaced; shorter replies; a one-line notice before interrupting a service.
 - **AI writes under /etc now ask** — write_file / edit_file under /etc change from deny to always-ask, so you review the change line by line instead of the agent falling back to `sudo tee`; .ssh and .env stay denied.
 - **Faster, steadier SSH transfers** — Uploads and downloads reuse the session's SFTP connection instead of opening and authenticating a new one each time; uploads are pipelined in 4 MiB chunks; a transfer started while SFTP is still being set up waits up to 15 s.
@@ -56,7 +64,7 @@
 ### Validation
 
 - Every merge passed CI: frontend build and tests, Rust fmt / clippy / tests on macOS and Windows.
-- The packaged release build, live SSH connections and Windows hardware have not been fully verified by hand; some shell hook changes were verified only with bash / zsh / pwsh on Linux.
+- The packaged release build, live SSH connections and Windows hardware have not been fully verified by hand; some shell hook changes were verified only with bash / zsh / pwsh on Linux; find, snippets and synced input have not been tried on real hardware.
 
 ---
 
