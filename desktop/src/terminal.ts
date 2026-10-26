@@ -32,6 +32,7 @@ patchCanvasTextRendering();
 import {
   applySettingsToTerminal,
   registerOscColorHandlers,
+  terminalBehaviorOptions,
 } from './terminal-settings';
 import { scheduleResize as _scheduleResize, sendResize } from './terminal-resize';
 import { isMirrored } from './viewer-mirror';
@@ -87,6 +88,8 @@ class TerminalRegistryClass {
   private resizeGeneration = new Map<string, number>();
   private settings: AppSettings | null = null;
   private inputListeners = new Map<string, Set<(data: string) => void>>();
+  /** Other sessions that should receive a session's keyboard input (split-pane broadcast). */
+  private inputFanout: ((sessionId: string) => string[]) | null = null;
   /** Output listeners for event-driven output capture (used by AI agent) */
   private outputListeners = new Map<string, Set<(data: string) => void>>();
   /** Shell state listeners — called when shell transitions to idle (OSC 7768) */
@@ -436,14 +439,15 @@ class TerminalRegistryClass {
     })();
 
     const terminal = new Terminal({
-      cursorBlink: true,
+      ...terminalBehaviorOptions(this.settings),
       fontSize,
       fontFamily,
       fontWeight,
       fontWeightBold: 'bold',
-      scrollback: 5000,
       theme: terminalTheme,
       allowTransparency: needsTransparency,
+      // Search highlights are decorations, which xterm still marks as proposed API.
+      allowProposedApi: true,
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -686,7 +690,9 @@ class TerminalRegistryClass {
       // write-only — nothing ever read them — so they are gone: they made the
       // machine look like it tracked a user foreground command while every
       // consumer actually gates on the OSC 7768 hook. See ShellPhase.
-      sendToTerminal(mt, encodeMessage(MsgInput, new TextEncoder().encode(data)));
+      const encoded = encodeMessage(MsgInput, new TextEncoder().encode(data));
+      sendToTerminal(mt, encoded);
+      this.fanoutInput(mt.id, data, encoded);
       // For SSH sessions: if last pong is stale, send an immediate ping to detect dead connections
       this.maybePingOnInput(mt.id);
       // Notify input listeners
@@ -988,6 +994,39 @@ class TerminalRegistryClass {
     return '';
   }
 
+  /** Route user input from one session to others as well (see terminal-broadcast.ts). */
+  setInputFanout(resolver: ((sessionId: string) => string[]) | null): void {
+    this.inputFanout = resolver;
+  }
+
+  private fanoutInput(sessionId: string, data: string, encoded: Uint8Array): void {
+    // Mouse and focus reports describe this pane's screen; they mean nothing to the others.
+    if (/^\x1b\[(?:<|M|I$|O$)/.test(data)) return;
+    const targets = this.inputFanout?.(sessionId);
+    if (!targets?.length) return;
+    for (const id of targets) {
+      const other = this.terminals.get(id);
+      if (!other || other.ended || id === sessionId) continue;
+      other._hasUserInput = true;
+      other.shellState.lastUserInputAt = Date.now();
+      sendToTerminal(other, encoded);
+    }
+  }
+
+  /**
+   * Type text into a session as if the user did: it goes through the normal
+   * input path, so bracketed paste, broadcast and input listeners all apply.
+   * With `pressEnter` a Return follows, which runs the line.
+   */
+  typeIntoSession(sessionId: string, text: string, pressEnter: boolean): void {
+    const mt = this.terminals.get(sessionId);
+    if (!mt || mt.ended) return;
+    if (text) mt.terminal.paste(text);
+    if (pressEnter) mt.terminal.input('\r', true);
+    if (mt.terminal.textarea) mt.terminal.textarea.value = '';
+    mt.terminal.focus();
+  }
+
   onInput(sessionId: string, callback: (data: string) => void): () => void {
     if (!this.inputListeners.has(sessionId)) {
       this.inputListeners.set(sessionId, new Set());
@@ -1179,14 +1218,15 @@ class TerminalRegistryClass {
     })();
 
     const terminal = new Terminal({
-      cursorBlink: true,
+      ...terminalBehaviorOptions(this.settings),
       fontSize,
       fontFamily,
       fontWeight,
       fontWeightBold: 'bold',
-      scrollback: 5000,
       theme: terminalTheme,
       allowTransparency: needsTransparency,
+      // Search highlights are decorations, which xterm still marks as proposed API.
+      allowProposedApi: true,
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -1272,7 +1312,9 @@ class TerminalRegistryClass {
       // See the create() path: `phase`/'lastInputSource' transitions were
       // removed — write-only state that misled readers into trusting `phase`
       // on sessions where the hook cannot maintain it.
-      sendToTerminal(mt, encodeMessage(MsgInput, new TextEncoder().encode(data)));
+      const encoded = encodeMessage(MsgInput, new TextEncoder().encode(data));
+      sendToTerminal(mt, encoded);
+      this.fanoutInput(mt.id, data, encoded);
       const listeners = this.inputListeners.get(mt.id);
       if (listeners) {
         listeners.forEach((cb) => cb(data));

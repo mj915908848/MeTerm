@@ -80,6 +80,8 @@ import {
 import { showTabContextMenu, showShellContextMenu, preloadShells } from './context-menu';
 import { handleSSHConnect } from './ssh-handler';
 import { setupKeyboardShortcuts } from './keyboard-shortcuts';
+import { initInputBroadcast } from './terminal-broadcast';
+import { initTerminalMouseBehavior } from './terminal-mouse';
 import {
   setOverlayCallbacks,
 } from './overlays';
@@ -220,6 +222,8 @@ async function init(): Promise<void> {
   // edits made in the others.
   setupConnectionsDrawerSync();
   setupKeyboardShortcuts();
+  initInputBroadcast();
+  initTerminalMouseBehavior();
   setupToolbarDrag();
   initMacFullscreen();
 
