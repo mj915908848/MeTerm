@@ -1,5 +1,73 @@
 # MeTerm 更新记录
 
+## v0.4.0
+
+### 重要变化
+
+- **移除 Neo-Brutalism 主题和画中画** — Neo-Brutalism 外观（两个变体）、自定义调色板和画中画（⌘⇧P、工具栏按钮、菜单项、相关设置）都已删除。之前用 Neo-Brutalism 的会自动切换到浅色外观。
+- **移除应用内更新** — 更新窗口、更新提示和角标已删除；「检查更新」改为直接打开 GitHub Releases 页面。
+- **移除 Claude Code 会话镜像** — 本地 zsh / bash 不再包装你的 `claude` 命令。
+- **fish 不再安装 Shell Hook** — fish 会话按无 hook 模式运行；fish、tcsh 远端登录时也不再打印语法错误。
+- **安装包更小** — 内置字体从 16 个 Nerd Font 变体（约 22MB）精简为常规字体加一个 Symbols Nerd Font 图标回退，开启 Nerd Font 图标后对任何字体（包括系统字体）都生效；SSH 文件传输不再依赖 libssh2 / 内置 OpenSSL。还删除了没有入口的远程接口、设备权限框架、会话录制等残留代码。
+
+### 新功能 / 优化
+
+- **终端查找** — macOS 用 ⌘F，Windows 用 Ctrl+Shift+F（Ctrl+F 留给 shell）；查找栏在窗格右上角，支持区分大小写、正则、上一个 / 下一个和匹配计数，右键菜单也有入口。
+- **终端行为设置** — 设置 › 终端 › 行为：回滚行数（1k–100k，原来固定 5000）、光标样式和闪烁、选中即复制、右键改为复制 / 粘贴（按住 Shift 仍出菜单），以及 macOS 上把 Option 当作 Meta 键。
+- **命令片段** — 在 设置 › 终端 › 命令片段 中管理常用命令；⌘/Ctrl+Shift+S 或右键菜单打开面板，可筛选，Enter 发送、⌥/Alt+Enter 只插入不执行；多行命令不会被拆开执行。
+- **分屏同步输入** — ⌘/Ctrl+Shift+I 或右键菜单按标签开关；开启后同一标签的所有窗格同时收到输入和粘贴，窗格有琥珀色边框提示；AI 发出的命令不会广播。
+- **AI 提示词精简** — 规则去重并重新分组；被拒绝的操作不会绕开去做；「看看」「查一下」这类请求只查看、给建议，不改动；完成前只验证一次就汇报；不再长时间 sleep 等待；crontab 只追加不覆盖；回复更短；中断服务前先说明会影响什么。
+- **AI 写 /etc 改为每次询问** — write_file / edit_file 写 /etc 下的文件从「直接拒绝」改为「每次确认」，可以在确认卡片里逐行审阅，不必绕到 `sudo tee`；.ssh 和 .env 仍然拒绝。
+- **SSH 文件传输更快更稳** — 上传下载直接复用会话已有的 SFTP 连接，不再每次单独建连和认证；上传按 4 MiB 分块流水线写入；会话刚连上 SFTP 还在初始化时，传输最多等待 15 秒。
+- **状态栏改为浮动** — 显示或隐藏状态栏不再改变终端尺寸；SSH 延迟改为真实的 keepalive 往返时间，只统计当前标签，本地会话不显示延迟；标签不再被误标为断开。
+
+### 问题修复
+
+- **AI 功能检查修复** — 读文件和读输出单次最多 16K 字符；输出 ID 重启后不会指向别的输出；写文件改为临时文件加原子替换，保留权限；已完成的计划不再发给模型；恢复的对话不丢回复；sudo 文件工具在全屏程序或等待输入时拒绝执行；自动压缩消耗的 token 也计入用量。
+- **Shell Hook 修复** — bash 上报的命令不再是上一条；退出码正确（含 Windows PowerShell）；zsh 加载 ZDOTDIR（如 ~/.config/zsh）里的配置；超过 4KB 的粘贴脚本不再让 AI 一直等待；提示符位置在提示符打印完后才确定（双行提示符取最后一行）；exec zsh、tmux 等导致 hook 丢失时 10 秒后自动退回无 hook 模式；macOS 本地 bash 按登录 shell 顺序读取 ~/.bash_profile。
+- **状态栏修复** — 暂停的传输不再让状态栏一直显示；批量完成显示「完成」而不是「0 个文件 100%」；文案补齐中英文；过长的连接错误以省略号结尾。
+
+### 验证
+
+- 合并前均通过 CI：前端构建与测试、Rust fmt / clippy / 测试（macOS 与 Windows）。
+- 正式安装包、真实 SSH 连接以及 Windows 真机尚未完整手动验证；部分 Shell Hook 改动只在 Linux 上的 bash / zsh / pwsh 验证过；终端查找、命令片段、同步输入等新功能尚未在真机上验证。
+
+---
+
+## Changelog (English)
+
+### Breaking Changes
+
+- **Neo-Brutalism theme and picture-in-picture removed** — The Neo-Brutalism appearance (both variants), its palette editor and picture-in-picture (Cmd+Shift+P, toolbar button, menu items, settings) are gone. Neo-Brutalism users are moved to the light appearance.
+- **In-app updater removed** — The updater window, update toast and badge are gone; "Check for updates" opens GitHub Releases.
+- **Claude Code session mirror removed** — Local zsh / bash no longer wrap your `claude` command.
+- **No shell hook for fish** — fish sessions run in no-hook mode; fish and tcsh remote logins no longer print syntax errors.
+- **Smaller app** — The 16 bundled Nerd Font variants (~22 MB) become plain fonts plus one Symbols Nerd Font fallback, so Nerd icons work with any font, including system fonts; SSH file transfers no longer pull in libssh2 / vendored OpenSSL. Unused remote APIs, the device-auth framework, session recording and other leftovers are removed.
+
+### What's New / Improvements
+
+- **Find in terminal** — Cmd+F on macOS, Ctrl+Shift+F on Windows (Ctrl+F stays with the shell); a find bar at the pane's top right with case, regex, next / previous and a match count, also in the right-click menu.
+- **Terminal behavior settings** — Settings › Terminal › Behavior: scrollback (1k–100k, was fixed at 5000), cursor style and blink, copy on select, right click to copy / paste (Shift+right click still opens the menu), and on macOS Option as Meta.
+- **Command snippets** — Manage saved commands in Settings › Terminal › Snippets; Cmd/Ctrl+Shift+S or the right-click menu opens a filterable palette, Enter sends, Alt/Option+Enter inserts without running; multi-line commands are not split.
+- **Synced input across panes** — Cmd/Ctrl+Shift+I or the right-click menu toggles it per tab; typing and pastes go to every pane in the tab, marked with an amber border; commands from the AI agent are not broadcast.
+- **Leaner AI prompt** — Rules deduplicated and regrouped; refused actions are not routed around; look-only requests ("take a look", "check") report and suggest without changing anything; the agent verifies once before reporting done; no long sleeps; crontab is appended, never replaced; shorter replies; a one-line notice before interrupting a service.
+- **AI writes under /etc now ask** — write_file / edit_file under /etc change from deny to always-ask, so you review the change line by line instead of the agent falling back to `sudo tee`; .ssh and .env stay denied.
+- **Faster, steadier SSH transfers** — Uploads and downloads reuse the session's SFTP connection instead of opening and authenticating a new one each time; uploads are pipelined in 4 MiB chunks; a transfer started while SFTP is still being set up waits up to 15 s.
+- **Floating status bar** — Showing or hiding it no longer resizes terminals; SSH latency is a real keepalive round trip for the current tab only, local sessions show none, and tabs are no longer marked disconnected.
+
+### Bug Fixes
+
+- **AI feature review fixes** — File and output reads are capped at 16K characters; output ids stay valid across restarts; file writes use a temp file and atomic rename, keeping permissions; finished plans are no longer sent to the model; restored conversations keep their replies; sudo file tools refuse while a full-screen program or a question owns the pane; automatic compaction counts toward token usage.
+- **Shell hook fixes** — bash reports the right command and exit code (Windows PowerShell too); zsh loads configs from ZDOTDIR (e.g. ~/.config/zsh); pasted scripts over 4 KB no longer leave the agent waiting; the prompt position is taken after the prompt is printed (last line of two-line prompts); a lost hook (exec zsh, tmux) falls back to no-hook mode after 10 s; local macOS bash reads ~/.bash_profile like a login shell.
+- **Status bar fixes** — Paused transfers no longer hold the bar open; a finished batch shows "Done" instead of "0 files 100%"; strings are translated; long connection errors end in an ellipsis.
+
+### Validation
+
+- Every merge passed CI: frontend build and tests, Rust fmt / clippy / tests on macOS and Windows.
+- The packaged release build, live SSH connections and Windows hardware have not been fully verified by hand; some shell hook changes were verified only with bash / zsh / pwsh on Linux; find, snippets and synced input have not been tried on real hardware.
+
+---
+
 ## v0.3.3
 
 ### 新功能
