@@ -311,7 +311,7 @@ export function finalizeMessage(
   },
 ): void {
   instance.isStreaming = false;
-  document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false } }));
+  document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false, key: instance.tabId } }));
   updateButtonHighlight(instance);
   hideAgentPulse(instance);
 
@@ -425,7 +425,7 @@ export function finalizeThinking(
 
 export function showError(instance: AICapsuleInstance, message: string): void {
   instance.isStreaming = false;
-  document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false } }));
+  document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false, key: instance.tabId } }));
   updateButtonHighlight(instance);
   hideAgentPulse(instance);
   collapseActiveThinking(instance);
@@ -526,7 +526,7 @@ export function buildAgentCallbacks(
     },
     onIterationStart: () => {
       instance.isStreaming = true;
-      document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: true } }));
+      document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: true, key: instance.tabId } }));
       updateButtonHighlight(instance);
       showAgentPulse(instance);
       instance.streamBuffer = '';
@@ -561,7 +561,7 @@ export function buildAgentCallbacks(
         finalizeMessage(instance, instance.streamBuffer, finalizeDeps);
       } else {
         instance.isStreaming = false;
-        document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false } }));
+        document.dispatchEvent(new CustomEvent('status-bar-ai', { detail: { active: false, key: instance.tabId } }));
         updateButtonHighlight(instance);
         hideAgentPulse(instance);
         instance.streamMsgEl = null;

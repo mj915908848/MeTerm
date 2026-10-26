@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { commandLooksMutating, newSelfCheckState, noteToolCall, selfCheckNote, stepsLeftAfterReply } from '../src/ai-self-check.ts';
+import { commandLooksMutating, newSelfCheckState, noteToolCall, resultLooksFailed, selfCheckNote, stepsLeftAfterReply } from '../src/ai-self-check.ts';
 
 test('no note when nothing changed and the plan is done', () => {
   const s = newSelfCheckState();
@@ -96,4 +96,13 @@ test('the note asks for a one-line answer when nothing needs fixing', () => {
   const s = newSelfCheckState();
   noteToolCall(s, 'edit_file', true, false);
   assert.match(selfCheckNote(s, [], 'Done.', true) ?? '', /ONE short line/);
+});
+
+test('results reported as error text count as failed calls', () => {
+  assert.equal(resultLooksFailed('Error editing file: old_string was not found'), true);
+  assert.equal(resultLooksFailed('Error: read_file requires a non-empty "path" argument.'), true);
+  assert.equal(resultLooksFailed('[pane: 2]\nError: terminal connection lost'), true);
+  assert.equal(resultLooksFailed({ text: 'Error reading file: denied', images: [] }), true);
+  assert.equal(resultLooksFailed('File edited: /etc/a.conf (1 replacement)'), false);
+  assert.equal(resultLooksFailed('[status: completed, exit: 0]\nErrors: 0'), false);
 });

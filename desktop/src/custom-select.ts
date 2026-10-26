@@ -2,11 +2,10 @@
  * Custom select component for Windows platform.
  * On Windows, native <select> dropdown popups are rendered by the OS and cannot
  * be styled with CSS. This module provides a div-based dropdown replacement.
- * On macOS/Linux, it returns a native <select> element.
+ * On macOS, it returns a native <select> element.
  */
 
 const isWindows = document.documentElement.classList.contains('platform-windows');
-const isLinux = document.documentElement.classList.contains('platform-linux');
 
 export interface SelectOption {
   value: string;
@@ -56,7 +55,7 @@ function ensureGlobalListener(): void {
  * On other platforms → native <select>.
  */
 export function createSettingsSelect(options: SelectOption[]): SettingsSelect {
-  if (!isWindows && !isLinux) {
+  if (!isWindows) {
     return createNativeSelect(options);
   }
   return createCustomSelect(options);

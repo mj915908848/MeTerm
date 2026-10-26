@@ -9,34 +9,14 @@ use std::time::{Duration, Instant};
 
 use tokio_util::sync::CancellationToken;
 
-use super::client::ClientInfo;
 use super::state::SessionState;
-use super::{access::SessionCreator, Session, SessionConfig};
-use crate::server::auth::{AuthPrincipal, TrustedIngress};
-use crate::server::events::EventBus;
-use crate::server::hook_secret::HookSecretRegistry;
-
-/// Aggregated device info (grouped by IP).
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct DeviceInfo {
-    pub ip: String,
-    pub name: String,
-    pub sessions: Vec<ClientInfo>,
-    pub count: usize,
-}
+use super::{Session, SessionConfig};
 
 /// Manages all active sessions and runs the reaper.
 pub struct SessionManager {
     sessions: Mutex<HashMap<String, Arc<Session>>>,
     config: SessionConfig,
     cancel: CancellationToken,
-    /// 桌面级事件总线(终端通知 Phase 1):创建每个 `Session` 时把 clone 注入进去,
-    /// 使 run loop 能把通知性 OscEvent 额外投递到这里。
-    event_bus: EventBus,
-    /// hook secret 注册表(agent 终端镜像 M1):会话被 `reap`(TTL/exit/idle)回收时,在此
-    /// 一并清除该会话的 hook secret,修 M1「只在创建时登记、销毁时不清」导致的内存慢泄漏。
-    /// Clone 共享同一份 `Arc<Mutex<..>>`(仿 `event_bus` 注入模式),与 `ServerState.hook_secrets` 同源。
-    hook_secrets: HookSecretRegistry,
 }
 
 /// An SSH session that has all of its immutable authorization metadata but is
@@ -74,17 +54,11 @@ impl Drop for PendingSession {
 }
 
 impl SessionManager {
-    pub fn new(
-        config: SessionConfig,
-        event_bus: EventBus,
-        hook_secrets: HookSecretRegistry,
-    ) -> Arc<Self> {
+    pub fn new(config: SessionConfig) -> Arc<Self> {
         let mgr = Arc::new(Self {
             sessions: Mutex::new(HashMap::new()),
             config,
             cancel: CancellationToken::new(),
-            event_bus,
-            hook_secrets,
         });
 
         // Start the reaper task
@@ -111,54 +85,34 @@ impl SessionManager {
 
     /// Create a new session. Returns the session ID.
     pub fn create(&self) -> Arc<Session> {
-        self.create_with_creator(None, "local-shell", None)
+        self.create_with_type("local-shell", None)
     }
 
-    /// Create an SSH session bound to the authenticated principal that
-    /// requested it. Both type and binding are installed before the session
-    /// enters the registry, so authorization never observes a partial record.
+    /// Create an SSH session record without a terminal (tests only).
     #[cfg(test)]
-    pub(crate) fn create_for_principal(&self, principal: &AuthPrincipal) -> Arc<Session> {
-        self.create_with_creator(Some(SessionCreator::from(principal)), "ssh", None)
+    pub(crate) fn create_ssh(&self) -> Arc<Session> {
+        self.create_with_type("ssh", None)
     }
 
     /// Prepare an already-connected SSH terminal's metadata without publishing
     /// it. The caller wires the terminal and then commits the returned guard.
-    pub(crate) fn prepare_connected_ssh_for_principal(
-        self: &Arc<Self>,
-        principal: &AuthPrincipal,
-        config: crate::server::terminal::ssh::SshConfig,
-    ) -> PendingSession {
-        PendingSession {
-            manager: self.clone(),
-            session: self.build_with_creator(
-                Some(SessionCreator::from(principal)),
-                "ssh",
-                Some(config),
-            ),
-            committed: false,
-        }
-    }
-
-    /// Local-owner counterpart used by the Tauri SSH command.
     pub(crate) fn prepare_connected_ssh(
         self: &Arc<Self>,
         config: crate::server::terminal::ssh::SshConfig,
     ) -> PendingSession {
         PendingSession {
             manager: self.clone(),
-            session: self.build_with_creator(None, "ssh", Some(config)),
+            session: self.build_with_type("ssh", Some(config)),
             committed: false,
         }
     }
 
-    fn create_with_creator(
+    fn create_with_type(
         &self,
-        creator: Option<SessionCreator>,
         executor_type: &str,
         ssh_config: Option<crate::server::terminal::ssh::SshConfig>,
     ) -> Arc<Session> {
-        let session = self.build_with_creator(creator, executor_type, ssh_config);
+        let session = self.build_with_type(executor_type, ssh_config);
         self.sessions
             .lock()
             .unwrap()
@@ -166,19 +120,13 @@ impl SessionManager {
         session
     }
 
-    fn build_with_creator(
+    fn build_with_type(
         &self,
-        creator: Option<SessionCreator>,
         executor_type: &str,
         ssh_config: Option<crate::server::terminal::ssh::SshConfig>,
     ) -> Arc<Session> {
         let id = uuid::Uuid::new_v4().to_string();
-        let session = Arc::new(Session::new_with_creator(
-            id.clone(),
-            self.config.clone(),
-            self.event_bus.clone(),
-            creator,
-        ));
+        let session = Arc::new(Session::new(id.clone(), self.config.clone()));
         *session.executor_type.lock().unwrap() = executor_type.to_string();
         *session.ssh_config.lock().unwrap() = ssh_config;
         session
@@ -207,17 +155,11 @@ impl SessionManager {
         // this Arc can no longer dispatch during the map-removal window.
         session.close_with_frame(crate::server::protocol::encode_session_end_deleted());
         let mut sessions = self.sessions.lock().unwrap();
-        let removed = if sessions
+        if sessions
             .get(id)
             .is_some_and(|current| Arc::ptr_eq(current, &session))
         {
-            sessions.remove(id).is_some()
-        } else {
-            false
-        };
-        drop(sessions);
-        if removed {
-            self.hook_secrets.remove(id);
+            sessions.remove(id);
         }
         Ok(())
     }
@@ -225,12 +167,9 @@ impl SessionManager {
     /// Roll back a local PTY record whose executor never started. Local shells
     /// are registered before PTY startup so their early shell hook can resolve
     /// the session; every startup failure must use this path to remove that
-    /// temporary visibility and its hook credential together.
+    /// temporary visibility.
     pub(crate) fn discard_unstarted(&self, id: &str) -> bool {
         let Some(session) = self.sessions.lock().unwrap().get(id).cloned() else {
-            // Preserve the old orphan-secret cleanup behavior even if startup
-            // already removed the registry entry.
-            self.hook_secrets.remove(id);
             return false;
         };
         // The session is briefly visible before PTY startup finishes, so a
@@ -247,88 +186,7 @@ impl SessionManager {
             false
         };
         drop(sessions);
-        if removed {
-            self.hook_secrets.remove(id);
-        }
         removed
-    }
-
-    /// List all clients across all sessions.
-    /// List all remote clients across all sessions (excludes local IPC clients).
-    pub fn list_all_clients(&self) -> Vec<ClientInfo> {
-        let sessions = self.sessions.lock().unwrap();
-        let mut all = Vec::new();
-        for session in sessions.values() {
-            all.extend(
-                session
-                    .list_clients()
-                    .into_iter()
-                    .filter(|c| c.device_id.is_some() || c.ingress != "direct_loopback"),
-            );
-        }
-        all
-    }
-
-    /// List devices grouped by IP (excluding loopback).
-    pub fn list_devices(&self) -> Vec<DeviceInfo> {
-        let all_clients = self.list_all_clients();
-        let mut by_ip: HashMap<String, Vec<ClientInfo>> = HashMap::new();
-        for client in all_clients {
-            let ip = client.remote_addr.clone();
-            if ip.is_empty() {
-                continue;
-            }
-            by_ip.entry(ip).or_default().push(client);
-        }
-        by_ip
-            .into_iter()
-            .map(|(ip, sessions)| DeviceInfo {
-                count: sessions.len(),
-                name: ip.clone(),
-                ip,
-                sessions,
-            })
-            .collect()
-    }
-
-    /// Kick all clients from a specific IP across all sessions.
-    pub fn kick_by_ip(&self, ip: &str) -> usize {
-        let sessions = self.sessions.lock().unwrap();
-        let mut total = 0;
-        for session in sessions.values() {
-            total += session.kick_by_ip(ip);
-        }
-        total
-    }
-
-    /// Disconnect all remote (non-loopback) clients across all sessions.
-    /// Sends ERR_KICKED and promotes next master if the master was kicked.
-    pub fn disconnect_all_clients(&self) -> usize {
-        self.disconnect_device_principals(None)
-    }
-
-    /// Immediately disconnect all authenticated device/relay WebSockets, or
-    /// just one stable device ID after a targeted credential revocation.
-    pub(crate) fn disconnect_device_principals(&self, device_id: Option<&str>) -> usize {
-        let sessions = self.sessions.lock().unwrap();
-        let mut total = 0;
-        for session in sessions.values() {
-            total += session.disconnect_device_principals(device_id);
-        }
-        total
-    }
-
-    pub(crate) fn disconnect_device_generation(
-        &self,
-        device_id: &str,
-        generation: uuid::Uuid,
-    ) -> usize {
-        self.sessions
-            .lock()
-            .unwrap()
-            .values()
-            .map(|session| session.disconnect_device_generation(device_id, generation))
-            .sum()
     }
 
     pub(crate) fn disconnect_owner_generation(&self, generation: uuid::Uuid) -> usize {
@@ -388,18 +246,11 @@ impl SessionManager {
         if !to_remove.is_empty() {
             let mut sessions = self.sessions.lock().unwrap();
             for (id, expected) in to_remove {
-                let removed = if sessions
+                if sessions
                     .get(&id)
                     .is_some_and(|current| Arc::ptr_eq(current, &expected))
                 {
-                    sessions.remove(&id).is_some()
-                } else {
-                    false
-                };
-                if removed {
-                    // 修 M1 泄漏:会话被回收时一并清除其 hook secret(secret 绑 PTY 会话生命周期;
-                    // 镜像 finalize 不清 secret,同一 PTY 可再跑 claude,secret 只在会话真正消失时清)。
-                    self.hook_secrets.remove(&id);
+                    sessions.remove(&id);
                 }
             }
         }
@@ -461,23 +312,12 @@ mod tests {
         *session.drain_start.lock().unwrap() = Some(drained_at);
     }
 
-    /// 修 M1 泄漏(§M5-5):会话被 `reap` 回收(TTL/exit/idle)时,其 hook secret 也一并从
-    /// 注册表清除——否则 M1 只在创建时登记、销毁时不清,注册表随会话增删无界慢泄漏。
     #[tokio::test]
-    async fn reaper_clears_hook_secret_for_reaped_session() {
-        let hook_secrets = HookSecretRegistry::new();
-        let mgr = SessionManager::new(test_config(), EventBus::new(), hook_secrets.clone());
-
-        // 终端会话:模拟 M1 在会话创建时随机生成并登记 hook secret。
+    async fn reaper_removes_draining_session_over_ttl() {
+        let mgr = SessionManager::new(test_config());
         let term = mgr.create();
         let term_id = term.id.clone();
-        hook_secrets.register(term_id.clone(), "s3cr3t".to_string());
-        assert!(
-            hook_secrets.verify(&term_id, "s3cr3t"),
-            "前置:secret 已登记"
-        );
 
-        // 令其 Draining 且超 client-TTL → 本轮 reap 回收。
         make_draining_over_ttl(&term);
         mgr.reap();
 
@@ -485,19 +325,14 @@ mod tests {
             mgr.get(&term_id).is_none(),
             "终端会话超 client-TTL 应被 reap"
         );
-        assert!(
-            !hook_secrets.verify(&term_id, "s3cr3t"),
-            "reap 回收会话后应清除其 hook secret(修 M1 泄漏)"
-        );
     }
 
     #[tokio::test]
-    async fn discard_unstarted_removes_session_secret_and_cancels_it() {
+    async fn discard_unstarted_removes_session_and_cancels_it() {
         use super::super::client::{Client, ClientSecurityContext};
         use super::super::state::ClientRole;
 
-        let hook_secrets = HookSecretRegistry::new();
-        let mgr = SessionManager::new(test_config(), EventBus::new(), hook_secrets.clone());
+        let mgr = SessionManager::new(test_config());
         let session = mgr.create();
         let id = session.id.clone();
         let cancelled = session.cancellation_token();
@@ -511,11 +346,9 @@ mod tests {
         let client = Arc::new(client);
         let conn_gen = client.conn_gen();
         session.add_client(client.clone()).unwrap();
-        hook_secrets.register(id.clone(), "startup-only".to_string());
 
         assert!(mgr.discard_unstarted(&id));
         assert!(mgr.get(&id).is_none());
-        assert!(!hook_secrets.verify(&id, "startup-only"));
         assert!(cancelled.is_cancelled());
         assert!(session.is_closed());
         assert!(!client.is_connected());
@@ -553,7 +386,7 @@ mod tests {
 
     #[tokio::test]
     async fn pending_ssh_session_is_invisible_until_commit() {
-        let mgr = SessionManager::new(test_config(), EventBus::new(), HookSecretRegistry::new());
+        let mgr = SessionManager::new(test_config());
         let pending = mgr.prepare_connected_ssh(test_ssh_config());
         let id = pending.session().id.clone();
 
@@ -566,7 +399,7 @@ mod tests {
 
     #[tokio::test]
     async fn dropping_pending_ssh_session_never_registers_it() {
-        let mgr = SessionManager::new(test_config(), EventBus::new(), HookSecretRegistry::new());
+        let mgr = SessionManager::new(test_config());
         let pending = mgr.prepare_connected_ssh(test_ssh_config());
         let id = pending.session().id.clone();
 

@@ -38,7 +38,6 @@ const WINDOW_ROUTES = [
   'editor',
   'jumpserver-browser',
   'settings',
-  'updater',
 ];
 
 test('every utility-window route is listed here, so a new window cannot slip through', () => {
@@ -52,17 +51,16 @@ test('every utility-window route is listed here, so a new window cannot slip thr
   );
 });
 
-// The three windows that answer with the app's own menu (or with nothing at all):
+// The two windows that answer with the app's own menu (or with nothing at all):
 // none of them shows a browser menu on a slider, a button, the tab strip, or
 // empty space. They all sit under capabilities/default.json, so the clipboard
 // entries the field menu needs are already granted there.
 const SUPPRESSED: Array<[file: string, init: string]> = [
   ['settings-window.ts', 'export function initSettingsWindow'],
   ['about-window.ts', 'export function initAboutWindow'],
-  ['updater-window.ts', 'export function initUpdaterWindow'],
 ];
 
-test('the settings, about and updater windows install the shared suppressor', () => {
+test('the settings and about windows install the shared suppressor', () => {
   for (const [file, init] of SUPPRESSED) {
     const source = read(file);
     assert.match(
@@ -82,7 +80,7 @@ test('the settings, about and updater windows install the shared suppressor', ()
 // suppressor without the permission would show cut / copy / paste / select all
 // and have every copy and paste reject.
 test('each of those windows is allowed to use the clipboard for its fields', () => {
-  for (const label of ['settings', 'about', 'updater']) {
+  for (const label of ['settings', 'about']) {
     const owner = fs
       .readdirSync(new URL('../src-tauri/capabilities/', import.meta.url))
       .find((name) =>

@@ -35,8 +35,8 @@ import { notifyUser } from './notify';
 import {
   activateTab,
   showHomeView, hideHomeView, showGalleryView, hideGalleryView,
-  openSettings, getActiveSessionProgress,
-  syncPaneStatusBar,
+  openSettings,
+  syncPaneStatusBar, syncConnectionStatusBar, connectionLabelFor,
 } from './view-manager';
 import {
   createNewSession,
@@ -62,15 +62,13 @@ import {
 import {
   port, authToken, metermReady, setPort, setAuthToken, setMetermReady,
   settings, setSettings,
-  isHomeView, isGalleryView, isPipMode,
+  isHomeView, isGalleryView,
   sshConfigMap, sessionProgressMap,
-  isMacPlatform, isWindowsPlatform, isLinuxPlatform,
+  isMacPlatform, isWindowsPlatform,
   setLastFocusedMainWindowLabel,
 } from './app-state';
-import { togglePip } from './pip';
 import { flushMainWindowGeometry, trackMainWindowGeometry } from './window-geometry';
 import { restoreActiveJumpServersFromStorage } from './jumpserver-handler';
-import { applyNbPalette } from './nb-palette';
 import { requestEditorCloseBeforeLastMainWindow } from './last-main-editor-close';
 import { waitForEditorReady } from './file-editor-bridge';
 import {
@@ -179,6 +177,7 @@ export function setupDomEventListeners(): void {
   TabManager.subscribe(() => {
     StatusBar.setSessionCount(TabManager.tabs.length);
     syncPaneStatusBar();
+    syncConnectionStatusBar();
     renderTabs();
     renderToolbarActions();
     if (isHomeView) {
@@ -201,7 +200,7 @@ export function setupDomEventListeners(): void {
     const mt = TerminalRegistry.get(sessionId);
     if (mt) {
       activeTab.title = mt.shellTitle || mt.title;
-      activeTab.status = mt.ended ? 'ended' : mt.ws ? 'connected' : 'disconnected';
+      activeTab.status = mt.ended ? 'ended' : (mt.ws || mt.transport?.connected) ? 'connected' : 'disconnected';
     }
 
     // Switch drawer/AI bar to focused session (side panel stays put within same tab)
@@ -278,7 +277,6 @@ export function setupDomEventListeners(): void {
 
   // Window resize handler
   window.addEventListener('resize', () => {
-    if (isPipMode) return; // PiP: don't trigger terminal resize
     updateWindowAspectRatio();
     TerminalRegistry.resizeAll();
     syncTabMarqueeState();
@@ -297,8 +295,8 @@ export function setupDomEventListeners(): void {
   // and ignores utility windows.
   trackMainWindowGeometry(getCurrentWindow());
 
-  // On Windows/Linux: keep the maximize/restore button icon in sync with actual window state.
-  if (isWindowsPlatform || isLinuxPlatform) {
+  // On Windows: keep the maximize/restore button icon in sync with actual window state.
+  if (isWindowsPlatform) {
     const toolbarRightEl = getToolbarRightEl();
     window.addEventListener('resize', () => {
       void getCurrentWindow().isMaximized().then((isMax) => {
@@ -330,7 +328,6 @@ export function setupDomEventListeners(): void {
     } else {
       sessionProgressMap.set(sessionId, { state, percent });
     }
-    StatusBar.setProgress(getActiveSessionProgress());
     syncTabProgressLayers();
     syncGalleryProgressBars();
   }) as EventListener);
@@ -365,9 +362,7 @@ export function setupDomEventListeners(): void {
     if (matchedTab) {
       TabManager.activate(matchedTab.id);
       await activateTab(matchedTab.id);
-      const selSessionId = customEvent.detail;
-      const selSshCfg = sshConfigMap.get(selSessionId);
-      StatusBar.setConnection('connected', selSshCfg ? `${selSshCfg.username}@${selSshCfg.host}` : 'Local');
+      StatusBar.setConnection(matchedTab.status, connectionLabelFor(customEvent.detail));
       renderTabs();
       renderToolbarActions();
     }
@@ -472,7 +467,7 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     void emit('main-window-focused', { label: currentWindowLabel });
     // Normal app foregrounding does not necessarily fire visibilitychange.
     // Repair only xterm's macOS renderer here; PTY/TUI SIGWINCH recovery stays
-    // scoped to actual sleep/lock and PiP transitions.
+    // scoped to actual sleep/lock.
     if (isMacPlatform && metermReady) {
       TerminalRegistry.refreshRenderingAfterFocus();
     }
@@ -543,11 +538,6 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     }
     await invoke('allow_window_close', { windowLabel: currentWindowLabel });
     await getCurrentWindow().close();
-  });
-
-  void listen<{ target_window: string }>('menu-pip-toggle', (event) => {
-    if (!isForThisWindow(event.payload)) return;
-    void togglePip();
   });
 
   void listen<{ target_window: string }>('menu-show-home', (event) => {
@@ -732,7 +722,7 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     const terminalPanelEl = getTerminalPanelEl();
     const previous = settings;
     setSettings(loadSettings());
-    // Dragging an opacity or PiP slider sends a stream of these. Reloading fonts,
+    // Dragging an opacity slider sends a stream of these. Reloading fonts,
     // re-theming every terminal and rebuilding the home view for each one made
     // the drag stutter, so purely visual changes take the short path.
     if (isLiveAppearanceOnly(changedSettingKeys(previous, settings))) {
@@ -751,12 +741,7 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
     applyBackgroundImage(settings, terminalPanelEl);
     void applyVibrancy(settings.enableVibrancy);
     applyUiFont(settings.uiFontFamily);
-    // setSettings is async (awaits loadFont) and re-sets all terminal
-    // themes at the end. NB palette must run AFTER it finishes so our
-    // custom terminal bg/fg aren't clobbered.
-    void TerminalRegistry.setSettings(settings).then(() => {
-      applyNbPalette(settings.colorScheme);
-    });
+    void TerminalRegistry.setSettings(settings);
     void syncTrayLanguage();
     renderTabs();
     renderToolbarActions();

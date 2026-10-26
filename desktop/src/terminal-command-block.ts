@@ -44,10 +44,8 @@ export function recordPrompt(mt: ManagedTerminal, command: string, exitCode: num
     const old = state.block;
     let block = old;
     const cmd = command.trim();
-    // `fc -ln -1` repeats the previous command after an empty Enter; a
-    // prompt directly below the last one means nothing ran.
-    const emptyEnter = !!prev && now.line - prev.line <= 1 && !!old && old.command === cmd;
-    if (cmd && prev && prev.line >= 0 && !emptyEnter) {
+    // The hook reports an empty command when nothing ran (empty Enter, Ctrl-C).
+    if (cmd && prev && prev.line >= 0) {
       block = { command: cmd, exitCode, byAgent, start: prev, end: now };
     }
     const keep = new Set<IMarker>([now, ...(block ? [block.start, block.end] : [])]);
@@ -56,6 +54,21 @@ export function recordPrompt(mt: ManagedTerminal, command: string, exitCode: num
     }
     states.set(mt, { prompt: now, block });
   });
+}
+
+/**
+ * Where user input begins. OSC 7768 arrives before the shell prints its prompt,
+ * and xterm parses output asynchronously, so the cursor at the event is still
+ * at the start of the prompt: reading the input line from there picked up the
+ * prompt text. So this runs as a write callback, after the event and after each
+ * output write while the prompt is open, and the last call before input arrives
+ * leaves the cursor at the end of the prompt (the last row of a two-line one).
+ */
+export function trackPromptEnd(mt: ManagedTerminal): void {
+  if (!mt.shellState.promptOpen) return;
+  const buffer = mt.terminal.buffer.active;
+  mt.shellState.promptRow = buffer.baseY + buffer.cursorY;
+  mt.shellState.promptCol = buffer.cursorX;
 }
 
 /** Text of one buffer row plus any rows soft-wrapped onto it. */

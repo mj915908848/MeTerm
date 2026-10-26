@@ -14,27 +14,22 @@ import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { revealAfterPaint } from './window-utils';
 import { readText as clipboardReadText } from '@tauri-apps/plugin-clipboard-manager';
 import { applyVibrancy } from './appearance';
-import { applyNbPalette } from './nb-palette';
 import { changedSettingKeys, createTrailingThrottle, SETTINGS_PANEL_KEYS } from './settings-sync';
 
 const ua = navigator.userAgent.toLowerCase();
 const isWindowsPlatform = ua.includes('windows');
-const isMacPlatform = ua.includes('macintosh') || ua.includes('mac os');
-const needsCustomControls = isWindowsPlatform || (!isMacPlatform && !isWindowsPlatform);
+const needsCustomControls = isWindowsPlatform;
 
 function resolveThemeAttr(colorScheme: string): string {
   if (colorScheme === 'darker') return 'darker';
   if (colorScheme === 'navy') return 'navy';
   if (colorScheme === 'light') return 'light';
-  if (colorScheme === 'neo-brutalism') return 'neo-brutalism';
-  if (colorScheme === 'neo-brutalism-rounded') return 'neo-brutalism-rounded';
   if (colorScheme === 'auto') return resolveIsDark('auto') ? 'dark' : 'light';
   return 'dark';
 }
 
 function applyTheme(settings: AppSettings): void {
   document.documentElement.dataset.theme = resolveThemeAttr(settings.colorScheme);
-  applyNbPalette(settings.colorScheme);
 }
 
 function createCustomTitleBar(): HTMLElement {
@@ -86,7 +81,6 @@ export function initSettingsWindow(): void {
 
   // Platform class for CSS
   document.documentElement.classList.toggle('platform-windows', isWindowsPlatform);
-  document.documentElement.classList.toggle('platform-linux', needsCustomControls && !isWindowsPlatform);
 
   // Hide main app UI
   const app = document.getElementById('app');
@@ -97,16 +91,9 @@ export function initSettingsWindow(): void {
 
   void applyVibrancy(settings.enableVibrancy);
 
-  // Linux CSD: wrap all content in a div with border-radius for rounded corners
-  const isLinux = needsCustomControls && !isWindowsPlatform;
-  const wrapper = isLinux ? document.createElement('div') : null;
-  if (wrapper) {
-    wrapper.className = 'linux-csd-content';
-    document.body.appendChild(wrapper);
-  }
-  const appendTarget = wrapper || document.body;
+  const appendTarget = document.body;
 
-  // On Windows/Linux: add custom title bar (no native decorations)
+  // On Windows: add custom title bar (no native decorations)
   // On macOS: add drag region for overlay title bar
   if (needsCustomControls) {
     appendTarget.appendChild(createCustomTitleBar());

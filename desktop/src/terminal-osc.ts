@@ -5,7 +5,7 @@ import { DrawerManager } from './drawer';
 import { sendToTerminal } from './terminal-transport';
 import { readText as clipboardReadText, writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
 import type { ManagedTerminal } from './terminal-types';
-import { recordPrompt } from './terminal-command-block';
+import { recordPrompt, trackPromptEnd } from './terminal-command-block';
 
 export interface OscHandlerCallbacks {
   /** Called when shell state transitions to idle (OSC 7768) */
@@ -69,7 +69,9 @@ export function handleOscEvents(
           if (!isNaN(code) && code >= 0 && code < shellTypes.length) {
             callbacks.onShellTypeDetected?.(mt.id, shellTypes[code]);
           }
-          mt.shellState.hookInjected = true;
+          // Not proof of a hook on its own: OSC 7766 carries no token, so any
+          // output (`cat` of a log) can print it. Every hook sends its tokened
+          // 7768 right after, and that is what marks the session hooked.
         } else {
           const resolver = mt._oscMarkerResolvers.get(id);
           if (resolver) {
@@ -80,14 +82,23 @@ export function handleOscEvents(
         break;
       }
       case 'shell': {
+        // The hook reports an empty command when nothing new ran (empty Enter,
+        // Ctrl-C) and for space-prefixed lines, which is how the agent sends its
+        // own commands: those are named from what the agent sent, and kept out
+        // of the user's command history.
+        const byAgent = mt.shellState.phase === 'agent_executing';
+        const cmd = ev.cmd ?? '';
         mt.shellState.lastExitCode = ev.exit ?? 0;
         mt.shellState.cwd = ev.cwd ?? '';
-        mt.shellState.lastCommand = ev.cmd ?? '';
-        recordPrompt(mt, ev.cmd ?? '', ev.exit ?? 0, mt.shellState.phase === 'agent_executing');
+        mt.shellState.lastCommand = byAgent ? '' : cmd;
+        recordPrompt(mt, cmd || (byAgent ? mt.shellState.agentCommand : ''), ev.exit ?? 0, byAgent);
+        mt.shellState.agentCommand = '';
         mt.shellState.phase = 'ready';
         mt.shellState.hookInjected = true;
-        mt.shellState.promptRow = mt.terminal.buffer.active.baseY + mt.terminal.buffer.active.cursorY;
-        mt.shellState.promptCol = mt.terminal.buffer.active.cursorX;
+        // The hook reports before the shell prints its prompt, so the cursor is
+        // not where input begins yet: follow it until the user types.
+        mt.shellState.promptOpen = true;
+        mt.terminal.write('', () => trackPromptEnd(mt));
         // Only prefetch local directories — SSH sessions use SFTP via 'cwd' handler
         if (includePrefetch && ev.cwd && !DrawerManager.getServerInfo(mt.id)) {
           prefetchDirCache(ev.cwd);

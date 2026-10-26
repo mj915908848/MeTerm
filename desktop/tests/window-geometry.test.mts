@@ -38,7 +38,7 @@ test('exactly one window owns the remembered geometry slot', () => {
     assert.equal(windowGeometryRole(label), 'inherit-size', label);
   }
   // Utility windows share the settings object but must never touch this slot.
-  for (const label of ['settings', 'editor', 'about', 'updater', 'jumpserver-browser', 'tray-dialog', 'drag-preview']) {
+  for (const label of ['settings', 'editor', 'about', 'jumpserver-browser', 'tray-dialog', 'drag-preview']) {
     assert.equal(windowGeometryRole(label), 'none', label);
   }
 });

@@ -123,15 +123,9 @@ export function withSessionPtyLock<T>(
  * `PROMPT_COMMAND` entries, which is why the extension below follows the shape
  * the variable already has (bash 5.1+ arrays included).
  *
- * `fish` and `powershell` deliberately still emit 3 fields: a syntax error in an
- * injected hook is *masked* (the 7766 detect marker fires before the `eval`, so
- * `hookInjected` would flip true while the hook is dead), so the extra field is
- * only worth adding where the hook can be *run*, not merely read. `fish` is now
- * run for real by `tests/shell-hook-injection.test.mts` whenever a `fish` binary
- * is on PATH — which is why the injected line is kept free of anything fish
- * cannot parse (see `hostGuardCommand`) — but that binary is absent in CI, so
- * treat the fish path as verified-where-available rather than covered. `pwsh`
- * is neither run nor verified anywhere.
+ * Only zsh and bash are injected. A remote PowerShell gets no hook (the local
+ * Windows one is installed by `pty_windows.rs`), and fish is not supported (too rare to be worth a third dialect); the injected
+ * line only has to *parse* there — see `HOOK_UNSUPPORTED_SHELL_CODE`.
  */
 function buildShellHook(shellType: string, token = ''): string {
   // `token` is base64url (or empty for a session without one), so it is safe
@@ -140,62 +134,59 @@ function buildShellHook(shellType: string, token = ''): string {
     case 'zsh':
       return [
         `__meterm_tok='${token}';`,
-        `__meterm_cmd_start='';__meterm_cmd_running=0;`,
+        `__meterm_cmd_start='';__meterm_cmd_running=0;__meterm_cmd='';`,
+        // `$1` is the command line about to run. A leading space means "keep it out
+        // of history" (and is how the agent sends its own commands), so it is not
+        // reported; an empty Enter or Ctrl-C never reaches preexec at all.
         `__meterm_preexec(){ __meterm_cmd_running=1;`,
+        `case "$1" in ' '*) __meterm_cmd='';; *) __meterm_cmd="$1";; esac;`,
         `if [ -n "\${EPOCHREALTIME:-}" ];then __meterm_cmd_start="$EPOCHREALTIME";else __meterm_cmd_start="$SECONDS";fi; };`,
-        `__meterm_precmd(){ local e=$?;local c;local dur=0;`,
-        `if [ -z "$__meterm_hook_ready" ];then export __meterm_hook_ready=1;c='';`,
-        `else c=$(fc -ln -1 2>/dev/null);`,
+        `__meterm_precmd(){ local e=$?;local c='';local dur=0;`,
+        `if [ -z "$__meterm_hook_ready" ];then export __meterm_hook_ready=1;`,
+        `else [ "$__meterm_cmd_running" = 1 ]&&c="$__meterm_cmd";`,
         `if [ "$__meterm_cmd_running" = 1 ]&&[ -n "$__meterm_cmd_start" ]&&[ -n "\${EPOCHREALTIME:-}" ];then dur=$(( (EPOCHREALTIME - __meterm_cmd_start) * 1000 ));dur=\${dur%%.*};`,
-        `case "$dur" in ''|*[!0-9-]*) dur=0;; esac;fi;fi;`,
-        `__meterm_cmd_running=0;`,
+        `case "$dur" in ''|*[^0-9-]*) dur=0;; esac;fi;fi;`,
+        `__meterm_cmd_running=0;__meterm_cmd='';`,
         `printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' "\${__meterm_tok:-}" "$e" "$PWD" "$c" "$dur"; };`,
         `zmodload zsh/datetime 2>/dev/null;`,
         `autoload -Uz add-zsh-hook 2>/dev/null&&{ add-zsh-hook preexec __meterm_preexec; add-zsh-hook precmd __meterm_precmd; }`,
       ].join('');
-    case 'fish':
-      return [
-        `set -g __meterm_tok '${token}';`,
-        `function __meterm_postcmd --on-event fish_postexec;`,
-        `if not set -q __meterm_hook_ready;set -gx __meterm_hook_ready 1;`,
-        `printf '\\033]7768;k=%s;%d;%s;\\007' "$__meterm_tok" $status "$PWD";`,
-        `else;`,
-        `printf '\\033]7768;k=%s;%d;%s;%s\\007' "$__meterm_tok" $status "$PWD" "$argv";`,
-        `end;`,
-        `end`,
-      ].join('');
-    case 'powershell':
-      return [
-        `$global:__mtTok='${token}';`,
-        `function prompt {`,
-        `$e=$LASTEXITCODE;`,
-        `if (-not $env:__meterm_hook_ready){$env:__meterm_hook_ready='1';$c=''}`,
-        `else{$c=(Get-History -Count 1).CommandLine};`,
-        `[Console]::Write("$([char]0x1b)]7768;k=$($global:__mtTok);$e;$(Get-Location);$c$([char]7)");`,
-        `return "PS> "`,
-        `}`,
-      ].join('');
     default: // bash
       return [
         `__meterm_tok='${token}';`,
-        `__meterm_cmd_start='';__meterm_cmd_running=0;__meterm_in_prompt=0;`,
+        `__meterm_cmd_start='';__meterm_cmd_running=0;__meterm_in_prompt=0;__meterm_cmd='';__meterm_hist_n='';`,
         `__meterm_preexec(){ [ -n "\${COMP_LINE:-}" ]&&return;`,
-        `case "\${BASH_COMMAND:-}" in __meterm_precmd*) return;; esac;`,
+        `case "\${BASH_COMMAND:-}" in __meterm_precmd*|__meterm_prompt_end*) return;; esac;`,
         `[ "\${__meterm_in_prompt:-0}" = 1 ]&&return;`,
         `[ "\${__meterm_cmd_running:-0}" = 1 ]&&return;`,
-        `__meterm_cmd_running=1;`,
+        `__meterm_cmd_running=1;__meterm_cmd="\${BASH_COMMAND:-}";`,
         `if [ -n "\${EPOCHREALTIME:-}" ];then __meterm_cmd_start="$EPOCHREALTIME";else __meterm_cmd_start="\${EPOCHSECONDS:-$SECONDS}";fi; };`,
-        `__meterm_precmd(){ local e=$?;local c;local dur=0;__meterm_in_prompt=1;`,
-        `if [ -z "$__meterm_hook_ready" ];then export __meterm_hook_ready=1;c='';`,
-        `else c=$(fc -ln -1 2>/dev/null);`,
+        // Inside PROMPT_COMMAND `fc -ln -1` skips the newest entry (it takes it
+        // for the `fc` itself) and reports the one before. `history 1` does not,
+        // and its number tells whether anything new ran: an empty Enter and a
+        // space-prefixed command leave it unchanged. Under HISTCONTROL=ignoredups
+        // a repeat leaves it unchanged too, so the DEBUG trap's BASH_COMMAND
+        // vouches for that case.
+        `__meterm_precmd(){ local e=$?;local c='';local dur=0;local h n;__meterm_in_prompt=1;`,
+        `h=$(HISTTIMEFORMAT= builtin history 1 2>/dev/null);`,
+        `h="\${h#"\${h%%[^[:space:]]*}"}";n="\${h%%[[:space:]]*}";h="\${h#"$n"}";h="\${h#"\${h%%[^[:space:]]*}"}";`,
+        `if [ -z "$__meterm_hook_ready" ];then export __meterm_hook_ready=1;`,
+        `else if [ "$n" != "$__meterm_hist_n" ];then c="$h";`,
+        `elif [ "\${__meterm_cmd_running:-0}" = 1 ]&&[ -n "$__meterm_cmd" ];then case "$h" in "$__meterm_cmd"|"$__meterm_cmd "*) c="$h";; esac;fi;`,
         `if [ "\${__meterm_cmd_running:-0}" = 1 ]&&[ -n "\${__meterm_cmd_start:-}" ];then if [ -n "\${EPOCHREALTIME:-}" ];then local __s_sec=\${__meterm_cmd_start%.*};local __s_usec=\${__meterm_cmd_start#*.};`,
         `local __e_sec=\${EPOCHREALTIME%.*};local __e_usec=\${EPOCHREALTIME#*.};`,
         `dur=$(( (10#$__e_sec - 10#$__s_sec) * 1000 + (10#$__e_usec - 10#$__s_usec) / 1000 ));`,
         `else dur=$(( (\${EPOCHSECONDS:-$SECONDS} - \${__meterm_cmd_start%%.*}) * 1000 ));fi;`,
-        `case "$dur" in ''|*[!0-9-]*) dur=0;; esac;`,
+        `case "$dur" in ''|*[^0-9-]*) dur=0;; esac;`,
         `[ "$dur" -lt 0 ] 2>/dev/null&&dur=0;fi;fi;`,
-        `__meterm_cmd_running=0;__meterm_in_prompt=0;`,
-        `printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' "\${__meterm_tok:-}" "$e" "$PWD" "$c" "$dur"; };`,
+        `__meterm_hist_n="$n";__meterm_cmd_running=0;__meterm_cmd='';`,
+        `printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' "\${__meterm_tok:-}" "$e" "$PWD" "$c" "$dur";`,
+        // Hand the status on to the user's own PROMPT_COMMAND entries, which run
+        // after this one (starship & co. show a failure mark from it).
+        `return $e; };`,
+        // Runs last in PROMPT_COMMAND: until then the DEBUG trap must not take
+        // the user's own entries for the start of a command.
+        `__meterm_prompt_end(){ __meterm_in_prompt=0; };`,
         // One DEBUG trap per shell and no "append" form: installing ours would
         // *delete* whatever was there — `bash-preexec` and everything built on
         // it, audit/telemetry hooks — permanently, on a host this app does not
@@ -210,8 +201,8 @@ function buildShellHook(shellType: string, token = ''): string {
         // The array form is bash-only syntax that a POSIX `sh` (dash) rejects
         // while *parsing* the whole hook, so it is deferred behind `eval` and
         // only parsed when this branch actually runs, which is always in bash.
-        `eval 'PROMPT_COMMAND=(__meterm_precmd "\${PROMPT_COMMAND[@]}")';; `,
-        `*) PROMPT_COMMAND="__meterm_precmd\${PROMPT_COMMAND:+;$PROMPT_COMMAND}";; esac`,
+        `eval 'PROMPT_COMMAND=(__meterm_precmd "\${PROMPT_COMMAND[@]}" __meterm_prompt_end)';; `,
+        `*) PROMPT_COMMAND="__meterm_precmd\${PROMPT_COMMAND:+;$PROMPT_COMMAND};__meterm_prompt_end";; esac`,
       ].join('');
   }
 }
@@ -252,6 +243,12 @@ interface HookInjectionState {
 /** Delays between attempts. Length + 1 = total attempts (1 initial + 3 retries). */
 const HOOK_RETRY_BACKOFF_MS = [5_000, 15_000, 60_000];
 
+/**
+ * How long a hooked session may sit at a prompt after an agent command without
+ * the hook reporting it before the session is treated as hookless.
+ */
+const HOOK_LOST_AFTER_SILENCE_MS = 10_000;
+
 /** How long the handshake waits for the 7766 detect marker. */
 const HOOK_INJECTION_TIMEOUT_MS = 3000;
 
@@ -263,6 +260,14 @@ const _injectionState = new Map<string, HookInjectionState>();
  * it can never be read as a successful handshake.
  */
 const HOOK_FOREIGN_HOST_CODE = 9;
+
+/**
+ * The 7766 code a fish shell answers with: no hook is installed there, and the
+ * session stops asking. fish parses the whole line before running any of it,
+ * so the line is still kept free of anything fish cannot parse — otherwise every
+ * attempt would print a syntax error into the user's terminal.
+ */
+const HOOK_UNSUPPORTED_SHELL_CODE = 8;
 
 /**
  * The one shell expression that identifies the host on the other end: the
@@ -378,7 +383,7 @@ function probeHostIdentityThenInject(sessionId: string): void {
  * as a bare shell prompt (`active`) — so this cannot catch that case, and typing
  * into it with the injection would land on the wrong host. The note that used to
  * stand here claimed "the attempt still fails the handshake, so the cost is a lost
- * attempt"; that is wrong. The remote shell has no `__meterm_hook_ready`, so it
+ * attempt"; that is wrong. The remote shell has no hook installed, so it
  * runs the command happily and its 7766 marker comes straight back through the
  * PTY: the handshake *succeeds*. This session would be marked hooked while the
  * hook lives on the other host, its cwd / exit codes / durations would describe
@@ -615,7 +620,6 @@ function _injectShellHookImpl(
   const token = _oscToken.get(sessionId) ?? '';
   const zshHook = buildShellHook('zsh', token);
   const bashHook = buildShellHook('bash', token);
-  const fishHook = buildShellHook('fish', token);
   const detectId = `det_${Date.now().toString(36)}`;
 
   // Whose shell is this, really? `expectedHost` is the answer from the exec
@@ -646,35 +650,31 @@ function _injectShellHookImpl(
     : `${hostGuardCommand(expectedHost, detectId)} && `;
 
   // Single-line polyglot: `test -n` guards ensure only the matching branch runs.
-  // __meterm_hook_ready guard: skip if Go sidecar already installed the hook.
+  // Skipped where a hook is already installed (local rc, the SSH hook line). That
+  // is asked of `__meterm_cmd_running`, which every hook sets and never exports,
+  // not of the exported `__meterm_hook_ready`: a shell started by `exec zsh` or
+  // inside tmux inherits that one without the hook, and could never be hooked
+  // again. It is cleared so the new hook announces itself like a fresh one.
+  const notHooked = 'test -z "$__meterm_cmd_running" && unset __meterm_hook_ready &&';
   const body = [
-    ` test -n "$ZSH_VERSION" && ${guard}test -z "$__meterm_hook_ready" &&`,
+    ` test -n "$ZSH_VERSION" && ${guard}${notHooked}`,
     `printf '\\033]7766;${detectId};1\\007' &&`,
     `eval '${escapeShellSingle(zshHook)}' &&`,
     `setopt HIST_IGNORE_SPACE 2>/dev/null;`,
-    `test -n "$BASH_VERSION" && ${guard}test -z "$__meterm_hook_ready" &&`,
+    `test -n "$BASH_VERSION" && ${guard}${notHooked}`,
     `printf '\\033]7766;${detectId};0\\007' &&`,
     `eval '${escapeShellSingle(bashHook)}' &&`,
     `history -d $HISTCMD 2>/dev/null;`,
-    // Two things about this line, both consequences of fish parsing the *whole*
-    // injected line before running any of it:
-    //
-    //   - `${HISTCONTROL:+…}` is a bash/zsh idiom fish cannot parse at all
-    //     (`${` is "not a valid variable in fish"), and a construct in a branch
-    //     fish never takes still costs every fish session the hook. `"$HISTCONTROL:
-    //     ignorespace"` is the same list either way — an unset variable
-    //     contributes an empty entry, which every reader of `HISTCONTROL` skips.
-    //   - Fixing that also *runs* the line in fish for the first time ever, so it
-    //     is gated on the shells that have a `HISTCONTROL`: exporting a
-    //     bash-only variable into a fish session is a change to a remote host's
-    //     environment, and the point of this pass is to make fish work, not to
-    //     make it different. (`$BASH_VERSION$ZSH_VERSION` is empty in fish, so
-    //     the `test` fails there — the concatenation is the portable way to ask
-    //     "either of these?".)
+    // fish parses the *whole* injected line before running any of it, so
+    // `${HISTCONTROL:+…}` (a bash/zsh idiom fish cannot parse: `${` is "not a
+    // valid variable in fish") would print a syntax error there even though fish
+    // never takes this branch. `"$HISTCONTROL:ignorespace"` is the same list
+    // either way — an unset variable contributes an empty entry, which every
+    // reader of `HISTCONTROL` skips. It is gated on the shells that have a
+    // `HISTCONTROL` (`$BASH_VERSION$ZSH_VERSION` is empty in fish), so a fish
+    // session's environment is left alone.
     `test -n "$BASH_VERSION$ZSH_VERSION" && export HISTCONTROL="$HISTCONTROL:ignorespace";`,
-    `test -n "$FISH_VERSION" && ${guard}test -z "$__meterm_hook_ready" &&`,
-    `printf '\\033]7766;${detectId};2\\007' &&`,
-    `eval '${escapeShellSingle(fishHook)}';`,
+    `test -n "$FISH_VERSION" && printf '\\033]7766;${detectId};${HOOK_UNSUPPORTED_SHELL_CODE}\\007';`,
     `printf '\\0338\\033[0J\\033[0m\\r\\033[2K'`,
   ].join(' ');
 
@@ -713,11 +713,16 @@ function _injectShellHookImpl(
       _hostIdentity.delete(sessionId);
       return;
     }
-    // The marker is emitted inside the `test -z "$__meterm_hook_ready"` guard,
+    if (code === HOOK_UNSUPPORTED_SHELL_CODE) {
+      // fish: nothing was installed and nothing ever will be.
+      clearHookRetry(sessionId);
+      return;
+    }
+    // The marker is emitted behind the "not hooked yet" guard,
     // so receiving one means a shell branch really ran. (The old `code !== -1`
-    // test was dead: resolver() coerces NaN to 0, so code ∈ {0,1,2,9} — 9 is
-    // handled above and never reaches this line.)
-    setShellType(sessionId, code === 1 ? 'zsh' : code === 2 ? 'fish' : 'bash');
+    // test was dead: resolver() coerces NaN to 0, so code ∈ {0,1,8,9} — 8 and 9
+    // are handled above and never reach this line.)
+    setShellType(sessionId, code === 1 ? 'zsh' : 'bash');
     mt.shellState.hookInjected = true;
     clearHookRetry(sessionId);
   });
@@ -941,6 +946,15 @@ function runWaitLoop(
         // prompt-shaped tail would hand us the PREVIOUS command's exit
         // code instead of this one's.
         const tailIsPrompt = endsWithShellPrompt(outputBuffer);
+        // Back at a prompt for a while and still no 7768: the hook is gone
+        // (`exec zsh`, a shell inside tmux, a nested shell that has none).
+        // Without this the session stayed "hooked" for good, and every command
+        // waited out the full silence before giving up. The next 7768 marks it
+        // hooked again.
+        if (hookAlive() && tailIsPrompt && silentMs >= HOOK_LOST_AFTER_SILENCE_MS && !userTypedJustNow()) {
+          const mt = TerminalRegistry.get(sessionId);
+          if (mt) mt.shellState.hookInjected = false;
+        }
         if (shouldCompleteFromPromptTail({
           hookInjected: hookAlive(),
           recentUserInput: userTypedJustNow(),

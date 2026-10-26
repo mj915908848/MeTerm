@@ -6,7 +6,7 @@ import type { ManagedTerminal } from './terminal-types';
  *
  * This is intentionally separate from forceFullRefresh(), whose temporary
  * cols-1 resize is required to make TUI applications handle SIGWINCH after
- * PiP exit or system wake. A normal macOS focus transition must not mutate
+ * system wake. A normal macOS focus transition must not mutate
  * terminal dimensions or notify the PTY.
  */
 export function recoverTerminalRenderer(mt: ManagedTerminal): void {

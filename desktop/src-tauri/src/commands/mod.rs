@@ -17,9 +17,6 @@ pub mod transfer;
 pub(crate) mod user_presence;
 pub mod window;
 
-#[cfg(test)]
-mod transfer_tests;
-
 use serde::Serialize;
 
 /// Validates that an ID string (session_id, client_id) contains only safe characters.

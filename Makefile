@@ -1,16 +1,10 @@
-.PHONY: backend clean desktop-sidecar desktop-dev desktop-build-dev desktop-run-dev desktop-build desktop-dev-win desktop-dev-win-rebuild desktop-build-win release-macos release-macos-arm64 release-macos-x86_64 release-macos-all
+.PHONY: clean desktop-dev desktop-build-dev desktop-run-dev desktop-build desktop-dev-win desktop-dev-win-rebuild desktop-build-win release-macos release-macos-arm64 release-macos-x86_64 release-macos-all
 
 # The development signing identity is derived from the local keychain at build
 # time rather than committed: the certificate CN embeds a personal Apple ID and
 # the team ID it belongs to is account specific. Shared by `desktop-dev` and
 # `desktop-build-dev`; see scripts/dev-relay-provenance.sh.
 METERM_DEV_PROVENANCE_SH = $(CURDIR)/scripts/dev-relay-provenance.sh
-
-backend:
-	cd backend && go run .
-
-desktop-sidecar:
-	cd backend && go build -o ../desktop/src-tauri/binaries/meterm-server-$$(rustc --print host-tuple) .
 
 desktop-dev:
 	@set -eu; \
@@ -52,9 +46,6 @@ desktop-build-dev:
 # `tauri dev` executable, so its Keychain designated requirement stays stable.
 desktop-run-dev: desktop-build-dev
 	open -n 'desktop/src-tauri/target/debug/bundle/macos/MeTerm Dev.app'
-
-desktop-dev-go: desktop-sidecar
-	cd desktop && METERM_GO_SIDECAR=1 npm run tauri dev -- --config '{"identifier":"com.meterm.dev"}'
 
 desktop-build:
 	cd desktop && npm run tauri build

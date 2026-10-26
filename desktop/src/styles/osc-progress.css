@@ -1,4 +1,4 @@
-/* ── OSC 9;4 共用进度层 (状态栏 + Tab 标签) ── */
+/* ── OSC 9;4 进度层 (Tab 标签) ── */
 
 .osc-progress-layer {
   position: absolute;
@@ -31,11 +31,6 @@
 @keyframes osc-progress-slide {
   0%   { background-position: 100% 0; }
   100% { background-position: -100% 0; }
-}
-
-/* 状态栏内容浮于进度层之上 */
-.status-left, .status-spacer, .status-right {
-  position: relative; z-index: 1;
 }
 
 /* Tab 内容浮于进度层之上 */

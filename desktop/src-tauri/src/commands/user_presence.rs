@@ -56,14 +56,14 @@ pub async fn confirm_for_secret_export(
     window: &tauri::WebviewWindow,
     reason: String,
 ) -> Result<(), String> {
-    confirm(window, reason, "com.meterm.app.export-connections").await
+    confirm(window, reason).await
 }
 
 pub async fn confirm_for_credential_binding(
     window: &tauri::WebviewWindow,
     reason: String,
 ) -> Result<(), String> {
-    confirm(window, reason, "com.meterm.app.credential-binding").await
+    confirm(window, reason).await
 }
 
 pub(crate) fn validate_reason(reason: &str) -> Result<(), String> {
@@ -79,11 +79,7 @@ pub(crate) fn validate_reason(reason: &str) -> Result<(), String> {
     }
 }
 
-async fn confirm(
-    window: &tauri::WebviewWindow,
-    reason: String,
-    action_id: &'static str,
-) -> Result<(), String> {
+async fn confirm(window: &tauri::WebviewWindow, reason: String) -> Result<(), String> {
     validate_reason(&reason)?;
 
     let _guard = AUTH_PROMPT_LOCK
@@ -93,20 +89,19 @@ async fn confirm(
 
     #[cfg(target_os = "windows")]
     {
-        let _ = action_id;
         platform_confirm(window, &reason).await
     }
     #[cfg(not(target_os = "windows"))]
     {
         let _ = window;
-        tokio::task::spawn_blocking(move || platform_confirm(&reason, action_id))
+        tokio::task::spawn_blocking(move || platform_confirm(&reason))
             .await
             .map_err(|_| "identity confirmation task failed".to_string())?
     }
 }
 
 #[cfg(target_os = "macos")]
-fn platform_confirm(reason: &str, _action_id: &str) -> Result<(), String> {
+fn platform_confirm(reason: &str) -> Result<(), String> {
     use block2::RcBlock;
     use objc2_foundation::NSString;
     use objc2_local_authentication::{LAContext, LAPolicy};
@@ -192,44 +187,8 @@ async fn platform_confirm(window: &tauri::WebviewWindow, reason: &str) -> Result
     }
 }
 
-#[cfg(target_os = "linux")]
-fn platform_confirm(reason: &str, action_id: &str) -> Result<(), String> {
-    let pid = std::process::id();
-    let stat = std::fs::read_to_string("/proc/self/stat")
-        .map_err(|_| "cannot determine process start time".to_string())?;
-    let close_paren = stat
-        .rfind(')')
-        .ok_or_else(|| "cannot determine process start time".to_string())?;
-    // Fields after the executable name begin at proc field 3; starttime is
-    // field 22, therefore index 19 in this suffix.
-    let start_time = stat[close_paren + 1..]
-        .split_whitespace()
-        .nth(19)
-        .ok_or_else(|| "cannot determine process start time".to_string())?;
-    let uid = unsafe { libc::geteuid() };
-    let subject = format!("{},{},{}", pid, start_time, uid);
-    let status = std::process::Command::new("/usr/bin/pkcheck")
-        .args([
-            "--action-id",
-            action_id,
-            "--process",
-            &subject,
-            "--allow-user-interaction",
-            "--detail",
-            "operation",
-            reason,
-        ])
-        .status()
-        .map_err(|_| "polkit identity confirmation is unavailable".to_string())?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err("identity confirmation was rejected".to_string())
-    }
-}
-
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-fn platform_confirm(_reason: &str, _action_id: &str) -> Result<(), String> {
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn platform_confirm(_reason: &str) -> Result<(), String> {
     Err("identity-confirmed export is unsupported on this platform".to_string())
 }
 

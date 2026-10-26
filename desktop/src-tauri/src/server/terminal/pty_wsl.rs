@@ -94,18 +94,12 @@ impl WslPtyTerminal {
     /// `distro` can be a bare distribution name (e.g., "Ubuntu"),
     /// a full command string (e.g., "wsl.exe -d Ubuntu"), or empty
     /// (uses the default distribution).
-    ///
-    /// `envs`:与 unix/native 保持签名一致(agent 终端镜像 M1)。注意 **WSL 不在镜像覆盖
-    /// 范围内**:注入的 METERM_HOOK_PORT 指向 Windows 侧 loopback,WSL 内的 hook 子进程一般
-    /// 不可达该端口(网络命名空间隔离),故此处仅 best-effort 透传(经 WSLENV 未桥接时
-    /// WSL 侧收不到),不保证 hook 回报可用。
     pub async fn new(
         distro: &str,
         shell: &str,
         cwd: &str,
         cols: u16,
         rows: u16,
-        envs: &[(String, String)],
     ) -> Result<Self, String> {
         let mut cmd = Command::new("wsl.exe");
 
@@ -130,11 +124,6 @@ impl WslPtyTerminal {
         cmd.env("COLS", cols.to_string());
         if !shell.is_empty() {
             cmd.env("SHELL", shell);
-        }
-        // best-effort 透传调用方 env(agent 镜像 hook env)。见方法文档:WSL 不在镜像覆盖范围,
-        // loopback 一般不可达,仅设在 Windows 侧进程环境(未经 WSLENV 桥接则 WSL 内看不到)。
-        for (k, v) in envs {
-            cmd.env(k, v);
         }
 
         cmd.stdin(Stdio::piped())

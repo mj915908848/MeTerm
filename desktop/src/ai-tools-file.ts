@@ -20,6 +20,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { resolveLocalToolPath, ToolHandler } from './ai-tools-core';
 import { executeViaTerminal } from './ai-tools-shell';
+import { readShellInputState } from './ai-tools-command';
 import { hasSensitivePathComponent } from './ai-permission-rules';
 import { quoteRemotePath, resolveSftpPath } from './ai-remote-path';
 import {
@@ -52,6 +53,8 @@ function fmtError(e: unknown): string {
 
 /** Default number of lines read_file returns. */
 const READ_DEFAULT_LINES = 200;
+/** Most characters one read_file result returns, whatever the line count. */
+const READ_MAX_CHARS = 16000;
 
 /** True when an SFTP command failed because the session has no SFTP. */
 function sftpUnavailable(e: unknown): boolean {
@@ -66,15 +69,33 @@ function formatReadResult(result: AgentReadResult, startLine: number, path: stri
   if (result.is_binary) {
     return `This appears to be a binary file (${result.size} bytes). Cannot display content. Use run_command with xxd / file / strings to inspect.`;
   }
-  const content = result.content ?? '';
-  if (!result.truncated && startLine <= 1) return content;
+  let content = result.content ?? '';
+  let truncated = !!result.truncated;
+  // The line limit alone does not bound the size: minified code or a log
+  // with very long lines can be megabytes in 200 lines. Keep whole lines
+  // up to READ_MAX_CHARS; a single longer line is cut and marked.
+  let cutLine = false;
+  if (content.length > READ_MAX_CHARS) {
+    const lastBreak = content.lastIndexOf('\n', READ_MAX_CHARS);
+    if (lastBreak > 0) {
+      content = content.slice(0, lastBreak);
+    } else {
+      content = content.slice(0, READ_MAX_CHARS);
+      cutLine = true;
+    }
+    truncated = true;
+  }
+  if (!truncated && startLine <= 1) return content;
   const shown = content ? content.split('\n').length : 0;
   const total = result.total_lines ? ` of ${result.total_lines}` : '';
   if (shown === 0) {
     return `--- ${path}: no lines at or after line ${startLine}${total ? ` (file has${total.replace(' of', '')} lines)` : ''}. ---`;
   }
   const end = startLine + shown - 1;
-  const more = result.truncated
+  if (cutLine) {
+    return `${content}…\n\n--- Line ${startLine} is longer than ${READ_MAX_CHARS} characters and was cut. Use run_command with cut -c / head -c / jq / grep -o to read parts of it. Next line: offset=${startLine + 1}. ---`;
+  }
+  const more = truncated
     ? ` To read further, call read_file again with offset=${end + 1}.`
     : '';
   return `${content}\n\n--- Showing lines ${startLine}-${end}${total} (${result.size} bytes total).${more} ---`;
@@ -111,6 +132,12 @@ async function withSudoTemp<T>(
   opts: { stage: boolean; commit: boolean; mkdirs?: boolean },
   work: (temp: string) => Promise<T>,
 ): Promise<T | string> {
+  // The sudo steps are typed into the pane's shell: a full-screen program
+  // or a waiting question would receive them as input instead.
+  const input = readShellInputState(ctx.sessionId).kind;
+  if (input !== 'shell') {
+    return `Error: sudo=true needs the shell prompt, but ${input === 'tui' ? 'a full-screen program' : 'a program waiting for input'} is running in the pane. Ask the user to exit it first.`;
+  }
   const cmd = opts.stage ? sudoStageCommand(quoteRemotePath(path)) : tempFileCommand();
   const out = await executeViaTerminal(ctx.sessionId, cmd, 20, ctx.shellType);
   const temp = parseTempPath(out);

@@ -338,8 +338,6 @@ html.platform-windows .terminal-container .xterm-viewport,
 html.platform-windows .terminal-container .xterm .xterm-viewport,
 html.platform-macos   .terminal-container .xterm-viewport,
 html.platform-macos   .terminal-container .xterm .xterm-viewport,
-html.platform-linux   .terminal-container .xterm-viewport,
-html.platform-linux   .terminal-container .xterm .xterm-viewport,
 .terminal-thumbnail-source .xterm-viewport,
 .terminal-thumbnail-source .xterm .xterm-viewport {
   background: transparent !important;
@@ -358,13 +356,11 @@ html.platform-windows .split-pane .xterm-screen {
 
 /* hide native scrollbar completely — replaced by custom overlay (all platforms) */
 html.platform-windows .terminal-container .xterm-viewport,
-html.platform-macos   .terminal-container .xterm-viewport,
-html.platform-linux   .terminal-container .xterm-viewport {
+html.platform-macos   .terminal-container .xterm-viewport {
   scrollbar-width: none !important;
 }
 html.platform-windows .terminal-container .xterm-viewport::-webkit-scrollbar,
-html.platform-macos   .terminal-container .xterm-viewport::-webkit-scrollbar,
-html.platform-linux   .terminal-container .xterm-viewport::-webkit-scrollbar {
+html.platform-macos   .terminal-container .xterm-viewport::-webkit-scrollbar {
   width: 0 !important;
   display: none !important;
 }
@@ -373,17 +369,12 @@ html.platform-linux   .terminal-container .xterm-viewport::-webkit-scrollbar {
 html.platform-macos .terminal-container .xterm,
 html.platform-macos .terminal-container .xterm-screen,
 html.platform-macos .terminal-container .xterm-rows,
-html.platform-macos .terminal-container .xterm-helper-textarea,
-html.platform-linux .terminal-container .xterm,
-html.platform-linux .terminal-container .xterm-screen,
-html.platform-linux .terminal-container .xterm-rows,
-html.platform-linux .terminal-container .xterm-helper-textarea {
+html.platform-macos .terminal-container .xterm-helper-textarea {
   width: 100% !important;
   min-width: 100% !important;
 }
 
-html.platform-macos .split-pane .xterm-screen,
-html.platform-linux .split-pane .xterm-screen {
+html.platform-macos .split-pane .xterm-screen {
   min-width: 100% !important;
 }
 
@@ -396,8 +387,7 @@ html.platform-linux .split-pane .xterm-screen {
  * always creates a dedicated, properly-invalidated layer for the canvas content.
  * Chrome (dev mode) handles canvas layer lifecycle correctly; this rule only
  * matters for WKWebView / Metal. */
-html.platform-macos .terminal-container .xterm-screen,
-html.platform-linux .terminal-container .xterm-screen {
+html.platform-macos .terminal-container .xterm-screen {
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
 }

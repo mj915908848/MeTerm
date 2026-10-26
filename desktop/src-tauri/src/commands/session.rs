@@ -41,20 +41,12 @@ pub async fn create_session(
 ) -> Result<String, String> {
     let session = state.session_manager.create();
 
-    // agent 终端镜像地基(M1):给 local-shell 注入 hook 环境变量(见 handlers::create_session)。
-    let secret = crate::server::generate_token();
-    state
-        .hook_secrets
-        .register(session.id.clone(), secret.clone());
-    let envs = crate::server::hook_secret::hook_envs(&session.id, state.port(), &secret);
-
     let executor = crate::server::executor::local::LocalShellExecutor::new(
         shell.unwrap_or_default(),
         cwd.unwrap_or_default(),
         80,
         24,
-    )
-    .with_envs(envs);
+    );
     match executor.start().await {
         Ok(terminal) => {
             crate::server::session::Session::start_terminal(session.clone(), terminal).await;
@@ -116,14 +108,7 @@ pub async fn delete_session(
 ) -> Result<String, String> {
     super::validate_id(&session_id)?;
     match state.session_manager.delete(&session_id) {
-        Ok(()) => {
-            // 会话销毁,清除其 hook secret(agent 镜像 M1);非 local-shell 会话无登记则 no-op。
-            state.hook_secrets.remove(&session_id);
-            // 清除镜像状态并取消 tailer(agent 镜像 M3,对齐 handlers.rs HTTP delete 路径,
-            // 桌面 UI 关标签走的正是本 IPC 路径);无镜像则 no-op。
-            state.mirrors.remove_and_cancel(&session_id);
-            Ok(serde_json::json!({ "ok": true }).to_string())
-        }
+        Ok(()) => Ok(serde_json::json!({ "ok": true }).to_string()),
         Err(e) => Err(e),
     }
 }

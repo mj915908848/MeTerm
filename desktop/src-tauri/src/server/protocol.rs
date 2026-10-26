@@ -43,21 +43,12 @@ pub const MSG_NUDGE: u8 = 0x18;
 // Desktop presence event (桌面事件总线经 `/ws-events` 转发给手机的帧,JSON 负载,见 `events.rs`)
 pub const MSG_NOTIFY_EVENT: u8 = 0x41;
 
-// agent 聊天(方案甲镜像):镜像事件流归一 AgentEvent 经此下行;上行输入/控制见
-// agent::upstream。0x50/0x51/0x52 三个常量都在本段定义,便于协议一览。
-pub const MSG_AGENT_EVENT: u8 = 0x50; // ↓ JSON: AgentEvent(下行)
-pub const MSG_AGENT_INPUT: u8 = 0x51; // ↑ JSON: {prompt}
-pub const MSG_AGENT_CONTROL: u8 = 0x52; // ↑ JSON: {action,requestId?,optionId?,message?,answers?}
-
 // Master role management
 pub const MSG_MASTER_REQUEST: u8 = 0x19;
 pub const MSG_MASTER_REQUEST_NOTIFY: u8 = 0x1A;
 pub const MSG_MASTER_APPROVAL: u8 = 0x1B;
 pub const MSG_MASTER_RECLAIM: u8 = 0x1C;
 
-// Device pairing
-pub const MSG_PAIR_NOTIFY: u8 = 0x1D;
-pub const MSG_PAIR_APPROVAL: u8 = 0x1E;
 /// master 主动让出主控(手机端"停止接管"):服务端把 master 移交给
 /// 下一个合适客户端(优先桌面 ipc/loopback)。payload 为空。
 pub const MSG_MASTER_RELEASE: u8 = 0x1F;
@@ -186,26 +177,11 @@ pub fn encode_master_approval(
     buf
 }
 
-/// Encode a pair notification (JSON).
-pub fn encode_pair_notify(pair_id: &str, device_info: &str, remote_addr: &str) -> Vec<u8> {
-    let json = serde_json::json!({
-        "pair_id": pair_id,
-        "device_info": device_info,
-        "remote_addr": remote_addr,
-    });
-    encode_message(MSG_PAIR_NOTIFY, json.to_string().as_bytes())
-}
+/// RTT value meaning "SSH session, but no reading this time" (timeout or busy).
+pub const PONG_RTT_UNKNOWN: u32 = u32::MAX;
 
-/// Encode a pair-approval message: `[0x1E][approved: u8][pair_id UTF-8]`.
-pub fn encode_pair_approval(approved: bool, pair_id: &str) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(2 + pair_id.len());
-    buf.push(MSG_PAIR_APPROVAL);
-    buf.push(if approved { 1 } else { 0 });
-    buf.extend_from_slice(pair_id.as_bytes());
-    buf
-}
-
-/// Encode a pong message. For SSH sessions includes RTT in ms as 4-byte BE.
+/// Encode a pong message. For SSH sessions includes RTT in ms as 4-byte BE
+/// (`PONG_RTT_UNKNOWN` when it could not be measured).
 pub fn encode_pong(rtt_ms: Option<u32>) -> Vec<u8> {
     match rtt_ms {
         Some(ms) => {

@@ -27,7 +27,7 @@ import { getSelection, performCopy, performPaste } from './clipboard-actions';
 import { openTerminalSearch } from './terminal-search';
 import { openSnippetPalette } from './snippets';
 import { isBroadcasting, toggleInputBroadcast } from './terminal-broadcast';
-import { activateTab, showHomeView, openSettings } from './view-manager';
+import { activateTab, showHomeView, openSettings, connectionLabelFor } from './view-manager';
 import { doSplitPane, createNewSession, closeAllSessions } from './session-actions';
 import { renderTabs } from './tab-renderer';
 import {
@@ -134,8 +134,7 @@ export function showTabContextMenu(event: MouseEvent, tab: Tab, tabIndex: number
         const newActiveTab = TabManager.tabs.find(t => t.id === TabManager.activeTabId);
         if (newActiveTab) {
           const activeSessionId = TabManager.getActiveSessionId();
-          const sshCfg = activeSessionId ? sshConfigMap.get(activeSessionId) : undefined;
-          StatusBar.setConnection(newActiveTab.status, sshCfg ? `${sshCfg.username}@${sshCfg.host}` : 'Local');
+          StatusBar.setConnection(newActiveTab.status, connectionLabelFor(activeSessionId));
         }
       } else {
         showHomeView();
@@ -614,8 +613,7 @@ export function showCustomContextMenu(event: MouseEvent): void {
           const newActiveTab = TabManager.tabs.find(t => t.id === TabManager.activeTabId);
           if (newActiveTab) {
             const activeSessionId = TabManager.getActiveSessionId();
-            const sshCfg = activeSessionId ? sshConfigMap.get(activeSessionId) : undefined;
-            StatusBar.setConnection(newActiveTab.status, sshCfg ? `${sshCfg.username}@${sshCfg.host}` : 'Local');
+            StatusBar.setConnection(newActiveTab.status, connectionLabelFor(activeSessionId));
           }
         } else {
           showHomeView();

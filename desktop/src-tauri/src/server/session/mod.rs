@@ -21,10 +21,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::server::auth::AuthPrincipal;
-use crate::server::events::{DesktopEvent, EventBus};
 use crate::server::protocol;
-use access::SessionCreator;
 use client::{Client, ClientSecurityContext};
 use state::{ClientRole, SessionState};
 
@@ -184,15 +181,9 @@ impl AdaptivePipeline {
     }
 }
 
-/// Callback for [`Session::on_shell_prompt`]; receives the prompt's exit code.
-pub(crate) type ShellPromptCallback = Arc<dyn Fn(i32) + Send + Sync>;
-
 /// A terminal session.
 pub struct Session {
     pub id: String,
-    /// Immutable authenticated creator. SSH sessions require an exact match
-    /// for device access; owner requests remain administrative superusers.
-    creator: Option<SessionCreator>,
     pub state: Mutex<SessionState>,
     pub clients: Mutex<HashMap<String, Arc<Client>>>,
     pub master_id: Mutex<String>,
@@ -268,41 +259,19 @@ pub struct Session {
     /// Upload control channels keyed by transferId (supports parallel uploads).
     pub upload_ctrls: tokio::sync::Mutex<HashMap<u32, tokio::sync::mpsc::Sender<UploadSignal>>>,
 
-    /// 7768 兜底回调槽(agent 镜像 Task D):镜像态下顶层 shell 回 prompt(OSC 7768)即
-    /// claude 可能已退出,run loop 经 [`Self::dispatch_shell_prompt`] 把 7768 首字段的
-    /// exit code(`$?`)传给本槽回调(FIX-4:挂起/退出的判别在回调侧,见 agent/hook.rs;
-    /// agent/hook.rs 升格时设置、清理时置 None;Arc 便于 clone 后锁外调用,守卫忽略的
-    /// 调用不消耗回调)。非镜像态恒 None。
-    pub(crate) on_shell_prompt: Mutex<Option<ShellPromptCallback>>,
-
     /// OSC filter — intercepts MeTerm OSC sequences from terminal output.
     osc_filter: Mutex<crate::server::osc_filter::OscFilter>,
 
     /// Cancellation token for the session's run loop.
     cancel: CancellationToken,
-
-    /// 桌面级事件总线(终端通知 Phase 1):run loop 抽出 `OscEvent::Notify` 时,
-    /// 除会话内 `MSG_OSC_EVENT` 广播外,额外投一份 `DesktopEvent::Notify` 到这里,
-    /// 供 presence WS(后续任务)订阅转发给手机。
-    event_bus: EventBus,
 }
 
 impl Session {
-    pub fn new(id: String, config: SessionConfig, event_bus: EventBus) -> Self {
-        Self::new_with_creator(id, config, event_bus, None)
-    }
-
-    pub(crate) fn new_with_creator(
-        id: String,
-        config: SessionConfig,
-        event_bus: EventBus,
-        creator: Option<SessionCreator>,
-    ) -> Self {
+    pub fn new(id: String, config: SessionConfig) -> Self {
         let ring_size = config.ring_buffer_size;
         let cancel = CancellationToken::new();
         Self {
             id,
-            creator,
             state: Mutex::new(SessionState::Created),
             clients: Mutex::new(HashMap::new()),
             master_id: Mutex::new(String::new()),
@@ -332,51 +301,26 @@ impl Session {
             upload_path_leases: transfer::UploadPathLeaseRegistry::new(),
             download_registry: Arc::new(downloads::DownloadRegistry::new(&cancel)),
             upload_ctrls: tokio::sync::Mutex::new(HashMap::new()),
-            on_shell_prompt: Mutex::new(None),
             current_cwd: Mutex::new(None),
             osc_filter: Mutex::new(crate::server::osc_filter::OscFilter::new()),
             cancel,
-            event_bus,
         }
     }
 
-    pub(crate) fn creator_allows_principal(&self, principal: &AuthPrincipal) -> bool {
-        if matches!(principal, AuthPrincipal::Owner { .. }) {
-            return true;
-        }
-        self.creator
-            .as_ref()
-            .is_some_and(|creator| creator.allows_principal(principal))
-    }
-
-    pub(crate) fn creator_allows_device(&self, device_id: &str, generation: uuid::Uuid) -> bool {
-        self.creator
-            .as_ref()
-            .is_some_and(|creator| creator.allows_device(device_id, generation))
-    }
-
-    /// run loop 的 OSC 7768 → 回调槽接线(FIX-6:抽成方法便于单测,锁定「ShellState 事件
-    /// 必须携带 exit code 调回调」的真实通路):每个 `ShellState` 事件把 7768 首字段的
-    /// exit code(`$?`)传给 `on_shell_prompt` 回调,非 ShellState 事件不触发。
-    /// clone 后**锁外**调用:回调内部要拿 mirrors registry 锁,不得与槽锁交叠
-    /// (锁序论证见 agent/hook.rs `MirrorRegistry::cleanup`)。
     /// The OSC 7768 hook token of this session's terminal, for hooks injected
     /// later from the frontend (see `ai-tools-shell.ts`). `None` = not enforced.
     pub fn osc_token(&self) -> Option<String> {
         self.osc_filter.lock().unwrap().token().map(str::to_string)
     }
 
+    /// run loop 的 OSC 7768 / OSC 7 → `current_cwd` 接线。
     pub(crate) fn dispatch_shell_prompt(&self, events: &[crate::server::osc_filter::OscEvent]) {
         for e in events {
             match e {
-                crate::server::osc_filter::OscEvent::ShellState { exit, cwd, .. } => {
+                crate::server::osc_filter::OscEvent::ShellState { cwd, .. } => {
                     // fix13:7768 precmd 携带 cwd,旁路记录(Git tab 的 repo 根定位)。
                     if !cwd.is_empty() {
                         *self.current_cwd.lock().unwrap() = Some(cwd.clone());
-                    }
-                    let cb = self.on_shell_prompt.lock().unwrap().clone();
-                    if let Some(cb) = cb {
-                        cb(*exit);
                     }
                 }
                 // OSC 7(file://host/path)同样上报 cwd(无 7768 集成的 shell 兜底)。
@@ -732,19 +676,6 @@ impl Session {
                                         let msg = protocol::encode_message(protocol::MSG_OSC_EVENT, &json);
                                         session.broadcast(msg);
                                     }
-                                    // 额外一路:通知性 OscEvent 投到桌面事件总线,供 presence WS
-                                    // (后续任务)转发给手机。不影响上面的会话内 MSG_OSC_EVENT 广播。
-                                    // 先 clone 出标题、显式释放锁,避免在持有 title 锁的同时
-                                    // 又去 publish(publish 内部不持锁,但保持"取值后立即放锁"的习惯,
-                                    // 防止未来在 publish 路径里引入回读 title 造成死锁)。
-                                    let session_title = session.title.lock().unwrap().clone();
-                                    for desktop_event in
-                                        notify_events_to_publish(&events, &session.id, &session_title)
-                                    {
-                                        session.event_bus.publish(desktop_event);
-                                    }
-                                    // Task D:镜像态下顶层 shell 回 prompt(OSC 7768)= claude
-                                    // 可能已退出,接线抽在 dispatch_shell_prompt(FIX-6 可单测)。
                                     session.dispatch_shell_prompt(&events);
                                 }
                             }
@@ -976,74 +907,6 @@ impl Session {
             chunk.push(protocol::MSG_OUTPUT);
             chunk.extend_from_slice(&data[offset..end]);
             if !self.send_to_client_generation(&client.id, expected_conn_gen, chunk) {
-                return;
-            }
-            offset = end;
-        }
-    }
-
-    /// [`flush_ring_buffer`] 的**背压变体**:内容/语义与其完全一致(RIS 复位 + 模式重放 +
-    /// MSG_OUTPUT 分片),唯一区别是逐块用 [`Client::send_async`](client::Client::send_async)
-    /// 发送——priority 通道满时**等待 writer 排空**,而非 [`Client::send`](client::Client::send)
-    /// 的 `Full → disconnect() + 截断`。
-    ///
-    /// 为什么镜像 WS attach 路径必须用它:Mirror 分支先 `entry.attach()`(背压回放 agent 历史),
-    /// 可能把 1024 槽 priority 通道填到**正好满**;紧接着若再用非阻塞 `flush_ring_buffer` 回放终端
-    /// 环形缓冲,首块就撞 `TrySendError::Full → disconnect()`,丢弃 client + 截断回放 → 手机大历史 +
-    /// 慢 sink 下**永久重连环**(正是 attach 背压化消灭的 Critical bug 的终端缓冲镜像版)。改用背压
-    /// 发送后,通道满则挂起等 writer 排空,绝不 disconnect、绝不截断。
-    ///
-    /// **不持锁跨 await**:先在锁内只做快照(读环形缓冲全量 + 当前模式重放序列),释放锁后再 await
-    /// 发送(仿 [`attach_client`](crate::server::agent::manager) 的做法),避免持 std Mutex 跨 `.await`
-    /// 阻塞 run loop 的 `append_to_ring_buffer`。**前提**:调用方须已 spawn writer 并发排空 priority
-    /// 通道(WS 侧 writer-before-attach),否则背压 await 会死等;IPC 下行无背压容量限制,不适用此路径。
-    pub async fn flush_ring_buffer_async(&self, client: &Client, expected_conn_gen: u64) {
-        // BUG-2 守卫(终端回放镜像版,对照 `attach_client` agent/manager.rs:326/358):捕获本次连接
-        // 代次。背压化让本 flush 成了跨多个 `.await` 的长任务;被同 client_id 的 reconnect 顶替后
-        // `send_async` 会重读已换成新通道的 downstream(reconnect 后 connected=true),把陈旧终端回放帧
-        // (首块 RIS 复位 + 后续 MSG_OUTPUT)灌进新连接 → 与新 handler 自己的 attach+flush 回放交错、
-        // 终端页乱码。故起始捕获 gen,各发送前比对 `conn_gen() == gen`,不等(被 reconnect bump)即 abort。
-        // 锁内只做快照:读环形缓冲全量 + 当前模式重放序列,随即释放锁(绝不持锁跨 await)。
-        let (data, mode_seq) = {
-            let data = self.ring_buf.lock().unwrap().read_all();
-            let mode_seq = self.mode_tracker.lock().unwrap().replay_seq();
-            (data, mode_seq)
-        };
-        if data.is_empty() && mode_seq.is_empty() {
-            return;
-        }
-
-        const CHUNK_SIZE: usize = 4096;
-
-        // First chunk: RIS + 模式重放 + 内容头部(背压发送,满则等 writer 排空)。
-        let ris = b"\x1bc";
-        let first_end = CHUNK_SIZE.min(data.len());
-        let mut msg = Vec::with_capacity(1 + ris.len() + mode_seq.len() + first_end);
-        msg.push(protocol::MSG_OUTPUT);
-        msg.extend_from_slice(ris);
-        msg.extend_from_slice(&mode_seq);
-        msg.extend_from_slice(&data[..first_end]);
-        // BUG-2:首块发送前校验代次,被 reconnect 顶替则放弃回放(不发首块,尤其不发含 RIS 的复位帧)。
-        if !client
-            .send_async_for_generation(expected_conn_gen, msg)
-            .await
-        {
-            return; // client 已掉线(通道关闭)——停止回放,不再徒劳发送
-        }
-
-        // Remaining chunks
-        let mut offset = first_end;
-        while offset < data.len() {
-            let end = (offset + CHUNK_SIZE).min(data.len());
-            let mut chunk = Vec::with_capacity(1 + (end - offset));
-            chunk.push(protocol::MSG_OUTPUT);
-            chunk.extend_from_slice(&data[offset..end]);
-            // BUG-2:每块发送前校验代次,被 reconnect 顶替则立即 abort,把陈旧帧污染新通道的窗口
-            // 收敛到最多一块(前一块 send_async 期间才可能发生 bump)。
-            if !client
-                .send_async_for_generation(expected_conn_gen, chunk)
-                .await
-            {
                 return;
             }
             offset = end;
@@ -1286,28 +1149,6 @@ impl Session {
             .any(|c| c.is_connected() && c.is_trusted_local_owner())
     }
 
-    /// List connected client info for API responses.
-    pub fn list_clients(&self) -> Vec<client::ClientInfo> {
-        let clients = self.clients.lock().unwrap();
-        clients
-            .values()
-            .map(|c| {
-                let security = c.security_context();
-                client::ClientInfo {
-                    id: c.id.clone(),
-                    session_id: self.id.clone(),
-                    session_title: String::new(),
-                    role: c.role.as_str().to_string(),
-                    connected: c.is_connected(),
-                    last_seen: format!("{:?}", c.idle_duration()),
-                    remote_addr: c.remote_addr.clone(),
-                    ingress: security.ingress_name().to_string(),
-                    device_id: security.device_id().map(str::to_string),
-                }
-            })
-            .collect()
-    }
-
     /// Count connected clients.
     pub fn connected_client_count(&self) -> usize {
         self.clients
@@ -1316,78 +1157,6 @@ impl Session {
             .values()
             .filter(|c| c.is_connected())
             .count()
-    }
-
-    /// Verify that a client ID belongs to the authenticated request principal.
-    /// The local owner may administer any client; a device may name only its
-    /// own WS clients.
-    pub(crate) fn client_matches_principal(
-        &self,
-        client_id: &str,
-        principal: &AuthPrincipal,
-    ) -> bool {
-        let clients = self.clients.lock().unwrap();
-        let Some(client) = clients.get(client_id) else {
-            return false;
-        };
-        client.matches_request_principal(principal)
-    }
-
-    /// Disconnect device-authenticated clients, optionally scoped to one
-    /// stable device ID. Relay clients are fail-closed even if malformed state
-    /// somehow lacks a Device principal.
-    pub(crate) fn disconnect_device_principals(&self, device_id: Option<&str>) -> usize {
-        let clients = self.clients.lock().unwrap();
-        let mut count = 0;
-        for client in clients.values() {
-            if !client.is_connected() || !client.is_device_or_relay() {
-                continue;
-            }
-            if let Some(expected) = device_id {
-                if client.authenticated_device_id().as_deref() != Some(expected) {
-                    continue;
-                }
-            }
-            client.send(protocol::encode_error(
-                protocol::ERR_KICKED,
-                "credential revoked",
-            ));
-            client.disconnect();
-            count += 1;
-        }
-        let mut master = self.master_id.lock().unwrap();
-        Self::reconcile_master_locked(&clients, &mut master, true, true);
-        drop(master);
-        self.reconcile_state_locked(&clients);
-        count
-    }
-
-    /// Disconnect only sockets authenticated with one exact runtime
-    /// credential generation. A newly re-paired generation with the same
-    /// stable device ID is not affected by stale self-unpair cleanup.
-    pub(crate) fn disconnect_device_generation(
-        &self,
-        device_id: &str,
-        generation: uuid::Uuid,
-    ) -> usize {
-        let clients = self.clients.lock().unwrap();
-        let mut count = 0;
-        for client in clients.values() {
-            if !client.is_connected() || !client.matches_device_generation(device_id, generation) {
-                continue;
-            }
-            client.send(protocol::encode_error(
-                protocol::ERR_KICKED,
-                "credential revoked",
-            ));
-            client.disconnect();
-            count += 1;
-        }
-        let mut master = self.master_id.lock().unwrap();
-        Self::reconcile_master_locked(&clients, &mut master, true, true);
-        drop(master);
-        self.reconcile_state_locked(&clients);
-        count
     }
 
     /// Disconnect only WebSockets authenticated by one retired owner-token
@@ -1429,43 +1198,6 @@ impl Session {
         } else {
             (String::new(), false)
         }
-    }
-
-    /// Disconnect all device-authenticated or relay clients.
-    /// Sends ERR_KICKED and promotes next master if needed.
-    pub fn disconnect_remote_clients(&self) -> usize {
-        let clients = self.clients.lock().unwrap();
-        let mut count = 0;
-        for client in clients.values() {
-            if client.is_connected() && client.is_device_or_relay() {
-                client.send(protocol::encode_error(protocol::ERR_KICKED, "kicked"));
-                client.disconnect();
-                count += 1;
-            }
-        }
-        let mut master = self.master_id.lock().unwrap();
-        Self::reconcile_master_locked(&clients, &mut master, true, true);
-        drop(master);
-        self.reconcile_state_locked(&clients);
-        count
-    }
-
-    /// Kick all clients from a specific IP. Returns count of kicked.
-    pub fn kick_by_ip(&self, ip: &str) -> usize {
-        let clients = self.clients.lock().unwrap();
-        let mut count = 0;
-        for client in clients.values() {
-            if client.is_connected() && client.is_device_or_relay() && client.remote_addr == ip {
-                client.send(protocol::encode_error(protocol::ERR_KICKED, "kicked"));
-                client.disconnect();
-                count += 1;
-            }
-        }
-        let mut master = self.master_id.lock().unwrap();
-        Self::reconcile_master_locked(&clients, &mut master, true, true);
-        drop(master);
-        self.reconcile_state_locked(&clients);
-        count
     }
 }
 
@@ -1542,58 +1274,6 @@ impl RingBuffer {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// 长命令完成的耗时阈值(毫秒)——命令耗时达到/超过此值才合成一条 `CmdDone`
-/// 通知事件。当前写死 30 秒,后续可做成用户可配置项(见通知设计文档 Phase 2)。
-const CMD_DONE_THRESHOLD_MS: u64 = 30_000;
-
-/// 从一批 `OscEvent` 中挑出「值得通知」的事件,转换为待发布到桌面事件总线的 `DesktopEvent`。
-///
-/// 纯函数,便于单测(不依赖 run loop / EventBus 实例)。`id` 用
-/// `uuid::Uuid::new_v4()`——与项目里生成会话 id / client id / pairing nonce id
-/// 的既有随机源一致,不引入新依赖。
-///
-/// 覆盖两类事件:
-/// - `OscEvent::Notify`(程序显式通知,OSC 9/777)→ 原样转发。
-/// - `OscEvent::ShellState`(OSC 7768,precmd 携带的命令耗时)→ 耗时达到
-///   `CMD_DONE_THRESHOLD_MS` 且命令非空(排除空回车)才合成 `CmdDone`;
-///   `duration_ms` 缺失(旧格式/未启用 preexec 计时)或耗时不足阈值均不产出。
-fn notify_events_to_publish(
-    events: &[crate::server::osc_filter::OscEvent],
-    session_id: &str,
-    session_title: &str,
-) -> Vec<DesktopEvent> {
-    events
-        .iter()
-        .filter_map(|e| match e {
-            crate::server::osc_filter::OscEvent::Notify { title, body } => {
-                Some(DesktopEvent::Notify {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    session_id: session_id.to_string(),
-                    session_title: session_title.to_string(),
-                    title: title.clone(),
-                    body: body.clone(),
-                })
-            }
-            crate::server::osc_filter::OscEvent::ShellState {
-                exit,
-                cmd,
-                duration_ms: Some(ms),
-                ..
-            } if *ms >= CMD_DONE_THRESHOLD_MS && !cmd.trim().is_empty() => {
-                Some(DesktopEvent::CmdDone {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    session_id: session_id.to_string(),
-                    session_title: session_title.to_string(),
-                    cmd: cmd.clone(),
-                    exit: *exit,
-                    duration_ms: *ms,
-                })
-            }
-            _ => None,
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1637,187 +1317,9 @@ mod tests {
 
     /// `notify_events_to_publish` 只挑出 Notify,忽略其它 OscEvent 变体,
     /// 且 session_id/title/body 原样带过去。
-    #[test]
-    fn notify_events_to_publish_filters_notify_only() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![
-            OscEvent::Cwd {
-                cwd: "/tmp".to_string(),
-            },
-            OscEvent::Notify {
-                title: "标题".to_string(),
-                body: "正文".to_string(),
-            },
-            OscEvent::Progress {
-                state: 1,
-                percent: 50,
-            },
-        ];
-
-        let published = notify_events_to_publish(&events, "sess-1", "会话A");
-        assert_eq!(published.len(), 1, "只应挑出 Notify 这一条");
-        match &published[0] {
-            DesktopEvent::Notify {
-                session_id,
-                session_title,
-                title,
-                body,
-                id,
-            } => {
-                assert_eq!(session_id, "sess-1");
-                assert_eq!(session_title, "会话A");
-                assert_eq!(title, "标题");
-                assert_eq!(body, "正文");
-                assert!(!id.is_empty(), "id 应非空");
-            }
-            other => panic!("expected Notify, got {:?}", other),
-        }
-    }
-
-    /// 多个 Notify 应各自生成一条 DesktopEvent,且 id 互不相同。
-    #[test]
-    fn notify_events_to_publish_multiple_notify_get_distinct_ids() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![
-            OscEvent::Notify {
-                title: "A".to_string(),
-                body: "a".to_string(),
-            },
-            OscEvent::Notify {
-                title: "B".to_string(),
-                body: "b".to_string(),
-            },
-        ];
-
-        let published = notify_events_to_publish(&events, "sess-2", "会话B");
-        assert_eq!(published.len(), 2);
-        let ids: Vec<&str> = published
-            .iter()
-            .map(|e| match e {
-                DesktopEvent::Notify { id, .. } => id.as_str(),
-                _ => unreachable!(),
-            })
-            .collect();
-        assert_ne!(ids[0], ids[1], "两条 Notify 的 id 应不同");
-    }
-
-    /// 空/无 Notify 的事件批应返回空 Vec。
-    #[test]
-    fn notify_events_to_publish_empty_when_no_notify() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![OscEvent::Cwd {
-            cwd: "/".to_string(),
-        }];
-        assert!(notify_events_to_publish(&events, "sess-3", "会话C").is_empty());
-        assert!(notify_events_to_publish(&[], "sess-3", "会话C").is_empty());
-    }
-
-    /// ShellState 耗时达到/超过阈值(30s)且命令非空 → 应产出一条 CmdDone,字段正确。
-    #[test]
-    fn notify_events_to_publish_shell_state_over_threshold_emits_cmd_done() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![OscEvent::ShellState {
-            exit: 0,
-            cwd: "/tmp".to_string(),
-            cmd: "make build".to_string(),
-            duration_ms: Some(CMD_DONE_THRESHOLD_MS),
-        }];
-
-        let published = notify_events_to_publish(&events, "sess-4", "会话D");
-        assert_eq!(published.len(), 1, "耗时达到阈值应产出一条 CmdDone");
-        match &published[0] {
-            DesktopEvent::CmdDone {
-                id,
-                session_id,
-                session_title,
-                cmd,
-                exit,
-                duration_ms,
-            } => {
-                assert!(!id.is_empty(), "id 应非空");
-                assert_eq!(session_id, "sess-4");
-                assert_eq!(session_title, "会话D");
-                assert_eq!(cmd, "make build");
-                assert_eq!(*exit, 0);
-                assert_eq!(*duration_ms, CMD_DONE_THRESHOLD_MS);
-            }
-            other => panic!("expected CmdDone, got {:?}", other),
-        }
-    }
-
-    /// ShellState 耗时低于阈值 → 不产出 CmdDone。
-    #[test]
-    fn notify_events_to_publish_shell_state_under_threshold_emits_nothing() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![OscEvent::ShellState {
-            exit: 0,
-            cwd: "/tmp".to_string(),
-            cmd: "ls".to_string(),
-            duration_ms: Some(CMD_DONE_THRESHOLD_MS - 1),
-        }];
-
-        assert!(
-            notify_events_to_publish(&events, "sess-5", "会话E").is_empty(),
-            "耗时不足阈值不应产出通知"
-        );
-    }
-
-    /// ShellState 无 duration_ms(旧格式/未计时)→ 不产出 CmdDone。
-    #[test]
-    fn notify_events_to_publish_shell_state_without_duration_emits_nothing() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![OscEvent::ShellState {
-            exit: 0,
-            cwd: "/tmp".to_string(),
-            cmd: "make build".to_string(),
-            duration_ms: None,
-        }];
-
-        assert!(
-            notify_events_to_publish(&events, "sess-6", "会话F").is_empty(),
-            "duration_ms 缺失不应产出通知"
-        );
-    }
-
-    /// ShellState 命令为空(空回车)即使耗时够也不应产出 CmdDone。
-    #[test]
-    fn notify_events_to_publish_shell_state_empty_cmd_emits_nothing() {
-        use crate::server::osc_filter::OscEvent;
-
-        let events = vec![OscEvent::ShellState {
-            exit: 0,
-            cwd: "/tmp".to_string(),
-            cmd: "".to_string(),
-            duration_ms: Some(CMD_DONE_THRESHOLD_MS * 2),
-        }];
-
-        assert!(
-            notify_events_to_publish(&events, "sess-7", "会话G").is_empty(),
-            "空命令(空回车)不应产出通知"
-        );
-
-        // 纯空白命令同样应被视为空。
-        let events_whitespace = vec![OscEvent::ShellState {
-            exit: 0,
-            cwd: "/tmp".to_string(),
-            cmd: "   ".to_string(),
-            duration_ms: Some(CMD_DONE_THRESHOLD_MS * 2),
-        }];
-        assert!(notify_events_to_publish(&events_whitespace, "sess-7", "会话G").is_empty());
-    }
-
-    // ── conn_gen 守卫 / 跨代次清理(镜像回放终审 merge-blocker 回归)──
+    // ── conn_gen 守卫 / 跨代次清理 ──
     //
-    // 两处根因同属一个 conn_gen 奇偶性问题:先前已给 agent 历史回放(attach_client)
-    // 补了精确一次守卫(BUG-1/BUG-2),但 M5 背压回放把同款破口放大到镜像**终端页**回放:
-    // ①flush_ring_buffer_async 缺 conn_gen 守卫(与 attach_client 的 BUG-2 对偶);
-    // ②ws.rs 在长回放**之后**才捕获 conn_gen,cleanup 用到被 bump 的代次误拆重连连接。
+    // ws.rs 须在回放之前捕获 conn_gen,否则 cleanup 会用被 reconnect bump 的代次误拆重连连接。
     use super::client::WsReceivers;
     use std::time::Duration;
 
@@ -1987,60 +1489,20 @@ mod tests {
                 ring_buffer_size,
                 log_dir: String::new(),
             },
-            EventBus::new(),
         ))
     }
 
-    #[test]
-    fn relay_synthetic_loopback_cannot_enter_private_session() {
-        let session = ring_session("private-relay", 4096);
-        session.set_private(true);
-        let (relay, _rx) = Client::new(
-            "relay-client".into(),
-            "127.0.0.1".into(),
-            ClientRole::Viewer,
-            ClientSecurityContext::test_device(
-                crate::server::auth::TrustedIngress::Relay,
-                "phone-a",
-            ),
-        );
-        assert_eq!(
-            session.add_client(Arc::new(relay)),
-            Err("session is private".to_string())
-        );
-    }
-
-    #[test]
-    fn targeted_revoke_disconnects_only_matching_device_and_keeps_local_owner() {
-        let session = ring_session("revoke-device", 4096);
-        let (owner, _) = ws_client(&session, "owner");
-        for (client_id, device_id) in [("phone-a", "device-a"), ("phone-b", "device-b")] {
-            let (client, _) = Client::new(
-                client_id.into(),
-                "127.0.0.1".into(),
-                ClientRole::Viewer,
-                ClientSecurityContext::test_device(
-                    crate::server::auth::TrustedIngress::Relay,
-                    device_id,
-                ),
-            );
-            session.add_client(Arc::new(client)).unwrap();
+    fn owner_security(generation: uuid::Uuid) -> ClientSecurityContext {
+        ClientSecurityContext {
+            ingress: crate::server::auth::TrustedIngress::DirectLoopback,
+            principal: crate::server::auth::AuthPrincipal::Owner { generation },
         }
-
-        assert_eq!(session.disconnect_device_principals(Some("device-a")), 1);
-        let clients = session.clients.lock().unwrap();
-        assert!(owner.is_connected());
-        assert!(!clients.get("phone-a").unwrap().is_connected());
-        assert!(clients.get("phone-b").unwrap().is_connected());
     }
 
     #[test]
     fn reconnect_identity_mismatch_cannot_disconnect_existing_client() {
         let session = ring_session("reconnect-identity", 4096);
-        let security_a = ClientSecurityContext::test_device(
-            crate::server::auth::TrustedIngress::Relay,
-            "device-a",
-        );
+        let security_a = owner_security(uuid::Uuid::new_v4());
         let (client, _) = Client::new(
             "phone".into(),
             "127.0.0.1".into(),
@@ -2049,10 +1511,7 @@ mod tests {
         );
         let client = Arc::new(client);
         session.add_client(client.clone()).unwrap();
-        let security_b = ClientSecurityContext::test_device(
-            crate::server::auth::TrustedIngress::Relay,
-            "device-b",
-        );
+        let security_b = owner_security(uuid::Uuid::new_v4());
         assert!(session
             .reconnect_client(
                 "phone",
@@ -2063,84 +1522,6 @@ mod tests {
             .is_err());
         assert!(client.is_connected());
         assert_eq!(client.conn_gen(), 0);
-    }
-
-    /// 【缺陷 A 回归 · flush_ring_buffer_async 缺 conn_gen 守卫】
-    /// 场景:镜像终端页大环形缓冲背压回放中,同 client_id 重连(reconnect bump conn_gen + 换新通道)。
-    /// 被顶替的旧 flush 必须在下一个 conn_gen 校验点 abort:停止发送——否则次块 `send_async` 重读已换成
-    /// 新通道的 downstream,把陈旧终端回放帧(RIS 复位 + MSG_OUTPUT)灌进重连后的新连接 → 终端页乱码。
-    /// 对照 `attach_client` 的 BUG-2 守卫(agent/manager.rs:326/358)——本测试是其终端回放路径镜像版。
-    #[tokio::test]
-    async fn flush_ring_buffer_async_aborts_when_conn_gen_bumps_midway() {
-        // ring 需装下 > 4096 字节 → flush 产 ≥2 个 MSG_OUTPUT 分片,给「首块发出后、次块发出前」留校验点。
-        let session = ring_session("flush-gen-guard", 16384);
-        // 8192 字节纯 'X'(无转义序列 → 模式重放序列为空)→ flush 产 2 个 4096 分片。
-        session.append_to_ring_buffer(&vec![b'X'; 8192]);
-
-        let (client, rx) = ws_client(&session, "phone");
-        let WsReceivers { priority_rx, .. } = rx; // 旧通道 rx(H0)
-        let gen0 = client.conn_gen();
-
-        // 预填旧 priority 通道到满(1024 槽 = PRIORITY_SEND_CHANNEL_SIZE),使 flush 首块 send_async 背压挂起。
-        const CH_CAP: usize = 1024;
-        for _ in 0..CH_CAP {
-            assert!(
-                client.send_async(vec![0xEE]).await,
-                "预填应成功(容量内不阻塞)"
-            );
-        }
-
-        // spawn flush:捕获 gen0 → 快照 → 首块 send_async 撞满通道 → 挂起(生产上等 writer 排空)。
-        let session2 = session.clone();
-        let client2 = client.clone();
-        let flush_task = tokio::spawn(async move {
-            session2.flush_ring_buffer_async(&client2, gen0).await;
-        });
-
-        // 让 flush 跑到首块背压挂起(仿 attach_aborts_when_conn_gen_bumps_midway)。
-        for _ in 0..64 {
-            tokio::task::yield_now().await;
-        }
-
-        // 回放中途同 client_id reconnect:换新通道 + connected=true + conn_gen bump。旧 flush 被顶替。
-        let new_rx = client
-            .reconnect(
-                "127.0.0.1:9999".into(),
-                ClientSecurityContext::direct_loopback_owner(),
-            )
-            .unwrap();
-        let WsReceivers {
-            priority_rx: mut new_prx,
-            ..
-        } = new_rx; // 新通道 rx(H1)
-        assert_ne!(client.conn_gen(), gen0, "reconnect 应 bump conn_gen");
-
-        // 排空旧通道:放行预填帧 + flush 挂起的首块 send 完成 → flush 进入次块前的 conn_gen 校验 → abort。
-        let drainer = tokio::spawn(async move {
-            let mut prx = priority_rx;
-            while let Ok(Some(_)) =
-                tokio::time::timeout(Duration::from_millis(200), prx.recv()).await
-            {}
-        });
-
-        // flush 应很快 abort 返回,不 hang。
-        tokio::time::timeout(Duration::from_secs(5), flush_task)
-            .await
-            .expect("flush 应在 conn_gen 变化后 abort,不应 hang")
-            .unwrap();
-
-        // 关键断言:被顶替的旧 flush 绝不把陈旧终端回放帧灌进重连后的新通道。
-        // 无守卫时次块 send_async 重读新通道 downstream → 新通道收到 MSG_OUTPUT(leaked==1),断言失败。
-        let mut leaked = 0;
-        while new_prx.try_recv().is_ok() {
-            leaked += 1;
-        }
-        assert_eq!(
-            leaked, 0,
-            "conn_gen 守卫应拦下次块——陈旧终端回放帧绝不灌进 reconnect 后的新通道"
-        );
-
-        drainer.abort();
     }
 
     /// 【缺陷 B 回归 · remove_client 跨代次不误拆】

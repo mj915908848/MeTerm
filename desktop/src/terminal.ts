@@ -16,7 +16,6 @@ import {
   MsgMasterRequest,
   MsgMasterApproval,
   MsgMasterReclaim,
-  MsgPairApproval,
 } from './protocol';
 import { AppSettings, getTheme, getColorSchemeBg, hexToRgba } from './themes';
 import { loadFont, getFontFamily, getEffectiveFontWeight } from './fonts';
@@ -173,23 +172,6 @@ class TerminalRegistryClass {
     sendToTerminal(mt, encodeMessage(MsgMasterReclaim, new Uint8Array(0)));
   }
 
-  /** Send pairing approval/denial via any active master session.
-   *  Returns true if sent via WebSocket, false if no active connection available. */
-  sendPairApproval(approved: boolean, pairId: string): boolean {
-    const pairIdBytes = new TextEncoder().encode(pairId);
-    const payload = new Uint8Array(1 + pairIdBytes.length);
-    payload[0] = approved ? 1 : 0;
-    payload.set(pairIdBytes, 1);
-    // Send through any active connection (IPC or WebSocket)
-    for (const mt of this.terminals.values()) {
-      const canSend = (mt.transport && mt.transport.connected) || (mt.ws && mt.ws.readyState === WebSocket.OPEN);
-      if (canSend) {
-        sendToTerminal(mt, encodeMessage(MsgPairApproval, payload));
-        return true;
-      }
-    }
-    return false;
-  }
 
   /** Send an immediate ping if last pong is stale — called on user input for SSH sessions */
   private maybePingOnInput(sessionId: string): void {
@@ -555,7 +537,7 @@ class TerminalRegistryClass {
       _hasUserInput: false,
       _transferGrace: false,
       _oscMarkerResolvers: new Map(),
-      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', promptRow: -1, promptCol: 0 },
+      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', agentCommand: '', promptRow: -1, promptCol: 0, promptOpen: false },
     };
 
     if (isMacPlatform && webglAddon) {
@@ -702,6 +684,7 @@ class TerminalRegistryClass {
       _dedupTime = now;
       mt._hasUserInput = true;
       mt.shellState.lastUserInputAt = Date.now();
+      mt.shellState.promptOpen = false;
       // NOTE: the legacy state machine also moved `phase` to 'user_active' here
       // (Enter at a ready prompt) and tagged `lastInputSource`. Both were
       // write-only — nothing ever read them — so they are gone: they made the
@@ -892,24 +875,13 @@ class TerminalRegistryClass {
     });
   }
 
-  /** Cancel all pending debounce and settle timers to prevent interference. */
-  cancelPendingResizeTimers(): void {
-    this.terminals.forEach((mt) => {
-      if (mt.resizeDebounce !== null) {
-        clearTimeout(mt.resizeDebounce);
-        mt.resizeDebounce = null;
-      }
-      mt.settleTimers.forEach((t) => clearTimeout(t));
-      mt.settleTimers = [];
-    });
-  }
-
   /**
-   * Force xterm.js + TUI apps to fully redraw after PiP exit.
+   * Force xterm.js + TUI apps to fully redraw (after system wake or a
+   * mouse-mode restore).
    *
    * POSIX ioctl(TIOCSWINSZ) only generates SIGWINCH when the PTY
-   * size actually changes. During PiP the PTY dimensions are frozen,
-   * so on exit the cols/rows are identical to what the PTY already has.
+   * size actually changes. After wake the cols/rows are usually
+   * identical to what the PTY already has.
    * Sending the same size produces no SIGWINCH and the TUI never redraws.
    *
    * Fix: send cols-1 to the backend first (real PTY size change → SIGWINCH),
@@ -1086,6 +1058,8 @@ class TerminalRegistryClass {
     // on `hookInjected` — the hookless completion paths use the screen tail
     // instead. See ShellPhase in terminal-types.ts.
     mt.shellState.phase = 'agent_executing';
+    mt.shellState.agentCommand = command.trim();
+    mt.shellState.promptOpen = false;
     // PowerShell does not support Ctrl+U (unix-line-discard); skip prefix to avoid ^U echo.
     const prefix = shellType === 'powershell' ? '' : '\x15';
     // Terminator: use CR (\r) to emulate a real Enter keypress, which
@@ -1105,6 +1079,7 @@ class TerminalRegistryClass {
   sendInput(sessionId: string, text: string): void {
     const mt = this.terminals.get(sessionId);
     if (!mt) return;
+    mt.shellState.promptOpen = false;
     const payload = new TextEncoder().encode(text);
     sendToTerminal(mt, encodeMessage(MsgInput, payload));
   }
@@ -1311,7 +1286,7 @@ class TerminalRegistryClass {
       _hasUserInput: false,
       _transferGrace: true,
       _oscMarkerResolvers: new Map(),
-      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', promptRow: -1, promptCol: 0 },
+      shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', agentCommand: '', promptRow: -1, promptCol: 0, promptOpen: false },
     };
 
     // OSC handlers are processed by Rust OscFilter → MSG_OSC_EVENT → handleOscEvents.
@@ -1333,6 +1308,7 @@ class TerminalRegistryClass {
       _dedupTime = now;
       mt._hasUserInput = true;
       mt.shellState.lastUserInputAt = Date.now();
+      mt.shellState.promptOpen = false;
       // See the create() path: `phase`/'lastInputSource' transitions were
       // removed — write-only state that misled readers into trusting `phase`
       // on sessions where the hook cannot maintain it.

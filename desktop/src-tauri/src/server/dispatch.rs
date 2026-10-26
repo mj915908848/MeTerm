@@ -40,21 +40,6 @@ fn deny_not_master(session: &Session, authority: &DispatchAuthority) {
     );
 }
 
-fn deny_owner_only(session: &Session, authority: &DispatchAuthority) {
-    let err = serde_json::json!({
-        "code": "OWNER_ONLY",
-        "message": "该管理操作仅允许本机桌面端执行",
-    });
-    session.send_to_client_generation(
-        authority.client_id(),
-        authority.conn_gen(),
-        protocol::encode_message(
-            protocol::MSG_ERROR,
-            serde_json::to_vec(&err).unwrap_or_default().as_slice(),
-        ),
-    );
-}
-
 /// Validate a file path (absolute, max 4096 chars).
 pub fn validate_path(path: &str) -> Result<(), &'static str> {
     let cleaned = path.replace("\\", "/");
@@ -160,11 +145,6 @@ pub async fn dispatch_message(
         session.remove_client(client_id, conn_gen);
         return;
     }
-    if !super::device_access::can_access_session(&state.authenticator, &security.principal, session)
-    {
-        session.remove_client(client_id, conn_gen);
-        return;
-    }
     if file_policy::reject_unavailable_sftp(session, &authority, msg_type) {
         return;
     }
@@ -181,7 +161,12 @@ pub async fn dispatch_message(
             }
         }
         protocol::MSG_PING => {
-            handle_ping(session, &authority).await;
+            // Measuring can wait on the SSH connection for seconds; don't hold
+            // this client's input and resize frames behind it.
+            let session = session.clone();
+            let client_id = authority.client_id().to_string();
+            let conn_gen = authority.conn_gen();
+            tokio::spawn(async move { handle_ping(&session, &client_id, conn_gen).await });
         }
         protocol::MSG_NUDGE => {
             if !authority.can_control() {
@@ -572,60 +557,6 @@ pub async fn dispatch_message(
                 }
             }
         }
-        protocol::MSG_PAIR_APPROVAL => {
-            if !security.is_trusted_local_owner() {
-                deny_owner_only(session, &authority);
-                return;
-            }
-            if !authority.can_control() {
-                deny_not_master(session, &authority);
-                return;
-            }
-            if payload.len() >= 2 {
-                let approved = payload[0] == 1;
-                if let Ok(pair_id) = std::str::from_utf8(&payload[1..]) {
-                    let result = match security.principal.owner_generation() {
-                        Some(generation) if generation.is_nil() => state
-                            .pairing_manager
-                            .handle_local_approval(approved, pair_id),
-                        Some(generation) => state
-                            .pairing_manager
-                            .handle_approval(approved, pair_id, generation),
-                        None => Err("owner credential required".to_string()),
-                    };
-                    match result {
-                        Ok(Some(rotation)) => {
-                            if let Some(retired_generation) = rotation.retired_generation {
-                                state.disconnect_device_generation(
-                                    &rotation.device_id,
-                                    retired_generation,
-                                );
-                            }
-                        }
-                        Ok(None) => {}
-                        Err(error) => eprintln!("[pairing] approval failed: {}", error),
-                    }
-                }
-            }
-        }
-        // agent 会话上行:发消息(0x51)。master-gated;解析 + 注入镜像会话底层 PTY
-        // 都在 upstream::handle_agent_input 内(多行提交回车内部 tokio::spawn 延迟注入,不在此 await)。
-        protocol::MSG_AGENT_INPUT => {
-            if !authority.can_control() {
-                deny_not_master(session, &authority);
-                return;
-            }
-            super::agent::upstream::handle_agent_input(session, &authority, payload, state);
-        }
-        // agent 会话上行:审批 / 打断(0x52)。master-gated;解析 + 打断注入 PTY / 审批
-        // 决策回投审批桥(均不阻塞 WS 读循环)都在 upstream::handle_agent_control 内。
-        protocol::MSG_AGENT_CONTROL => {
-            if !authority.can_control() {
-                deny_not_master(session, &authority);
-                return;
-            }
-            super::agent::upstream::handle_agent_control(session, &authority, payload, state);
-        }
         _ => {}
     }
 }
@@ -634,44 +565,52 @@ pub async fn dispatch_message(
 // Ping handler
 // ---------------------------------------------------------------------------
 
-async fn handle_ping(session: &Arc<Session>, authority: &DispatchAuthority) {
+async fn handle_ping(session: &Arc<Session>, client_id: &str, conn_gen: u64) {
     let exec_type = session.executor_type.lock().unwrap().clone();
-    if exec_type == "ssh" {
-        if let Some(handle) = session.ssh_exec_handle.lock().await.as_ref() {
-            if let Some(ssh_handle) = handle.downcast_ref::<std::sync::Arc<
-                tokio::sync::Mutex<Option<russh::client::Handle<super::terminal::ssh::SshHandler>>>,
-            >>() {
-                let start = std::time::Instant::now();
-                let mut guard = ssh_handle.lock().await;
-                if let Some(ref mut sess) = *guard {
-                    match tokio::time::timeout(
-                        std::time::Duration::from_secs(10),
-                        sess.channel_open_session(),
-                    )
-                    .await
-                    {
-                        Ok(Ok(ch)) => {
-                            let _ = ch.close().await;
-                            let rtt_ms = start.elapsed().as_millis() as u32;
-                            session.send_to_client_generation(
-                                authority.client_id(),
-                                authority.conn_gen(),
-                                protocol::encode_pong(Some(rtt_ms)),
-                            );
-                            return;
-                        }
-                        _ => {
-                            session.close_with_frame(protocol::encode_session_end());
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    session.send_to_client_generation(
-        authority.client_id(),
-        authority.conn_gen(),
-        protocol::encode_pong(None),
-    );
+    let rtt_ms = if exec_type == "ssh" {
+        Some(
+            measure_ssh_rtt(session)
+                .await
+                .unwrap_or(protocol::PONG_RTT_UNKNOWN),
+        )
+    } else {
+        None
+    };
+    session.send_to_client_generation(client_id, conn_gen, protocol::encode_pong(rtt_ms));
 }
+
+/// Round trip of one `keepalive@openssh.com` global request on the session's
+/// SSH connection. No channel is opened, and the clock starts only once the
+/// handle lock is held, so a concurrent exec (server info, file probes) does
+/// not show up as latency. `None` means "no reading": the caller reports it as
+/// unknown and leaves the session alone; a dead connection is detected by
+/// russh's own keepalive (SSH_KEEPALIVE_INTERVAL / SSH_KEEPALIVE_MAX).
+async fn measure_ssh_rtt(session: &Arc<Session>) -> Option<u32> {
+    type SshHandleArc = std::sync::Arc<
+        tokio::sync::Mutex<Option<russh::client::Handle<super::terminal::ssh::SshHandler>>>,
+    >;
+    // Clone the inner handle out so the outer slot is not held while we wait.
+    let ssh_handle: SshHandleArc = {
+        let slot = session.ssh_exec_handle.lock().await;
+        slot.as_ref()?.downcast_ref::<SshHandleArc>()?.clone()
+    };
+    let guard = tokio::time::timeout(PING_TIMEOUT, ssh_handle.lock())
+        .await
+        .ok()?;
+    let handle = guard.as_ref()?;
+    if handle.is_closed() {
+        return None;
+    }
+    let start = std::time::Instant::now();
+    tokio::time::timeout(PING_TIMEOUT, handle.send_ping())
+        .await
+        .ok()?
+        .ok()?;
+    // send_ping also returns Ok when the connection drops before the reply.
+    if handle.is_closed() {
+        return None;
+    }
+    Some((start.elapsed().as_millis() as u32).min(protocol::PONG_RTT_UNKNOWN - 1))
+}
+
+const PING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);

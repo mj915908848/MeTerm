@@ -5,7 +5,6 @@ import './styles/toolbar.css';
 import './styles/status-bar.css';
 import './styles/overlay-scrollbar.css';
 import './styles/terminal.css';
-import './styles/update.css';
 import './styles/home.css';
 import './styles/settings.css';
 import './styles/ssh-modal.css';
@@ -22,13 +21,11 @@ import './styles/ai-chat.css';
 import './styles/ai-settings.css';
 import './styles/ai-todo-board.css';
 import './styles/ai-attachments.css';
-import './styles/neo-brutalism.css';
 import './styles/session-control.css';
 import './styles/jumpserver.css';
 import './styles/osc-progress.css';
 import './styles/toast.css';
 import './styles/misc.css';
-import './styles/pip.css';
 import './styles/fullscreen-mac.css';
 import '@xterm/xterm/css/xterm.css';
 
@@ -41,16 +38,13 @@ import {
 } from './settings-secrets';
 import { applyWindowOpacity, applyAiBarOpacity, applyColorScheme, applyBackgroundImage, applyVibrancy } from './appearance';
 import { applyUiFont } from './fonts';
-import { applyNbPalette, listenForNbPaletteChanges } from './nb-palette';
 import { setHomeViewSettings } from './home';
 import { setGalleryViewSettings, setGalleryProgressGetter } from './gallery';
 import { initSettingsWindow } from './settings-window';
-import { initUpdaterWindow } from './updater-window';
 import { initAboutWindow } from './about-window';
 import { initJumpServerBrowserWindow } from './jumpserver-browser-window';
 import { initEditorWindowShell } from './file-editor-init';
 import { setupConnectionsDrawerSync } from './connections-drawer';
-import { initPip } from './pip';
 import { initMacFullscreen } from './fullscreen-mac';
 import { initLanguage, setLanguage } from './i18n';
 import { setSSHConnectHandler } from './ssh';
@@ -118,10 +112,6 @@ async function init(): Promise<void> {
     initSettingsWindow();
     return;
   }
-  if (params.get('window') === 'updater') {
-    initUpdaterWindow();
-    return;
-  }
   if (params.get('window') === 'about') {
     initAboutWindow();
     return;
@@ -138,10 +128,6 @@ async function init(): Promise<void> {
     return;
   }
 
-  // Release may import and consume only 11 strictly validated, non-secret UI
-  // preference keys from the old Dev database. Debug is always a no-op; all
-  // credential/history rows remain untouched for explicit recovery/cleanup.
-  if (getCurrentWindow().label === 'main') await consumeLegacyUiPreferences();
   // Only the primary window may perform the one-shot native migration. Normal
   // `window-*` launches consume non-sensitive cached presence flags and never
   // touch the settings Keychain during startup.
@@ -212,10 +198,7 @@ async function init(): Promise<void> {
     }
     setupJumpServerEventListener();
   });
-  // setSettings is async (awaits loadFont). Chain NB palette after it.
-  void TerminalRegistry.setSettings(settings).then(() => {
-    applyNbPalette(settings.colorScheme);
-  });
+  void TerminalRegistry.setSettings(settings);
   setHomeViewSettings(settings);
   setGalleryViewSettings(settings);
   setGalleryProgressGetter((id) => sessionProgressMap.get(id));
@@ -225,11 +208,6 @@ async function init(): Promise<void> {
   applyBackgroundImage(settings, terminalPanelEl);
   void applyVibrancy(settings.enableVibrancy);
   applyUiFont(settings.uiFontFamily);
-  // Listen for NB palette changes from the settings window (cross-window
-  // localStorage events). This is more reliable than emit('settings-changed')
-  // because it fires immediately when the other window writes to localStorage.
-  listenForNbPaletteChanges(() => loadSettings().colorScheme);
-
   // Restore the remembered window frame (size + position + maximized state).
   // Utility windows are filtered out inside the helper; on Windows only the
   // primary window is resized this early (see window-geometry.ts).
@@ -247,7 +225,6 @@ async function init(): Promise<void> {
   initInputBroadcast();
   initTerminalMouseBehavior();
   setupToolbarDrag();
-  initPip();
   initMacFullscreen();
 
   // Mark initialized early — right after close handler is registered, BEFORE
@@ -341,29 +318,6 @@ async function init(): Promise<void> {
 
   // Post-ready event listeners (updater, etc.)
   setupPostReadyEventListeners(currentWindowLabel);
-}
-
-/**
- * Consume the native migration's strict non-secret UI-preference allowlist.
- * The command cannot be used as a generic old localStorage reader.
- */
-async function consumeLegacyUiPreferences(): Promise<void> {
-  try {
-    const data = await invoke<Record<string, string> | null>('consume_legacy_ui_preferences');
-    if (!data) return;
-    let count = 0;
-    for (const [key, value] of Object.entries(data)) {
-      if (localStorage.getItem(key) === null) {
-        localStorage.setItem(key, value);
-        count++;
-      }
-    }
-    if (count > 0) {
-      console.log(`[migration] Imported ${count} legacy UI preferences`);
-    }
-  } catch (e) {
-    console.warn('[migration] Failed to consume legacy UI preferences:', e);
-  }
 }
 
 init().catch((err) => {

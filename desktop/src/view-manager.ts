@@ -7,7 +7,6 @@
  * - activateTab() — core tab activation
  * - statusLabel()
  * - openSettings()
- * - getActiveSessionProgress()
  */
 
 import { syncBroadcastIndicator } from './terminal-broadcast';
@@ -34,7 +33,7 @@ import {
 import {
   isHomeView, isGalleryView, setIsHomeView, setIsGalleryView,
   type ViewMode,
-  sshConfigMap, sessionProgressMap,
+  sshConfigMap, sessionProgressMap, jumpServerConfigMap,
 } from './app-state';
 
 // ── DOM elements (lazily cached) ──
@@ -197,7 +196,6 @@ export async function activateTab(tabId: string): Promise<void> {
   // Keep the left-docked server info panel pointed at the tab being activated.
   ServerInfoPanel.syncToActiveSession();
   _renderToolbarActions();
-  StatusBar.setProgress(getActiveSessionProgress());
 }
 
 /**
@@ -215,6 +213,36 @@ export function syncPaneStatusBar(): void {
   const total = tab.paneNumbers.size;
   const paneNumber = tab.paneNumbers.get(tab.focusedPaneId) ?? null;
   StatusBar.setPane(paneNumber, total);
+}
+
+/** Label the status bar's connection capsule shows for a session. */
+export function connectionLabelFor(sessionId: string | null): string {
+  const ssh = sessionId ? sshConfigMap.get(sessionId) : undefined;
+  if (ssh) return `${ssh.username}@${ssh.host}`;
+  const js = sessionId ? jumpServerConfigMap.get(sessionId) : undefined;
+  if (js) return `${js.account.username}@${js.asset.address}`;
+  return t('statusLocal');
+}
+
+let lastSyncedConnection: { sessionId: string; status: string } | null = null;
+
+/**
+ * Follow the active session's own status changes (auto-reconnect going to
+ * "reconnecting" and back, a session ending) into the status bar. Tab
+ * switches and explicit connects set the bar themselves with their own
+ * labels, so only a change on the *same* session is pushed from here.
+ */
+export function syncConnectionStatusBar(): void {
+  const tab = TabManager.tabs.find((t) => t.id === TabManager.activeTabId);
+  const sessionId = TabManager.getActiveSessionId();
+  if (isHomeView || isGalleryView || !tab || !sessionId) {
+    lastSyncedConnection = null;
+    return;
+  }
+  const prev = lastSyncedConnection;
+  lastSyncedConnection = { sessionId, status: tab.status };
+  if (!prev || prev.sessionId !== sessionId || prev.status === tab.status) return;
+  StatusBar.setConnection(tab.status, connectionLabelFor(sessionId));
 }
 
 export function statusLabel(status: string): string {
@@ -251,7 +279,6 @@ export function showHomeView(): void {
   // Reset status bar when no active connection is displayed
   StatusBar.setConnection('disconnected');
   StatusBar.setLatency(null);
-  StatusBar.setProgress(null);
 }
 
 export function hideHomeView(): void {
@@ -284,7 +311,6 @@ export function showGalleryView(): void {
   // must step aside (syncToActiveSession keeps the pin and hides the panel).
   ServerInfoPanel.syncToActiveSession();
   _renderToolbarActions();
-  StatusBar.setProgress(null);
 }
 
 export function hideGalleryView(): void {
@@ -368,9 +394,3 @@ export async function openEditorWindow(): Promise<void> {
   }
 }
 
-export function getActiveSessionProgress(): { state: number; percent: number } | null {
-  if (isHomeView || isGalleryView) return null;
-  const sessionId = TabManager.getActiveSessionId();
-  if (!sessionId) return null;
-  return sessionProgressMap.get(sessionId) ?? null;
-}

@@ -1,4 +1,5 @@
 import type { SessionStatus } from './terminal';
+import { t, tf } from './i18n';
 
 // ─── Data Structures ─────────────────────────────────────────────
 
@@ -69,12 +70,11 @@ class StatusBarClass {
   private transferCapsule: HTMLDivElement | null = null;
   private aiCapsule: HTMLDivElement | null = null;
 
+  /** Tabs whose AI run is in flight — the capsule stays while any is. */
+  private aiRunning = new Set<string>();
+
   // Active transfer tracking
   private activeTransfers = new Map<string, { type: 'upload' | 'download'; progress: number; status: string }>();
-
-  // OSC 9;4 progress layer
-  private progressLayer: HTMLDivElement | null = null;
-  private progressFill: HTMLDivElement | null = null;
 
   // Timers
   private transferHideTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,7 +95,7 @@ class StatusBarClass {
 
   private state: CapsuleState = {
     connectionStatus: 'disconnected',
-    connectionLabel: 'Disconnected',
+    connectionLabel: '',
     latencyMs: null,
     sessionCount: 0,
     transfer: null,
@@ -141,6 +141,13 @@ class StatusBarClass {
   setConnection(status: SessionStatus | 'error', label?: string): void {
     this.state.connectionStatus = status;
     this.state.connectionLabel = label ?? this.defaultLabel(status);
+    // Called on every tab switch: drop the previous tab's latency at once.
+    const active = this.getActiveSessionId?.() ?? null;
+    if (active !== this.latencySessionId) {
+      this.latencySessionId = active;
+      this.latencyHistory = [];
+      this.state.latencyMs = null;
+    }
     this.renderConnectionCapsule();
     this.renderLatencyCapsule();
     this.updateVisibility();
@@ -193,7 +200,11 @@ class StatusBarClass {
     }
   }
 
-  setAIActive(active: boolean): void {
+  setAIActive(active: boolean, key = 'default'): void {
+    if (active) this.aiRunning.add(key);
+    else this.aiRunning.delete(key);
+    active = this.aiRunning.size > 0;
+
     // Clear any pending exit timer
     if (this.aiExitTimer !== null) {
       clearTimeout(this.aiExitTimer);
@@ -215,41 +226,6 @@ class StatusBarClass {
     }
   }
 
-  setProgress(progress: { state: number; percent: number } | null): void {
-    if (!this.container) return;
-
-    if (!progress || progress.state === 0) {
-      if (this.progressLayer) {
-        this.progressLayer.remove();
-        this.progressLayer = null;
-        this.progressFill = null;
-      }
-      return;
-    }
-
-    if (!this.progressLayer) {
-      this.progressLayer = document.createElement('div');
-      this.progressLayer.className = 'osc-progress-layer';
-      this.progressFill = document.createElement('div');
-      this.progressFill.className = 'osc-progress-fill';
-      this.progressLayer.appendChild(this.progressFill);
-      this.container.insertBefore(this.progressLayer, this.container.firstChild);
-    }
-
-    const fill = this.progressFill!;
-    fill.classList.remove('normal', 'error', 'indeterminate');
-    if (progress.state === 1) {
-      fill.classList.add('normal');
-      fill.style.width = `${progress.percent}%`;
-    } else if (progress.state === 2) {
-      fill.classList.add('error');
-      fill.style.width = `${progress.percent}%`;
-    } else if (progress.state === 3) {
-      fill.classList.add('indeterminate');
-      fill.style.width = '100%';
-    }
-  }
-
   setError(message: string): void {
     this.setConnection('error', message);
   }
@@ -258,12 +234,12 @@ class StatusBarClass {
 
   getConnectionTooltip(): string {
     const parts: string[] = [];
-    parts.push(`Status: ${this.state.connectionLabel}`);
+    parts.push(tf('statusTooltipStatus', { value: this.state.connectionLabel }));
     if (this.state.latencyMs !== null) {
-      parts.push(`Latency: ${this.state.latencyMs}ms`);
+      parts.push(tf('statusTooltipLatency', { ms: this.state.latencyMs }));
     }
     if (this.state.sessionCount > 1) {
-      parts.push(`Sessions: ${this.state.sessionCount}`);
+      parts.push(tf('statusTooltipSessions', { count: this.state.sessionCount }));
     }
     return parts.join('\n');
   }
@@ -277,6 +253,9 @@ class StatusBarClass {
       this.connectionCapsule = document.createElement('div');
       this.connectionCapsule.className = 'status-capsule capsule-connection';
       this.connectionCapsule.addEventListener('click', () => {
+        // A healthy session has nothing to reconnect; offering the
+        // "disconnected — reconnect" overlay over it would be a lie.
+        if (!this.canReconnect()) return;
         document.dispatchEvent(new CustomEvent('status-bar-reconnect'));
       });
       this.leftZone.insertBefore(
@@ -291,8 +270,14 @@ class StatusBarClass {
     const label = escapeHtml(this.state.connectionLabel);
     this.connectionCapsule.innerHTML =
       `<span class="status-dot ${dotClass}"></span>` +
-      `<span>${label}</span>`;
+      `<span class="status-label">${label}</span>`;
     this.connectionCapsule.title = this.getConnectionTooltip();
+    this.connectionCapsule.classList.toggle('clickable', this.canReconnect());
+  }
+
+  private canReconnect(): boolean {
+    const s = this.state.connectionStatus;
+    return s === 'disconnected' || s === 'ended' || s === 'error' || s === 'reconnecting';
   }
 
   private renderPaneCapsule(): void {
@@ -311,16 +296,14 @@ class StatusBarClass {
       this.paneCapsule = document.createElement('div');
       this.paneCapsule.className = 'status-capsule capsule-pane';
       this.addCapsuleAnimated(this.paneCapsule);
-      // Insert after the connection capsule, before latency.
-      const anchor = this.connectionCapsule?.nextSibling ?? null;
-      this.leftZone.insertBefore(this.paneCapsule, anchor);
+      this.placeInLeftZone(this.paneCapsule);
     }
     // Use circled numbers ①..⑳ when possible, else Pane N.
     const glyph = paneNumber >= 1 && paneNumber <= 20
       ? String.fromCodePoint(0x245F + paneNumber)
       : String(paneNumber);
-    this.paneCapsule.innerHTML = `<span class="pane-glyph">${glyph}</span><span>Pane · ${paneTotal}</span>`;
-    this.paneCapsule.title = `Pane ${paneNumber} of ${paneTotal}`;
+    this.paneCapsule.innerHTML = `<span class="pane-glyph">${glyph}</span><span>${escapeHtml(tf('statusPaneLabel', { total: paneTotal }))}</span>`;
+    this.paneCapsule.title = tf('statusPaneTitle', { n: paneNumber, total: paneTotal });
   }
 
   private renderLatencyCapsule(): void {
@@ -346,9 +329,7 @@ class StatusBarClass {
       this.latencyCapsule.className = 'status-capsule capsule-latency';
       this.addCapsuleAnimated(this.latencyCapsule);
 
-      // Insert after connection capsule
-      const afterConnection = this.connectionCapsule?.nextSibling ?? null;
-      this.leftZone.insertBefore(this.latencyCapsule, afterConnection);
+      this.placeInLeftZone(this.latencyCapsule);
     }
 
     this.latencyCapsule.innerHTML =
@@ -371,7 +352,7 @@ class StatusBarClass {
       this.sessionsCapsule = document.createElement('div');
       this.sessionsCapsule.className = 'status-capsule capsule-sessions';
       this.addCapsuleAnimated(this.sessionsCapsule);
-      this.leftZone.appendChild(this.sessionsCapsule);
+      this.placeInLeftZone(this.sessionsCapsule);
     }
 
     this.sessionsCapsule.innerHTML =
@@ -381,10 +362,10 @@ class StatusBarClass {
   private renderTransferCapsule(): void {
     if (!this.rightZone || !this.state.transfer) return;
 
-    const t = this.state.transfer;
+    const tr = this.state.transfer;
     const arrow =
-      t.direction === 'upload' ? svgIcons.upload :
-      t.direction === 'download' ? svgIcons.download : svgIcons.transfer;
+      tr.direction === 'upload' ? svgIcons.upload :
+      tr.direction === 'download' ? svgIcons.download : svgIcons.transfer;
     if (!this.transferCapsule) {
       this.transferCapsule = document.createElement('div');
       this.transferCapsule.className = 'status-capsule capsule-transfer';
@@ -395,18 +376,23 @@ class StatusBarClass {
       );
     }
 
-    const pct = Math.round(t.progress);
+    const pct = Math.round(tr.progress);
+    // fileCount 0 = "everything finished" (the per-file entries are gone by
+    // then), shown as Done rather than "0 files 100%".
+    const text = tr.fileCount > 0
+      ? `${arrow} ${escapeHtml(tf(tr.fileCount === 1 ? 'statusTransferFile' : 'statusTransferFiles', { count: tr.fileCount }))} ${pct}%`
+      : `${arrow} ${escapeHtml(t('statusTransferDone'))}`;
 
     // In-place update: 保持 DOM 元素不重建，CSS transition 处理动画
     const existingFill = this.transferCapsule.querySelector('.transfer-progress-fill') as HTMLElement | null;
     const existingText = this.transferCapsule.querySelector('span') as HTMLElement | null;
     if (existingFill && existingText) {
-      existingText.innerHTML = `${arrow} ${t.fileCount} file${t.fileCount !== 1 ? 's' : ''} ${pct}%`;
-      existingFill.style.width = `${t.progress}%`;
+      existingText.innerHTML = text;
+      existingFill.style.width = `${tr.progress}%`;
     } else {
       this.transferCapsule.innerHTML =
-        `<span>${arrow} ${t.fileCount} file${t.fileCount !== 1 ? 's' : ''} ${pct}%</span>` +
-        `<div class="transfer-progress-bar"><div class="transfer-progress-fill" style="width:${t.progress}%"></div></div>`;
+        `<span>${text}</span>` +
+        `<div class="transfer-progress-bar"><div class="transfer-progress-fill" style="width:${tr.progress}%"></div></div>`;
     }
     this.updateVisibility();
   }
@@ -428,6 +414,19 @@ class StatusBarClass {
     this.updateVisibility();
   }
 
+  /**
+   * Insert a left-zone capsule at its fixed slot (connection, pane, latency,
+   * sessions) regardless of which one happened to be created first.
+   */
+  private placeInLeftZone(el: HTMLDivElement): void {
+    if (!this.leftZone) return;
+    const order = [this.connectionCapsule, this.paneCapsule, this.latencyCapsule, this.sessionsCapsule];
+    const index = order.indexOf(el);
+    const anchor = order.slice(index + 1)
+      .find((c): c is HTMLDivElement => !!c && c.parentNode === this.leftZone) ?? null;
+    this.leftZone.insertBefore(el, anchor);
+  }
+
   // ── Capsule Lifecycle Animations ────────────────────────────
 
   private addCapsuleAnimated(el: HTMLDivElement): void {
@@ -443,10 +442,12 @@ class StatusBarClass {
     el: HTMLDivElement | null,
     cleanup: () => void
   ): void {
-    if (!el) {
-      cleanup();
-      return;
-    }
+    // Let go of the element right away: if the same capsule is needed again
+    // while this one is still fading, render creates a fresh element instead
+    // of reusing one that is about to be removed (which left e.g. a running
+    // AI turn with no capsule).
+    cleanup();
+    if (!el) return;
     el.classList.add('capsule-exiting');
     let done = false;
     const finish = () => {
@@ -454,7 +455,6 @@ class StatusBarClass {
       done = true;
       el.removeEventListener('animationend', onEnd);
       el.remove();
-      cleanup();
       this.updateVisibility();
     };
     const onEnd = () => finish();
@@ -468,7 +468,11 @@ class StatusBarClass {
    * fixture: it is on screen while something is in flight or wrong —
    * connecting, reconnecting, a failure, a file transfer, a running AI turn —
    * and retracts to 0 the rest of the time. A healthy session that just sits
-   * there is not an event, so its 24px row goes back to #app.
+   * there is not an event, so it fades out.
+   *
+   * It floats over the top of the content area instead of taking a grid row:
+   * a row that grows and shrinks would resize every terminal (and send the
+   * remote a SIGWINCH) each time an AI turn or transfer starts or ends.
    *
    * Collapsing is also the signal to stop *measuring*: the 5s ping only exists
    * to feed the latency capsule next to the connection label, so with the bar
@@ -492,8 +496,6 @@ class StatusBarClass {
     this.visible = show;
 
     this.container.classList.toggle('status-collapsed', !show);
-    // Also collapse the #app grid row so the reserved 24px space is reclaimed.
-    document.getElementById('app')?.classList.toggle('app-status-collapsed', !show);
 
     if (!show) {
       // Nothing on screen to describe — stop accumulating latency (the 5s
@@ -512,6 +514,8 @@ class StatusBarClass {
 
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private latencyHistory: number[] = [];
+  /** Session the samples in latencyHistory belong to. */
+  private latencySessionId: string | null = null;
   private getActiveSessionId: (() => string | null) | null = null;
   private sendPingFn: ((sessionId: string) => void) | null = null;
 
@@ -533,6 +537,14 @@ class StatusBarClass {
       // the window — letting this one back in would leave a stale number
       // waiting to be shown the next time the bar reappears.
       if (!this.visible) return;
+      // Background tabs' keepalive pongs arrive here too; only the session
+      // on screen is being measured, and a switch starts a fresh average.
+      const active = this.getActiveSessionId?.() ?? null;
+      if (!active || e.detail.sessionId !== active) return;
+      if (this.latencySessionId !== active) {
+        this.latencySessionId = active;
+        this.latencyHistory = [];
+      }
       this.latencyHistory.push(e.detail.rtt);
       if (this.latencyHistory.length > 5) this.latencyHistory.shift();
       const avg = Math.round(this.latencyHistory.reduce((a, b) => a + b, 0) / this.latencyHistory.length);
@@ -556,6 +568,12 @@ class StatusBarClass {
     // get dropped by the server's 90s idle rule.)
     if (!this.visible) return;
     const sessionId = this.getActiveSessionId();
+    if (sessionId !== this.latencySessionId) {
+      // Don't keep showing the previous tab's number until the first pong.
+      this.latencySessionId = sessionId;
+      this.latencyHistory = [];
+      if (this.state.latencyMs !== null) this.setLatency(null);
+    }
     if (sessionId) {
       this.sendPingFn(sessionId);
     }
@@ -582,15 +600,17 @@ class StatusBarClass {
     }>) => {
       const { id, type, progress, status } = e.detail;
       const isTerminal = status === 'completed' || status === 'failed' || status === 'cancelled';
-      if (isTerminal) {
+      // A paused transfer is not "something happening": it must not hold the
+      // bar open indefinitely. It re-enters the set when it resumes.
+      if (isTerminal || status === 'paused') {
         this.activeTransfers.delete(id);
       } else {
         this.activeTransfers.set(id, { type, progress, status });
       }
 
       if (this.activeTransfers.size === 0) {
-        if (status === 'cancelled' || status === 'failed') {
-          // Cancelled/failed: remove capsule immediately, no "100%" flash
+        if (status === 'cancelled' || status === 'failed' || status === 'paused') {
+          // Cancelled/failed/paused: remove capsule immediately, no "Done" flash
           this.setTransfer(null);
         } else {
           // Completed: show 100% for 2s then fade out
@@ -614,8 +634,8 @@ class StatusBarClass {
   // ── AI Event Listener ──────────────────────────────────────
 
   private listenForAI(): void {
-    this.aiListener = ((e: CustomEvent<{ active: boolean }>) => {
-      this.setAIActive(e.detail.active);
+    this.aiListener = ((e: CustomEvent<{ active: boolean; key?: string }>) => {
+      this.setAIActive(e.detail.active, e.detail.key);
     }) as EventListener;
     document.addEventListener('status-bar-ai', this.aiListener);
   }
@@ -643,13 +663,8 @@ class StatusBarClass {
       this.aiExitTimer = null;
     }
 
-    if (this.progressLayer) {
-      this.progressLayer.remove();
-      this.progressLayer = null;
-      this.progressFill = null;
-    }
-
     this.activeTransfers.clear();
+    this.aiRunning.clear();
     this.connectionCapsule = null;
     this.latencyCapsule = null;
     this.sessionsCapsule = null;
@@ -670,19 +685,19 @@ class StatusBarClass {
   private defaultLabel(status: SessionStatus | 'error'): string {
     switch (status) {
       case 'connecting':
-        return 'Connecting';
+        return t('connecting');
       case 'connected':
-        return 'Connected';
+        return t('connected');
       case 'reconnecting':
-        return 'Reconnecting';
+        return t('reconnecting');
       case 'ended':
-        return 'Ended';
+        return t('ended');
       case 'notfound':
-        return 'Not Found';
+        return t('sessionNotFound');
       case 'disconnected':
-        return 'Disconnected';
+        return t('disconnected');
       case 'error':
-        return 'Error';
+        return t('statusError');
     }
   }
 }

@@ -34,6 +34,19 @@ export function noteToolCall(state: SelfCheckState, toolName: string, changes: b
   }
 }
 
+/**
+ * Tools report most failures as text ("Error: ...", "Error editing file:
+ * ...") rather than by throwing, so the agent's isError flag stays false
+ * for them. For the self-check such a result is a failed call: a failed
+ * edit is not a change to verify, a failed read is not a check.
+ */
+export function resultLooksFailed(result: unknown): boolean {
+  const text = typeof result === 'string'
+    ? result
+    : result && typeof result === 'object' ? String((result as { text?: unknown }).text ?? '') : '';
+  return /^(\[pane: \d+\]\n)?Error\b/.test(text);
+}
+
 // Commands that change the machine. run_command also asks for
 // confirmation on read-only commands it cannot prove safe (compound
 // lines, sudo), so the self-check looks at the command itself.

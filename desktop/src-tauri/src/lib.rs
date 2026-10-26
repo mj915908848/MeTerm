@@ -69,7 +69,6 @@ static APP_START: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instan
 pub(crate) const LIFECYCLE_UTILITY_WINDOW_LABELS: &[&str] = &[
     "settings",
     "tray-dialog",
-    "updater",
     "about",
     "jumpserver-browser",
     "editor",
@@ -104,7 +103,6 @@ pub struct AppLifecycleState {
     /// Tracks when each window was created for grace period protection
     window_created_at: Mutex<HashMap<String, Instant>>,
     current_language: Mutex<String>,
-    pending_update: Mutex<Option<String>>,
     /// Path from CLI args — consumed once by frontend on first load.
     initial_open_path: Mutex<Option<String>>,
 }
@@ -120,7 +118,6 @@ impl AppLifecycleState {
             initialized_windows: Mutex::new(HashSet::new()),
             window_created_at: Mutex::new(HashMap::new()),
             current_language: Mutex::new("en".to_string()),
-            pending_update: Mutex::new(None),
         }
     }
 
@@ -226,19 +223,6 @@ impl AppLifecycleState {
             .unwrap_or_else(|_| "en".to_string())
     }
 
-    pub fn set_pending_update(&self, version: Option<String>) {
-        if let Ok(mut guard) = self.pending_update.lock() {
-            *guard = version;
-        }
-    }
-
-    pub fn pending_update(&self) -> Option<String> {
-        self.pending_update
-            .lock()
-            .map(|guard| guard.clone())
-            .unwrap_or(None)
-    }
-
     fn should_dispatch_menu_event(&self, menu_id: &str) -> bool {
         const DEDUPE_WINDOW: Duration = Duration::from_millis(250);
         let now = Instant::now();
@@ -275,17 +259,15 @@ fn normalize_menu_id(raw: &str) -> Option<&'static str> {
         "import_connections" => Some("import_connections"),
         "export_connections" => Some("export_connections"),
         "check_updates" => Some("check_updates"),
-        "pip_toggle" => Some("pip_toggle"),
         _ => None,
     }
 }
 
 fn get_target_window(app: &tauri::AppHandle) -> Option<tauri::WebviewWindow> {
-    // Utility windows (settings, updater, tray-dialog) are never menu targets —
+    // Utility windows (settings, about, tray-dialog) are never menu targets —
     // menu actions must be dispatched to a main window so they are actually handled.
     let is_main = |label: &str| {
         label != "settings"
-            && label != "updater"
             && label != "about"
             && label != "tray-dialog"
             && !label.starts_with("drag-preview")
@@ -402,9 +384,6 @@ fn dispatch_menu_action(app: &tauri::AppHandle, action: &str) {
                         .as_millis()
                 );
 
-                #[cfg(target_os = "linux")]
-                let bg_alpha = 0_u8;
-                #[cfg(not(target_os = "linux"))]
                 let bg_alpha = 255_u8;
 
                 #[allow(unused_mut)]
@@ -435,8 +414,6 @@ fn dispatch_menu_action(app: &tauri::AppHandle, action: &str) {
                         );
                         let lifecycle = app.state::<AppLifecycleState>();
                         lifecycle.track_window_created(&new_window_label);
-                        #[cfg(target_os = "linux")]
-                        commands::window::apply_gtk_csd(&new_window);
                         // macOS: alpha=0 + orderBack: to compositor invisibly
                         #[cfg(target_os = "macos")]
                         {
@@ -665,12 +642,6 @@ fn dispatch_menu_action(app: &tauri::AppHandle, action: &str) {
                 },
             );
         }
-        "pip_toggle" => {
-            let payload = WindowEvent {
-                target_window: window_label.clone(),
-            };
-            let _ = app.emit("menu-pip-toggle", payload);
-        }
         _ => {}
     }
 }
@@ -779,7 +750,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_process::init())
         .manage(lifecycle)
         .manage(tldr::TldrState::new())
         .setup(|app| {
@@ -861,7 +831,6 @@ pub fn run() {
             let show_home_item = MenuItem::with_id(app, "show_home", "Show Home", true, None::<&str>)?;
             let new_terminal_item = MenuItem::with_id(app, "new_terminal", "New Terminal", true, None::<&str>)?;
             let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-            let pip_toggle_item = MenuItem::with_id(app, "pip_toggle", "Picture-in-Picture", true, None::<&str>)?;
             let import_connections_item = MenuItem::with_id(app, "import_connections", "Import Connections", true, None::<&str>)?;
             let export_connections_item = MenuItem::with_id(app, "export_connections", "Export Connections", true, None::<&str>)?;
             let close_all_sessions_item = MenuItem::with_id(app, "close_all_sessions", "Close All Sessions", true, None::<&str>)?;
@@ -879,7 +848,6 @@ pub fn run() {
                     &show_home_item,
                     &new_terminal_item,
                     &settings_item,
-                    &pip_toggle_item,
                     &separator2,
                     &import_connections_item,
                     &export_connections_item,
@@ -937,14 +905,6 @@ pub fn run() {
                 }
             }
 
-            // Linux: apply CSD (empty headerbar) to main window for WM shadows + rounded corners
-            #[cfg(target_os = "linux")]
-            {
-                if let Some(main_win) = app.get_webview_window("main") {
-                    commands::window::apply_gtk_csd(&main_win);
-                }
-            }
-
             startup_log("Setup: complete");
             Ok(())
         })
@@ -969,7 +929,6 @@ pub fn run() {
             commands::transfer::control_session_file_upload,
             // menu
             commands::menu::set_tray_language,
-            commands::menu::set_update_badge,
             // lifecycle
             commands::lifecycle::set_has_open_tabs,
             commands::lifecycle::request_app_quit,
@@ -1002,7 +961,6 @@ pub fn run() {
             commands::connection_sync::sync_development_credential_recovery_available,
             commands::connection_sync::sync_import_production_credential_for_development,
             // security
-            commands::security::consume_legacy_ui_preferences,
             commands::security::set_proxy_mode,
             // authority-bound JumpServer credential broker (never returns secrets)
             commands::jumpserver_credentials::jumpserver_migrate_credentials,

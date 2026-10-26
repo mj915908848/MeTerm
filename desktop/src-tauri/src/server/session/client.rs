@@ -58,18 +58,6 @@ impl ClientSecurityContext {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn test_device(ingress: TrustedIngress, device_id: &str) -> Self {
-        Self {
-            ingress,
-            principal: AuthPrincipal::Device {
-                device_id: device_id.to_string(),
-                device_name: "test phone".to_string(),
-                generation: uuid::Uuid::new_v4(),
-            },
-        }
-    }
-
     pub(crate) fn is_trusted_local_owner(&self) -> bool {
         self.ingress == TrustedIngress::DirectLoopback
             && matches!(self.principal, AuthPrincipal::Owner { .. })
@@ -86,54 +74,8 @@ impl ClientSecurityContext {
         ) || authenticator.is_principal_current(&self.principal)
     }
 
-    pub(crate) fn device_id(&self) -> Option<&str> {
-        match &self.principal {
-            AuthPrincipal::Device { device_id, .. } => Some(device_id),
-            AuthPrincipal::Owner { .. } => None,
-        }
-    }
-
-    pub(crate) fn is_device_or_relay(&self) -> bool {
-        matches!(self.principal, AuthPrincipal::Device { .. })
-            || matches!(
-                self.ingress,
-                TrustedIngress::Relay | TrustedIngress::RelayRenewal
-            )
-    }
-
     fn same_authenticated_identity(&self, other: &Self) -> bool {
-        match (&self.principal, &other.principal) {
-            (
-                AuthPrincipal::Owner {
-                    generation: left_generation,
-                },
-                AuthPrincipal::Owner {
-                    generation: right_generation,
-                },
-            ) => left_generation == right_generation,
-            (
-                AuthPrincipal::Device {
-                    device_id: left,
-                    generation: left_generation,
-                    ..
-                },
-                AuthPrincipal::Device {
-                    device_id: right,
-                    generation: right_generation,
-                    ..
-                },
-            ) => left == right && left_generation == right_generation,
-            _ => false,
-        }
-    }
-
-    pub(crate) fn ingress_name(&self) -> &'static str {
-        match self.ingress {
-            TrustedIngress::DirectLoopback => "direct_loopback",
-            TrustedIngress::DirectRemote => "direct_remote",
-            TrustedIngress::Relay => "relay",
-            TrustedIngress::RelayRenewal => "relay_renewal",
-        }
+        self.principal.generation() == other.principal.generation()
     }
 }
 
@@ -150,21 +92,6 @@ pub struct Client {
     downstream: Mutex<Option<DownStream>>,
     /// Connection generation — incremented on each reconnect.
     conn_gen: AtomicU64,
-}
-
-/// Info returned by listing clients (serializable).
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct ClientInfo {
-    pub id: String,
-    pub session_id: String,
-    pub session_title: String,
-    pub role: String,
-    pub connected: bool,
-    pub last_seen: String,
-    pub remote_addr: String,
-    pub ingress: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub device_id: Option<String>,
 }
 
 impl Client {
@@ -243,47 +170,6 @@ impl Client {
         self.security.read().unwrap().is_trusted_local_owner()
     }
 
-    pub(crate) fn authenticated_device_id(&self) -> Option<String> {
-        self.security
-            .read()
-            .unwrap()
-            .device_id()
-            .map(str::to_string)
-    }
-
-    pub(crate) fn matches_request_principal(&self, principal: &AuthPrincipal) -> bool {
-        match principal {
-            AuthPrincipal::Owner { .. } => true,
-            AuthPrincipal::Device {
-                device_id,
-                generation,
-                ..
-            } => matches!(
-                &self.security.read().unwrap().principal,
-                AuthPrincipal::Device {
-                    device_id: authenticated,
-                    generation: authenticated_generation,
-                    ..
-                } if authenticated == device_id && authenticated_generation == generation
-            ),
-        }
-    }
-
-    pub(crate) fn matches_device_generation(
-        &self,
-        device_id: &str,
-        generation: uuid::Uuid,
-    ) -> bool {
-        matches!(
-            &self.security.read().unwrap().principal,
-            AuthPrincipal::Device {
-                device_id: authenticated,
-                generation: authenticated_generation,
-                ..
-            } if authenticated == device_id && *authenticated_generation == generation
-        )
-    }
-
     pub(crate) fn matches_owner_generation(&self, generation: uuid::Uuid) -> bool {
         matches!(
             &self.security.read().unwrap().principal,
@@ -291,10 +177,6 @@ impl Client {
                 generation: current
             } if *current == generation
         )
-    }
-
-    pub(crate) fn is_device_or_relay(&self) -> bool {
-        self.security.read().unwrap().is_device_or_relay()
     }
 
     pub(crate) fn matches_authenticated_identity(&self, other: &ClientSecurityContext) -> bool {

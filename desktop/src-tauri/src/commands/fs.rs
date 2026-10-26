@@ -97,13 +97,8 @@ pub fn open_path(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
-    #[cfg(target_os = "linux")]
-    {
-        std::process::Command::new("xdg-open")
-            .arg(&resolved)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = resolved;
     Ok(())
 }
 
@@ -134,28 +129,8 @@ pub fn open_text_file(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
-    #[cfg(target_os = "linux")]
-    {
-        // Try common editors in order; fall back to xdg-open.
-        let editors = ["gedit", "kate", "mousepad", "xed", "nano"];
-        let mut opened = false;
-        for editor in &editors {
-            if std::process::Command::new(editor)
-                .arg(&resolved)
-                .spawn()
-                .is_ok()
-            {
-                opened = true;
-                break;
-            }
-        }
-        if !opened {
-            std::process::Command::new("xdg-open")
-                .arg(&resolved)
-                .spawn()
-                .map_err(|e| e.to_string())?;
-        }
-    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let _ = resolved;
     Ok(())
 }
 
@@ -716,6 +691,65 @@ fn ensure_agent_write_allowed(app: &AppHandle, target: &std::path::Path) -> Resu
     Ok(())
 }
 
+/// Write `bytes` to `path`. An existing file is replaced through a temp
+/// file in the same directory and an atomic rename, so a crash mid-write
+/// leaves the old content intact. Where the rename would lose something
+/// (another owner, hard links; ACLs on Windows) the file is rewritten in
+/// place as before.
+fn store_local_file(path: &std::path::Path, bytes: &[u8]) -> Result<(), String> {
+    // Replace what a symlink points to, not the link itself.
+    let real = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    #[cfg(unix)]
+    if let Ok(meta) = std::fs::metadata(&real) {
+        if meta.is_file() && replace_local_atomically(&real, &meta, bytes).is_ok() {
+            return Ok(());
+        }
+    }
+    std::fs::write(&real, bytes).map_err(|e| format!("write failed: {}", e))
+}
+
+#[cfg(unix)]
+fn replace_local_atomically(
+    path: &std::path::Path,
+    target: &std::fs::Metadata,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::MetadataExt;
+
+    let refuse = || std::io::Error::other("cannot replace atomically");
+    // A read-only file must keep failing the write, as it did in place.
+    if target.nlink() > 1 || target.mode() & 0o200 == 0 {
+        return Err(refuse());
+    }
+    let name = path.file_name().ok_or_else(refuse)?.to_string_lossy();
+    let tag = &uuid::Uuid::new_v4().simple().to_string()[..8];
+    let temp = path.with_file_name(format!(".{}.meterm-{}.tmp", name, tag));
+    let result = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp)?;
+        // Mode and group first, so a private file is never readable via the temp.
+        file.set_permissions(target.permissions())?;
+        let mine = file.metadata()?;
+        if mine.uid() != target.uid() {
+            return Err(refuse());
+        }
+        if mine.gid() != target.gid() {
+            std::os::unix::fs::fchown(&file, None, Some(target.gid()))?;
+        }
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&temp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
+}
+
 /// Write a local file by absolute / `~`-prefixed path. Creates parent
 /// directories as needed. Overwrites existing files.
 #[tauri::command]
@@ -731,7 +765,7 @@ pub fn agent_write_file(app: AppHandle, path: String, content: String) -> Result
         }
     }
 
-    std::fs::write(p, content.as_bytes()).map_err(|e| format!("write failed: {}", e))?;
+    store_local_file(p, content.as_bytes())?;
 
     Ok(content.len() as u64)
 }
@@ -831,7 +865,7 @@ pub fn agent_edit_file(
         &new_string,
         replace_all.unwrap_or(false),
     )?;
-    std::fs::write(p, edited.as_bytes()).map_err(|e| format!("write failed: {}", e))?;
+    store_local_file(p, edited.as_bytes())?;
     Ok(result)
 }
 
@@ -1817,6 +1851,55 @@ mod agent_fs_tests {
         assert_eq!(
             canonical_write_target(&target).unwrap(),
             canonical.join("x").join("f.txt")
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn store_local_file_replaces_atomically_and_keeps_mode_and_links() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir("store");
+        let file = dir.join("app.conf");
+        std::fs::write(&file, "old").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let link = dir.join("link.conf");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+
+        store_local_file(&link, b"new").unwrap();
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "new");
+        assert!(std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        let mode = std::fs::metadata(&file).unwrap().permissions().mode() & 0o7777;
+        assert_eq!(mode, 0o640);
+        // No temp file left behind.
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names.len(), 2, "{:?}", names);
+
+        // A read-only file still refuses the write.
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o440)).unwrap();
+        let is_root = std::fs::metadata("/proc/self")
+            .map(|m| {
+                use std::os::unix::fs::MetadataExt;
+                m.uid() == 0
+            })
+            .unwrap_or(false);
+        if !is_root {
+            assert!(store_local_file(&file, b"other").is_err());
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), "new");
+        }
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o640)).unwrap();
+
+        // A new file is created normally.
+        store_local_file(&dir.join("fresh.txt"), b"hi").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("fresh.txt")).unwrap(),
+            "hi"
         );
         std::fs::remove_dir_all(dir).unwrap();
     }

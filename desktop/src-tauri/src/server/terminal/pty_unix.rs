@@ -42,17 +42,7 @@ impl PtyTerminal {
     /// 2. Stage 2: `exec` to interactive shell with `TERM=xterm-256color`
     ///
     /// Shell hooks (OSC 7766/7768) are injected via ZDOTDIR (zsh) or --rcfile (bash).
-    ///
-    /// `envs`:调用方额外注入的环境变量(agent 终端镜像 M1:METERM_SESSION_ID /
-    /// METERM_HOOK_PORT / METERM_HOOK_SECRET)。macOS 两段式 `login -p` 保留 env,
-    /// 故这些变量能穿透到最终交互 shell 及其后代(claude / hook 子进程按 env 继承拿到)。
-    pub fn new(
-        shell: &str,
-        cwd: &str,
-        cols: u16,
-        rows: u16,
-        envs: &[(String, String)],
-    ) -> Result<Self, String> {
+    pub fn new(shell: &str, cwd: &str, cols: u16, rows: u16) -> Result<Self, String> {
         let pty_system = xpty::native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -81,10 +71,6 @@ impl PtyTerminal {
         cmd.env("TERM_PROGRAM", "MeTerm");
         cmd.env("COLORTERM", "truecolor");
 
-        // 调用方注入的环境变量(agent 镜像 hook env 等)。放在 TERM_PROGRAM 之后、
-        // login 组装之前:macOS 下 login -p 保留 env,能穿透到 Stage 2 交互 shell。
-        apply_envs(&mut cmd, envs);
-
         // Create hook directory for supported shells (OSC 7766/7768 injection)
         let hook_dir = if basename == "zsh" || basename == "bash" {
             create_hook_dir(&basename)
@@ -92,12 +78,13 @@ impl PtyTerminal {
             None
         };
 
-        // Agent 镜像 hooks(M2 修复):hooks settings 绝对路径经 env 注入,不再字面写死进 rc。
-        // 原实现把路径直接插进 rc 的双引号 shell 赋值 `meterm_claude_hooks="<path>"`,
-        // 若路径含 `$`/`` ` ``/`"`/`\`(理论上 TMPDIR 可控)会被 shell 解释(命令替换等)。
-        // 改用 env 传递(与 METERM_SESSION_ID 等既有注入同一模式):env 值不经 shell 解析,
-        // rc 里的 claude 包装函数只引用 `$METERM_CLAUDE_HOOKS`,不含任何插值路径。
-        apply_claude_hooks_env(&mut cmd, &hook_dir);
+        // zsh gets ZDOTDIR pointed at the hook dir below; the proxy rc files need
+        // the value it replaces to find the user's own config.
+        if basename == "zsh" && hook_dir.is_some() {
+            if let Some(zd) = std::env::var_os("ZDOTDIR").filter(|v| !v.is_empty()) {
+                cmd.env("METERM_USER_ZDOTDIR", zd);
+            }
+        }
 
         // Hook token: the rc copies it into a shell variable and unsets the env
         // var, so commands run in the shell never see it.
@@ -126,6 +113,9 @@ impl PtyTerminal {
                 // Build Stage 2 inner command
                 let inner_cmd = if basename == "bash" {
                     if let Some(ref dir) = hook_dir {
+                        // Stage 2 is a non-login shell; the proxy rc reads the
+                        // login files instead (see create_bash_hooks).
+                        cmd.env("METERM_BASH_LOGIN", "1");
                         // GNU long options (--rcfile) must precede short options (-i) for bash 3.2
                         format!(
                             "export TERM=xterm-256color; exec {} --rcfile {}/.bashrc -i",
@@ -327,27 +317,8 @@ impl Drop for PtyTerminal {
     }
 }
 
-/// 把调用方指定的环境变量逐条应用到 `CommandBuilder`。
-/// 抽成独立函数,便于单测断言透传(不必 spawn 真实 shell)。
 /// Env var carrying the OSC 7768 hook token into the shell's rc (see `create_zsh_hooks`).
 const OSC_TOKEN_ENV: &str = "METERM_OSC_TOKEN";
-
-fn apply_envs(cmd: &mut CommandBuilder, envs: &[(String, String)]) {
-    for (k, v) in envs {
-        cmd.env(k, v);
-    }
-}
-
-/// 若 `hook_dir` 存在(zsh/bash 会话已建 hook 目录),把 agent 镜像 hooks settings 的
-/// 绝对路径写入 `METERM_CLAUDE_HOOKS` env,供 rc 里的 `claude` 包装函数引用
-/// (`--settings "$METERM_CLAUDE_HOOKS"`),不再把路径字面插进 rc 的 shell 字符串。
-/// 抽成独立函数,便于单测断言(不必 spawn 真实 shell)。
-fn apply_claude_hooks_env(cmd: &mut CommandBuilder, hook_dir: &Option<String>) {
-    if let Some(dir) = hook_dir {
-        let settings_path = std::path::Path::new(dir).join(super::hook_files::HOOKS_SETTINGS_NAME);
-        cmd.env("METERM_CLAUDE_HOOKS", &settings_path);
-    }
-}
 
 // ── Shell hook injection ────────────────────────────────────────────────────
 
@@ -368,13 +339,19 @@ fn create_hook_dir(shell_basename: &str) -> Option<String> {
 
 /// Create proxy zsh dotfiles that source user's originals then install MeTerm hook.
 fn create_zsh_hooks(dir: &std::path::Path) {
-    // .zshenv: proxy user's .zshenv, preserve our ZDOTDIR for .zshrc loading
+    // .zshenv: proxy user's .zshenv, preserve our ZDOTDIR for .zshrc loading.
+    // The user's own config directory is wherever zsh would have looked: the
+    // ZDOTDIR they launched with (METERM_USER_ZDOTDIR), else $HOME — and their
+    // .zshenv may move it (`export ZDOTDIR=~/.config/zsh` is the usual XDG setup),
+    // so the value it leaves behind is kept in __meterm_user_zd for the other
+    // proxies. Ignoring that used to skip such users' .zshrc entirely.
     let _ = std::fs::write(
         dir.join(".zshenv"),
         "# MeTerm: proxy user zshenv, keep ZDOTDIR for hook injection\n\
          __mt_zd=\"$ZDOTDIR\"\n\
-         ZDOTDIR=\"$HOME\"\n\
-         [[ -f \"$HOME/.zshenv\" ]] && source \"$HOME/.zshenv\"\n\
+         ZDOTDIR=\"${METERM_USER_ZDOTDIR:-$HOME}\"\n\
+         [[ -f \"$ZDOTDIR/.zshenv\" ]] && source \"$ZDOTDIR/.zshenv\"\n\
+         __meterm_user_zd=\"${ZDOTDIR:-$HOME}\"\n\
          ZDOTDIR=\"$__mt_zd\"\n\
          unset __mt_zd\n",
     );
@@ -382,18 +359,23 @@ fn create_zsh_hooks(dir: &std::path::Path) {
     // .zprofile: proxy user's .zprofile (login shell only)
     let _ = std::fs::write(
         dir.join(".zprofile"),
-        "[[ -f \"$HOME/.zprofile\" ]] && source \"$HOME/.zprofile\"\n",
+        "__mt_zd=\"$ZDOTDIR\"\n\
+         ZDOTDIR=\"$__meterm_user_zd\"\n\
+         [[ -f \"$ZDOTDIR/.zprofile\" ]] && source \"$ZDOTDIR/.zprofile\"\n\
+         ZDOTDIR=\"$__mt_zd\"\n\
+         unset __mt_zd\n",
     );
 
     // .zshrc: proxy user's .zshrc, then install precmd hook
     let _ = std::fs::write(
         dir.join(".zshrc"),
         "# MeTerm: proxy user zshrc + install precmd hook\n\
-         ZDOTDIR=\"$HOME\"\n\
+         ZDOTDIR=\"$__meterm_user_zd\"\n\
+         unset __meterm_user_zd METERM_USER_ZDOTDIR\n\
          # Fix HISTFILE: ZDOTDIR override causes zsh default HISTFILE to point at temp hook dir.\n\
          # Reset to standard default; user .zshrc can still override.\n\
-         HISTFILE=\"$HOME/.zsh_history\"\n\
-         [[ -f \"$HOME/.zshrc\" ]] && source \"$HOME/.zshrc\"\n\
+         HISTFILE=\"$ZDOTDIR/.zsh_history\"\n\
+         [[ -f \"$ZDOTDIR/.zshrc\" ]] && source \"$ZDOTDIR/.zshrc\"\n\
          \n\
          # ── MeTerm shell hook (preexec/precmd, 记录命令耗时) ──\n\
          __meterm_tok=\"${METERM_OSC_TOKEN:-}\"\n\
@@ -401,9 +383,13 @@ fn create_zsh_hooks(dir: &std::path::Path) {
          zmodload zsh/datetime 2>/dev/null\n\
          __meterm_cmd_start=''\n\
          __meterm_cmd_running=0\n\
+         __meterm_cmd=''\n\
          __meterm_preexec(){\n\
            # 标记本轮提示周期确实执行过命令,避免空回车误报上一条命令耗时\n\
            __meterm_cmd_running=1\n\
+           # $1 就是这次执行的命令行。空格开头的(用户不想留历史 / AI 发的命令)不上报;\n\
+           # 空回车、Ctrl+C 不触发 preexec,所以 precmd 报空命令,不再重复上一条。\n\
+           case \"$1\" in ' '*) __meterm_cmd='' ;; *) __meterm_cmd=\"$1\" ;; esac\n\
            if [ -n \"$EPOCHREALTIME\" ]; then\n\
              __meterm_cmd_start=\"$EPOCHREALTIME\"\n\
            else\n\
@@ -412,14 +398,13 @@ fn create_zsh_hooks(dir: &std::path::Path) {
          }\n\
          __meterm_precmd(){\n\
            local e=$?\n\
-           local c\n\
+           local c=''\n\
            local dur=0\n\
            if [ -z \"$__meterm_hook_ready\" ]; then\n\
              export __meterm_hook_ready=1\n\
              printf '\\033]7766;meterm_init;1\\007'\n\
-             c=''\n\
            else\n\
-             c=$(fc -ln -1 2>/dev/null)\n\
+             [ \"$__meterm_cmd_running\" = \"1\" ] && c=\"$__meterm_cmd\"\n\
              if [ \"$__meterm_cmd_running\" = \"1\" ] && [ -n \"$__meterm_cmd_start\" ]; then\n\
                if [ -n \"$EPOCHREALTIME\" ]; then\n\
                  dur=$(( (EPOCHREALTIME - __meterm_cmd_start) * 1000 ))\n\
@@ -432,6 +417,7 @@ fn create_zsh_hooks(dir: &std::path::Path) {
              fi\n\
            fi\n\
            __meterm_cmd_running=0\n\
+           __meterm_cmd=''\n\
            printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' \"$__meterm_tok\" \"$e\" \"$PWD\" \"$c\" \"$dur\"\n\
          }\n\
          autoload -Uz add-zsh-hook 2>/dev/null && { add-zsh-hook preexec __meterm_preexec; add-zsh-hook precmd __meterm_precmd; }\n\
@@ -441,13 +427,12 @@ fn create_zsh_hooks(dir: &std::path::Path) {
     // .zlogin: proxy user's .zlogin (login shell only)
     let _ = std::fs::write(
         dir.join(".zlogin"),
-        "[[ -f \"$HOME/.zlogin\" ]] && source \"$HOME/.zlogin\"\n",
+        "__mt_zd=\"$ZDOTDIR\"\n\
+         ZDOTDIR=\"$__meterm_user_zd\"\n\
+         [[ -f \"$ZDOTDIR/.zlogin\" ]] && source \"$ZDOTDIR/.zlogin\"\n\
+         ZDOTDIR=\"$__mt_zd\"\n\
+         unset __mt_zd\n",
     );
-
-    // ── Agent 镜像 hook 产物(M2)──
-    // 写会话级 hooks settings JSON + 转发脚本,并在 .zshrc 末尾(用户 rc + OSC hook 之后)
-    // 追加 claude 包装函数。claude 一跑就被注入观察者 hooks(端到端等 M3 的端点)。
-    super::hook_files::install_agent_mirror(dir, &dir.join(".zshrc"));
 }
 
 /// Create proxy bash .bashrc that sources user's original then installs MeTerm hook.
@@ -455,7 +440,27 @@ fn create_bash_hooks(dir: &std::path::Path) {
     let _ = std::fs::write(
         dir.join(".bashrc"),
         "# MeTerm: proxy user bashrc + install PROMPT_COMMAND hook\n\
-         [[ -f \"$HOME/.bashrc\" ]] && source \"$HOME/.bashrc\"\n\
+         # ── user config ──\n\
+         # macOS 上 Terminal.app/iTerm 开的是登录 shell,只读 ~/.bash_profile(及 /etc/bashrc\n\
+         # 的默认提示符),很多人的别名和提示符只写在那里。这里的交互 shell 是第二阶段的\n\
+         # 非登录 shell,所以照登录 shell 的顺序读;profile 没提到 .bashrc 时再补读它,\n\
+         # 免得只在 .bashrc 里配置的人丢东西。\n\
+         if [[ -n \"${METERM_BASH_LOGIN:-}\" ]]; then\n\
+           unset METERM_BASH_LOGIN\n\
+           [[ -r /etc/bashrc ]] && source /etc/bashrc\n\
+           __meterm_profile=''\n\
+           for __meterm_f in \"$HOME/.bash_profile\" \"$HOME/.bash_login\" \"$HOME/.profile\"; do\n\
+             if [[ -f \"$__meterm_f\" ]]; then __meterm_profile=\"$__meterm_f\"; break; fi\n\
+           done\n\
+           [[ -n \"$__meterm_profile\" ]] && source \"$__meterm_profile\"\n\
+           if [[ -f \"$HOME/.bashrc\" ]] && { [[ -z \"$__meterm_profile\" ]] || ! grep -q '\\.bashrc' \"$__meterm_profile\" 2>/dev/null; }; then\n\
+             source \"$HOME/.bashrc\"\n\
+           fi\n\
+           unset __meterm_profile __meterm_f\n\
+         else\n\
+           [[ -f \"$HOME/.bashrc\" ]] && source \"$HOME/.bashrc\"\n\
+         fi\n\
+         # ── end user config ──\n\
          \n\
          # ── MeTerm shell hook (DEBUG trap 近似 preexec + PROMPT_COMMAND 近似 precmd,记录命令耗时) ──\n\
          __meterm_tok=\"${METERM_OSC_TOKEN:-}\"\n\
@@ -463,16 +468,20 @@ fn create_bash_hooks(dir: &std::path::Path) {
          __meterm_cmd_start=''\n\
          __meterm_cmd_running=0\n\
          __meterm_in_prompt=0\n\
+         __meterm_cmd=''\n\
+         __meterm_hist_n=''\n\
          __meterm_preexec(){\n\
            # DEBUG trap 每条简单命令都触发,包括 PROMPT_COMMAND 自身(尤其是空提示符回车时,\n\
            # 没有用户命令可执行,DEBUG 仍会在调用 __meterm_precmd 前触发一次)。\n\
            # 用 $BASH_COMMAND 精确识别并排除\"即将执行的是我们自己的 precmd\"这种情况,\n\
            # 而不是依赖时间重合——否则空回车会被误记为一次耗时几乎为 0 的伪命令。\n\
+           # 用户自己的 PROMPT_COMMAND 夹在 precmd 和 prompt_end 之间,由 in_prompt 挡住。\n\
            [ -n \"$COMP_LINE\" ] && return\n\
-           case \"$BASH_COMMAND\" in __meterm_precmd*) return ;; esac\n\
+           case \"$BASH_COMMAND\" in __meterm_precmd*|__meterm_prompt_end*) return ;; esac\n\
            [ \"$__meterm_in_prompt\" = \"1\" ] && return\n\
            [ \"$__meterm_cmd_running\" = \"1\" ] && return\n\
            __meterm_cmd_running=1\n\
+           __meterm_cmd=\"$BASH_COMMAND\"\n\
            if [ -n \"$EPOCHREALTIME\" ]; then\n\
              __meterm_cmd_start=\"$EPOCHREALTIME\"\n\
            else\n\
@@ -485,15 +494,29 @@ fn create_bash_hooks(dir: &std::path::Path) {
          if [ -z \"$(trap -p DEBUG)\" ]; then trap '__meterm_preexec' DEBUG; fi\n\
          __meterm_precmd(){\n\
            local e=$?\n\
-           local c\n\
+           local c=''\n\
            local dur=0\n\
+           local h n\n\
            __meterm_in_prompt=1\n\
+           # 在 PROMPT_COMMAND 里 `fc -ln -1` 会把最新一条当成 fc 自己跳过,拿到的是上一条;\n\
+           # 改读 `history 1`,并用历史序号判断这一轮有没有新命令(空回车、空格开头的命令\n\
+           # 序号都不变,报空命令)。\n\
+           h=$(HISTTIMEFORMAT= builtin history 1 2>/dev/null)\n\
+           h=\"${h#\"${h%%[^[:space:]]*}\"}\"\n\
+           n=\"${h%%[[:space:]]*}\"\n\
+           h=\"${h#\"$n\"}\"\n\
+           h=\"${h#\"${h%%[^[:space:]]*}\"}\"\n\
            if [ -z \"$__meterm_hook_ready\" ]; then\n\
              export __meterm_hook_ready=1\n\
              printf '\\033]7766;meterm_init;0\\007'\n\
-             c=''\n\
            else\n\
-             c=$(fc -ln -1 2>/dev/null)\n\
+             if [ \"$n\" != \"$__meterm_hist_n\" ]; then\n\
+               c=\"$h\"\n\
+             elif [ \"$__meterm_cmd_running\" = \"1\" ] && [ -n \"$__meterm_cmd\" ]; then\n\
+               # HISTCONTROL=ignoredups 时重复的命令不进历史、序号不变;DEBUG trap\n\
+               # 记下的命令和最新一条对得上,说明确实是它又执行了一次\n\
+               case \"$h\" in \"$__meterm_cmd\"|\"$__meterm_cmd \"*) c=\"$h\" ;; esac\n\
+             fi\n\
              if [ \"$__meterm_cmd_running\" = \"1\" ] && [ -n \"$__meterm_cmd_start\" ]; then\n\
                if [ -n \"$EPOCHREALTIME\" ]; then\n\
                  # bash 的 $(( )) 只支持整数运算,EPOCHREALTIME 形如 秒.微秒(固定6位小数)\n\
@@ -510,23 +533,23 @@ fn create_bash_hooks(dir: &std::path::Path) {
                [ \"$dur\" -lt 0 ] 2>/dev/null && dur=0\n\
              fi\n\
            fi\n\
+           __meterm_hist_n=\"$n\"\n\
            __meterm_cmd_running=0\n\
+           __meterm_cmd=''\n\
            printf '\\033]7768;k=%s;%d;%s;%s;%d\\007' \"$__meterm_tok\" \"$e\" \"$PWD\" \"$c\" \"$dur\"\n\
-           __meterm_in_prompt=0\n\
+           # 把退出码交还给排在后面的用户 PROMPT_COMMAND(starship 等靠它显示失败标记)\n\
+           return $e\n\
          }\n\
+         __meterm_prompt_end(){ __meterm_in_prompt=0; }\n\
          # PROMPT_COMMAND 可以就地扩写,但 bash 5.1+ 允许它是数组,而标量赋值会把整个\n\
          # 数组换掉(用户第 2..n 项静默消失),所以按它本来的形态扩写。\n\
+         # precmd 排最前(拿到命令真实的 $?),prompt_end 排最后(用户的条目跑完才重新计时)。\n\
          case \"$(declare -p PROMPT_COMMAND 2>/dev/null)\" in\n\
-           'declare -a'*) PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\") ;;\n\
-           *) PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;;\n\
+           'declare -a'*) PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\" __meterm_prompt_end) ;;\n\
+           *) PROMPT_COMMAND=\"__meterm_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND};__meterm_prompt_end\" ;;\n\
          esac\n\
          export HISTCONTROL=\"${HISTCONTROL:+$HISTCONTROL:}ignorespace\"\n",
     );
-
-    // ── Agent 镜像 hook 产物(M2)──
-    // 写会话级 hooks settings JSON + 转发脚本,并在 .bashrc 末尾(用户 rc + OSC hook 之后)
-    // 追加 claude 包装函数。claude 一跑就被注入观察者 hooks(端到端等 M3 的端点)。
-    super::hook_files::install_agent_mirror(dir, &dir.join(".bashrc"));
 }
 
 /// Check if the shell is csh or tcsh (which don't support -l properly).
@@ -555,17 +578,13 @@ mod tests {
         assert!(zshrc.contains("7766;meterm_init;1"));
         assert!(zshrc.contains("7768"));
         assert!(
-            zshrc.contains("HISTFILE=\"$HOME/.zsh_history\""),
+            zshrc.contains("HISTFILE=\"$ZDOTDIR/.zsh_history\""),
             "HISTFILE fix must be present"
         );
-        // Agent 镜像产物(M2):hooks JSON + 转发脚本落地,.zshrc 末尾追加 claude 包装函数。
-        assert!(std::path::Path::new(&dir)
-            .join("meterm-claude-hooks.json")
-            .exists());
-        assert!(std::path::Path::new(&dir)
-            .join("meterm-hook-forward.sh")
-            .exists());
-        assert!(zshrc.contains("claude() {"), "zsh rc 须含 claude 包装函数");
+        assert!(
+            !zshrc.contains("claude"),
+            "rc must not wrap the user's claude command"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -631,81 +650,16 @@ mod tests {
             "本地 bashrc 须识别数组形态的 PROMPT_COMMAND"
         );
         assert!(
-            bashrc.contains("PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\")"),
+            bashrc.contains(
+                "PROMPT_COMMAND=(__meterm_precmd \"${PROMPT_COMMAND[@]}\" __meterm_prompt_end)"
+            ),
             "数组分支须保留用户已有元素"
         );
-        // Agent 镜像产物(M2):hooks JSON + 转发脚本落地,.bashrc 末尾追加 claude 包装函数。
-        assert!(std::path::Path::new(&dir)
-            .join("meterm-claude-hooks.json")
-            .exists());
-        assert!(std::path::Path::new(&dir)
-            .join("meterm-hook-forward.sh")
-            .exists());
         assert!(
-            bashrc.contains("claude() {"),
-            "bash rc 须含 claude 包装函数"
+            !bashrc.contains("claude"),
+            "rc must not wrap the user's claude command"
         );
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn test_apply_envs_passthrough() {
-        // 断言 apply_envs 把每一对 env 都写进 CommandBuilder(agent hook env 透传的核心一步)。
-        let mut cmd = CommandBuilder::new("/bin/sh");
-        let envs = vec![
-            ("METERM_SESSION_ID".to_string(), "sess-xyz".to_string()),
-            ("METERM_HOOK_PORT".to_string(), "51234".to_string()),
-            ("METERM_HOOK_SECRET".to_string(), "top-secret".to_string()),
-        ];
-        apply_envs(&mut cmd, &envs);
-        assert_eq!(
-            cmd.get_env("METERM_SESSION_ID"),
-            Some(std::ffi::OsStr::new("sess-xyz"))
-        );
-        assert_eq!(
-            cmd.get_env("METERM_HOOK_PORT"),
-            Some(std::ffi::OsStr::new("51234"))
-        );
-        assert_eq!(
-            cmd.get_env("METERM_HOOK_SECRET"),
-            Some(std::ffi::OsStr::new("top-secret"))
-        );
-    }
-
-    #[test]
-    fn test_apply_envs_empty_is_noop() {
-        // 空 envs(SSH/agent 会话不注入的场景)不应改动已有 env。
-        let mut cmd = CommandBuilder::new("/bin/sh");
-        cmd.env("TERM_PROGRAM", "MeTerm");
-        apply_envs(&mut cmd, &[]);
-        assert_eq!(
-            cmd.get_env("TERM_PROGRAM"),
-            Some(std::ffi::OsStr::new("MeTerm"))
-        );
-        assert_eq!(cmd.get_env("METERM_HOOK_SECRET"), None);
-    }
-
-    #[test]
-    fn test_apply_claude_hooks_env_sets_when_hook_dir_present() {
-        // hook_dir 存在时,METERM_CLAUDE_HOOKS 须指向 <hook_dir>/meterm-claude-hooks.json,
-        // 且不经字面路径插值(这是 PtyTerminal 侧对 M2 rc 插值缺陷的修复入口)。
-        let mut cmd = CommandBuilder::new("/bin/sh");
-        let hook_dir = Some("/tmp/meterm-hook-abc".to_string());
-        apply_claude_hooks_env(&mut cmd, &hook_dir);
-        let expected =
-            std::path::Path::new("/tmp/meterm-hook-abc").join("meterm-claude-hooks.json");
-        assert_eq!(
-            cmd.get_env("METERM_CLAUDE_HOOKS"),
-            Some(expected.as_os_str())
-        );
-    }
-
-    #[test]
-    fn test_apply_claude_hooks_env_noop_when_no_hook_dir() {
-        // 非 zsh/bash(无 hook_dir)时不应设置该 env。
-        let mut cmd = CommandBuilder::new("/bin/sh");
-        apply_claude_hooks_env(&mut cmd, &None);
-        assert_eq!(cmd.get_env("METERM_CLAUDE_HOOKS"), None);
     }
 
     #[cfg(target_os = "macos")]

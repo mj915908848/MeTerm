@@ -4,7 +4,6 @@ import { escapeHtml } from './status-bar';
 
 // Notification types — extensible for future use
 export type NotificationType =
-  | 'pair-request'
   | 'master-request'
   | 'terminal-osc'
   /** Agent needs user action (tool confirmation / stuck on interactive prompt). */
@@ -35,7 +34,7 @@ export async function requestWindowAttention(): Promise<void> {
 /**
  * Comprehensive user notification. Behavior matrix:
  *
- *   pair-request / master-request (connection approvals):
+ *   master-request (control approvals):
  *     not focused → attention + show + setFocus (force foreground)
  *     focused     → caller already handles the UI
  *

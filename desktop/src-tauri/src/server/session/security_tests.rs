@@ -5,7 +5,6 @@ use super::client::{Client, ClientSecurityContext};
 use super::state::ClientRole;
 use super::{Session, SessionConfig};
 use crate::server::auth::{AuthPrincipal, Authenticator, TrustedIngress};
-use crate::server::events::EventBus;
 use axum::body::Body;
 use axum::extract::Request;
 use axum::http::{header, HeaderValue};
@@ -19,7 +18,6 @@ fn test_session(id: &str) -> Arc<Session> {
             ring_buffer_size: 4096,
             log_dir: String::new(),
         },
-        EventBus::new(),
     ))
 }
 
@@ -39,23 +37,11 @@ fn client_with_role(
     (Arc::new(client), receivers)
 }
 
-fn generation_security(device_id: &str, generation: uuid::Uuid) -> ClientSecurityContext {
+/// A client that did not come from this machine's trusted loopback owner.
+fn remote_security() -> ClientSecurityContext {
     ClientSecurityContext {
-        ingress: TrustedIngress::Relay,
-        principal: AuthPrincipal::Device {
-            device_id: device_id.to_string(),
-            device_name: "test phone".to_string(),
-            generation,
-        },
-    }
-}
-
-fn ingress_security(device_id: &str, ingress: TrustedIngress) -> ClientSecurityContext {
-    ClientSecurityContext {
-        ingress,
-        principal: AuthPrincipal::Device {
-            device_id: device_id.to_string(),
-            device_name: "test phone".to_string(),
+        ingress: TrustedIngress::DirectRemote,
+        principal: AuthPrincipal::Owner {
             generation: uuid::Uuid::new_v4(),
         },
     }
@@ -66,6 +52,11 @@ fn owner_security(generation: uuid::Uuid) -> ClientSecurityContext {
         ingress: TrustedIngress::DirectLoopback,
         principal: AuthPrincipal::Owner { generation },
     }
+}
+
+/// Test setup: hand the master role to `client_id` directly.
+fn promote_to_master(session: &Session, client_id: &str) {
+    *session.master_id.lock().unwrap() = client_id.to_string();
 }
 
 fn authenticate(authenticator: &Authenticator, token: &str) -> AuthPrincipal {
@@ -80,7 +71,7 @@ fn authenticate(authenticator: &Authenticator, token: &str) -> AuthPrincipal {
 #[test]
 fn close_disconnects_clients_and_permanently_rejects_new_dispatch_or_registration() {
     let session = test_session("closed-session");
-    let security = ClientSecurityContext::test_device(TrustedIngress::Relay, "device-close");
+    let security = remote_security();
     let (client, mut receivers) = device_client("phone", security.clone());
     session.add_client(client.clone()).unwrap();
     let conn_gen = client.conn_gen();
@@ -142,9 +133,8 @@ fn ttl_close_is_atomic_with_connected_client_and_cannot_be_resurrected() {
             ring_buffer_size: 4096,
             log_dir: String::new(),
         },
-        EventBus::new(),
     ));
-    let security = ClientSecurityContext::test_device(TrustedIngress::Relay, "device-ttl");
+    let security = remote_security();
     let (client, _receivers) = device_client("phone", security.clone());
     session.add_client(client.clone()).unwrap();
     let conn_gen = client.conn_gen();
@@ -235,10 +225,7 @@ fn native_ipc_reconnect_keeps_owner_id_and_rejects_stale_generation() {
 #[test]
 fn native_ipc_reconnect_cannot_replace_a_websocket_client() {
     let session = test_session("ipc-cannot-rebind-ws");
-    let (remote, _receivers) = device_client(
-        "phone",
-        generation_security("phone-device", uuid::Uuid::new_v4()),
-    );
+    let (remote, _receivers) = device_client("phone", remote_security());
     session.add_client(remote.clone()).unwrap();
     let generation = remote.conn_gen();
     let channel = tauri::ipc::Channel::<tauri::ipc::InvokeResponseBody>::new(|_| Ok(()));
@@ -258,7 +245,7 @@ fn native_ipc_reconnect_cannot_replace_a_websocket_client() {
 #[test]
 fn private_session_rejects_same_device_reconnect() {
     let session = test_session("private-reconnect");
-    let security = ClientSecurityContext::test_device(TrustedIngress::Relay, "device-private-test");
+    let security = remote_security();
     let (client, _receivers) = device_client("phone", security.clone());
     session.add_client(client.clone()).unwrap();
 
@@ -279,7 +266,7 @@ fn private_session_rejects_same_device_reconnect() {
 #[test]
 fn add_and_private_transition_cannot_leave_remote_client_connected() {
     let session = test_session("private-add-race");
-    let security = ClientSecurityContext::test_device(TrustedIngress::Relay, "device-race-test");
+    let security = remote_security();
     let (client, _receivers) = device_client("phone", security);
 
     // Block insertion on clients. With the required private -> clients lock
@@ -321,36 +308,13 @@ fn add_and_private_transition_cannot_leave_remote_client_connected() {
 }
 
 #[test]
-fn generation_cleanup_spares_newly_repaired_session_client() {
-    let session = test_session("generation-cleanup");
-    let old_generation = uuid::Uuid::new_v4();
-    let new_generation = uuid::Uuid::new_v4();
-    let (old, _old_receivers) =
-        device_client("old", generation_security("device-a", old_generation));
-    let (new, _new_receivers) =
-        device_client("new", generation_security("device-a", new_generation));
-    session.add_client(old.clone()).unwrap();
-    session.add_client(new.clone()).unwrap();
-
-    assert_eq!(
-        session.disconnect_device_generation("device-a", old_generation),
-        1
-    );
-    assert!(!old.is_connected());
-    assert!(new.is_connected());
-}
-
-#[test]
 fn owner_generation_cleanup_spares_new_owner_device_and_local_ipc() {
     let session = test_session("owner-generation-cleanup");
     let old_generation = uuid::Uuid::new_v4();
     let new_generation = uuid::Uuid::new_v4();
     let (old, _old_receivers) = device_client("old-owner", owner_security(old_generation));
     let (new, _new_receivers) = device_client("new-owner", owner_security(new_generation));
-    let (device, _device_receivers) = device_client(
-        "device",
-        generation_security("device-a", uuid::Uuid::new_v4()),
-    );
+    let (device, _device_receivers) = device_client("device", remote_security());
     let (local_ipc, _ipc_receivers) =
         device_client("local-ipc", ClientSecurityContext::direct_loopback_owner());
     for client in [&old, &new, &device, &local_ipc] {
@@ -367,19 +331,13 @@ fn owner_generation_cleanup_spares_new_owner_device_and_local_ipc() {
 #[test]
 fn later_client_promotion_does_not_rewrite_immutable_owner() {
     let session = test_session("immutable-owner");
-    let (first, _) = device_client(
-        "first",
-        ingress_security("device-first", TrustedIngress::Relay),
-    );
+    let (first, _) = device_client("first", remote_security());
     session.add_client(first.clone()).unwrap();
     assert_eq!(session.master(), "first");
     assert_eq!(session.owner(), "first");
 
     session.remove_client("first", first.conn_gen());
-    let (second, _) = device_client(
-        "second",
-        ingress_security("device-second", TrustedIngress::Relay),
-    );
+    let (second, _) = device_client("second", remote_security());
     session.add_client(second).unwrap();
 
     assert_eq!(session.master(), "second");
@@ -393,10 +351,7 @@ fn later_client_promotion_does_not_rewrite_immutable_owner() {
 #[test]
 fn explicit_kick_clears_master_when_no_successor_exists() {
     let session = test_session("kick-clears-master");
-    let (phone, _) = device_client(
-        "phone",
-        ingress_security("device-phone", TrustedIngress::Relay),
-    );
+    let (phone, _) = device_client("phone", remote_security());
     session.add_client(phone.clone()).unwrap();
     assert_eq!(session.master(), "phone");
 
@@ -412,10 +367,7 @@ fn explicit_kick_clears_master_when_no_successor_exists() {
 #[test]
 fn private_transition_promotes_remaining_local_owner() {
     let session = test_session("private-promotes-local");
-    let (remote, _remote_receivers) = device_client(
-        "remote",
-        ingress_security("device-remote", TrustedIngress::Relay),
-    );
+    let (remote, _remote_receivers) = device_client("remote", remote_security());
     let (local, _local_receivers) =
         device_client("local", ClientSecurityContext::direct_loopback_owner());
     session.add_client(remote.clone()).unwrap();
@@ -436,75 +388,13 @@ fn buffered_frame_security_recheck_rejects_retired_generations() {
         ingress: TrustedIngress::DirectRemote,
         principal: authenticate(&authenticator, &owner_token),
     };
-    let device_token = authenticator
-        .issue_device_token("device-a", "Test Phone")
-        .unwrap();
-    let device = ClientSecurityContext {
-        ingress: TrustedIngress::Relay,
-        principal: authenticate(&authenticator, &device_token),
-    };
     let local = ClientSecurityContext::direct_loopback_owner();
     assert!(owner.is_current(&authenticator));
-    assert!(device.is_current(&authenticator));
     assert!(local.is_current(&authenticator));
 
     authenticator.set_token("B".repeat(32)).unwrap();
-    authenticator
-        .issue_device_token("device-a", "Repaired Phone")
-        .unwrap();
     assert!(!owner.is_current(&authenticator));
-    assert!(!device.is_current(&authenticator));
     assert!(local.is_current(&authenticator));
-}
-
-#[test]
-fn takeover_requires_exact_connected_client_generation_and_principal() {
-    let session = test_session("takeover-generation");
-    let (owner, _owner_rx) = device_client("owner", ClientSecurityContext::direct_loopback_owner());
-    session.add_client(owner).unwrap();
-
-    let device_generation = uuid::Uuid::new_v4();
-    let security = generation_security("device-a", device_generation);
-    let principal = security.principal.clone();
-    let (phone, _phone_rx) = device_client("phone", security.clone());
-    session.add_client(phone.clone()).unwrap();
-    let old_conn_gen = phone.conn_gen();
-
-    let _replacement_rx = session
-        .reconnect_client(
-            "phone",
-            "127.0.0.1".to_string(),
-            security,
-            Duration::from_secs(60),
-        )
-        .unwrap();
-    let current_conn_gen = phone.conn_gen();
-    assert_ne!(old_conn_gen, current_conn_gen);
-    assert!(session
-        .set_master_for_connection("phone", old_conn_gen, &principal)
-        .is_err());
-    assert_eq!(session.master(), "owner");
-
-    let wrong_principal = AuthPrincipal::Device {
-        device_id: "device-a".to_string(),
-        device_name: "repaired phone".to_string(),
-        generation: uuid::Uuid::new_v4(),
-    };
-    assert!(session
-        .set_master_for_connection("phone", current_conn_gen, &wrong_principal)
-        .is_err());
-    assert_eq!(session.master(), "owner");
-
-    session
-        .set_master_for_connection("phone", current_conn_gen, &principal)
-        .unwrap();
-    assert_eq!(session.master(), "phone");
-    session.remove_client("phone", current_conn_gen);
-    assert_eq!(session.master(), "owner");
-    assert!(session
-        .set_master_for_connection("phone", current_conn_gen, &principal)
-        .is_err());
-    assert_eq!(session.master(), "owner");
 }
 
 #[test]
@@ -514,20 +404,13 @@ fn readonly_client_cannot_enter_any_master_path() {
     let owner_conn_gen = owner.conn_gen();
     session.add_client(owner).unwrap();
 
-    let readonly_security = generation_security("readonly-device", uuid::Uuid::new_v4());
-    let readonly_principal = readonly_security.principal.clone();
+    let readonly_security = remote_security();
     let (readonly, _readonly_rx) =
         client_with_role("readonly", ClientRole::ReadOnly, readonly_security);
     let readonly_conn_gen = readonly.conn_gen();
     session.add_client(readonly).unwrap();
 
     assert_eq!(session.master(), "owner");
-    assert!(session
-        .set_master_for_connection("readonly", readonly_conn_gen, &readonly_principal)
-        .is_err());
-    assert!(session
-        .forward_master_request_for_connection("readonly", readonly_conn_gen, &readonly_principal,)
-        .is_err());
     assert!(session
         .forward_master_request_for_generation("readonly", readonly_conn_gen)
         .is_err());
@@ -560,8 +443,7 @@ fn dispatch_authority_snapshot_does_not_borrow_a_reconnected_clients_master_role
     let (owner, _owner_rx) = device_client("owner", ClientSecurityContext::direct_loopback_owner());
     session.add_client(owner).unwrap();
 
-    let viewer_security = generation_security("viewer-device", uuid::Uuid::new_v4());
-    let viewer_principal = viewer_security.principal.clone();
+    let viewer_security = remote_security();
     let (viewer, _viewer_rx) = device_client("viewer", viewer_security.clone());
     session.add_client(viewer.clone()).unwrap();
     let old_conn_gen = viewer.conn_gen();
@@ -580,9 +462,7 @@ fn dispatch_authority_snapshot_does_not_borrow_a_reconnected_clients_master_role
         .unwrap();
     let current_conn_gen = viewer.conn_gen();
     assert_ne!(old_conn_gen, current_conn_gen);
-    session
-        .set_master_for_connection("viewer", current_conn_gen, &viewer_principal)
-        .unwrap();
+    promote_to_master(&session, "viewer");
     assert_eq!(session.master(), "viewer");
     assert!(session
         .current_client_connection("viewer", current_conn_gen)
@@ -642,12 +522,11 @@ fn approval_rejects_stale_or_demoted_approver_and_normal_release_still_works() {
     session.add_client(owner.clone()).unwrap();
     let stale_owner_conn_gen = owner.conn_gen();
 
-    let delegate_security = generation_security("delegate-device", uuid::Uuid::new_v4());
-    let delegate_principal = delegate_security.principal.clone();
+    let delegate_security = remote_security();
     let (delegate, _delegate_rx) = device_client("delegate", delegate_security);
     session.add_client(delegate.clone()).unwrap();
 
-    let phone_security = generation_security("phone-device", uuid::Uuid::new_v4());
+    let phone_security = remote_security();
     let (phone, _phone_rx) = device_client("phone", phone_security);
     session.add_client(phone.clone()).unwrap();
 
@@ -671,9 +550,7 @@ fn approval_rejects_stale_or_demoted_approver_and_normal_release_still_works() {
     ));
     assert_eq!(session.master(), "owner");
 
-    session
-        .set_master_for_connection("delegate", delegate.conn_gen(), &delegate_principal)
-        .unwrap();
+    promote_to_master(&session, "delegate");
     assert_eq!(session.master(), "delegate");
 
     assert!(!session.approve_master_for_connections(
@@ -702,17 +579,13 @@ fn approval_rejects_stale_or_demoted_approver_and_normal_release_still_works() {
 fn stale_release_and_reclaim_cannot_change_master() {
     let session = test_session("stale-release-reclaim");
     let owner_security = ClientSecurityContext::direct_loopback_owner();
-    let owner_principal = owner_security.principal.clone();
     let (owner, _owner_rx) = device_client("owner", owner_security.clone());
     session.add_client(owner.clone()).unwrap();
 
-    let phone_security = generation_security("phone-device", uuid::Uuid::new_v4());
-    let phone_principal = phone_security.principal.clone();
+    let phone_security = remote_security();
     let (phone, _phone_rx) = device_client("phone", phone_security.clone());
     session.add_client(phone.clone()).unwrap();
-    session
-        .set_master_for_connection("phone", phone.conn_gen(), &phone_principal)
-        .unwrap();
+    promote_to_master(&session, "phone");
     assert_eq!(session.master(), "phone");
 
     let stale_phone_conn_gen = phone.conn_gen();
@@ -740,13 +613,6 @@ fn stale_release_and_reclaim_cannot_change_master() {
     assert_ne!(stale_owner_conn_gen, owner.conn_gen());
     assert!(!session.reclaim_master_for_connection("owner", stale_owner_conn_gen));
     assert_eq!(session.master(), "phone");
-
-    // Sanity-check the retained owner identity is still principal-compatible;
-    // only the stale connection generation prevented reclaim.
-    assert!(session
-        .set_master_for_connection("owner", stale_owner_conn_gen, &owner_principal)
-        .is_err());
-    assert_eq!(session.master(), "phone");
 }
 
 #[test]
@@ -756,7 +622,7 @@ fn reaper_candidate_cannot_expire_a_reconnected_generation() {
     let (owner, _owner_rx) = device_client("owner", owner_security);
     session.add_client(owner).unwrap();
 
-    let phone_security = generation_security("phone-device", uuid::Uuid::new_v4());
+    let phone_security = remote_security();
     let (phone, _phone_rx) = device_client("phone", phone_security.clone());
     session.add_client(phone.clone()).unwrap();
     let old_conn_gen = phone.conn_gen();
@@ -786,7 +652,7 @@ fn reaper_candidate_cannot_expire_a_reconnected_generation() {
 #[test]
 fn disconnect_master_transition_serializes_with_reconnect() {
     let session = test_session("disconnect-reconnect-serialization");
-    let phone_security = generation_security("phone-device", uuid::Uuid::new_v4());
+    let phone_security = remote_security();
     let (phone, _phone_rx) = device_client("phone", phone_security.clone());
     let (desktop, _desktop_rx) =
         device_client("desktop", ClientSecurityContext::direct_loopback_owner());

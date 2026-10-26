@@ -17,6 +17,7 @@ pub(crate) struct Extensions {
     pub hardlink: bool,
     pub fsync: bool,
     pub statvfs: bool,
+    pub posix_rename: bool,
     pub limits: Option<Arc<Limits>>,
 }
 
@@ -62,6 +63,10 @@ impl SftpSession {
                 .extensions
                 .get(extensions::STATVFS)
                 .is_some_and(|e| e == "2"),
+            posix_rename: version
+                .extensions
+                .get(extensions::POSIX_RENAME)
+                .is_some_and(|e| e == "1"),
             limits: None,
         };
 
@@ -270,6 +275,24 @@ impl SftpSession {
         }
 
         self.session.hardlink(oldpath, newpath).await.map(|_| true)
+    }
+
+    /// Renames `oldpath` to `newpath`, atomically replacing `newpath` if it
+    /// exists. Returns [`Ok(false)`] if the server does not support the
+    /// `posix-rename@openssh.com` extension.
+    pub async fn posix_rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<bool>
+    where
+        O: Into<String>,
+        N: Into<String>,
+    {
+        if !self.extensions.posix_rename {
+            return Ok(false);
+        }
+
+        self.session
+            .posix_rename(oldpath, newpath)
+            .await
+            .map(|_| true)
     }
 
     /// Performs a statvfs on the remote file system path.

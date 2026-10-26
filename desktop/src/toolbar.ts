@@ -21,10 +21,8 @@ import { updateSSHHomeView, exportConnectionsToFile, formatSSHExportResult, impo
 import { showHomeView, showGalleryView, openSettings } from './view-manager';
 import { createNewSession, closeAllSessions, createNewWindowNearCurrent } from './session-actions';
 import { renderTabs } from './tab-renderer';
-import { pendingUpdateVersion, openUpdaterWindow } from './updater';
-import { settings, isHomeView, isGalleryView, isWindowsPlatform, isLinuxPlatform, isMacPlatform, activeJumpServers } from './app-state';
+import { settings, isHomeView, isGalleryView, isWindowsPlatform, isMacPlatform, activeJumpServers } from './app-state';
 import { toggleJumpServerPanel, isJumpServerPanelOpen, showJsConnectionContextMenu } from './jumpserver-panel';
-import { isPipActive, togglePip } from './pip';
 import { DrawerManager } from './drawer';
 import { AICapsuleManager } from './ai-capsule';
 import { toggleFileManager, isFileManagerOpen } from './file-manager-toggle';
@@ -33,7 +31,7 @@ import { isConnectionsDrawerOpen, toggleConnectionsDrawer } from './connections-
 import appIconUrl from '../src-tauri/icons/icon.svg';
 
 /** Platforms that need custom window controls (no native overlay titlebar). */
-const needsCustomControls = isWindowsPlatform || isLinuxPlatform;
+const needsCustomControls = isWindowsPlatform;
 
 // ── Always-on-top state ──
 
@@ -147,10 +145,6 @@ export function showWindowsToolbarMenu(anchor: HTMLElement): void {
   addItem(t('settings'), () => {
     openSettings();
   });
-  addItem(
-    isPipActive() ? t('toolbarExitPictureInPicture') : t('toolbarPictureInPicture'),
-    async () => { await togglePip(); },
-  );
   addDivider();
   addItem(
     t('appMenuImportConnections'),
@@ -395,19 +389,8 @@ export function renderToolbarActions(): void {
     }
   }
 
-  // Update available icon (shown only when update is pending and user hasn't hidden it)
-  if (pendingUpdateVersion && !localStorage.getItem('meterm-hide-update-icon')) {
-    const updateBtn = document.createElement('button');
-    updateBtn.className = 'toolbar-icon-btn toolbar-update-btn';
-    updateBtn.type = 'button';
-    updateBtn.title = t('updateAvailable').replace('{version}', pendingUpdateVersion);
-    updateBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v10m0 0 3.5-3.5M12 12l-3.5-3.5"/><path d="M4.93 15A8 8 0 1 0 12 4"/></svg>`;
-    updateBtn.onclick = () => { void openUpdaterWindow(); };
-    toolbarRightEl.appendChild(updateBtn);
-  }
-
-  // Always-on-top (pin) button: only show when there are terminal tabs and NOT in PiP
-  if (TabManager.tabs.length > 0 && !isPipActive()) {
+  // Always-on-top (pin) button: only show when there are terminal tabs
+  if (TabManager.tabs.length > 0) {
     const aotBtn = document.createElement('button');
     aotBtn.className = `toolbar-icon-btn always-on-top-btn${isAlwaysOnTop ? ' active' : ''}`;
     aotBtn.type = 'button';
@@ -415,19 +398,6 @@ export function renderToolbarActions(): void {
     aotBtn.innerHTML = `<span class="tab-icon">${icon('pin')}</span>`;
     aotBtn.onclick = () => { void toggleAlwaysOnTop(); };
     toolbarRightEl.appendChild(aotBtn);
-  }
-
-  // PiP button: only show when there are terminal tabs
-  if (TabManager.tabs.length > 0 || isPipActive()) {
-    const pipBtn = document.createElement('button');
-    pipBtn.className = `toolbar-icon-btn pip-pin-btn${isPipActive() ? ' active' : ''}`;
-    pipBtn.type = 'button';
-    pipBtn.title = isPipActive()
-      ? t('toolbarExitPictureInPicture')
-      : t('toolbarPictureInPicture');
-    pipBtn.innerHTML = `<span class="tab-icon">${icon('pip')}</span>`;
-    pipBtn.onclick = () => { void togglePip(); };
-    toolbarRightEl.appendChild(pipBtn);
   }
 
   // Settings is reachable from the connection sidebar footer, the macOS menu
@@ -577,11 +547,6 @@ function showJumpServerDropdown(anchor: HTMLElement): void {
 export function setupToolbarDrag(): void {
   const dragLayer = document.getElementById('window-toolbar-drag-layer');
   if (!dragLayer) return;
-  // On Linux CSD, remove data-tauri-drag-region to avoid conflict with
-  // the manual startDragging() handler (double drag attempt causes issues).
-  if (isLinuxPlatform) {
-    dragLayer.removeAttribute('data-tauri-drag-region');
-  }
   dragLayer.addEventListener('mousedown', (event) => {
     if (event.button !== 0) return;
     event.preventDefault();

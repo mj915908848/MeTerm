@@ -374,15 +374,6 @@ class SidebarManagerClass {
     return this.sidebars.get(sessionId)?.isOpen ?? false;
   }
 
-  /** 返回当前处于打开状态的侧边栏 session id 列表（用于 PiP 进入/退出时保存与恢复） */
-  getOpenSessionIds(): string[] {
-    const ids: string[] = [];
-    this.sidebars.forEach((inst, sid) => {
-      if (inst.isOpen) ids.push(sid);
-    });
-    return ids;
-  }
-
   /**
    * 仅修改 isOpen 标记，不触碰 DOM。用于非活跃 tab 的侧边栏：
    * 切换回那个 tab 时 view-manager 会基于 isOpen 自动 show，

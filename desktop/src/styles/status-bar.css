@@ -1,25 +1,33 @@
-/* ── Status Bar (capsule layout) ── */
+/* ── Status Bar (capsule layout) ──
+   Floats over the top edge of #main-content instead of taking a grid row, so
+   appearing/disappearing never changes the terminal size. The bar itself is
+   transparent and click-through; only the capsule groups paint and take
+   clicks. */
 #status {
-  position: relative;
+  position: absolute;
+  top: 37px;
+  left: 0;
+  right: 0;
+  z-index: 40;
   display: flex;
   align-items: center;
   height: 24px;
-  padding: 0 8px;
+  padding: 0 14px;
   color: var(--text-secondary);
   font-size: 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: rgba(var(--bg-status), var(--app-window-opacity));
   gap: 0;
-  overflow: hidden;
+  pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
-  transition: height 0.16s ease, border-bottom-color 0.16s ease;
+  transition: opacity 0.16s ease, transform 0.16s ease;
 }
 
-/* Auto-hide: collapse to 0 when idle (no connecting/error/transfer/AI). */
+/* Auto-hide when idle (no connecting/error/transfer/AI). */
 #status.status-collapsed {
-  height: 0;
-  border-bottom-color: transparent;
+  opacity: 0;
+  transform: translateY(-4px);
+  visibility: hidden;
+  transition: opacity 0.16s ease, transform 0.16s ease, visibility 0s linear 0.16s;
 }
 
 #status.error {
@@ -31,12 +39,30 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+/* Each group is a small solid plate so the capsules stay readable over
+   terminal text. Empty groups paint nothing. */
+.status-left,
+.status-right {
+  padding: 2px;
+  border-radius: 12px;
+  background: rgb(var(--bg-status));
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+}
+.status-left:empty,
+.status-right:empty {
+  display: none;
 }
 
 .status-spacer {
   flex: 1 1 auto;
   min-width: 8px;
+  pointer-events: none;
 }
 
 .status-right {
@@ -115,10 +141,23 @@
 /* ── Capsule: connection ── */
 .capsule-connection {
   background: rgba(255, 255, 255, 0.06);
-  cursor: pointer;
   transition: background 0.15s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
-.capsule-connection:hover {
+/* A long label (an SSH error message) ends in "…"; the tooltip has it all. */
+.capsule-connection .status-label {
+  min-width: 0;
+  max-width: min(60vw, 520px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Clickable (→ reconnect) only while there is something to reconnect. */
+.capsule-connection.clickable {
+  cursor: pointer;
+}
+.capsule-connection.clickable:hover {
   background: rgba(255, 255, 255, 0.12);
 }
 
@@ -291,6 +330,11 @@
 [data-theme="light"] .capsule-transfer {
   background: rgba(0, 0, 0, 0.06);
 }
+
+[data-theme="light"] .status-left,
+[data-theme="light"] .status-right {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
 @keyframes eye-breathe-light {
   0%, 100% {
     opacity: 0.5;
@@ -301,7 +345,7 @@
     filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.6));
   }
 }
-[data-theme="light"] .capsule-connection:hover {
+[data-theme="light"] .capsule-connection.clickable:hover {
   background: rgba(0, 0, 0, 0.12);
 }
 

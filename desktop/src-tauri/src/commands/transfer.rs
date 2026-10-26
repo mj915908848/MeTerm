@@ -1,13 +1,9 @@
-use base64::Engine as _;
-use std::io::{BufWriter as StdBufWriter, Read as _, Seek as _, Write as _};
-use std::net::{SocketAddr, TcpStream as StdTcpStream, ToSocketAddrs};
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ssh2::{CheckResult, HashType, KnownHostFileKind, MethodType};
 use tauri::State;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, BufWriter};
 use tokio_util::sync::CancellationToken;
@@ -15,12 +11,9 @@ use tokio_util::sync::CancellationToken;
 use crate::server::dispatch::{validate_download_offset, validate_path, wait_download_ctrl};
 use crate::server::session::downloads::DownloadOwner;
 use crate::server::session::transfer::{
-    finalize_local_upload, finalize_sftp_upload, finalize_ssh2_upload, UploadLeaseOwner,
+    finalize_local_upload, finalize_sftp_upload, UploadLeaseOwner,
 };
 use crate::server::session::{DownloadSignal, Session, UploadSignal};
-use crate::server::terminal::ssh::{
-    resolve_private_key_pem, SshAuthMethod, SshConfig, DEFAULT_KEY_FILES,
-};
 use crate::server::ServerState;
 
 const LOCAL_DOWNLOAD_CHUNK_SIZE: usize = 1024 * 1024;
@@ -30,11 +23,13 @@ const UPLOAD_PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 const DOWNLOAD_WRITE_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 const UPLOAD_WRITE_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 const SFTP_DOWNLOAD_MAX_INFLIGHT_BYTES: usize = 32 * 1024 * 1024;
-const SSH2_DOWNLOAD_BUFFER_SIZE: usize = 1024 * 1024;
-const SSH2_UPLOAD_BUFFER_SIZE: usize = 1024 * 1024;
-const SSH2_SESSION_TIMEOUT: Duration = Duration::from_secs(15);
+/// Each upload chunk is sent as pipelined SFTP writes, so one round-trip per
+/// chunk instead of one per 32 KiB packet.
+const SFTP_UPLOAD_CHUNK_SIZE: usize = 4 * 1024 * 1024;
 const ASYNC_SFTP_OPERATION_TIMEOUT: Duration = Duration::from_secs(30);
-const SSH2_PAUSE_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const SFTP_UNAVAILABLE: &str = "SFTP is not available for this session";
+const SFTP_READY_TIMEOUT: Duration = Duration::from_secs(15);
+const SFTP_READY_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const SESSION_UPLOAD_CANCEL_GRACE: Duration = Duration::from_secs(30);
 
 #[derive(Clone, serde::Serialize)]
@@ -99,16 +94,6 @@ enum DownloadOutcome {
 enum UploadOutcome {
     Completed,
     Cancelled,
-}
-
-enum BlockingDownloadUpdate {
-    Started { total_size: u64 },
-    Progress { written: u64 },
-}
-
-enum BlockingUploadUpdate {
-    Started { total_size: u64 },
-    Progress { written: u64 },
 }
 
 fn send_event(
@@ -260,656 +245,6 @@ impl<'a> UploadProgressReporter<'a> {
     }
 }
 
-fn known_hosts_paths() -> Vec<PathBuf> {
-    let mut paths = Vec::new();
-    if let Some(home) = dirs::home_dir() {
-        let ssh_dir = home.join(".ssh");
-        paths.push(ssh_dir.join("known_hosts"));
-        paths.push(ssh_dir.join("known_hosts2"));
-    }
-    paths
-}
-
-fn has_aes_acceleration() -> bool {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    {
-        std::is_x86_feature_detected!("aes")
-    }
-    #[cfg(target_arch = "aarch64")]
-    {
-        std::arch::is_aarch64_feature_detected!("aes")
-    }
-    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-    {
-        false
-    }
-}
-
-fn preferred_ssh2_ciphers() -> &'static str {
-    if has_aes_acceleration() {
-        "aes128-gcm@openssh.com,aes256-gcm@openssh.com,aes128-ctr,aes256-ctr,chacha20-poly1305@openssh.com"
-    } else {
-        "chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes128-ctr"
-    }
-}
-
-fn proxy_socket_addr(config: &SshConfig, default_host: &str, default_port: u16) -> String {
-    format!(
-        "{}:{}",
-        if config.proxy_host.is_empty() {
-            default_host
-        } else {
-            &config.proxy_host
-        },
-        if config.proxy_port == 0 {
-            default_port
-        } else {
-            config.proxy_port
-        },
-    )
-}
-
-fn connect_with_timeout(target: &str) -> Result<StdTcpStream, String> {
-    let timeout = SSH2_SESSION_TIMEOUT;
-    let addrs: Vec<SocketAddr> = target
-        .to_socket_addrs()
-        .map_err(|e| format!("resolve {}: {}", target, e))?
-        .collect();
-    if addrs.is_empty() {
-        return Err(format!("resolve {}: no addresses found", target));
-    }
-
-    let mut last_err = None;
-    for addr in addrs {
-        match StdTcpStream::connect_timeout(&addr, timeout) {
-            Ok(stream) => return Ok(stream),
-            Err(err) => last_err = Some(err),
-        }
-    }
-
-    Err(format!(
-        "TCP connect {}: {}",
-        target,
-        last_err
-            .map(|err| err.to_string())
-            .unwrap_or_else(|| "unknown error".to_string())
-    ))
-}
-
-fn connect_via_socks5_blocking(
-    config: &SshConfig,
-    target_host: &str,
-    target_port: u16,
-) -> Result<StdTcpStream, String> {
-    let proxy_addr = proxy_socket_addr(config, "127.0.0.1", 1080);
-    let mut stream = connect_with_timeout(&proxy_addr)?;
-
-    let use_auth = !config.proxy_username.is_empty();
-    let greeting = if use_auth {
-        vec![0x05, 0x02, 0x00, 0x02]
-    } else {
-        vec![0x05, 0x01, 0x00]
-    };
-    stream
-        .write_all(&greeting)
-        .map_err(|e| format!("SOCKS5 greeting {}: {}", proxy_addr, e))?;
-
-    let mut method_reply = [0u8; 2];
-    stream
-        .read_exact(&mut method_reply)
-        .map_err(|e| format!("SOCKS5 method {}: {}", proxy_addr, e))?;
-    if method_reply[0] != 0x05 {
-        return Err(format!(
-            "SOCKS5 proxy {} returned invalid version",
-            proxy_addr
-        ));
-    }
-    match method_reply[1] {
-        0x00 => {}
-        0x02 if use_auth => {
-            let username = config.proxy_username.as_bytes();
-            let password = config.proxy_password.as_bytes();
-            if username.len() > u8::MAX as usize || password.len() > u8::MAX as usize {
-                return Err("SOCKS5 proxy credentials too long".to_string());
-            }
-
-            let mut auth = Vec::with_capacity(3 + username.len() + password.len());
-            auth.push(0x01);
-            auth.push(username.len() as u8);
-            auth.extend_from_slice(username);
-            auth.push(password.len() as u8);
-            auth.extend_from_slice(password);
-            stream
-                .write_all(&auth)
-                .map_err(|e| format!("SOCKS5 auth {}: {}", proxy_addr, e))?;
-
-            let mut auth_reply = [0u8; 2];
-            stream
-                .read_exact(&mut auth_reply)
-                .map_err(|e| format!("SOCKS5 auth reply {}: {}", proxy_addr, e))?;
-            if auth_reply != [0x01, 0x00] {
-                return Err(format!("SOCKS5 proxy {} rejected credentials", proxy_addr));
-            }
-        }
-        0xFF => {
-            return Err(format!(
-                "SOCKS5 proxy {} has no acceptable authentication method",
-                proxy_addr
-            ));
-        }
-        method => {
-            return Err(format!(
-                "SOCKS5 proxy {} returned unsupported auth method {}",
-                proxy_addr, method
-            ));
-        }
-    }
-
-    let host = target_host.as_bytes();
-    if host.len() > u8::MAX as usize {
-        return Err("SOCKS5 target host too long".to_string());
-    }
-
-    let mut request = Vec::with_capacity(7 + host.len());
-    request.extend_from_slice(&[0x05, 0x01, 0x00, 0x03, host.len() as u8]);
-    request.extend_from_slice(host);
-    request.extend_from_slice(&target_port.to_be_bytes());
-    stream
-        .write_all(&request)
-        .map_err(|e| format!("SOCKS5 CONNECT {}: {}", proxy_addr, e))?;
-
-    let mut reply = [0u8; 4];
-    stream
-        .read_exact(&mut reply)
-        .map_err(|e| format!("SOCKS5 CONNECT reply {}: {}", proxy_addr, e))?;
-    if reply[0] != 0x05 {
-        return Err(format!(
-            "SOCKS5 proxy {} returned invalid version",
-            proxy_addr
-        ));
-    }
-    if reply[1] != 0x00 {
-        return Err(format!(
-            "SOCKS5 CONNECT via {} failed with code {}",
-            proxy_addr, reply[1]
-        ));
-    }
-
-    let addr_len = match reply[3] {
-        0x01 => 4,
-        0x04 => 16,
-        0x03 => {
-            let mut len = [0u8; 1];
-            stream
-                .read_exact(&mut len)
-                .map_err(|e| format!("SOCKS5 CONNECT addr len {}: {}", proxy_addr, e))?;
-            len[0] as usize
-        }
-        atyp => {
-            return Err(format!(
-                "SOCKS5 CONNECT via {} returned unsupported address type {}",
-                proxy_addr, atyp
-            ));
-        }
-    };
-
-    let mut discard = vec![0u8; addr_len + 2];
-    stream
-        .read_exact(&mut discard)
-        .map_err(|e| format!("SOCKS5 CONNECT addr {}: {}", proxy_addr, e))?;
-
-    Ok(stream)
-}
-
-fn connect_via_http_connect_blocking(
-    config: &SshConfig,
-    target: &str,
-) -> Result<StdTcpStream, String> {
-    let proxy_addr = proxy_socket_addr(config, "127.0.0.1", 8080);
-    let mut stream = connect_with_timeout(&proxy_addr)?;
-
-    let mut request = format!("CONNECT {} HTTP/1.1\r\nHost: {}\r\n", target, target);
-    if !config.proxy_username.is_empty() {
-        let credentials = format!("{}:{}", config.proxy_username, config.proxy_password);
-        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
-        request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
-    }
-    request.push_str("\r\n");
-    stream
-        .write_all(request.as_bytes())
-        .map_err(|e| format!("HTTP CONNECT send {}: {}", proxy_addr, e))?;
-
-    let mut response = Vec::with_capacity(1024);
-    let mut buf = [0u8; 512];
-    while !response.windows(4).any(|window| window == b"\r\n\r\n") {
-        let n = stream
-            .read(&mut buf)
-            .map_err(|e| format!("HTTP CONNECT read {}: {}", proxy_addr, e))?;
-        if n == 0 {
-            break;
-        }
-        response.extend_from_slice(&buf[..n]);
-        if response.len() > 8192 {
-            break;
-        }
-    }
-
-    let response = String::from_utf8_lossy(&response);
-    let first_line = response.lines().next().unwrap_or_default();
-    if !first_line.contains(" 200 ") && !first_line.ends_with(" 200") {
-        return Err(format!("HTTP CONNECT failed: {}", first_line));
-    }
-
-    Ok(stream)
-}
-
-fn establish_blocking_connection(config: &SshConfig) -> Result<StdTcpStream, String> {
-    let target = format!("{}:{}", config.host, config.port);
-    let stream = match config.proxy_type.as_str() {
-        "socks5" => connect_via_socks5_blocking(config, &config.host, config.port)?,
-        "http" => connect_via_http_connect_blocking(config, &target)?,
-        _ => connect_with_timeout(&target)?,
-    };
-    stream
-        .set_nodelay(true)
-        .map_err(|e| format!("set TCP_NODELAY on {}: {}", target, e))?;
-    Ok(stream)
-}
-
-pub(super) fn ssh_sha256_fingerprint_matches(trusted: &str, hash: &[u8]) -> bool {
-    let trusted = trusted.trim();
-    let digest = trusted.strip_prefix("SHA256:").unwrap_or(trusted);
-    let digest = digest.strip_suffix('=').unwrap_or(digest);
-    digest == base64::engine::general_purpose::STANDARD_NO_PAD.encode(hash)
-}
-
-fn verify_ssh2_host_key(session: &ssh2::Session, config: &SshConfig) -> Result<(), String> {
-    let (host_key, _) = session
-        .host_key()
-        .ok_or_else(|| "failed to read SSH host key".to_string())?;
-
-    if !config.trusted_fingerprint.is_empty() {
-        let hash = session
-            .host_key_hash(HashType::Sha256)
-            .ok_or_else(|| "failed to compute SHA256 host fingerprint".to_string())?;
-        let actual = format!(
-            "SHA256:{}",
-            base64::engine::general_purpose::STANDARD_NO_PAD.encode(hash)
-        );
-        if ssh_sha256_fingerprint_matches(&config.trusted_fingerprint, hash) {
-            return Ok(());
-        }
-        return Err(format!(
-            "SSH host key fingerprint mismatch: expected {}, got {}",
-            config.trusted_fingerprint, actual
-        ));
-    }
-
-    let mut known_hosts = session
-        .known_hosts()
-        .map_err(|e| format!("load known_hosts: {}", e))?;
-    for path in known_hosts_paths() {
-        if path.exists() {
-            known_hosts
-                .read_file(&path, KnownHostFileKind::OpenSSH)
-                .map_err(|e| format!("read known_hosts {}: {}", path.display(), e))?;
-        }
-    }
-
-    match known_hosts.check_port(&config.host, config.port, host_key) {
-        CheckResult::Match => Ok(()),
-        CheckResult::Mismatch => {
-            // A known_hosts entry exists for this host and the key presented on
-            // this fresh transfer connection does NOT match it — a host key
-            // change / possible MITM. The terminal (russh) path never silently
-            // trusts a changed key without a user-confirmed fingerprint
-            // (Layer 3 rejects); mirror that posture here. A legitimate change
-            // is re-confirmed by the user in the UI, which populates
-            // `trusted_fingerprint` and is handled by the exact-match branch
-            // above.
-            Err(format!(
-                "SSH host key mismatch for {}:{}: differs from the known_hosts entry; reconnect the terminal session to re-confirm the host key",
-                config.host, config.port
-            ))
-        }
-        CheckResult::NotFound => {
-            // This is a fresh TCP/SSH connection.  A verified terminal on a
-            // different connection (or a key for another algorithm) cannot
-            // authenticate this key; accepting here would expose passwords and
-            // file contents to a selective MITM of the transfer connection.
-            Err(format!(
-                "cannot verify SSH host key for {}:{}: key is not present in known_hosts and no trusted fingerprint was supplied",
-                config.host, config.port
-            ))
-        }
-        CheckResult::Failure => Err("failed to verify SSH host key".to_string()),
-    }
-}
-
-fn authenticate_ssh2_session(session: &ssh2::Session, config: &SshConfig) -> Result<(), String> {
-    // Stay aligned with the russh terminal path: branch on auth_method, and
-    // when key auth is selected with an empty path, walk the OpenSSH ladder
-    // (ssh-agent → default identity files). No silent fallback to password.
-    match config.auth_method {
-        SshAuthMethod::Key if config.private_key.trim().is_empty() => {
-            let mut diagnostics: Vec<String> = Vec::new();
-
-            // 1) ssh-agent — libssh2 has a single API that walks all agent
-            //    identities internally.
-            if session.userauth_agent(&config.username).is_ok() && session.authenticated() {
-                return Ok(());
-            } else {
-                diagnostics.push("ssh-agent: no identity accepted".to_string());
-            }
-
-            // 2) Default identity files.
-            if let Some(ssh_dir) = dirs::home_dir().map(|h| h.join(".ssh")) {
-                for name in DEFAULT_KEY_FILES {
-                    let path = ssh_dir.join(name);
-                    if !path.is_file() {
-                        continue;
-                    }
-                    let pem = match std::fs::read_to_string(&path) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            diagnostics.push(format!("{}: read failed: {}", name, e));
-                            continue;
-                        }
-                    };
-                    match session.userauth_pubkey_memory(&config.username, None, &pem, None) {
-                        Ok(()) if session.authenticated() => return Ok(()),
-                        Ok(()) => diagnostics.push(format!("{}: server rejected", name)),
-                        Err(e) => diagnostics.push(format!("{}: {}", name, e)),
-                    }
-                }
-            }
-
-            return Err(format!(
-                "no usable SSH identity for SFTP (tried: {})",
-                if diagnostics.is_empty() {
-                    "ssh-agent + ~/.ssh defaults".to_string()
-                } else {
-                    diagnostics.join("; ")
-                }
-            ));
-        }
-        SshAuthMethod::Key => {
-            let pem = resolve_private_key_pem(&config.private_key)?;
-            session
-                .userauth_pubkey_memory(
-                    &config.username,
-                    None,
-                    &pem,
-                    if config.passphrase.is_empty() {
-                        None
-                    } else {
-                        Some(config.passphrase.as_str())
-                    },
-                )
-                .map_err(|e| format!("SSH key auth: {}", e))?;
-        }
-        SshAuthMethod::Password => {
-            session
-                .userauth_password(&config.username, &config.password)
-                .map_err(|e| format!("SSH password auth: {}", e))?;
-        }
-    }
-
-    if session.authenticated() {
-        Ok(())
-    } else {
-        Err("SSH authentication failed".to_string())
-    }
-}
-
-fn run_ssh2_session_download_blocking(
-    config: &SshConfig,
-    path: &str,
-    save_path: &str,
-    start_offset: u64,
-    paused: &AtomicBool,
-    cancelled: &AtomicBool,
-    updates: &tokio::sync::mpsc::UnboundedSender<BlockingDownloadUpdate>,
-) -> Result<(DownloadOutcome, u64), String> {
-    let tcp = establish_blocking_connection(config)?;
-    tcp.set_read_timeout(Some(SSH2_SESSION_TIMEOUT))
-        .map_err(|e| format!("set read timeout: {}", e))?;
-    tcp.set_write_timeout(Some(SSH2_SESSION_TIMEOUT))
-        .map_err(|e| format!("set write timeout: {}", e))?;
-
-    let mut session = ssh2::Session::new().map_err(|e| format!("create ssh2 session: {}", e))?;
-    session
-        .method_pref(MethodType::CryptCs, preferred_ssh2_ciphers())
-        .map_err(|e| format!("set cipher preference (client->server): {}", e))?;
-    session
-        .method_pref(MethodType::CryptSc, preferred_ssh2_ciphers())
-        .map_err(|e| format!("set cipher preference (server->client): {}", e))?;
-    session.set_timeout(SSH2_SESSION_TIMEOUT.as_millis() as u32);
-    session.set_tcp_stream(tcp);
-    session
-        .handshake()
-        .map_err(|e| format!("SSH handshake: {}", e))?;
-    verify_ssh2_host_key(&session, config)?;
-    authenticate_ssh2_session(&session, config)?;
-
-    let negotiated_cipher = session
-        .methods(MethodType::CryptSc)
-        .unwrap_or("unknown")
-        .to_string();
-    eprintln!(
-        "[download] ssh2 backend connected host={}:{} cipher={} proxy={}",
-        config.host,
-        config.port,
-        negotiated_cipher,
-        if config.proxy_type.is_empty() {
-            "direct"
-        } else {
-            &config.proxy_type
-        }
-    );
-
-    let sftp = session
-        .sftp()
-        .map_err(|e| format!("open ssh2 sftp: {}", e))?;
-    let total_size = sftp
-        .stat(Path::new(path))
-        .map_err(|e| format!("stat remote file: {}", e))?
-        .size
-        .unwrap_or(0);
-    validate_download_offset(start_offset, total_size).map_err(str::to_string)?;
-    let _ = updates.send(BlockingDownloadUpdate::Started { total_size });
-
-    let mut remote = sftp
-        .open(Path::new(path))
-        .map_err(|e| format!("open remote file: {}", e))?;
-    if start_offset > 0 {
-        remote
-            .seek(std::io::SeekFrom::Start(start_offset))
-            .map_err(|e| format!("seek remote file: {}", e))?;
-    }
-
-    let mut target = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(start_offset == 0)
-        .open(save_path)
-        .map_err(|e| format!("open local file: {}", e))?;
-    if start_offset > 0 {
-        target
-            .seek(std::io::SeekFrom::Start(start_offset))
-            .map_err(|e| format!("seek local file: {}", e))?;
-    }
-
-    let mut writer = StdBufWriter::with_capacity(DOWNLOAD_WRITE_BUFFER_SIZE, target);
-    let mut written = start_offset;
-    let mut buf = vec![0u8; SSH2_DOWNLOAD_BUFFER_SIZE];
-    let mut last_emit_at = std::time::Instant::now();
-
-    loop {
-        while paused.load(Ordering::Relaxed) {
-            if cancelled.load(Ordering::Relaxed) {
-                let _ = std::fs::remove_file(save_path);
-                return Ok((DownloadOutcome::Cancelled, total_size));
-            }
-            std::thread::sleep(SSH2_PAUSE_POLL_INTERVAL);
-        }
-
-        if cancelled.load(Ordering::Relaxed) {
-            let _ = std::fs::remove_file(save_path);
-            return Ok((DownloadOutcome::Cancelled, total_size));
-        }
-
-        let n = remote
-            .read(&mut buf)
-            .map_err(|e| format!("read remote file: {}", e))?;
-        if n == 0 {
-            break;
-        }
-
-        writer
-            .write_all(&buf[..n])
-            .map_err(|e| format!("write local file: {}", e))?;
-        written += n as u64;
-
-        if written >= total_size || last_emit_at.elapsed() >= DOWNLOAD_PROGRESS_INTERVAL {
-            let _ = updates.send(BlockingDownloadUpdate::Progress { written });
-            last_emit_at = std::time::Instant::now();
-        }
-    }
-
-    writer
-        .flush()
-        .map_err(|e| format!("flush local file: {}", e))?;
-    let _ = updates.send(BlockingDownloadUpdate::Progress { written });
-
-    if written < total_size {
-        let _ = std::fs::remove_file(save_path);
-        return Err("remote file ended unexpectedly".to_string());
-    }
-
-    Ok((DownloadOutcome::Completed { total_size }, total_size))
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn run_ssh2_session_download(
-    config: SshConfig,
-    path: String,
-    save_path: String,
-    start_offset: u64,
-    mut ctrl: tokio::sync::mpsc::Receiver<DownloadSignal>,
-    transfer_id: u32,
-    on_event: &tauri::ipc::Channel<SessionDownloadEvent>,
-    cancellation: CancellationToken,
-) -> Result<DownloadOutcome, String> {
-    validate_path(&path).map_err(|e| e.to_string())?;
-    ensure_save_path(&save_path)?;
-
-    let paused = Arc::new(AtomicBool::new(false));
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let (updates_tx, mut updates_rx) = tokio::sync::mpsc::unbounded_channel();
-
-    let paused_ctrl = Arc::clone(&paused);
-    let cancelled_ctrl = Arc::clone(&cancelled);
-    let ctrl_cancellation = cancellation.clone();
-    let ctrl_task = tokio::spawn(async move {
-        loop {
-            let signal = tokio::select! {
-                _ = ctrl_cancellation.cancelled() => {
-                    cancelled_ctrl.store(true, Ordering::Relaxed);
-                    paused_ctrl.store(false, Ordering::Relaxed);
-                    break;
-                }
-                signal = ctrl.recv() => signal,
-            };
-            let Some(signal) = signal else {
-                cancelled_ctrl.store(true, Ordering::Relaxed);
-                paused_ctrl.store(false, Ordering::Relaxed);
-                break;
-            };
-            match signal {
-                DownloadSignal::Pause => paused_ctrl.store(true, Ordering::Relaxed),
-                DownloadSignal::Continue => paused_ctrl.store(false, Ordering::Relaxed),
-                DownloadSignal::Cancel => {
-                    cancelled_ctrl.store(true, Ordering::Relaxed);
-                    paused_ctrl.store(false, Ordering::Relaxed);
-                    break;
-                }
-            }
-        }
-    });
-
-    let config_blocking = config.clone();
-    let path_blocking = path.clone();
-    let save_path_blocking = save_path.clone();
-    let paused_blocking = Arc::clone(&paused);
-    let cancelled_blocking = Arc::clone(&cancelled);
-    let worker = tokio::task::spawn_blocking(move || {
-        run_ssh2_session_download_blocking(
-            &config_blocking,
-            &path_blocking,
-            &save_path_blocking,
-            start_offset,
-            &paused_blocking,
-            &cancelled_blocking,
-            &updates_tx,
-        )
-    });
-
-    let mut total_size = None;
-    let mut reporter = None;
-    let mut relay_err = None;
-    while let Some(update) = updates_rx.recv().await {
-        match update {
-            BlockingDownloadUpdate::Started { total_size: size } => {
-                total_size = Some(size);
-                if let Err(err) = send_event(
-                    on_event,
-                    SessionDownloadEvent::Started {
-                        transfer_id,
-                        total_size: size,
-                    },
-                ) {
-                    cancelled.store(true, Ordering::Relaxed);
-                    relay_err = Some(err);
-                    break;
-                }
-                reporter = Some(ProgressReporter::new(on_event, transfer_id, size));
-            }
-            BlockingDownloadUpdate::Progress { written } => {
-                if let Some(reporter) = reporter.as_mut() {
-                    if let Err(err) = reporter.emit_if_needed(written, total_size == Some(written))
-                    {
-                        cancelled.store(true, Ordering::Relaxed);
-                        relay_err = Some(err);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let result = worker
-        .await
-        .map_err(|e| format!("join ssh2 download task: {}", e))?;
-    ctrl_task.abort();
-    if let Some(err) = relay_err {
-        return Err(err);
-    }
-
-    match result? {
-        (DownloadOutcome::Cancelled, _) => {
-            send_event(on_event, SessionDownloadEvent::Cancelled { transfer_id })?;
-            Ok(DownloadOutcome::Cancelled)
-        }
-        (DownloadOutcome::Completed { .. }, total_size) => {
-            if let Some(reporter) = reporter.as_mut() {
-                reporter.emit_if_needed(total_size, true)?;
-            }
-            Ok(DownloadOutcome::Completed { total_size })
-        }
-    }
-}
-
 fn ensure_local_source_path(local_path: &str) -> Result<(), String> {
     if local_path.is_empty() {
         return Err("local path is required".to_string());
@@ -941,10 +276,6 @@ async fn wait_upload_ctrl(ctrl: &mut tokio::sync::mpsc::Receiver<UploadSignal>) 
     }
 }
 
-fn cleanup_ssh2_part_file(sftp: &ssh2::Sftp, remote_part_path: &str) {
-    let _ = sftp.unlink(Path::new(remote_part_path));
-}
-
 async fn cleanup_sftp_part_file(
     sftp: &Arc<russh_sftp::client::SftpSession>,
     remote_part_path: &str,
@@ -952,225 +283,27 @@ async fn cleanup_sftp_part_file(
     let _ = sftp.remove_file(remote_part_path.to_string()).await;
 }
 
-fn run_ssh2_session_upload_blocking(
-    config: &SshConfig,
-    local_path: &str,
-    remote_path: &str,
-    paused: &AtomicBool,
-    cancelled: &AtomicBool,
-    updates: &tokio::sync::mpsc::UnboundedSender<BlockingUploadUpdate>,
-) -> Result<(UploadOutcome, u64), String> {
-    let tcp = establish_blocking_connection(config)?;
-    tcp.set_read_timeout(Some(SSH2_SESSION_TIMEOUT))
-        .map_err(|e| format!("set read timeout: {}", e))?;
-    tcp.set_write_timeout(Some(SSH2_SESSION_TIMEOUT))
-        .map_err(|e| format!("set write timeout: {}", e))?;
-
-    let mut session = ssh2::Session::new().map_err(|e| format!("create ssh2 session: {}", e))?;
-    session
-        .method_pref(MethodType::CryptCs, preferred_ssh2_ciphers())
-        .map_err(|e| format!("set cipher preference (client->server): {}", e))?;
-    session
-        .method_pref(MethodType::CryptSc, preferred_ssh2_ciphers())
-        .map_err(|e| format!("set cipher preference (server->client): {}", e))?;
-    session.set_timeout(SSH2_SESSION_TIMEOUT.as_millis() as u32);
-    session.set_tcp_stream(tcp);
-    session
-        .handshake()
-        .map_err(|e| format!("SSH handshake: {}", e))?;
-    verify_ssh2_host_key(&session, config)?;
-    authenticate_ssh2_session(&session, config)?;
-
-    let negotiated_cipher = session
-        .methods(MethodType::CryptCs)
-        .unwrap_or("unknown")
-        .to_string();
-    eprintln!(
-        "[upload] ssh2 backend connected host={}:{} cipher={} proxy={}",
-        config.host,
-        config.port,
-        negotiated_cipher,
-        if config.proxy_type.is_empty() {
-            "direct"
-        } else {
-            &config.proxy_type
-        }
-    );
-
-    let total_size = std::fs::metadata(local_path)
-        .map_err(|e| format!("stat local file: {}", e))?
-        .len();
-    let _ = updates.send(BlockingUploadUpdate::Started { total_size });
-
-    let sftp = session
-        .sftp()
-        .map_err(|e| format!("open ssh2 sftp: {}", e))?;
-    let remote_part_path = format!("{}.meterm.part", remote_path);
-    let mut source =
-        std::fs::File::open(local_path).map_err(|e| format!("open local file: {}", e))?;
-    let mut remote = sftp
-        .create(Path::new(&remote_part_path))
-        .map_err(|e| format!("create remote part file: {}", e))?;
-    let mut written = 0u64;
-    let mut buf = vec![0u8; SSH2_UPLOAD_BUFFER_SIZE];
-    let mut last_emit_at = std::time::Instant::now();
-
+/// The SFTP client a transfer should use, or `None` for a local session.
+///
+/// SSH and JumpServer sessions both transfer over the session's own russh SFTP
+/// client, so no second login is made per transfer. An SSH session sets that
+/// client up in the background right after connecting; a transfer started in
+/// that window waits for it rather than failing.
+async fn session_sftp(
+    session: &Session,
+) -> Result<Option<Arc<russh_sftp::client::SftpSession>>, String> {
+    let deadline = Instant::now() + SFTP_READY_TIMEOUT;
     loop {
-        while paused.load(Ordering::Relaxed) {
-            if cancelled.load(Ordering::Relaxed) {
-                drop(remote);
-                cleanup_ssh2_part_file(&sftp, &remote_part_path);
-                return Ok((UploadOutcome::Cancelled, total_size));
-            }
-            std::thread::sleep(SSH2_PAUSE_POLL_INTERVAL);
+        if let Some(sftp) = session.sftp.lock().unwrap().clone() {
+            return Ok(Some(sftp));
         }
-
-        if cancelled.load(Ordering::Relaxed) {
-            drop(remote);
-            cleanup_ssh2_part_file(&sftp, &remote_part_path);
-            return Ok((UploadOutcome::Cancelled, total_size));
+        if *session.executor_type.lock().unwrap() != "ssh" {
+            return Ok(None);
         }
-
-        let n = source
-            .read(&mut buf)
-            .map_err(|e| format!("read local file: {}", e))?;
-        if n == 0 {
-            break;
+        if session.sftp_init_error.lock().unwrap().is_some() || Instant::now() >= deadline {
+            return Err(SFTP_UNAVAILABLE.to_string());
         }
-
-        remote
-            .write_all(&buf[..n])
-            .map_err(|e| format!("write remote file: {}", e))?;
-        written += n as u64;
-
-        if written >= total_size || last_emit_at.elapsed() >= UPLOAD_PROGRESS_INTERVAL {
-            let _ = updates.send(BlockingUploadUpdate::Progress { written });
-            last_emit_at = std::time::Instant::now();
-        }
-    }
-
-    remote
-        .flush()
-        .map_err(|e| format!("flush remote file: {}", e))?;
-    drop(remote);
-    finalize_ssh2_upload(&sftp, &remote_part_path, remote_path)?;
-    let _ = updates.send(BlockingUploadUpdate::Progress { written });
-
-    if written < total_size {
-        cleanup_ssh2_part_file(&sftp, &remote_part_path);
-        return Err("local file ended unexpectedly".to_string());
-    }
-
-    Ok((UploadOutcome::Completed, total_size))
-}
-
-async fn run_ssh2_session_upload(
-    config: SshConfig,
-    local_path: String,
-    remote_path: String,
-    mut ctrl: tokio::sync::mpsc::Receiver<UploadSignal>,
-    transfer_id: u32,
-    on_event: &tauri::ipc::Channel<SessionUploadEvent>,
-) -> Result<UploadOutcome, String> {
-    validate_path(&remote_path).map_err(|e| e.to_string())?;
-    ensure_local_source_path(&local_path)?;
-
-    let paused = Arc::new(AtomicBool::new(false));
-    let cancelled = Arc::new(AtomicBool::new(false));
-    let (updates_tx, mut updates_rx) = tokio::sync::mpsc::unbounded_channel();
-
-    let paused_ctrl = Arc::clone(&paused);
-    let cancelled_ctrl = Arc::clone(&cancelled);
-    let ctrl_task = tokio::spawn(async move {
-        while let Some(signal) = ctrl.recv().await {
-            match signal {
-                UploadSignal::Pause => paused_ctrl.store(true, Ordering::Relaxed),
-                UploadSignal::Continue => paused_ctrl.store(false, Ordering::Relaxed),
-                UploadSignal::Cancel => {
-                    cancelled_ctrl.store(true, Ordering::Relaxed);
-                    paused_ctrl.store(false, Ordering::Relaxed);
-                    break;
-                }
-            }
-        }
-    });
-
-    let config_blocking = config.clone();
-    let local_path_blocking = local_path.clone();
-    let remote_path_blocking = remote_path.clone();
-    let paused_blocking = Arc::clone(&paused);
-    let cancelled_blocking = Arc::clone(&cancelled);
-    let worker = tokio::task::spawn_blocking(move || {
-        run_ssh2_session_upload_blocking(
-            &config_blocking,
-            &local_path_blocking,
-            &remote_path_blocking,
-            &paused_blocking,
-            &cancelled_blocking,
-            &updates_tx,
-        )
-    });
-
-    let mut total_size = None;
-    let mut reporter = None;
-    let mut relay_err = None;
-    while let Some(update) = updates_rx.recv().await {
-        match update {
-            BlockingUploadUpdate::Started { total_size: size } => {
-                total_size = Some(size);
-                if let Err(err) = send_upload_event(
-                    on_event,
-                    SessionUploadEvent::Started {
-                        transfer_id,
-                        total_size: size,
-                    },
-                ) {
-                    cancelled.store(true, Ordering::Relaxed);
-                    relay_err = Some(err);
-                    break;
-                }
-                reporter = Some(UploadProgressReporter::new(on_event, transfer_id, size));
-            }
-            BlockingUploadUpdate::Progress { written } => {
-                if let Some(reporter) = reporter.as_mut() {
-                    if let Err(err) = reporter.emit_if_needed(written, total_size == Some(written))
-                    {
-                        cancelled.store(true, Ordering::Relaxed);
-                        relay_err = Some(err);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let result = worker
-        .await
-        .map_err(|e| format!("join ssh2 upload task: {}", e))?;
-    ctrl_task.abort();
-    if let Some(err) = relay_err {
-        return Err(err);
-    }
-
-    match result? {
-        (UploadOutcome::Cancelled, _) => {
-            send_upload_event(on_event, SessionUploadEvent::Cancelled { transfer_id })?;
-            Ok(UploadOutcome::Cancelled)
-        }
-        (UploadOutcome::Completed, total_size) => {
-            if let Some(reporter) = reporter.as_mut() {
-                reporter.emit_if_needed(total_size, true)?;
-            }
-            send_upload_event(
-                on_event,
-                SessionUploadEvent::Completed {
-                    transfer_id,
-                    total_size,
-                    remote_path,
-                },
-            )?;
-            Ok(UploadOutcome::Completed)
-        }
+        tokio::time::sleep(SFTP_READY_POLL_INTERVAL).await;
     }
 }
 
@@ -1689,28 +822,7 @@ async fn run_session_download_to_stage(
     on_event: &tauri::ipc::Channel<SessionDownloadEvent>,
     cancellation: CancellationToken,
 ) -> Result<DownloadOutcome, String> {
-    let is_ssh = *session.executor_type.lock().unwrap() == "ssh";
-    if is_ssh {
-        let ssh_config = session.ssh_config.lock().unwrap().clone();
-        if let Some(config) = ssh_config {
-            return run_ssh2_session_download(
-                config,
-                path,
-                save_path,
-                start_offset,
-                ctrl,
-                transfer_id,
-                on_event,
-                cancellation,
-            )
-            .await;
-        }
-
-        return Err("SSH session configuration is unavailable".to_string());
-    }
-
-    let sftp = session.sftp.lock().unwrap().clone();
-    if let Some(sftp) = sftp {
+    if let Some(sftp) = session_sftp(&session).await? {
         run_sftp_session_download(
             sftp,
             path,
@@ -1935,7 +1047,7 @@ async fn run_sftp_session_upload(
         .map_err(|e| format!("create remote part file: {}", e))?;
     let mut reporter = UploadProgressReporter::new(on_event, transfer_id, total_size);
     let mut written = 0u64;
-    let mut buf = vec![0u8; LOCAL_UPLOAD_CHUNK_SIZE];
+    let mut buf = vec![0u8; SFTP_UPLOAD_CHUNK_SIZE];
 
     loop {
         if wait_upload_ctrl(&mut ctrl).await {
@@ -1954,7 +1066,7 @@ async fn run_sftp_session_upload(
         }
 
         remote
-            .write_all(&buf[..n])
+            .write_all_pipelined(&buf[..n])
             .await
             .map_err(|e| format!("write remote file: {}", e))?;
         written += n as u64;
@@ -1988,26 +1100,7 @@ async fn run_session_upload(
     transfer_id: u32,
     on_event: &tauri::ipc::Channel<SessionUploadEvent>,
 ) -> Result<UploadOutcome, String> {
-    let is_ssh = *session.executor_type.lock().unwrap() == "ssh";
-    if is_ssh {
-        let ssh_config = session.ssh_config.lock().unwrap().clone();
-        if let Some(config) = ssh_config {
-            return run_ssh2_session_upload(
-                config,
-                local_path,
-                remote_path,
-                ctrl,
-                transfer_id,
-                on_event,
-            )
-            .await;
-        }
-
-        return Err("SSH session configuration is unavailable".to_string());
-    }
-
-    let sftp = session.sftp.lock().unwrap().clone();
-    if let Some(sftp) = sftp {
+    if let Some(sftp) = session_sftp(&session).await? {
         run_sftp_session_upload(sftp, local_path, remote_path, ctrl, transfer_id, on_event).await
     } else {
         run_local_session_upload(local_path, remote_path, ctrl, transfer_id, on_event).await

@@ -4,6 +4,7 @@ pub const LIMITS: &str = "limits@openssh.com";
 pub const HARDLINK: &str = "hardlink@openssh.com";
 pub const FSYNC: &str = "fsync@openssh.com";
 pub const STATVFS: &str = "statvfs@openssh.com";
+pub const POSIX_RENAME: &str = "posix-rename@openssh.com";
 
 macro_rules! impl_try_into_bytes {
     ($struct:ty) => {
@@ -32,6 +33,14 @@ pub struct HardlinkExtension {
 }
 
 impl_try_into_bytes!(HardlinkExtension);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PosixRenameExtension {
+    pub oldpath: String,
+    pub newpath: String,
+}
+
+impl_try_into_bytes!(PosixRenameExtension);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FsyncExtension {

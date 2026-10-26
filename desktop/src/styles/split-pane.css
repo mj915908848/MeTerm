@@ -75,7 +75,7 @@
 /* Light-base themes: brightness(0.7) crushes a white panel (248→~174) into a grey
    overlay. Use an almost-imperceptible dim so the focused pane just reads brighter,
    instead of veiling the inactive ones. Dark themes keep 0.7. */
-:is([data-theme="light"], [data-theme="neo-brutalism"], [data-theme="neo-brutalism-rounded"])
+[data-theme="light"]
   .split-container .split-pane:not(.focused) > .terminal-container {
   filter: brightness(0.95);
 }
