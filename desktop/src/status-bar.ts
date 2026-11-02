@@ -467,12 +467,13 @@ class StatusBarClass {
    * The bar is a readout of *what is happening right now*, not a permanent
    * fixture: it is on screen while something is in flight or wrong —
    * connecting, reconnecting, a failure, a file transfer, a running AI turn —
-   * and retracts to 0 the rest of the time. A healthy session that just sits
-   * there is not an event, so it fades out.
+   * and is empty the rest of the time. A healthy session that just sits
+   * there is not an event, so its contents fade out.
    *
-   * It floats over the top of the content area instead of taking a grid row:
-   * a row that grows and shrinks would resize every terminal (and send the
-   * remote a SIGWINCH) each time an AI turn or transfer starts or ends.
+   * The row itself keeps its 24px (status-bar.css): a row that grows and
+   * shrinks would resize every terminal (and send the remote a SIGWINCH)
+   * each time an AI turn or transfer starts or ends, and a floating layer
+   * covered the terminal's top-left corner.
    *
    * Collapsing is also the signal to stop *measuring*: the 5s ping only exists
    * to feed the latency capsule next to the connection label, so with the bar

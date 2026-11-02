@@ -2,8 +2,8 @@
  * The status bar is on screen only while there is something to report:
  * connecting, reconnecting, a failure, a file transfer, a running AI turn.
  * A session that connected and then just sat there is not an event, so the bar
- * fades out. It floats over the content instead of owning a grid row, so
- * showing/hiding it never resizes the terminals (no SIGWINCH per AI turn).
+ * empties. Its 24px row is always reserved, so showing/hiding it never
+ * resizes the terminals (no SIGWINCH per AI turn).
  *
  * History, because this has flip-flopped: v0.2.11 made the bar auto-hide;
  * 2026-09-22 whitelisted the plain `connected` state at the owner's request
@@ -177,7 +177,7 @@ test('a settled connection leaves the bar out of the way', () => {
 
   statusBar.setConnection('connected', 'bruceli@192.168.0.150');
 
-  // A healthy session is not an event: the bar fades out.
+  // A healthy session is not an event: the bar empties.
   assert.equal(container.classList.contains('status-collapsed'), true,
     'a settled connection must not pin the bar on screen');
   // ...and it never touches the #app layout, so no terminal is resized.
@@ -264,7 +264,7 @@ function ruleBody(css: string, selector: string): string {
   return match ? match[1] : '';
 }
 
-test('the bar floats over the content and never takes a grid row', () => {
+test('the bar keeps a fixed 24px row: no resize, nothing covered', () => {
   const statusCss = styleSource('status-bar.css');
   const baseCss = styleSource('base.css');
 
@@ -273,16 +273,17 @@ test('the bar floats over the content and never takes a grid row', () => {
   assert.match(baseCss, /#app\s*\{/);
 
   const bar = ruleBody(statusCss, '#status');
-  assert.match(bar, /position:\s*absolute;/,
-    'a bar in the grid flow would resize every terminal when it shows/hides');
-  assert.match(bar, /pointer-events:\s*none;/,
-    'the transparent strip must not swallow clicks meant for the terminal');
+  assert.equal(bar.match(/height:\s*([^;]+);/)?.[1].trim(), '24px');
+  assert.doesNotMatch(bar, /position:\s*absolute;/,
+    'a floating bar covers the terminal\'s top-left corner');
 
   const appRows = ruleBody(baseCss, '#app').match(/grid-template-rows:\s*([^;]+);/)?.[1].trim();
-  assert.equal(appRows, `33px minmax(0, 1fr)`, '#app must not reserve a status row');
-  assert.doesNotMatch(baseCss, /app-status-collapsed/);
+  assert.equal(appRows, `33px 24px minmax(0, 1fr)`, 'the reserved row must equal the bar height');
+  assert.doesNotMatch(baseCss, /app-status-collapsed/,
+    'the row must never collapse — that resized every terminal per AI turn');
 
-  const collapsed = ruleBody(statusCss, '#status.status-collapsed');
-  assert.match(collapsed, /opacity:\s*0;/);
-  assert.doesNotMatch(collapsed, /height:/, 'hiding must not change the bar\'s box');
+  // Idle hides only the contents; the box keeps its size.
+  const collapsed = ruleBody(statusCss, '#status.status-collapsed > *');
+  assert.match(collapsed, /visibility:\s*hidden;/);
+  assert.doesNotMatch(ruleBody(statusCss, '#status.status-collapsed'), /height:/);
 });
