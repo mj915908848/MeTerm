@@ -156,13 +156,15 @@ export async function renderChatHistoryList(
   const panel = instance.chatHistoryPanel;
   if (!panel) return;
 
+  // Placeholder rows while the summaries load; the list replaces them.
+  const loading = `<div class="ai-chat-hist-loading" aria-busy="true" aria-label="${t('aiChatHistoryTitle')}">`
+    + '<div class="ai-chat-hist-skeleton"></div>'.repeat(3) + '</div>';
   const isSideInline = panel.classList.contains('ai-side-chat-history-view');
   if (isSideInline) {
-    panel.innerHTML = `<div class="ai-chat-hist-header"><span class="ai-chat-hist-title">${t('aiChatHistoryTitle')}</span></div><div class="ai-chat-hist-loading" style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">...</div>`;
+    panel.innerHTML = loading;
   } else {
     const { getPopupScrollViewport } = await import('./overlay-scrollbar');
-    const vp = getPopupScrollViewport(panel);
-    vp.innerHTML = `<div class="ai-chat-hist-header"><span class="ai-chat-hist-title">${t('aiChatHistoryTitle')}</span></div><div class="ai-chat-hist-loading" style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px;">...</div>`;
+    getPopupScrollViewport(panel).innerHTML = loading;
   }
 
   const convs = await host.loadConversations();

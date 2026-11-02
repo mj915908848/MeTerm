@@ -1,22 +1,41 @@
 
 /* ─── AI Chat Panel ─── */
-.ai-history-scope { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
-.ai-history-scope button, .ai-history-preview button {
-  color: var(--text-primary); background: rgb(var(--bg-button)); border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md); padding: 5px 9px; cursor: pointer;
-}
-.ai-history-scope button[aria-pressed="true"] { border-color: var(--accent, #6aa4ff); }
-.ai-history-scope input { width: 100%; color: var(--text-primary); background: transparent; border: 1px solid var(--border-primary); border-radius: var(--radius-md); padding: 6px; }
+/* Read-only preview of a conversation from another host. */
 .ai-history-preview-drawer { position: fixed; right: 8px; top: 40px; bottom: 8px; z-index: 10000; width: min(440px, 95vw); }
-.ai-history-preview { box-sizing: border-box; width: 100%; height: 100%; overflow: auto; background: rgb(var(--bg-primary, 30, 30, 30)); color: var(--text-primary); border: 1px solid var(--border-primary); border-radius: var(--radius-xl); padding: 14px; box-shadow: 0 16px 60px rgba(0,0,0,.2); }
-.ai-history-preview-inline { height: auto; min-height: 100%; overflow: visible; border: 0; border-radius: 0; box-shadow: none; }
-.ai-history-preview h3 { margin: 0 0 10px; font-size: 14px; overflow-wrap: anywhere; }
-.ai-history-preview > p { font-size: var(--fs-sm); color: var(--text-dim); }
-.ai-history-preview button:hover { background: rgb(var(--bg-button-hover)); }
-.ai-history-preview button:focus-visible { outline: 2px solid var(--accent, #6aa4ff); outline-offset: 2px; }
+.ai-history-preview {
+  box-sizing: border-box; width: 100%; height: 100%; overflow: auto;
+  background: rgb(var(--bg-primary, 30, 30, 30)); color: var(--text-primary);
+  border: 1px solid var(--border-primary); border-radius: var(--radius-xl);
+  padding: 12px 14px 14px; box-shadow: 0 16px 60px rgba(0, 0, 0, .2);
+  /* Row-wrap so the action buttons sit side by side; every text block takes a full line. */
+  display: flex; flex-flow: row wrap; align-items: center; align-content: flex-start; gap: 8px;
+}
+.ai-history-preview > h3, .ai-history-preview > p, .ai-history-preview > .ai-history-preview-body { flex: 0 0 100%; }
+.ai-history-preview-inline { height: auto; min-height: 100%; overflow: visible; border: 0; border-radius: 0; box-shadow: none; padding: 4px 6px; }
+.ai-history-preview h3 { margin: 0; font-size: var(--fs-md); font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; color: var(--text-heading); }
+.ai-history-preview > p {
+  margin: 0; box-sizing: border-box; font-size: var(--fs-xs); line-height: 1.5; color: var(--text-secondary);
+  background: var(--fill-subtle); border-radius: var(--radius-md); padding: 6px 8px;
+}
+.ai-history-preview > p:empty { display: none; }
+.ai-history-preview button {
+  height: 26px; padding: 0 10px; font-size: var(--fs-xs);
+  color: var(--text-primary); background: var(--fill); border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md); cursor: pointer; transition: background 0.12s;
+}
+.ai-history-preview button:hover { background: var(--fill-hover); }
+.ai-history-preview button:disabled { opacity: 0.5; cursor: default; }
+.ai-history-preview button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Back / close: a quiet text button, not a boxed one. */
+.ai-history-preview .ai-history-preview-back {
+  height: 22px; padding: 0 6px; margin-left: -6px; background: transparent; border-color: transparent; color: var(--text-secondary);
+}
+.ai-history-preview .ai-history-preview-back:hover { background: var(--fill); color: var(--text-primary); }
 .ai-history-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-.ai-history-preview-body { margin-top: 12px; overflow: visible; flex: none; }
-.ai-history-preview .ai-history-preview-back { display: block; margin: 0 0 12px; }
+.ai-history-preview-body {
+  box-sizing: border-box; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--border-primary);
+  overflow: visible;
+}
 .ai-response-actions {
   display: flex;
   justify-content: flex-start;
@@ -1041,43 +1060,8 @@ html.vibrancy-active .ai-side-model-dropdown {
   flex-direction: column;
   gap: 2px;
 }
-/* Reuse existing chat history row/item styles from ai-bar.css */
-.ai-side-chat-history-view .ai-chat-hist-header {
-  padding: 4px 4px 8px;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.ai-side-chat-history-view .ai-chat-hist-row {
-  padding: 8px 10px;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: background 0.1s;
-}
-.ai-side-chat-history-view .ai-chat-hist-row:hover {
-  background: var(--fill-subtle);
-}
-/* Side panel: keep meta below title, stacked vertically */
-.ai-side-chat-history-view .ai-chat-hist-info {
-  flex-direction: column;
-  /* stretch, NOT flex-start. This is the cross axis: with flex-start the title
-     sizes to fit-content, and because it is `white-space: nowrap` its
-     min-content equals its max-content — so a long title resolves to its full
-     text width, escapes the info box and paints underneath the delete button
-     instead of ellipsising. */
-  align-items: stretch;
-  gap: 2px;
-}
-[data-theme="light"] .ai-side-chat-history-view .ai-chat-hist-row:hover {
-  background: rgba(0, 0, 0, 0.04);
-}
-.ai-side-chat-history-view .ai-chat-hist-row.current,
-[data-theme="light"] .ai-side-chat-history-view .ai-chat-hist-row.current {
-  background: var(--accent-bg);
-}
-.ai-side-chat-history-view .ai-chat-hist-row-snippet { order: 0; }
-.ai-side-chat-history-view .ai-chat-hist-group { padding: 10px 10px 4px; font-size: var(--fs-xs); }
-.ai-side-chat-history-view .ai-chat-hist-group:first-child { padding-top: 2px; }
+/* Row, list and control styles are shared with the AI Bar popup (ai-bar.css). */
+.ai-side-chat-history-view .ai-chat-hist-row { padding: 8px 8px 8px 10px; }
 
 
 /* ============================================
