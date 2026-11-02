@@ -1,4 +1,5 @@
 import { escapeHtml } from './status-bar';
+import { scrollChatToEnd } from './ai-chat-scroll';
 import { t, tf } from './i18n';
 import { toolIcon, statusIcon, spinnerIcon, approveIcon, rejectIcon, editIcon, TOOL_COLORS } from './ai-icons';
 import type { AICapsuleInstance, ConvEntry } from './ai-capsule-types';
@@ -357,7 +358,7 @@ export function appendToolCallCard(
 
   container.appendChild(card);
   sinkAgentPulse(instance);
-  container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container);
 
   // Add run_command commands to history so they appear in the history panel
   if (toolName === 'run_command' && typeof args.command === 'string' && args.command.trim()) {
@@ -426,7 +427,7 @@ function mountPreWaitCard(
 
   renderWaitForUserInputCard(card, { reason, timeout: timeoutSec });
   container.appendChild(card);
-  container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container, true);
 
   notifyAgentWaiting('Agent paused — your input needed', reason);
 }
@@ -700,7 +701,7 @@ export function updateToolResultCard(
   }
 
   card.classList.add('completed');
-  container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container);
 
   // Back-fill result into the last pending tool_call entry for this tool
   for (let i = instance.messages.length - 1; i >= 0; i--) {
@@ -742,7 +743,7 @@ export function updateToolResultImages(
   if (card.querySelector('.ai-tool-images')) return;
 
   card.appendChild(buildImageThumbStrip(images));
-  container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container);
 
   // Back-fill images into the last pending tool_call entry.
   for (let i = instance.messages.length - 1; i >= 0; i--) {
@@ -861,7 +862,7 @@ export function showConfirmCard(
     card.appendChild(preview);
     card.appendChild(buttons);
     container.appendChild(card);
-    container.scrollTop = container.scrollHeight;
+    scrollChatToEnd(container, true);
 
     // Background notification: the agent is blocked waiting for the
     // user to click Allow/Reject/Edit. If the window isn't focused,

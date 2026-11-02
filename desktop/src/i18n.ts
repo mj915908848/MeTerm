@@ -383,6 +383,7 @@ export interface Translations {
   aiRunCommand: string;
   aiCopyCode: string;
   aiCopyResponse: string;
+  aiJumpToLatest: string;
   aiCopyFailed: string;
   aiDangerConfirmTitle: string;
   aiDangerConfirmMsg: string;
@@ -1149,6 +1150,7 @@ const translations: Record<Language, Translations> = {
     aiRunCommand: 'Run',
     aiCopyCode: 'Copy',
     aiCopyResponse: 'Copy response',
+    aiJumpToLatest: 'Jump to latest',
     aiCopyFailed: 'Copy failed — try again',
     aiDangerConfirmTitle: 'Dangerous Command',
     aiDangerConfirmMsg: 'This command may cause irreversible changes. Are you sure you want to run it?',
@@ -1911,6 +1913,7 @@ const translations: Record<Language, Translations> = {
     aiRunCommand: '执行',
     aiCopyCode: '复制',
     aiCopyResponse: '复制回答',
+    aiJumpToLatest: '回到最新',
     aiCopyFailed: '复制失败，请重试',
     aiDangerConfirmTitle: '危险命令',
     aiDangerConfirmMsg: '该命令可能造成不可逆的更改，确定要执行吗？',

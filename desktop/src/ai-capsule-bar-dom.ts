@@ -108,8 +108,10 @@ export function createBarElement(
   const inputWrap = document.createElement('div');
   inputWrap.className = 'ai-bar-input-wrap';
 
-  const input = document.createElement('input');
-  input.type = 'text';
+  // A textarea so pasted multi-line text survives and Shift+Enter can add
+  // a line; it grows with its content (see syncBarInputHeight).
+  const input = document.createElement('textarea');
+  input.rows = 1;
   input.className = 'ai-bar-input';
   input.placeholder = ' '; // non-empty so :placeholder-shown works
   input.autocapitalize = 'off';
@@ -197,6 +199,26 @@ export function createBarElement(
   bar.appendChild(hideBtn);
 
   return bar;
+}
+
+// ─── Input height ────────────────────────────────────────────
+
+/** Tallest the bar input grows before it scrolls (about 6 lines). */
+const BAR_INPUT_MAX_PX = 120;
+const BAR_INPUT_LINE_PX = 24;
+
+/**
+ * Fit the AI Bar textarea to its content. Call after any change to its
+ * value; programmatic assignments don't fire `input`.
+ */
+export function syncBarInputHeight(input: HTMLTextAreaElement | null | undefined): void {
+  if (!input) return;
+  input.style.height = '';
+  const needed = input.value ? input.scrollHeight : BAR_INPUT_LINE_PX;
+  const height = Math.min(Math.max(needed, BAR_INPUT_LINE_PX), BAR_INPUT_MAX_PX);
+  input.style.height = `${height}px`;
+  input.style.overflowY = needed > BAR_INPUT_MAX_PX ? 'auto' : 'hidden';
+  input.closest('.ai-bar')?.classList.toggle('ai-bar--multiline', height > BAR_INPUT_LINE_PX);
 }
 
 // ─── Sync Placeholder ────────────────────────────────────────

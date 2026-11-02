@@ -3,6 +3,7 @@
 // restoration and "send to LLM" logic. Extracted from ai-capsule.ts.
 
 import { t, tf } from './i18n';
+import { installChatScrollFollow, scrollChatToEnd } from './ai-chat-scroll';
 import { loadSettings } from './themes';
 import { TerminalRegistry } from './terminal';
 import { createOverlayScrollbar } from './overlay-scrollbar';
@@ -91,10 +92,30 @@ function leaveHeaderHistoryView(
   if (messages) messages.style.display = '';
 }
 
+/**
+ * Links in AI replies open in the system browser. Left alone, a click would
+ * navigate the app's own webview away. Installed once, on the document, so
+ * it also covers history previews and the host-binding dialog.
+ */
+let markdownLinkHandlerInstalled = false;
+function installMarkdownLinkHandler(): void {
+  if (markdownLinkHandlerInstalled) return;
+  markdownLinkHandlerInstalled = true;
+  document.addEventListener('click', (e) => {
+    const link = (e.target as Element | null)?.closest?.('a.ai-md-link') as HTMLAnchorElement | null;
+    if (!link) return;
+    e.preventDefault();
+    const href = link.getAttribute('href') ?? '';
+    if (!/^https?:\/\//i.test(href)) return;
+    void import('@tauri-apps/plugin-opener').then(({ openUrl }) => openUrl(href)).catch(() => {});
+  });
+}
+
 export function createChatPanel(
   instance: AICapsuleInstance,
   host: ChatOpsHost,
 ): HTMLDivElement {
+  installMarkdownLinkHandler();
   const panel = document.createElement('div');
   panel.className = 'ai-chat-panel';
   // Tag with the owning session so cross-cutting code (e.g. the
@@ -223,6 +244,7 @@ export function createChatPanel(
   panel.appendChild(header);
   panel.appendChild(messages);
   createOverlayScrollbar({ viewport: messages, container: messages });
+  installChatScrollFollow(messages, panel);
 
   // Bind context menu on the messages container (event delegation)
   host.bindChatContextMenu(instance, messages);
@@ -692,7 +714,7 @@ export function restoreConversation(
     restoreTodoBoardFromHistory(instance);
 
     host.bindCommandButtons(instance, msgContainer);
-    msgContainer.scrollTop = msgContainer.scrollHeight;
+    scrollChatToEnd(msgContainer, true);
   }
 
   // Show chat panel

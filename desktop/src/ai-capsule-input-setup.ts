@@ -4,6 +4,7 @@
 // history/chat-history search mode, etc.
 
 import { t } from './i18n';
+import { syncBarInputHeight } from './ai-capsule-bar-dom';
 import { announceHostNotes } from './ai-capsule-chat-ui';
 import { loadSettings, updateSettings } from './themes';
 import { TerminalRegistry } from './terminal';
@@ -49,7 +50,7 @@ export interface InputSetupHost {
 }
 
 export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): void {
-  const input = instance.element.querySelector('.ai-bar-input') as HTMLInputElement;
+  const input = instance.element.querySelector('.ai-bar-input') as HTMLTextAreaElement;
   const termBtn = instance.element.querySelector('.ai-bar-btn-term') as HTMLButtonElement;
   const llmBtn = instance.element.querySelector('.ai-bar-btn-llm') as HTMLButtonElement;
 
@@ -81,6 +82,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
   // whatever they were typing there.
   if (instance.state.draftText && !input.value) {
     input.value = instance.state.draftText;
+    syncBarInputHeight(input);
   }
 
   // Dismiss hint when input changes + sync draft back to tab state
@@ -91,6 +93,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
       dismissPromptHint();
     }
     instance.state.draftText = input.value;
+    syncBarInputHeight(input);
   });
 
   const sendToTerminal = () => {
@@ -101,6 +104,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
     TerminalRegistry.sendCommand(instance.sessionId, text);
     host.addHistory(instance, text, 'manual');
     input.value = '';
+    syncBarInputHeight(input);
     instance.state.draftText = '';
   };
 
@@ -149,6 +153,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
     host.updateChatTitle(instance);
     void host.saveConversation(instance);
     input.value = '';
+    syncBarInputHeight(input);
     instance.state.draftText = '';
 
     // Start streaming
@@ -221,6 +226,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
       if (text) {
         host.injectUserMessage(instance, text);
         input.value = '';
+        syncBarInputHeight(input);
         instance.state.draftText = '';
       } else {
         instance.agentAbort?.();
@@ -302,6 +308,13 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
       return;
     }
 
+    // Shift+Enter adds a line (the textarea's default); every other
+    // Enter combination keeps its send meaning below.
+    if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.stopPropagation();
+      return;
+    }
+
     if (e.key === 'Enter') {
       if (instance.layoutMode === 'side') {
         // Side mode: AI Bar input always sends to terminal
@@ -322,6 +335,7 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
         if (text) {
           host.injectUserMessage(instance, text);
           input.value = '';
+          syncBarInputHeight(input);
           instance.state.draftText = '';
         }
         e.preventDefault();

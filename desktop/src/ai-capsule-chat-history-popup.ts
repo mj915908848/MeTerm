@@ -110,7 +110,7 @@ export function openChatHistory(
     void renderChatHistoryList(instance, host);
     // 进入搜索模式
     host.enterSearchMode(instance, t('aiSearchChatHistory'), () => {
-      const input = instance.element.querySelector('.ai-bar-input') as HTMLInputElement;
+      const input = instance.element.querySelector('.ai-bar-input') as HTMLTextAreaElement;
       const query = input?.value || '';
       const cached = host.getCachedConversations(instance.sessionId);
       if (cached) {

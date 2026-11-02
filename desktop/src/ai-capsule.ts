@@ -1,4 +1,5 @@
 import { TerminalRegistry } from './terminal';
+import { scrollChatToEnd } from './ai-chat-scroll';
 import { DrawerManager } from './drawer';
 import { allowConversationSend, currentConversationHost } from './ai-conversation-host-ui';
 import { hostsMatch } from './ai-conversation-host';
@@ -65,6 +66,7 @@ import { updateModelLabel as updateModelLabelFn } from './ai-capsule-model-ui';
 import {
   createBarElement as createBarElementFn,
   syncBarPlaceholder as syncBarPlaceholderFn,
+  syncBarInputHeight,
 } from './ai-capsule-bar-dom';
 import {
   createChatPanel as createChatPanelFn,
@@ -680,7 +682,7 @@ class AICapsuleManagerClass {
     if (btn) btn.classList.add('active');
     // 进入搜索模式
     this.enterSearchMode(instance, t('aiSearchHistory'), () => {
-      const input = instance.element.querySelector('.ai-bar-input') as HTMLInputElement;
+      const input = instance.element.querySelector('.ai-bar-input') as HTMLTextAreaElement;
       this.renderHistoryPanel(instance, input?.value || '');
     });
   }
@@ -715,7 +717,7 @@ class AICapsuleManagerClass {
     content.textContent = t('aiNoConfig');
     msg.appendChild(content);
     container.appendChild(msg);
-    container.scrollTop = container.scrollHeight;
+    scrollChatToEnd(container, true);
   }
 
   private setupHistory(instance: AICapsuleInstance): void {
@@ -959,8 +961,11 @@ class AICapsuleManagerClass {
     // Restore the tab's shared draft text into the newly-visible
     // AI Bar input so a half-typed message carries over when the
     // user switches between panes of the same tab.
-    const barInput = inst.element.querySelector('.ai-bar-input') as HTMLInputElement | null;
-    if (barInput) barInput.value = inst.state.draftText || '';
+    const barInput = inst.element.querySelector('.ai-bar-input') as HTMLTextAreaElement | null;
+    if (barInput) {
+      barInput.value = inst.state.draftText || '';
+      syncBarInputHeight(barInput);
+    }
 
     // Re-render the pending-image strip on the newly-visible surface
     // (AI Bar / side input area). The strip is tab-scoped via
