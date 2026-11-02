@@ -123,7 +123,8 @@ function historySurface(className: string) {
     tag: string;
     constructor(tag: string) { this.tag = tag; }
     set innerHTML(_: string) { this.children = []; }
-    classList = { contains: (name: string) => this.className === name };
+    title = '';
+    classList = { contains: (name: string) => this.className === name, add: (name: string) => { this.className += ` ${name}`; } };
     append(...children: Element[]) { this.children.push(...children); }
     appendChild(child: Element) { this.children.push(child); }
     setAttribute(key: string, value: string) { this.attrs[key] = value; }
@@ -132,8 +133,8 @@ function historySurface(className: string) {
   }
   const persistence = loadModule('ai-capsule-chat-persistence.ts', {
     '@tauri-apps/plugin-fs': { BaseDirectory: { AppData: 1 } },
-    './i18n': { t: (key: string) => key },
-    './ai-icons': {}, './ai-system-notice': { buildSystemNotice: () => document.createElement('div') }, './ai-capsule-markdown': {}, './ai-capsule-tool-ui': {},
+    './i18n': { t: (key: string) => key, getLanguage: () => 'en' },
+    './ai-icons': {}, './ai-capsule-markdown': {}, './ai-capsule-tool-ui': {},
     './ai-capsule-history': { fuzzyMatch: (text: string, query: string) => text.includes(query), formatRelativeTime: () => 'now' },
     './ai-conversation-host': { hostsMatch, validHost },
     './ai-conversation-host-ui': { currentConversationHost: () => sshConversationHost('a', 22), conversationHostLabel: (host: any) => host?.displayName ?? 'Unbound' },
@@ -141,7 +142,10 @@ function historySurface(className: string) {
     './overlay-scrollbar': { getPopupScrollViewport: (panel: any) => panel },
     './themes': {}, './notify': {}, './ai-chat-history-store': historyStore,
   });
-  (globalThis as any).document = { createElement: (tag: string) => new Element(tag) };
+  (globalThis as any).document = {
+    createElement: (tag: string) => new Element(tag),
+    createTextNode: (text: string) => Object.assign(new Element('#text'), { textContent: text }),
+  };
   const panel = new Element('div'); panel.className = className;
   const instance = { chatHistoryPanel: panel, element: {} };
   const deps = { ensurePopupResizeHandle: () => {}, restoreConversation: () => {}, handleDeleteConversation: () => {} };
@@ -150,17 +154,34 @@ function historySurface(className: string) {
   return { persistence, panel, instance, deps, convs, dispose: () => { delete (globalThis as any).document; } };
 }
 
+/** History rows only, not the date headings between them. */
+const rowCount = (rows: any): number => rows.children.filter((child: any) => child.className.startsWith('ai-chat-hist-row')).length;
+
+test('history rows sit under a date heading, and the open conversation is marked', () => {
+  const surface = historySurface('ai-side-chat-history-view');
+  try {
+    const { persistence, panel, instance, deps, convs } = surface;
+    (instance as any).currentConversationId = '0';
+    persistence.renderChatHistoryListFromCache(instance, convs, deps);
+    const [heading, row] = panel.children[1].children;
+    assert.equal(heading.className, 'ai-chat-hist-group');
+    assert.equal(heading.textContent, 'aiChatGroupEarlier');
+    assert.equal(row.className, 'ai-chat-hist-row current');
+    assert.equal(row.attrs['aria-current'], 'true');
+  } finally { surface.dispose(); }
+});
+
 test('both history surfaces retain query on scope switch and support empty scoped lists', () => {
   for (const className of ['ai-side-chat-history-view', 'ai-bar-chat-history-panel']) {
     const surface = historySurface(className);
     try {
       const { persistence, panel, instance, deps, convs } = surface;
       persistence.renderChatHistoryListFromCache(instance, convs, deps, 'goal');
-      assert.equal(panel.children[1].children.length, 1);
+      assert.equal(rowCount(panel.children[1]), 1);
       panel.children[0].children[1].onclick!();
-      assert.equal(panel.children[1].children.length, 3);
+      assert.equal(rowCount(panel.children[1]), 3);
       persistence.renderChatHistoryListFromCache(instance, convs.slice(1), deps, 'goal');
-      assert.equal(panel.children[1].children.length, 2); // deletion refresh retains all scope
+      assert.equal(rowCount(panel.children[1]), 2); // deletion refresh retains all scope
       panel.children[0].children[0].onclick!();
       assert.equal(panel.children[1].className, 'ai-chat-hist-empty');
     } finally { surface.dispose(); }
@@ -186,10 +207,10 @@ test('side history keeps one stable search field so IME composition survives typ
       assert.equal(panel.children[0].children[2], field);
     }
     assert.equal(field.value, 'goal');
-    assert.equal(panel.children[1].children.length, 1);
+    assert.equal(rowCount(panel.children[1]), 1);
     // Switching scope keeps the typed query rather than a stale render closure.
     panel.children[0].children[1].onclick!();
-    assert.equal(panel.children[1].children.length, 3);
+    assert.equal(rowCount(panel.children[1]), 3);
     assert.equal(panel.children[0].children[2].value, 'goal');
     assert.equal(panel.children[0].children[2], field);
   } finally { surface.dispose(); }
@@ -203,11 +224,11 @@ test('AI Bar popup keeps a single search entry by reusing the AI Bar input', () 
     const controls = panel.children[0];
     assert.equal(controls.children.length, 2); // scope buttons only — no second search field
     assert.equal(panel.dataset.historyQuery, 'goal');
-    assert.equal(panel.children[1].children.length, 1);
+    assert.equal(rowCount(panel.children[1]), 1);
     // The AI Bar input filters through renderListFromCache; the panel only re-renders.
     panel.dataset.historyScope = 'all';
     persistence.renderChatHistoryListFromCache(instance, convs, deps, 'goal');
-    assert.equal(panel.children[1].children.length, 3);
+    assert.equal(rowCount(panel.children[1]), 3);
     assert.equal(panel.children[0], controls);
     assert.equal(panel.children[0].children.length, 2);
   } finally { surface.dispose(); }

@@ -34,6 +34,8 @@ export interface TabState {
   conversationHost: import('./ai-conversation-host').ConversationHost | undefined;
   /** Abort function for the currently-running agent.run() generator. */
   agentAbort: (() => void) | null;
+  /** Settles once the current run has finished, including its abort handling. */
+  agentDone: Promise<void> | null;
   /** Shared draft text across all AI Bars in this tab. */
   draftText: string;
   /**
@@ -109,6 +111,7 @@ export interface AICapsuleInstance {
   messages: ConvEntry[];
   agent: AIAgent;
   agentAbort: (() => void) | null;
+  agentDone: Promise<void> | null;
   chatPanel: HTMLDivElement | null;
   chatOpen: boolean;
   chatMinimized: boolean;
@@ -208,6 +211,7 @@ export const TAB_STATE_FIELDS: Array<keyof TabState> = [
   'currentConversationId',
   'conversationHost',
   'agentAbort',
+  'agentDone',
   'chatPanel',
   'chatOpen',
   'chatMinimized',

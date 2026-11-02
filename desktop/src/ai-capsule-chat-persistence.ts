@@ -1,11 +1,6 @@
 import { writeTextFile, readTextFile, mkdir, exists, readDir, remove, rename, BaseDirectory } from '@tauri-apps/plugin-fs';
-import { t } from './i18n';
-import { thinkingIcon } from './ai-icons';
-import { renderMarkdown } from './ai-capsule-markdown';
-import { buildSystemNotice } from './ai-system-notice';
-import { fuzzyMatch, formatRelativeTime } from './ai-capsule-history';
-import { appendToolCardGrouped, appendToRunGroup, buildToolCard, collapseToolGroups } from './ai-capsule-tool-ui';
-import { createOverlayScrollbar, getPopupScrollViewport } from './overlay-scrollbar';
+import { t, getLanguage } from './i18n';
+import { getPopupScrollViewport } from './overlay-scrollbar';
 import type { AICapsuleInstance, ConvEntry, ChatConversation } from './ai-capsule-types';
 import { hostsMatch, validHost } from './ai-conversation-host';
 import { currentConversationHost, conversationHostLabel } from './ai-conversation-host-ui';
@@ -14,7 +9,8 @@ import { loadSettings } from './themes';
 import { showToast } from './notify';
 import {
   CHAT_DIR, SUMMARY_DIR, summaryPath, entriesForHistory, buildSummary, parseSummary, conversationsToPrune,
-  type ConversationSummary,
+  lastActivity, historyDateGroup, searchKeywords, highlightRuns, searchSnippet,
+  type ConversationSummary, type HistoryDateGroup,
 } from './ai-chat-history-store';
 
 const FS_OPTS = { baseDir: BaseDirectory.AppData };
@@ -119,7 +115,7 @@ export function saveConversation(
     title: firstUser ? firstUser.content.slice(0, 80) : 'Untitled',
     messages: entriesForHistory(msgs),
     createdAt: msgs[0]?.timestamp || Date.now(),
-    updatedAt: Date.now(),
+    updatedAt: lastActivity(msgs, Date.now()),
   };
   const text = JSON.stringify(conv);
   const summary = buildSummary(conv);
@@ -213,68 +209,95 @@ export async function deleteConversation(id: string): Promise<void> {
   } catch (error) { console.error('[chat-history] delete failed:', error); }
 }
 
-export function confirmDeleteConversation(
-  setDeleteSkipUntil: (ts: number) => void,
-): Promise<boolean> {
+interface DangerConfirm {
+  title: string;
+  message: string;
+  ok: string;
+  /** Label of an optional "don't ask again for a while" box. */
+  checkbox?: string;
+}
+
+/** Modal confirm in the AI danger style; resolves whether the user agreed and ticked the box. */
+function confirmDanger(options: DangerConfirm): Promise<{ ok: boolean; checked: boolean }> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'ai-danger-overlay';
-
     const dialog = document.createElement('div');
     dialog.className = 'ai-danger-dialog';
+    dialog.setAttribute('role', 'alertdialog');
 
     const title = document.createElement('div');
     title.className = 'ai-danger-title';
-    title.textContent = t('aiChatDeleteConfirmTitle');
-
+    title.textContent = options.title;
     const msg = document.createElement('div');
     msg.className = 'ai-danger-msg';
-    msg.textContent = t('aiChatDeleteConfirmMsg');
+    msg.textContent = options.message;
+    dialog.append(title, msg);
 
-    const checkboxRow = document.createElement('label');
-    checkboxRow.className = 'ai-delete-checkbox-row';
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.className = 'ai-delete-checkbox';
-    const checkLabel = document.createElement('span');
-    checkLabel.textContent = t('aiChatDeleteNoAskMinutes');
-    checkboxRow.appendChild(checkbox);
-    checkboxRow.appendChild(checkLabel);
+    let checkbox: HTMLInputElement | null = null;
+    if (options.checkbox) {
+      const checkboxRow = document.createElement('label');
+      checkboxRow.className = 'ai-delete-checkbox-row';
+      checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'ai-delete-checkbox';
+      const checkLabel = document.createElement('span');
+      checkLabel.textContent = options.checkbox;
+      checkboxRow.append(checkbox, checkLabel);
+      dialog.append(checkboxRow);
+    }
 
     const actions = document.createElement('div');
     actions.className = 'ai-danger-actions';
-
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'ai-danger-btn ai-danger-btn-cancel';
     cancelBtn.textContent = t('aiChatDeleteConfirmCancel');
+    const okBtn = document.createElement('button');
+    okBtn.className = 'ai-danger-btn ai-danger-btn-run';
+    okBtn.textContent = options.ok;
+    actions.append(cancelBtn, okBtn);
+    dialog.append(actions);
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'ai-danger-btn ai-danger-btn-run';
-    deleteBtn.textContent = t('aiChatDeleteConfirmOk');
-
-    const close = (result: boolean) => {
-      if (result && checkbox.checked) {
-        setDeleteSkipUntil(Date.now() + 5 * 60 * 1000);
-      }
+    const close = (ok: boolean) => {
+      document.removeEventListener('keydown', onKey, true);
       overlay.remove();
-      resolve(result);
+      resolve({ ok, checked: ok && !!checkbox?.checked });
     };
-
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(false); }
+    };
+    document.addEventListener('keydown', onKey, true);
     cancelBtn.addEventListener('click', () => close(false));
-    deleteBtn.addEventListener('click', () => close(true));
+    okBtn.addEventListener('click', () => close(true));
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
 
-    actions.appendChild(cancelBtn);
-    actions.appendChild(deleteBtn);
-    dialog.appendChild(title);
-    dialog.appendChild(msg);
-    dialog.appendChild(checkboxRow);
-    dialog.appendChild(actions);
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
-
     cancelBtn.focus();
   });
+}
+
+export async function confirmDeleteConversation(
+  setDeleteSkipUntil: (ts: number) => void,
+): Promise<boolean> {
+  const { ok, checked } = await confirmDanger({
+    title: t('aiChatDeleteConfirmTitle'),
+    message: t('aiChatDeleteConfirmMsg'),
+    ok: t('aiChatDeleteConfirmOk'),
+    checkbox: t('aiChatDeleteNoAskMinutes'),
+  });
+  if (checked) setDeleteSkipUntil(Date.now() + 5 * 60 * 1000);
+  return ok;
+}
+
+/** Ask before opening another conversation stops the task that is running. */
+export async function confirmStopRunningTask(): Promise<boolean> {
+  const { ok } = await confirmDanger({
+    title: t('aiChatSwitchRunningTitle'),
+    message: t('aiChatSwitchRunningMsg'),
+    ok: t('aiChatSwitchRunningOk'),
+  });
+  return ok;
 }
 
 /**
@@ -339,6 +362,41 @@ function ensureHistoryChrome(
   return chrome;
 }
 
+const GROUP_LABELS = {
+  today: 'aiChatGroupToday',
+  yesterday: 'aiChatGroupYesterday',
+  week: 'aiChatGroupWeek',
+  earlier: 'aiChatGroupEarlier',
+} as const;
+
+const dateLocale = (): string => (getLanguage() === 'zh' ? 'zh-CN' : 'en-US');
+
+/** The time on a row: the group heading already says which day. */
+function formatListTime(timestamp: number, group: HistoryDateGroup): string {
+  const date = new Date(timestamp);
+  const locale = dateLocale();
+  const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (group === 'today' || group === 'yesterday') return time;
+  if (group === 'week') return `${date.toLocaleDateString(locale, { weekday: 'short' })} ${time}`;
+  const sameYear = date.getFullYear() === new Date().getFullYear();
+  return date.toLocaleDateString(locale, sameYear
+    ? { month: 'short', day: 'numeric' }
+    : { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+/** Append `text` to `target` with the search words wrapped in <mark>. */
+function appendHighlighted(target: HTMLElement, text: string, keywords: readonly string[]): void {
+  for (const run of highlightRuns(text, keywords)) {
+    if (run.hit) {
+      const mark = document.createElement('mark');
+      mark.textContent = run.text;
+      target.appendChild(mark);
+    } else {
+      target.appendChild(document.createTextNode(run.text));
+    }
+  }
+}
+
 function renderHistoryRows(
   instance: AICapsuleInstance,
   panel: HTMLDivElement,
@@ -364,9 +422,14 @@ function renderHistoryRows(
   const host = currentConversationHost(instance);
   const scoped = scope === 'all' ? chrome.convs : chrome.convs.filter(conv => hostsMatch(conv.hostBinding, host));
 
-  const filtered = query
-    ? scoped.filter(c => fuzzyMatch(c.title, query) || fuzzyMatch(conversationHostLabel(c.hostBinding), query) ||
-        fuzzyMatch(c.searchText, query))
+  // Every word must match somewhere in the conversation, so "nginx 502" finds
+  // a conversation titled "nginx" whose reply mentions 502.
+  const keywords = searchKeywords(query);
+  const filtered = keywords.length
+    ? scoped.filter(c => {
+        const haystack = `${c.title}\n${conversationHostLabel(c.hostBinding)}\n${c.searchText}`.toLowerCase();
+        return keywords.every(keyword => haystack.includes(keyword));
+      })
     : scoped;
 
   if (filtered.length === 0) {
@@ -375,10 +438,25 @@ function renderHistoryRows(
     return;
   }
 
+  const now = Date.now();
+  let group: HistoryDateGroup | null = null;
   for (const conv of filtered) {
+    const convGroup = historyDateGroup(conv.updatedAt, now);
+    if (convGroup !== group) {
+      group = convGroup;
+      const heading = document.createElement('div');
+      heading.className = 'ai-chat-hist-group';
+      heading.textContent = t(GROUP_LABELS[convGroup]);
+      rows.appendChild(heading);
+    }
+
     const row = document.createElement('div');
     row.className = 'ai-chat-hist-row';
     row.tabIndex = 0; row.setAttribute('role', 'button');
+    if (conv.id === instance.currentConversationId) {
+      row.classList.add('current');
+      row.setAttribute('aria-current', 'true');
+    }
     // The list holds summaries only; the full conversation is read on open.
     let opening = false;
     const open = async () => {
@@ -402,13 +480,25 @@ function renderHistoryRows(
 
     const rowTitle = document.createElement('div');
     rowTitle.className = 'ai-chat-hist-row-title';
-    rowTitle.textContent = conv.title;
+    appendHighlighted(rowTitle, conv.title, keywords);
+    info.appendChild(rowTitle);
+
+    // Why it matched, when the title alone does not show it.
+    const titleLower = conv.title.toLowerCase();
+    const snippet = keywords.some(keyword => !titleLower.includes(keyword))
+      ? searchSnippet(conv.searchText, keywords.filter(keyword => !titleLower.includes(keyword)))
+      : null;
+    if (snippet) {
+      const rowSnippet = document.createElement('div');
+      rowSnippet.className = 'ai-chat-hist-row-snippet';
+      appendHighlighted(rowSnippet, snippet, keywords);
+      info.appendChild(rowSnippet);
+    }
 
     const rowMeta = document.createElement('div');
     rowMeta.className = 'ai-chat-hist-row-meta';
-    rowMeta.textContent = `${conversationHostLabel(conv.hostBinding)} · ${t('aiChatMessageCount').replace('{n}', String(conv.messageCount))} · ${formatRelativeTime(conv.updatedAt)}`;
-
-    info.appendChild(rowTitle);
+    rowMeta.textContent = `${conversationHostLabel(conv.hostBinding)} · ${t('aiChatMessageCount').replace('{n}', String(conv.messageCount))} · ${formatListTime(conv.updatedAt, convGroup)}`;
+    rowMeta.title = new Date(conv.updatedAt).toLocaleString(dateLocale());
     info.appendChild(rowMeta);
 
     const delBtn = document.createElement('button');
@@ -448,108 +538,4 @@ export function renderChatHistoryListFromCache(
   chrome.deps = deps;
   chrome.query = filter ?? '';
   renderHistoryRows(instance, panel, chrome, deps);
-}
-
-export function renderChatHistoryDetail(
-  instance: AICapsuleInstance,
-  conv: ChatConversation,
-  deps: {
-    ensurePopupResizeHandle: (panel: HTMLElement, aiBar: HTMLElement) => void;
-    renderChatHistoryList: (inst: AICapsuleInstance) => void;
-    addHistory: (inst: AICapsuleInstance, cmd: string, source: 'manual' | 'ai') => void;
-    bindCommandButtons: (inst: AICapsuleInstance, container: Element) => void;
-  },
-): void {
-  const panel = instance.chatHistoryPanel
-    || instance.element.querySelector('.ai-bar-chat-history-panel') as HTMLDivElement;
-  if (!panel) return;
-
-  const isSideInline = panel.classList.contains('ai-side-chat-history-view');
-  const target = isSideInline ? panel : getPopupScrollViewport(panel);
-  target.innerHTML = '';
-  deps.ensurePopupResizeHandle(panel, instance.element);
-
-  const header = document.createElement('div');
-  header.className = 'ai-chat-hist-header';
-
-  const backBtn = document.createElement('button');
-  backBtn.className = 'ai-chat-hist-back';
-  backBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="10 3 5 8 10 13"/></svg>`;
-  backBtn.title = t('aiChatHistoryBack');
-  backBtn.addEventListener('click', () => deps.renderChatHistoryList(instance));
-
-  const title = document.createElement('span');
-  title.className = 'ai-chat-hist-title';
-  title.textContent = conv.title;
-
-  header.appendChild(backBtn);
-  header.appendChild(title);
-  target.appendChild(header);
-
-  const msgContainer = document.createElement('div');
-  msgContainer.className = 'ai-chat-hist-messages';
-  createOverlayScrollbar({ viewport: msgContainer, container: msgContainer });
-
-  for (const msg of conv.messages) {
-    const msgEl = document.createElement('div');
-    const content = document.createElement('div');
-    content.className = 'ai-msg-content';
-
-    if (msg.type === 'tool_call') {
-      appendToolCardGrouped(msgContainer, buildToolCard(msg));
-      continue;
-    } else if (msg.type === 'assistant') {
-      msgEl.className = 'ai-msg ai-msg-assistant';
-      const addHistoryCb = (cmd: string) => deps.addHistory(instance, cmd, 'ai');
-      content.innerHTML = renderMarkdown(msg.content, instance.sessionId, addHistoryCb);
-    } else if (msg.type === 'thinking') {
-      // Reasoning — standalone block (no bubble).
-      // Strip stray think/tool-XML fragments that older sessions might have
-      // persisted before we started sanitizing on finalize.
-      const cleanedReasoning = msg.reasoning
-        ? msg.reasoning
-            .replace(/<\/?think(?:ing)?>/gi, '')
-            .replace(/<\/(?:arg_value|tool_call|args|tool_use)>/gi, '')
-        : '';
-      if (cleanedReasoning) {
-        const block = document.createElement('div');
-        block.className = 'ai-thinking-block';
-        const details = document.createElement('details');
-        details.className = 'ai-reasoning';
-        const summary = document.createElement('summary');
-        summary.innerHTML = `${thinkingIcon(12)} <span>${t('aiThought')}</span>`;
-        const textEl = document.createElement('div');
-        textEl.className = 'ai-reasoning-text';
-        textEl.textContent = cleanedReasoning;
-        details.appendChild(summary);
-        details.appendChild(textEl);
-        block.appendChild(details);
-        appendToRunGroup(msgContainer, block);
-      }
-      // Assistant text — render as regular bubble
-      if (msg.content) {
-        msgEl.className = 'ai-msg ai-msg-assistant';
-        const addHistoryCb = (cmd: string) => deps.addHistory(instance, cmd, 'ai');
-        content.innerHTML = renderMarkdown(msg.content, instance.sessionId, addHistoryCb);
-      } else {
-        continue; // No content to render as a bubble
-      }
-    } else if (msg.type === 'system') {
-      msgContainer.appendChild(buildSystemNotice(msg.content, msg.tone));
-      continue;
-    } else {
-      // user
-      msgEl.className = 'ai-msg ai-msg-user';
-      content.textContent = msg.content;
-    }
-
-    msgEl.appendChild(content);
-    msgContainer.appendChild(msgEl);
-  }
-
-  collapseToolGroups(msgContainer);
-  target.appendChild(msgContainer);
-
-  // Bind command buttons in rendered markdown
-  deps.bindCommandButtons(instance, msgContainer);
 }

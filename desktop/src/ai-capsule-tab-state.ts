@@ -69,6 +69,7 @@ export class TabStateRegistry {
       currentConversationId: conversationId,
       conversationHost: undefined,
       agentAbort: null,
+      agentDone: null,
       draftText: '',
       activeRunTargetPaneNumber: null,
       pendingClosureNotices: [],

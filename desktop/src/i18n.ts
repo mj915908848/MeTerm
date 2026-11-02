@@ -505,7 +505,6 @@ export interface Translations {
   aiChatDeleteConfirmOk: string;
   aiChatDeleteConfirmCancel: string;
   aiChatDeleteNoAskMinutes: string;
-  aiChatHistoryBack: string;
   aiChatHostUnbound: string;
   aiChatHostLocal: string;
   aiChatHostMismatchTitle: string;
@@ -551,6 +550,13 @@ export interface Translations {
   aiChatHistorySearchPlaceholder: string;
   aiChatScopeCurrent: string;
   aiChatScopeAll: string;
+  aiChatGroupToday: string;
+  aiChatGroupYesterday: string;
+  aiChatGroupWeek: string;
+  aiChatGroupEarlier: string;
+  aiChatSwitchRunningTitle: string;
+  aiChatSwitchRunningMsg: string;
+  aiChatSwitchRunningOk: string;
   aiAttachBtnTitle: string;
   aiAttachRemoveImage: string;
   aiAttachRemoveFile: string;
@@ -1263,7 +1269,6 @@ const translations: Record<Language, Translations> = {
     aiChatDeleteConfirmOk: 'Delete',
     aiChatDeleteConfirmCancel: 'Cancel',
     aiChatDeleteNoAskMinutes: "Don't ask again for 5 minutes",
-    aiChatHistoryBack: 'Back',
     aiChatHostUnbound: 'Unbound',
     aiChatHostLocal: 'Local',
     aiChatHostMismatchTitle: 'Host mismatch',
@@ -1309,6 +1314,13 @@ const translations: Record<Language, Translations> = {
     aiChatHistorySearchPlaceholder: 'Search conversations or hosts',
     aiChatScopeCurrent: 'Current host',
     aiChatScopeAll: 'All conversations',
+    aiChatGroupToday: 'Today',
+    aiChatGroupYesterday: 'Yesterday',
+    aiChatGroupWeek: 'Previous 7 days',
+    aiChatGroupEarlier: 'Earlier',
+    aiChatSwitchRunningTitle: 'AI is still running',
+    aiChatSwitchRunningMsg: 'Opening another conversation stops the current task. What it has done so far is saved.',
+    aiChatSwitchRunningOk: 'Stop and open',
     aiAttachBtnTitle: 'Attach (click: paste clipboard image, or pick files if none · right click: paste clipboard image)',
     aiAttachRemoveImage: 'Remove image',
     aiAttachRemoveFile: 'Remove attachment',
@@ -2033,7 +2045,6 @@ const translations: Record<Language, Translations> = {
     aiChatDeleteConfirmOk: '删除',
     aiChatDeleteConfirmCancel: '取消',
     aiChatDeleteNoAskMinutes: '5 分钟内不再提示',
-    aiChatHistoryBack: '返回',
     aiChatHostUnbound: '未绑定',
     aiChatHostLocal: '本机',
     aiChatHostMismatchTitle: '主机不匹配',
@@ -2079,6 +2090,13 @@ const translations: Record<Language, Translations> = {
     aiChatHistorySearchPlaceholder: '搜索对话或主机',
     aiChatScopeCurrent: '当前主机',
     aiChatScopeAll: '全部对话',
+    aiChatGroupToday: '今天',
+    aiChatGroupYesterday: '昨天',
+    aiChatGroupWeek: '7 天内',
+    aiChatGroupEarlier: '更早',
+    aiChatSwitchRunningTitle: 'AI 仍在运行',
+    aiChatSwitchRunningMsg: '打开另一条对话会停止当前任务，已完成的部分会保存。',
+    aiChatSwitchRunningOk: '停止并打开',
     aiAttachBtnTitle: '添加附件（左键：粘贴剪贴板图片，没有图片时选择文件 · 右键：粘贴剪贴板图片）',
     aiAttachRemoveImage: '移除图片',
     aiAttachRemoveFile: '移除附件',

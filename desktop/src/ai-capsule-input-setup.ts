@@ -170,10 +170,12 @@ export function setupInput(instance: AICapsuleInstance, host: InputSetupHost): v
       attached.length > 0 ? attached : undefined,
     );
     instance.agentAbort = handle.abort;
+    instance.agentDone = handle.done;
     void handle.done.finally(() => {
       if (instance.agentAbort === handle.abort) {
         instance.agentAbort = null;
       }
+      if (instance.agentDone === handle.done) instance.agentDone = null;
       // Release the target-pane lock once the run is done. The next
       // send snapshots a fresh lock from the user's current focus.
       instance.state.activeRunTargetPaneNumber = null;

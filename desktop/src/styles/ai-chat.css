@@ -1071,6 +1071,13 @@ html.vibrancy-active .ai-side-model-dropdown {
 [data-theme="light"] .ai-side-chat-history-view .ai-chat-hist-row:hover {
   background: rgba(0, 0, 0, 0.04);
 }
+.ai-side-chat-history-view .ai-chat-hist-row.current,
+[data-theme="light"] .ai-side-chat-history-view .ai-chat-hist-row.current {
+  background: var(--accent-bg);
+}
+.ai-side-chat-history-view .ai-chat-hist-row-snippet { order: 0; }
+.ai-side-chat-history-view .ai-chat-hist-group { padding: 10px 10px 4px; font-size: var(--fs-xs); }
+.ai-side-chat-history-view .ai-chat-hist-group:first-child { padding-top: 2px; }
 
 
 /* ============================================
@@ -1501,7 +1508,6 @@ html.vibrancy-active .ai-host-notes-popover {
 .ai-msg-assistant:hover .ai-response-actions .ai-msg-action,
 .ai-response-actions .ai-msg-action:hover { opacity: 1; }
 /* Retry only makes sense in the live chat, not in history previews. */
-.ai-chat-hist-messages [data-ai-action],
 .ai-history-preview [data-ai-action] { display: none; }
 
 /* ─── Tool-call groups: consecutive cards fold under "Ran N steps" ─── */

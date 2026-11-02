@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   entriesForHistory, buildSummary, parseSummary, conversationsToPrune,
-  HISTORY_RESULT_LIMIT, SEARCH_TEXT_LIMIT,
+  HISTORY_RESULT_LIMIT, SEARCH_TEXT_LIMIT, SUMMARY_VERSION,
+  lastActivity, historyDateGroup, searchKeywords, highlightRuns, searchSnippet,
 } from '../src/ai-chat-history-store.ts';
 
 const image = { mediaType: 'image/png' as const, data: 'AAAA' };
@@ -54,11 +55,13 @@ test('summary carries list fields and searchable text without tool output', () =
 });
 
 test('summary parsing rejects malformed or mismatched files', () => {
-  const good = JSON.stringify({ id: 'a', title: 't', updatedAt: 2, messageCount: 1, searchText: 's' });
+  const good = JSON.stringify({ version: SUMMARY_VERSION, id: 'a', title: 't', updatedAt: 2, messageCount: 1, searchText: 's' });
   assert.equal(parseSummary(good, 'a')?.createdAt, 2);
   assert.equal(parseSummary(good, 'b'), null);
   assert.equal(parseSummary('{', 'a'), null);
-  assert.equal(parseSummary(JSON.stringify({ id: 'a', title: 't' }), 'a'), null);
+  assert.equal(parseSummary(JSON.stringify({ version: SUMMARY_VERSION, id: 'a', title: 't' }), 'a'), null);
+  // A summary from before commands were searchable is rebuilt from its file.
+  assert.equal(parseSummary(JSON.stringify({ id: 'a', title: 't', updatedAt: 2, messageCount: 1, searchText: 's' }), 'a'), null);
 });
 
 test('pruning removes the oldest beyond the limit and never an open conversation', () => {
@@ -67,4 +70,48 @@ test('pruning removes the oldest beyond the limit and never an open conversation
   assert.deepEqual(conversationsToPrune(summaries, 3, new Set(['c1'])), ['c2']);
   assert.deepEqual(conversationsToPrune(summaries, 0, new Set()), []);
   assert.deepEqual(conversationsToPrune(summaries, 10, new Set()), []);
+});
+
+test('summary search text includes the commands the agent ran, never their output', () => {
+  const summary = buildSummary({ id: 'c3', title: 't', createdAt: 1, updatedAt: 1, messages: [
+    { type: 'user', content: 'why 502', timestamp: 1 },
+    { type: 'tool_call', toolName: 'run_command', args: { command: 'systemctl status nginx' }, result: 'SECRET', isError: false, timestamp: 2 },
+    { type: 'tool_call', toolName: 'type_text', args: { text: 'hunter2' }, result: 'ok', isError: false, timestamp: 3 },
+  ] });
+  assert.equal(summary.searchText, 'why 502\nsystemctl status nginx');
+  assert.equal(summary.version, SUMMARY_VERSION);
+});
+
+test('last activity is the newest message, so reopening does not reorder the list', () => {
+  assert.equal(lastActivity([
+    { type: 'user', content: 'a', timestamp: 100 },
+    { type: 'assistant', content: 'b', timestamp: 300 },
+    { type: 'system', content: 'c', timestamp: 200 },
+  ], 999), 300);
+  assert.equal(lastActivity([{ type: 'user', content: 'legacy' } as any], 999), 999);
+  assert.equal(lastActivity([], 5), 5);
+});
+
+test('date groups follow local calendar days', () => {
+  const now = new Date(2026, 10, 2, 9, 30).getTime();
+  assert.equal(historyDateGroup(new Date(2026, 10, 2, 0, 1).getTime(), now), 'today');
+  assert.equal(historyDateGroup(new Date(2026, 10, 1, 23, 59).getTime(), now), 'yesterday');
+  assert.equal(historyDateGroup(new Date(2026, 9, 31, 12).getTime(), now), 'week');
+  assert.equal(historyDateGroup(new Date(2026, 9, 27, 0, 0).getTime(), now), 'week');
+  assert.equal(historyDateGroup(new Date(2026, 9, 26, 23, 59).getTime(), now), 'earlier');
+});
+
+test('search highlighting and snippets', () => {
+  const keywords = searchKeywords('  Nginx  502 ');
+  assert.deepEqual(keywords, ['nginx', '502']);
+  assert.deepEqual(highlightRuns('Restart NGINX now', keywords), [
+    { text: 'Restart ', hit: false }, { text: 'NGINX', hit: true }, { text: ' now', hit: false },
+  ]);
+  assert.deepEqual(highlightRuns('abc', []), [{ text: 'abc', hit: false }]);
+  const long = `${'x'.repeat(200)} upstream returned 502 bad gateway ${'y'.repeat(200)}`;
+  const snippet = searchSnippet(long, ['502'], 10);
+  assert.ok(snippet?.startsWith('…') && snippet.endsWith('…'));
+  assert.ok(snippet.includes('502'));
+  assert.equal(searchSnippet('short 502\nline', ['502']), 'short 502 line');
+  assert.equal(searchSnippet('nothing here', ['502']), null);
 });
