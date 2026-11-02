@@ -551,6 +551,8 @@ export interface Translations {
   aiChatScopeCurrent: string;
   aiChatScopeAll: string;
   aiChatGroupToday: string;
+  aiChatHistoryNoMatch: string;
+  aiChatHistoryEmptyHost: string;
   aiChatGroupYesterday: string;
   aiChatGroupWeek: string;
   aiChatGroupEarlier: string;
@@ -1315,6 +1317,8 @@ const translations: Record<Language, Translations> = {
     aiChatScopeCurrent: 'Current host',
     aiChatScopeAll: 'All conversations',
     aiChatGroupToday: 'Today',
+    aiChatHistoryNoMatch: 'No conversations match your search',
+    aiChatHistoryEmptyHost: 'No conversations on this host yet. Switch to All conversations to see the others.',
     aiChatGroupYesterday: 'Yesterday',
     aiChatGroupWeek: 'Previous 7 days',
     aiChatGroupEarlier: 'Earlier',
@@ -2091,6 +2095,8 @@ const translations: Record<Language, Translations> = {
     aiChatScopeCurrent: '当前主机',
     aiChatScopeAll: '全部对话',
     aiChatGroupToday: '今天',
+    aiChatHistoryNoMatch: '没有找到匹配的对话',
+    aiChatHistoryEmptyHost: '这台主机还没有对话，切到「全部对话」可以看其他主机的。',
     aiChatGroupYesterday: '昨天',
     aiChatGroupWeek: '7 天内',
     aiChatGroupEarlier: '更早',

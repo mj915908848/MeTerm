@@ -362,6 +362,8 @@ function ensureHistoryChrome(
   return chrome;
 }
 
+const TRASH_ICON = '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11"/><path d="M6 4V2.75h4V4"/><path d="M3.75 4l.7 9.25h7.1l.7-9.25"/><path d="M6.75 6.75v4M9.25 6.75v4"/></svg>';
+
 const GROUP_LABELS = {
   today: 'aiChatGroupToday',
   yesterday: 'aiChatGroupYesterday',
@@ -434,7 +436,11 @@ function renderHistoryRows(
 
   if (filtered.length === 0) {
     rows.className = 'ai-chat-hist-empty';
-    rows.textContent = t('aiChatHistoryEmpty');
+    // Say why the list is empty: a search with no hits, a host with nothing yet
+    // (while other hosts have conversations), or no history at all.
+    rows.textContent = keywords.length ? t('aiChatHistoryNoMatch')
+      : scope !== 'all' && chrome.convs.length > 0 ? t('aiChatHistoryEmptyHost')
+      : t('aiChatHistoryEmpty');
     return;
   }
 
@@ -503,8 +509,10 @@ function renderHistoryRows(
 
     const delBtn = document.createElement('button');
     delBtn.className = 'ai-chat-hist-delete';
-    delBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>`;
+    delBtn.type = 'button';
+    delBtn.innerHTML = TRASH_ICON;
     delBtn.title = t('aiChatDeleteConfirmOk');
+    delBtn.setAttribute('aria-label', `${t('aiChatDeleteConfirmOk')}: ${conv.title}`);
     delBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       deps.handleDeleteConversation(instance, conv.id);
