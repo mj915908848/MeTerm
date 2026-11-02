@@ -385,6 +385,12 @@ export interface Translations {
   aiCopyResponse: string;
   aiJumpToLatest: string;
   aiClickToCopy: string;
+  aiToolGroupSummary: string;
+  aiToolGroupFailed: string;
+  aiMsgEdit: string;
+  aiMsgRetry: string;
+  aiChatClose: string;
+  aiThought: string;
   aiCopyFailed: string;
   aiDangerConfirmTitle: string;
   aiDangerConfirmMsg: string;
@@ -1153,6 +1159,12 @@ const translations: Record<Language, Translations> = {
     aiCopyResponse: 'Copy response',
     aiJumpToLatest: 'Jump to latest',
     aiClickToCopy: 'Click to copy',
+    aiToolGroupSummary: 'Ran {n} steps',
+    aiToolGroupFailed: '{n} failed',
+    aiMsgEdit: 'Edit',
+    aiMsgRetry: 'Retry',
+    aiChatClose: 'Close',
+    aiThought: 'Thought process',
     aiCopyFailed: 'Copy failed — try again',
     aiDangerConfirmTitle: 'Dangerous Command',
     aiDangerConfirmMsg: 'This command may cause irreversible changes. Are you sure you want to run it?',
@@ -1917,6 +1929,12 @@ const translations: Record<Language, Translations> = {
     aiCopyResponse: '复制回答',
     aiJumpToLatest: '回到最新',
     aiClickToCopy: '点击复制',
+    aiToolGroupSummary: '执行了 {n} 步',
+    aiToolGroupFailed: '{n} 步失败',
+    aiMsgEdit: '编辑',
+    aiMsgRetry: '重试',
+    aiChatClose: '关闭',
+    aiThought: '思考过程',
     aiCopyFailed: '复制失败，请重试',
     aiDangerConfirmTitle: '危险命令',
     aiDangerConfirmMsg: '该命令可能造成不可逆的更改，确定要执行吗？',

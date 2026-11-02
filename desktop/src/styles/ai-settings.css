@@ -1072,3 +1072,27 @@ html.vibrancy-active .ai-trust-dropdown {
 }
 .ai-host-notes-delete:hover,
 .ai-host-notes-delete.armed { color: #ff6b6b; background: rgba(255, 107, 107, 0.12); }
+
+/* ─── AI popups: opaque, like the app's context menus ──────────────
+   The permission menu, model pickers and the tldr card used a 25%-white
+   glass in light mode (and 72% under vibrancy). They open inside panels
+   that already blur, where WebKit drops a nested backdrop-filter, so the
+   chat text showed straight through. */
+.ai-trust-dropdown,
+.ai-side-model-dropdown,
+.ai-bar-model-dropdown,
+.tldr-popup,
+[data-theme="light"] .ai-trust-dropdown,
+[data-theme="light"] .ai-side-model-dropdown,
+[data-theme="light"] .ai-bar-model-dropdown,
+[data-theme="light"] .tldr-popup,
+html.vibrancy-active .ai-trust-dropdown,
+html.vibrancy-active .ai-side-model-dropdown,
+html.vibrancy-active .ai-bar-model-dropdown,
+html.vibrancy-active .tldr-popup {
+  background: rgba(var(--bg-settings), 1);
+  border: 1px solid var(--border-context-menu, var(--border-primary));
+  box-shadow: 0 6px 20px var(--shadow-context-menu, rgba(0, 0, 0, 0.25));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}

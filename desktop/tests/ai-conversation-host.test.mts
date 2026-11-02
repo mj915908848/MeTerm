@@ -103,8 +103,8 @@ test('cross-host and legacy restore only preview, never clear or overwrite activ
     './ai-conversation-host': { hostsMatch },
     './ai-conversation-host-ui': { currentConversationHost: () => sshConversationHost('a', 22), previewHostConversation: () => previews++, allowConversationSend: () => false },
     './ai-capsule-chat-persistence': { bindLegacyConversation: () => {} },
-    './ai-capsule-chat-ui': { attachPersistentTodoListener: () => {} },
-    './ai-capsule-tool-ui': { renderTodoBoard: () => {}, restoreTodoBoardFromHistory: () => {} },
+    './ai-capsule-chat-ui': { attachPersistentTodoListener: () => {}, buildUserMessageActions: () => ({}) },
+    './ai-capsule-tool-ui': { renderTodoBoard: () => {}, restoreTodoBoardFromHistory: () => {}, appendToolCardGrouped: () => {}, appendToRunGroup: () => {}, collapseToolGroups: () => {} },
   });
   const instance = { currentConversationId: 'active', messages: ['unchanged'], agent: { clear: () => assert.fail('cleared agent') } };
   for (const hostBinding of [undefined, sshConversationHost('b', 22)]) {

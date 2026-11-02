@@ -10,6 +10,8 @@ export interface RenderMarkdownOptions {
    * fence at the end is shown as a code block instead of raw backticks.
    */
   streaming?: boolean;
+  /** Add a "Retry" action (final replies in the live chat only). */
+  retry?: boolean;
 }
 
 /** Fence opener: ``` plus an optional info string (`bash`, `c++`, `objective-c title=x`). */
@@ -78,7 +80,9 @@ export function renderMarkdown(text: string, sessionId: string, addHistoryFn: (c
   }
 
   return segments.join('') + (text && !streaming ?
-    `<div class="ai-response-actions"><button type="button" class="ai-response-copy" data-code="${escapeHtml(text)}" aria-label="${t('aiCopyResponse')}">${t('aiCopyResponse')}</button></div>` : '');
+    `<div class="ai-response-actions"><button type="button" class="ai-response-copy" data-code="${escapeHtml(text)}" aria-label="${t('aiCopyResponse')}">${t('aiCopyResponse')}</button>` +
+    (options.retry ? `<button type="button" class="ai-msg-action" data-ai-action="retry">${t('aiMsgRetry')}</button>` : '') +
+    `</div>` : '');
 }
 
 /**
