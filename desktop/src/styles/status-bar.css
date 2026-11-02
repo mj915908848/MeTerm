@@ -1,8 +1,8 @@
 /* ── Status Bar (capsule layout) ──
-   A fixed 24px row between the toolbar and the content. It never grows or
-   shrinks — showing/hiding is only its contents fading — so it never resizes
-   the terminals (a row that came and went sent the remote a SIGWINCH on every
-   AI turn) and never covers anything. */
+   A 24px row between the toolbar and the content. While a terminal is on
+   screen it is always shown, so it never grows or shrinks under a session
+   (that resized the terminal on every AI turn) and covers nothing. On the
+   home/gallery views it collapses (#app.app-status-collapsed). */
 #status {
   position: relative;
   display: flex;
@@ -19,15 +19,9 @@
   -webkit-user-select: none;
 }
 
-#status > * {
-  transition: opacity 0.16s ease;
-}
-
-/* Idle (no connecting/error/transfer/AI): the row stays, its contents go. */
-#status.status-collapsed > * {
-  opacity: 0;
-  visibility: hidden;
-  transition: opacity 0.16s ease, visibility 0s linear 0.16s;
+#status.status-collapsed {
+  height: 0;
+  border-bottom-color: transparent;
 }
 
 #status.error {

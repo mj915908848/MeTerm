@@ -65,6 +65,7 @@ export function setViewManagerCallbacks(cbs: {
 export function setViewMode(mode: ViewMode): void {
   setIsHomeView(mode === 'home');
   setIsGalleryView(mode === 'gallery');
+  StatusBar.setTerminalView(mode === 'terminal');
 }
 
 export function getOrCreateTerminalArea(): HTMLElement {

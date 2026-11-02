@@ -2,8 +2,8 @@
  * The status bar is on screen only while there is something to report:
  * connecting, reconnecting, a failure, a file transfer, a running AI turn.
  * A session that connected and then just sat there is not an event, so the bar
- * empties. Its 24px row is always reserved, so showing/hiding it never
- * resizes the terminals (no SIGWINCH per AI turn).
+ * goes away — on the home/gallery views. With a terminal on screen it always
+ * stays (connection + latency), so it never resizes a running session.
  *
  * History, because this has flip-flopped: v0.2.11 made the bar auto-hide;
  * 2026-09-22 whitelisted the plain `connected` state at the owner's request
@@ -177,11 +177,10 @@ test('a settled connection leaves the bar out of the way', () => {
 
   statusBar.setConnection('connected', 'bruceli@192.168.0.150');
 
-  // A healthy session is not an event: the bar empties.
+  // No terminal on screen (home view): a settled connection is not an event.
   assert.equal(container.classList.contains('status-collapsed'), true,
-    'a settled connection must not pin the bar on screen');
-  // ...and it never touches the #app layout, so no terminal is resized.
-  assert.equal(app.classList.contains('app-status-collapsed'), false);
+    'a settled connection must not pin the bar on the home view');
+  assert.equal(app.classList.contains('app-status-collapsed'), true);
 
   // The readout is still built and kept current in the DOM — it is only
   // faded out, so the capsules are already right when the bar
@@ -198,7 +197,7 @@ test('a settled connection leaves the bar out of the way', () => {
   // Closing everything keeps it collapsed.
   statusBar.setConnection('disconnected');
   assert.equal(container.classList.contains('status-collapsed'), true);
-  assert.equal(app.classList.contains('app-status-collapsed'), false);
+  assert.equal(app.classList.contains('app-status-collapsed'), true);
 });
 
 test('the bar comes back while something is in flight, capsules and all', () => {
@@ -264,7 +263,7 @@ function ruleBody(css: string, selector: string): string {
   return match ? match[1] : '';
 }
 
-test('the bar keeps a fixed 24px row: no resize, nothing covered', () => {
+test('the bar is a real 24px row that only collapses with no terminal on screen', () => {
   const statusCss = styleSource('status-bar.css');
   const baseCss = styleSource('base.css');
 
@@ -279,11 +278,22 @@ test('the bar keeps a fixed 24px row: no resize, nothing covered', () => {
 
   const appRows = ruleBody(baseCss, '#app').match(/grid-template-rows:\s*([^;]+);/)?.[1].trim();
   assert.equal(appRows, `33px 24px minmax(0, 1fr)`, 'the reserved row must equal the bar height');
-  assert.doesNotMatch(baseCss, /app-status-collapsed/,
-    'the row must never collapse — that resized every terminal per AI turn');
+  const collapsedRows = ruleBody(baseCss, '#app.app-status-collapsed').match(/grid-template-rows:\s*([^;]+);/)?.[1].trim();
+  assert.equal(collapsedRows, '33px 0px minmax(0, 1fr)');
+});
 
-  // Idle hides only the contents; the box keeps its size.
-  const collapsed = ruleBody(statusCss, '#status.status-collapsed > *');
-  assert.match(collapsed, /visibility:\s*hidden;/);
-  assert.doesNotMatch(ruleBody(statusCss, '#status.status-collapsed'), /height:/);
+test('with a terminal on screen the bar stays, whatever the session is doing', () => {
+  const { container, app, statusBar } = boot();
+  statusBar.setTerminalView(true);
+  statusBar.setConnection('connected', 'bruceli@192.168.0.150');
+  assert.equal(container.classList.contains('status-collapsed'), false,
+    'a settled session keeps its connection/latency readout');
+  assert.equal(app.classList.contains('app-status-collapsed'), false,
+    'and the row never collapses under a terminal (that would resize it)');
+
+  // Back to the home view: nothing to describe, the row goes.
+  statusBar.setTerminalView(false);
+  statusBar.setConnection('disconnected');
+  assert.equal(container.classList.contains('status-collapsed'), true);
+  assert.equal(app.classList.contains('app-status-collapsed'), true);
 });

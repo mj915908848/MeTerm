@@ -84,6 +84,8 @@ class StatusBarClass {
    *  updateVisibility(), read by doPing()/the pong listener to decide
    *  whether a latency reading is worth taking at all. */
   private visible = false;
+  /** See setTerminalView(). */
+  private terminalView = false;
 
   // Saved event listener references for cleanup
   private initialized = false;
@@ -150,6 +152,13 @@ class StatusBarClass {
     }
     this.renderConnectionCapsule();
     this.renderLatencyCapsule();
+    this.updateVisibility();
+  }
+
+  /** Whether a terminal (not the home or gallery view) is on screen. */
+  setTerminalView(on: boolean): void {
+    if (this.terminalView === on) return;
+    this.terminalView = on;
     this.updateVisibility();
   }
 
@@ -464,16 +473,13 @@ class StatusBarClass {
   }
 
   /**
-   * The bar is a readout of *what is happening right now*, not a permanent
-   * fixture: it is on screen while something is in flight or wrong —
-   * connecting, reconnecting, a failure, a file transfer, a running AI turn —
-   * and is empty the rest of the time. A healthy session that just sits
-   * there is not an event, so its contents fade out.
-   *
-   * The row itself keeps its 24px (status-bar.css): a row that grows and
-   * shrinks would resize every terminal (and send the remote a SIGWINCH)
-   * each time an AI turn or transfer starts or ends, and a floating layer
-   * covered the terminal's top-left corner.
+   * While a terminal is on screen the bar is always there (connection +
+   * latency), so it never comes and goes under a running session: a row that
+   * grows and shrinks resizes every terminal (and sends the remote a
+   * SIGWINCH), and a floating layer covered the terminal's top-left corner.
+   * On the home/gallery views there is no session to describe, so the row is
+   * collapsed unless something is in flight or wrong (connecting, a failure,
+   * a transfer still running) — there is no terminal there to resize.
    *
    * Collapsing is also the signal to stop *measuring*: the 5s ping only exists
    * to feed the latency capsule next to the connection label, so with the bar
@@ -486,6 +492,7 @@ class StatusBarClass {
     if (!this.container) return;
     const s = this.state;
     const show =
+      this.terminalView ||
       s.connectionStatus === 'connecting' ||
       s.connectionStatus === 'reconnecting' ||
       s.connectionStatus === 'error' ||
@@ -497,6 +504,7 @@ class StatusBarClass {
     this.visible = show;
 
     this.container.classList.toggle('status-collapsed', !show);
+    document.getElementById('app')?.classList.toggle('app-status-collapsed', !show);
 
     if (!show) {
       // Nothing on screen to describe — stop accumulating latency (the 5s
