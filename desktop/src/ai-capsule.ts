@@ -41,9 +41,9 @@ import {
 import {
   saveConversation as saveConversationFn, loadConversationSummaries as loadConversationSummariesFn,
   loadConversation as loadConversationFn, pruneConversations as pruneConversationsFn,
+  confirmStopRunningTask as confirmStopRunningTaskFn,
   deleteConversation as deleteConversationFn, confirmDeleteConversation as confirmDeleteConversationFn,
   renderChatHistoryListFromCache as renderChatHistoryListFromCacheFn,
-  renderChatHistoryDetail as renderChatHistoryDetailFn,
 } from './ai-capsule-chat-persistence';
 import {
   updateButtonHighlight as updateButtonHighlightFn, updateChatTitle as updateChatTitleFn,
@@ -366,7 +366,7 @@ class AICapsuleManagerClass {
       if (!latest) return;
       const conv = await loadConversationFn(latest.id);
       if (!conv || superseded() || this.isConversationOpenInOtherTab(inst, conv.id)) return;
-      this.restoreConversation(inst, conv);
+      await this.restoreConversation(inst, conv);
     } catch (error) {
       console.warn('[ai] Automatic host history restoration failed:', error);
     }
@@ -391,7 +391,7 @@ class AICapsuleManagerClass {
     sendToLLMFromFn(instance, text, this.getChatOpsHost());
   }
 
-  private restoreConversation(instance: AICapsuleInstance, conv: ChatConversation): void {
+  private async restoreConversation(instance: AICapsuleInstance, conv: ChatConversation): Promise<void> {
     if (hostsMatch(conv.hostBinding, currentConversationHost(instance))) {
       // Already the live conversation of this tab: the listed copy can be older
       // than what is in memory, so reloading it would drop the newest turns.
@@ -405,8 +405,25 @@ class AICapsuleManagerClass {
         showToast({ title: t('aiChatOpenElsewhereTitle'), body: t('aiChatOpenElsewhere') });
         return;
       }
+      // Switching used to abort the run silently, and the run's abort handling
+      // then finished its partial reply into the conversation just opened.
+      if (instance.isStreaming) {
+        if (!(await confirmStopRunningTaskFn())) return;
+        if (!(await this.stopRunAndWait(instance))) return;
+        if (conv.id === instance.currentConversationId || this.isConversationOpenInOtherTab(instance, conv.id)) return;
+      }
     }
     restoreConversationFn(instance, conv, this.getChatOpsHost());
+  }
+
+  /** Abort the running task and let it wrap up into its own conversation. */
+  private async stopRunAndWait(instance: AICapsuleInstance): Promise<boolean> {
+    if (!instance.isStreaming) return true;
+    const done = instance.agentDone;
+    instance.agentAbort?.();
+    instance.agent.abort();
+    if (done) await Promise.race([done, new Promise(resolve => setTimeout(resolve, 3000))]);
+    return !instance.isStreaming;
   }
 
   private isConversationOpenInOtherTab(instance: AICapsuleInstance, convId: string): boolean {
@@ -805,7 +822,7 @@ class AICapsuleManagerClass {
       closeHistory: (inst) => this.closeHistory(inst),
       enterSearchMode: (inst, placeholder, onInput) => this.enterSearchMode(inst, placeholder, onInput),
       exitSearchMode: (inst) => this.exitSearchMode(inst),
-      restoreConversation: (inst, conv) => this.restoreConversation(inst, conv),
+      restoreConversation: (inst, conv) => { void this.restoreConversation(inst, conv); },
       minimizeChat: (inst) => this.minimizeChat(inst),
       ensurePopupResizeHandle: (p, b) => this.ensurePopupResizeHandle(p, b),
       observePopupResize: (p, b) => this.observePopupResize(p, b),
@@ -841,21 +858,10 @@ class AICapsuleManagerClass {
     const isSideInline = instance.chatHistoryPanel?.classList.contains('ai-side-chat-history-view');
     renderChatHistoryListFromCacheFn(instance, convs, {
       ensurePopupResizeHandle: isSideInline ? noopResize : (p, b) => this.ensurePopupResizeHandle(p, b),
-      restoreConversation: (inst, conv) => this.restoreConversation(inst, conv),
+      restoreConversation: (inst, conv) => { void this.restoreConversation(inst, conv); },
       loadConversation: (id) => loadConversationFn(id),
       handleDeleteConversation: (inst, convId) => { void this.handleDeleteConversation(inst, convId); },
     }, filter);
-  }
-
-  private renderChatHistoryDetail(instance: AICapsuleInstance, conv: ChatConversation): void {
-    const isSideInline = instance.chatHistoryPanel?.classList.contains('ai-side-chat-history-view');
-    const noopResize = () => {};
-    renderChatHistoryDetailFn(instance, conv, {
-      ensurePopupResizeHandle: isSideInline ? noopResize : (p, b) => this.ensurePopupResizeHandle(p, b),
-      renderChatHistoryList: (inst) => { void this.renderChatHistoryList(inst); },
-      addHistory: (inst, cmd, src) => this.addHistory(inst, cmd, src),
-      bindCommandButtons: (inst, container) => this.bindCommandButtons(inst, container),
-    });
   }
 
   private async handleDeleteConversation(instance: AICapsuleInstance, convId: string): Promise<void> {

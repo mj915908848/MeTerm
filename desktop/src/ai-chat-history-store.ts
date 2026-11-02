@@ -20,19 +20,23 @@ export const SUMMARY_DIR = `${CHAT_DIR}/index`;
  *  restoring a conversation compacts old outputs anyway. */
 export const HISTORY_RESULT_LIMIT = 20_000;
 /** Text per conversation the history search can match. */
-export const SEARCH_TEXT_LIMIT = 8_000;
+export const SEARCH_TEXT_LIMIT = 32_000;
+/** Bumped when summaries gain content; an older summary is rebuilt once from its file. */
+export const SUMMARY_VERSION = 2;
 /** Choices offered in Settings; 0 keeps every conversation. */
 export const CHAT_HISTORY_LIMITS = [50, 100, 200, 500, 0] as const;
 export const DEFAULT_CHAT_HISTORY_LIMIT = 200;
 
 export interface ConversationSummary {
+  version?: number;
   id: string;
   hostBinding?: ConversationHost;
   title: string;
   createdAt: number;
   updatedAt: number;
   messageCount: number;
-  /** Text of the non-tool messages, capped, for the history search. */
+  /** Text of the messages and the commands the agent ran (never tool output),
+   *  capped, for the history search. */
   searchText: string;
 }
 
@@ -74,14 +78,23 @@ export function entriesForHistory(messages: ConvEntry[]): ConvEntry[] {
   });
 }
 
+/** The command a tool call ran, when it has one: searchable, unlike its output. */
+function toolCommand(entry: ConvEntry): string {
+  if (entry.type !== 'tool_call') return '';
+  const command = entry.args.command ?? entry.args.cmd;
+  return typeof command === 'string' ? command : '';
+}
+
 export function buildSummary(conv: ChatConversation): ConversationSummary {
   let searchText = '';
   for (const message of conv.messages) {
-    if (message.type === 'tool_call' || !message.content) continue;
-    searchText += (searchText ? '\n' : '') + message.content;
+    const text = message.type === 'tool_call' ? toolCommand(message) : message.content;
+    if (!text) continue;
+    searchText += (searchText ? '\n' : '') + text;
     if (searchText.length >= SEARCH_TEXT_LIMIT) { searchText = searchText.slice(0, SEARCH_TEXT_LIMIT); break; }
   }
   return {
+    version: SUMMARY_VERSION,
     id: conv.id,
     hostBinding: conv.hostBinding,
     title: conv.title,
@@ -92,14 +105,14 @@ export function buildSummary(conv: ChatConversation): ConversationSummary {
   };
 }
 
-/** Parse a summary file; anything malformed is treated as missing. */
+/** Parse a summary file; anything malformed or older is treated as missing. */
 export function parseSummary(text: string, id: string): ConversationSummary | null {
   try {
     const raw = JSON.parse(text) as Partial<ConversationSummary>;
-    if (!raw || raw.id !== id || typeof raw.title !== 'string' || typeof raw.updatedAt !== 'number'
+    if (!raw || raw.version !== SUMMARY_VERSION || raw.id !== id || typeof raw.title !== 'string' || typeof raw.updatedAt !== 'number'
         || typeof raw.messageCount !== 'number') return null;
     return {
-      id, hostBinding: raw.hostBinding, title: raw.title,
+      version: SUMMARY_VERSION, id, hostBinding: raw.hostBinding, title: raw.title,
       createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : raw.updatedAt,
       updatedAt: raw.updatedAt, messageCount: raw.messageCount,
       searchText: typeof raw.searchText === 'string' ? raw.searchText : '',
@@ -112,4 +125,77 @@ export function conversationsToPrune(summaries: ConversationSummary[], limit: nu
   if (!(limit > 0) || summaries.length <= limit) return [];
   const newestFirst = [...summaries].sort((a, b) => b.updatedAt - a.updatedAt);
   return newestFirst.slice(limit).filter(s => !keep.has(s.id)).map(s => s.id);
+}
+
+/**
+ * When a conversation last changed: its newest message. Saving a conversation
+ * that was only opened, switched away from or closed must not move it to the
+ * top of the history list.
+ */
+export function lastActivity(messages: readonly ConvEntry[], fallback: number): number {
+  let latest = 0;
+  for (const message of messages) {
+    if (typeof message.timestamp === 'number' && Number.isFinite(message.timestamp) && message.timestamp > latest) {
+      latest = message.timestamp;
+    }
+  }
+  return latest > 0 ? latest : fallback;
+}
+
+export type HistoryDateGroup = 'today' | 'yesterday' | 'week' | 'earlier';
+
+/** Which date heading a conversation goes under, in local time. */
+export function historyDateGroup(timestamp: number, now: number): HistoryDateGroup {
+  const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
+  const today = startOfToday.getTime();
+  if (timestamp >= today) return 'today';
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  if (timestamp >= yesterday.getTime()) return 'yesterday';
+  const weekAgo = new Date(today); weekAgo.setDate(weekAgo.getDate() - 6);
+  if (timestamp >= weekAgo.getTime()) return 'week';
+  return 'earlier';
+}
+
+/** The words of a history search, lower-cased; every one must match. */
+export function searchKeywords(query: string): string[] {
+  return query.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** `text` cut into runs, each marked when it is a keyword hit (case-insensitive). */
+export function highlightRuns(text: string, keywords: readonly string[]): { text: string; hit: boolean }[] {
+  if (keywords.length === 0 || !text) return text ? [{ text, hit: false }] : [];
+  const lower = text.toLowerCase();
+  const hits = new Array<boolean>(text.length).fill(false);
+  for (const keyword of keywords) {
+    for (let at = lower.indexOf(keyword); at !== -1; at = lower.indexOf(keyword, at + keyword.length)) {
+      hits.fill(true, at, at + keyword.length);
+    }
+  }
+  const runs: { text: string; hit: boolean }[] = [];
+  let start = 0;
+  for (let i = 1; i <= text.length; i++) {
+    if (i === text.length || hits[i] !== hits[start]) {
+      runs.push({ text: text.slice(start, i), hit: hits[start] });
+      start = i;
+    }
+  }
+  return runs;
+}
+
+/**
+ * One line of `text` around the first keyword it contains, for showing why a
+ * conversation matched. Null when no keyword is in `text`.
+ */
+export function searchSnippet(text: string, keywords: readonly string[], radius = 40): string | null {
+  const lower = text.toLowerCase();
+  let at = -1; let length = 0;
+  for (const keyword of keywords) {
+    const found = lower.indexOf(keyword);
+    if (found !== -1 && (at === -1 || found < at)) { at = found; length = keyword.length; }
+  }
+  if (at === -1) return null;
+  const start = Math.max(0, at - radius);
+  const end = Math.min(text.length, at + length + radius * 2);
+  const body = text.slice(start, end).replace(/\s+/g, ' ').trim();
+  return `${start > 0 ? '…' : ''}${body}${end < text.length ? '…' : ''}`;
 }

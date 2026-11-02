@@ -602,10 +602,12 @@ export function sendToLLMFrom(
     attached.length > 0 ? attached : undefined,
   );
   instance.agentAbort = handle.abort;
+  instance.agentDone = handle.done;
   void handle.done.finally(() => {
     if (instance.agentAbort === handle.abort) {
       instance.agentAbort = null;
     }
+    if (instance.agentDone === handle.done) instance.agentDone = null;
     instance.state.activeRunTargetPaneNumber = null;
   });
 }
