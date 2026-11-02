@@ -12,14 +12,19 @@ body {
   display: grid;
   /* First row 38px = 32px toolbar + 6px breathing gap below the tabs (the gap
      is the toolbar's own bottom padding, so it's a continuous toolbar-colored
-     block with no seam — see #window-toolbar). Second row = the status bar,
-     always reserved at full height so showing/hiding it never resizes the
-     terminals. */
+     block with no seam — see #window-toolbar). Second row = the status bar:
+     always there while a terminal is on screen (so it never resizes one),
+     collapsed on the home/gallery views. */
   grid-template-rows: 33px 24px minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
   overflow: hidden;
   background: transparent;
+}
+
+/* No terminal on screen and nothing to report → reclaim the status row. */
+#app.app-status-collapsed {
+  grid-template-rows: 33px 0px minmax(0, 1fr);
 }
 
 #main-content {

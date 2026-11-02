@@ -361,3 +361,21 @@ test('left capsules keep a fixed order whatever comes first', () => {
   const names = left.children.map((c: El) => c.className.split(' ').find((n) => n.startsWith('capsule-')));
   assert.deepEqual(names, ['capsule-connection', 'capsule-pane', 'capsule-latency', 'capsule-sessions']);
 });
+
+test('with a terminal on screen the latency is sampled continuously', () => {
+  const h = boot();
+  h.statusBar.setTerminalView(true);
+  h.statusBar.setConnection('connected', 'bruceli@192.168.0.150');
+  assert.equal(h.collapsed(), false);
+  const before = h.pings.length;
+  h.tick();
+  assert.equal(h.pings.length, before + 1, 'the readout is on screen, so it is kept current');
+  h.firePong('ssh-1', 33);
+  assert.ok(find(h.container, 'capsule-latency'));
+
+  h.statusBar.setTerminalView(false);
+  h.statusBar.setConnection('disconnected');
+  const settled = h.pings.length;
+  h.tick();
+  assert.equal(h.pings.length, settled, 'home view: nothing to measure');
+});
