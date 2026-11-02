@@ -1,4 +1,5 @@
 import { getLanguage, t, tf } from './i18n';
+import { scrollChatToEnd } from './ai-chat-scroll';
 import { formatUsage } from './ai-token-usage';
 import { escapeHtml } from './status-bar';
 import { pulseIcon, thinkingIcon, stopIcon } from './ai-icons';
@@ -108,7 +109,7 @@ export function appendUserMessage(
   }
 
   container.appendChild(msg);
-  container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container, true);
 }
 
 export function showAgentPulse(instance: AICapsuleInstance): void {
@@ -121,7 +122,7 @@ export function showAgentPulse(instance: AICapsuleInstance): void {
   ).join('');
   pulse.innerHTML = `${pulseIcon('var(--accent, #6aa4ff)', 10)} <span class="ai-pulse-label">${t('aiWorking')}</span><span class="ai-pulse-dots">${dots}</span>`;
   container.appendChild(pulse);
-  container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container);
 }
 
 export function hideAgentPulse(instance: AICapsuleInstance): void {
@@ -165,7 +166,7 @@ export function ensureStreamBubble(instance: AICapsuleInstance): HTMLDivElement 
   msg.appendChild(content);
   container.appendChild(msg);
   sinkAgentPulse(instance);
-  container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container);
 
   instance.streamMsgEl = msg;
   return msg;
@@ -195,18 +196,13 @@ export function appendStreamToken(instance: AICapsuleInstance, token: string): v
   scheduleFrame(pendingStreamFrame, instance, () => renderStreamText(instance));
 }
 
-/** Within this many px of the end counts as "following" the stream. */
-const FOLLOW_SLACK_PX = 40;
-
 /**
  * Apply a streaming update and keep the view pinned to the end, but only if
- * it was at the end before: a user who scrolled up to reread is left there.
+ * the reader is following: one who scrolled up to reread is left there.
  */
 function followStream(container: Element | null | undefined, update: () => void): void {
-  const follow = !container
-    || container.scrollHeight - container.scrollTop - container.clientHeight <= FOLLOW_SLACK_PX;
   update();
-  if (container && follow) container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container);
 }
 
 function renderStreamText(instance: AICapsuleInstance): void {
@@ -215,21 +211,30 @@ function renderStreamText(instance: AICapsuleInstance): void {
   if (!instance.streamMsgEl || !instance.streamBuffer) return;
   const content = instance.streamMsgEl.querySelector('.ai-msg-content');
   if (!content) return;
-  followStream(instance.chatPanel?.querySelector('.ai-chat-messages'), () => writeStreamText(content, instance.streamBuffer));
+  followStream(instance.chatPanel?.querySelector('.ai-chat-messages'), () => writeStreamText(content, instance.streamBuffer, instance.sessionId));
 }
 
-function writeStreamText(content: Element, text: string): void {
+/**
+ * Above this size the live preview falls back to plain text: re-rendering
+ * the whole reply every frame stops being cheap. The final render on
+ * completion is always full markdown.
+ */
+const LIVE_MARKDOWN_MAX_CHARS = 40_000;
 
-  const textNode = content.querySelector('.ai-stream-text');
-  if (textNode) {
-    textNode.textContent = text;
-  } else {
-    const span = document.createElement('span');
-    span.className = 'ai-stream-text';
-    span.textContent = text;
-    const cursor = content.querySelector('.ai-cursor');
-    content.insertBefore(span, cursor);
+function writeStreamText(content: Element, text: string, sessionId: string): void {
+  let node = content.querySelector('.ai-stream-text') as HTMLElement | null;
+  if (!node) {
+    node = document.createElement('div');
+    node.className = 'ai-stream-text';
+    content.insertBefore(node, content.querySelector('.ai-cursor'));
   }
+  if (text.length > LIVE_MARKDOWN_MAX_CHARS) {
+    node.classList.add('ai-stream-plain');
+    node.textContent = text;
+    return;
+  }
+  node.classList.remove('ai-stream-plain');
+  node.innerHTML = renderMarkdown(text, sessionId, () => {}, { streaming: true });
 }
 
 export function collapseActiveThinking(instance: AICapsuleInstance): void {
@@ -362,7 +367,7 @@ export function finalizeMessage(
   deps.saveConversation(instance);
 
   const container = instance.chatPanel?.querySelector('.ai-chat-messages');
-  if (container) container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container);
 
   // Background notification: fire a system notification + dock bounce
   // when the agent finishes a turn and the window isn't focused.
@@ -420,7 +425,7 @@ export function finalizeThinking(
   instance.streamBuffer = '';
 
   const container = instance.chatPanel?.querySelector('.ai-chat-messages');
-  if (container) container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container);
 }
 
 export function showError(instance: AICapsuleInstance, message: string): void {
@@ -465,7 +470,7 @@ export function appendSystemNotice(instance: AICapsuleInstance, text: string): v
   notice.className = 'ai-system-notice';
   notice.textContent = text;
   container.appendChild(notice);
-  container.scrollTop = container.scrollHeight;
+  scrollChatToEnd(container);
 
   instance.messages.push({ type: 'system', content: text, timestamp: Date.now() });
 }

@@ -87,6 +87,7 @@ test('side history preview stays inline, preserves active task and returns to th
 test('cross-host and legacy restore only preview, never clear or overwrite active conversation', () => {
   let previews = 0;
   const ops = loadModule('ai-capsule-chat-ops.ts', {
+    './ai-chat-scroll': { installChatScrollFollow: () => {}, scrollChatToEnd: () => {} },
     './i18n': { t: (key: string) => key }, './themes': { loadSettings: () => ({}) },
     './terminal': { TerminalRegistry: {} }, './overlay-scrollbar': { createOverlayScrollbar: () => {} },
     './ai-capsule-markdown': { renderMarkdown: () => '' }, './ai-provider': { resolveActiveModel: () => ({}) },

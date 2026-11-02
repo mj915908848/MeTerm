@@ -1,4 +1,5 @@
 import { writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
+import { syncBarInputHeight } from './ai-capsule-bar-dom';
 import { t } from './i18n';
 import type { AICapsuleInstance } from './ai-capsule-types';
 
@@ -85,9 +86,10 @@ export function bindChatContextMenu(
       items.push({
         label: t('aiCtxResend'),
         action: () => {
-          const input = instance.element.querySelector('.ai-bar-input') as HTMLInputElement | null;
+          const input = instance.element.querySelector('.ai-bar-input') as HTMLTextAreaElement | null;
           if (input) {
             input.value = rawText;
+            syncBarInputHeight(input);
             input.focus();
           }
         },

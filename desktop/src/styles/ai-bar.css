@@ -49,21 +49,48 @@
   flex: 1;
   position: relative;
   min-width: 0;
-  height: 24px;
+  min-height: 24px;
+  display: flex;
 }
 
+/* Textarea that looks like the old one-line input until it has more
+   than one line; syncBarInputHeight() grows it up to ~6 lines. */
 .ai-bar-input {
+  display: block;
   width: 100%;
+  box-sizing: border-box;
   background: transparent;
   border: none;
   color: var(--text-primary);
+  font-family: inherit;
   font-size: 12px;
+  line-height: 18px;
   height: 24px;
+  padding: 3px 0;
+  margin: 0;
+  resize: none;
+  overflow-y: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   outline: none;
   min-width: 0;
   transition: color 0.2s ease;
   position: relative;
   z-index: 1;
+}
+
+/* Multi-line: the bar grows upward; controls stay on the last line. */
+.ai-bar.ai-bar--multiline {
+  height: auto;
+  align-items: flex-end;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  border-radius: 12px;
+}
+/* Give the in-flow controls the line's height so they centre on it. */
+.ai-bar.ai-bar--multiline > :is(.ai-bar-model-select, .ai-bar-trust-switcher, .ai-bar-thinking-toggle) {
+  box-sizing: border-box;
+  min-height: 24px;
 }
 
 .ai-bar-input::placeholder {

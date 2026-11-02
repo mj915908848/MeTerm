@@ -1,4 +1,5 @@
 import { writeText as clipboardWriteText } from '@tauri-apps/plugin-clipboard-manager';
+import { syncBarInputHeight } from './ai-capsule-bar-dom';
 import { t } from './i18n';
 import { DrawerManager } from './drawer';
 import { MAX_HISTORY, HISTORY_STORAGE_KEY } from './ai-capsule-types';
@@ -66,12 +67,13 @@ export function enterSearchMode(
   savedInputValue: Map<string, string>,
   filterListener: Map<string, () => void>,
 ): void {
-  const input = instance.element.querySelector('.ai-bar-input') as HTMLInputElement;
+  const input = instance.element.querySelector('.ai-bar-input') as HTMLTextAreaElement;
   if (!input) return;
   const sid = instance.sessionId;
   savedPlaceholder.set(sid, input.placeholder);
   savedInputValue.set(sid, input.value);
   input.value = '';
+  syncBarInputHeight(input);
   input.placeholder = placeholder;
   input.classList.add('searching');
   input.addEventListener('input', onInput);
@@ -85,7 +87,7 @@ export function exitSearchMode(
   savedInputValue: Map<string, string>,
   filterListener: Map<string, () => void>,
 ): void {
-  const input = instance.element.querySelector('.ai-bar-input') as HTMLInputElement;
+  const input = instance.element.querySelector('.ai-bar-input') as HTMLTextAreaElement;
   if (!input) return;
   const sid = instance.sessionId;
   const listener = filterListener.get(sid);
@@ -94,6 +96,7 @@ export function exitSearchMode(
     filterListener.delete(sid);
   }
   input.value = savedInputValue.get(sid) ?? '';
+  syncBarInputHeight(input);
   input.placeholder = savedPlaceholder.get(sid) ?? ' ';
   input.classList.remove('searching');
   savedPlaceholder.delete(sid);
@@ -212,7 +215,7 @@ export function renderHistoryPanel(
       // 将选中的命令设为"恢复值"，关闭弹窗时会写入输入框
       deps.savedInputValue.set(instance.sessionId, entry.command);
       deps.closeHistory(instance);
-      const input = instance.element.querySelector('.ai-bar-input') as HTMLInputElement;
+      const input = instance.element.querySelector('.ai-bar-input') as HTMLTextAreaElement;
       if (input) input.focus();
     });
 
