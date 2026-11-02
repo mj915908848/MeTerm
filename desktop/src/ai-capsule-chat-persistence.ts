@@ -3,7 +3,7 @@ import { t } from './i18n';
 import { thinkingIcon } from './ai-icons';
 import { renderMarkdown } from './ai-capsule-markdown';
 import { fuzzyMatch, formatRelativeTime } from './ai-capsule-history';
-import { buildToolCard } from './ai-capsule-tool-ui';
+import { appendToolCardGrouped, buildToolCard, collapseToolGroups } from './ai-capsule-tool-ui';
 import { createOverlayScrollbar, getPopupScrollViewport } from './overlay-scrollbar';
 import type { AICapsuleInstance, ConvEntry, ChatConversation } from './ai-capsule-types';
 import { hostsMatch, validHost } from './ai-conversation-host';
@@ -495,7 +495,7 @@ export function renderChatHistoryDetail(
     content.className = 'ai-msg-content';
 
     if (msg.type === 'tool_call') {
-      msgContainer.appendChild(buildToolCard(msg));
+      appendToolCardGrouped(msgContainer, buildToolCard(msg));
       continue;
     } else if (msg.type === 'assistant') {
       msgEl.className = 'ai-msg ai-msg-assistant';
@@ -546,6 +546,7 @@ export function renderChatHistoryDetail(
     msgContainer.appendChild(msgEl);
   }
 
+  collapseToolGroups(msgContainer);
   target.appendChild(msgContainer);
 
   // Bind command buttons in rendered markdown

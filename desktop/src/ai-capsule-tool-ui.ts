@@ -72,6 +72,72 @@ export function toolArgsInline(toolName: string, args: Record<string, unknown>):
   return '';
 }
 
+// ─── Tool-call groups ───────────────────────────────────────
+// Consecutive tool cards share one group. A group of two or more gets a
+// summary header ("Ran 5 steps · 1 failed") and folds once the run is
+// over, so a long agent run leaves the final answer in view instead of a
+// wall of cards. One card on its own renders exactly as before.
+
+const CHEVRON_SVG = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 2 6.5 5 3.5 8"/></svg>`;
+
+function lastVisibleChild(container: Element): Element | null {
+  let el = container.lastElementChild;
+  while (el && (el.classList.contains('ai-agent-pulse') || (el as HTMLElement).hidden)) {
+    el = el.previousElementSibling;
+  }
+  return el;
+}
+
+/** Refresh a group's header text and whether it shows at all. */
+export function refreshToolGroup(group: Element): void {
+  const cards = group.querySelectorAll(':scope > .ai-tool-card');
+  const failed = group.querySelectorAll(':scope > .ai-tool-card.failed').length;
+  group.classList.toggle('multi', cards.length >= 2);
+  const label = group.querySelector(':scope > .ai-tool-group-header .ai-tool-group-label');
+  if (label) {
+    label.textContent = tf('aiToolGroupSummary', { n: cards.length })
+      + (failed > 0 ? ` · ${tf('aiToolGroupFailed', { n: failed })}` : '');
+  }
+}
+
+/** Append a tool card, joining the group right above it or starting one. */
+export function appendToolCardGrouped(container: Element, card: HTMLElement): void {
+  if (card.hidden) { container.appendChild(card); return; }
+  const last = lastVisibleChild(container);
+  let group = last?.classList.contains('ai-tool-group') ? last as HTMLDivElement : null;
+  if (!group) {
+    group = document.createElement('div');
+    group.className = 'ai-tool-group';
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'ai-tool-group-header';
+    header.innerHTML = `<span class="ai-tool-group-chevron">${CHEVRON_SVG}</span><span class="ai-tool-group-label"></span>`;
+    header.addEventListener('click', () => {
+      group!.classList.toggle('collapsed');
+      group!.dataset.userToggled = '1';
+    });
+    group.appendChild(header);
+    const pulse = container.querySelector(':scope > .ai-agent-pulse');
+    container.insertBefore(group, pulse && pulse === container.lastElementChild ? pulse : null);
+  }
+  group.appendChild(card);
+  refreshToolGroup(group);
+}
+
+/** Fold every multi-card group the user hasn't opened or closed by hand. */
+export function collapseToolGroups(container: Element | null | undefined): void {
+  container?.querySelectorAll('.ai-tool-group.multi').forEach((g) => {
+    if ((g as HTMLElement).dataset.userToggled !== '1') g.classList.add('collapsed');
+  });
+}
+
+/** Results shown in a card; tool output is already capped well below this. */
+const RESULT_DISPLAY_MAX = 20_000;
+
+function clipResult(text: string): string {
+  return text.length > RESULT_DISPLAY_MAX ? `${text.slice(0, RESULT_DISPLAY_MAX)}…` : text;
+}
+
 /** Build a completed tool card element (for history rendering).
  *  For `todo_write` we return an empty placeholder element: the
  *  plan is instead replayed through renderTodoBoard by the caller
@@ -86,7 +152,7 @@ export function buildToolCard(msg: Extract<ConvEntry, { type: 'tool_call' }>): H
     return d;
   }
   const card = document.createElement('div');
-  card.className = 'ai-tool-card completed';
+  card.className = `ai-tool-card completed${msg.isError ? ' failed' : ''}`;
   card.dataset.tool = msg.toolName;
   const status = msg.result !== null
     ? (msg.isError ? statusIcon('error', 12) : statusIcon('success', 12))
@@ -107,9 +173,7 @@ export function buildToolCard(msg: Extract<ConvEntry, { type: 'tool_call' }>): H
   const resultEl = document.createElement('div');
   resultEl.className = `ai-tool-result${msg.isError ? ' ai-tool-result-error' : ''}`;
   resultEl.style.display = 'none';
-  const raw = msg.result ?? '';
-  const truncated = raw.length > 500 ? raw.slice(0, 500) + '...' : raw;
-  resultEl.innerHTML = `<pre>${escapeHtml(truncated)}</pre>`;
+  resultEl.innerHTML = `<pre>${escapeHtml(clipResult(msg.result ?? ''))}</pre>`;
   header.addEventListener('click', () => {
     const willShow = resultEl.style.display === 'none';
     resultEl.style.display = willShow ? '' : 'none';
@@ -356,7 +420,7 @@ export function appendToolCallCard(
     }
   }
 
-  container.appendChild(card);
+  appendToolCardGrouped(container, card);
   sinkAgentPulse(instance);
   scrollChatToEnd(container);
 
@@ -685,8 +749,7 @@ export function updateToolResultCard(
   resultEl.className = `ai-tool-result ${isError ? 'ai-tool-result-error' : ''}`;
   resultEl.style.display = 'none'; // collapsed by default
 
-  const truncated = result.length > 500 ? result.slice(0, 500) + '...' : result;
-  resultEl.innerHTML = `<pre>${escapeHtml(truncated)}</pre>`;
+  resultEl.innerHTML = `<pre>${escapeHtml(clipResult(result))}</pre>`;
   card.appendChild(resultEl);
 
   // Make header clickable to toggle result
@@ -701,6 +764,9 @@ export function updateToolResultCard(
   }
 
   card.classList.add('completed');
+  if (isError) card.classList.add('failed');
+  const group = card.parentElement;
+  if (group?.classList.contains('ai-tool-group')) refreshToolGroup(group);
   scrollChatToEnd(container);
 
   // Back-fill result into the last pending tool_call entry for this tool

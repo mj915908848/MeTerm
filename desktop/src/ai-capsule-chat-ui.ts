@@ -1,5 +1,6 @@
 import { getLanguage, t, tf } from './i18n';
 import { scrollChatToEnd } from './ai-chat-scroll';
+import { collapseToolGroups } from './ai-capsule-tool-ui';
 import { formatUsage } from './ai-token-usage';
 import { escapeHtml } from './status-bar';
 import { pulseIcon, thinkingIcon, stopIcon } from './ai-icons';
@@ -108,8 +109,28 @@ export function appendUserMessage(
     msg.appendChild(row);
   }
 
+  msg.appendChild(buildUserMessageActions());
   container.appendChild(msg);
   scrollChatToEnd(container, true);
+}
+
+/**
+ * Hover actions under a user message. Clicks are handled by the chat
+ * panel's delegated listener (ai-capsule-chat-ops.ts), keyed on
+ * data-ai-action.
+ */
+export function buildUserMessageActions(): HTMLDivElement {
+  const row = document.createElement('div');
+  row.className = 'ai-msg-actions';
+  for (const [action, key] of [['copy', 'aiCtxCopy'], ['edit', 'aiMsgEdit'], ['resend', 'aiCtxResend']] as const) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ai-msg-action';
+    btn.dataset.aiAction = action;
+    btn.textContent = t(key);
+    row.appendChild(btn);
+  }
+  return row;
 }
 
 export function showAgentPulse(instance: AICapsuleInstance): void {
@@ -343,7 +364,7 @@ export function finalizeMessage(
       if (fullText) {
         const mdWrapper = document.createElement('div');
         const addHistoryCb = (cmd: string) => deps.addHistory(instance, cmd, 'ai');
-        mdWrapper.innerHTML = renderMarkdown(fullText, instance.sessionId, addHistoryCb);
+        mdWrapper.innerHTML = renderMarkdown(fullText, instance.sessionId, addHistoryCb, { retry: true });
         while (mdWrapper.firstChild) content.appendChild(mdWrapper.firstChild);
         deps.bindCommandButtons(instance, content);
       }
@@ -367,6 +388,8 @@ export function finalizeMessage(
   deps.saveConversation(instance);
 
   const container = instance.chatPanel?.querySelector('.ai-chat-messages');
+  // The run is over: fold its tool steps so the answer stays in view.
+  collapseToolGroups(container);
   scrollChatToEnd(container);
 
   // Background notification: fire a system notification + dock bounce

@@ -29,8 +29,8 @@ import { resolveFocusedPaneNumber } from './ai-capsule-tab-state';
 import { hostsMatch } from './ai-conversation-host';
 import { allowConversationSend, currentConversationHost, previewHostConversation } from './ai-conversation-host-ui';
 import { bindLegacyConversation } from './ai-capsule-chat-persistence';
-import { announceHostNotes, attachPersistentTodoListener } from './ai-capsule-chat-ui';
-import { renderTodoBoard as renderTodoBoardImport, restoreTodoBoardFromHistory } from './ai-capsule-tool-ui';
+import { announceHostNotes, attachPersistentTodoListener, buildUserMessageActions } from './ai-capsule-chat-ui';
+import { renderTodoBoard as renderTodoBoardImport, restoreTodoBoardFromHistory, appendToolCardGrouped, collapseToolGroups } from './ai-capsule-tool-ui';
 
 /** Host interface: methods the extracted functions need from the manager. */
 export interface ChatOpsHost {
@@ -111,6 +111,58 @@ function installMarkdownLinkHandler(): void {
   });
 }
 
+const HEADER_SVG = 'width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
+const SVG_NEW_CHAT = `<svg ${HEADER_SVG}><path d="M8 3H4a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 4 13h7a1.5 1.5 0 0 0 1.5-1.5V8"/><path d="M11.5 2.5l2 2L8 10H6V8z"/></svg>`;
+const SVG_CLEAR_CHAT = `<svg ${HEADER_SVG}><path d="M3 4.5h10"/><path d="M6.5 4.5V3h3v1.5"/><path d="M4.5 4.5l.6 8.2a1 1 0 0 0 1 .8h3.8a1 1 0 0 0 1-.8l.6-8.2"/></svg>`;
+const SVG_MINIMIZE = `<svg ${HEADER_SVG}><line x1="4" y1="8" x2="12" y2="8"/></svg>`;
+const SVG_CLOSE = `<svg ${HEADER_SVG}><line x1="4.5" y1="4.5" x2="11.5" y2="11.5"/><line x1="11.5" y1="4.5" x2="4.5" y2="11.5"/></svg>`;
+
+/** The input the user is typing into for this instance (side textarea or AI Bar). */
+function activeChatInput(inst: AICapsuleInstance): HTMLTextAreaElement | null {
+  if (inst.layoutMode === 'side' && inst.sideInput) return inst.sideInput;
+  return inst.element.querySelector('.ai-bar-input') as HTMLTextAreaElement | null;
+}
+
+/** Text of the user message a reply answers: the nearest one above it. */
+function questionFor(reply: Element): string {
+  let el = reply.previousElementSibling;
+  while (el && !el.classList.contains('ai-msg-user')) el = el.previousElementSibling;
+  return el?.querySelector('.ai-msg-content')?.textContent ?? '';
+}
+
+/** Copy / edit / resend / retry buttons under messages (delegated). */
+function bindMessageActions(
+  messages: HTMLElement,
+  currentInstance: () => AICapsuleInstance,
+  host: ChatOpsHost,
+): void {
+  messages.addEventListener('click', (e) => {
+    const btn = (e.target as Element | null)?.closest?.('[data-ai-action]') as HTMLElement | null;
+    if (!btn || !messages.contains(btn)) return;
+    const msg = btn.closest('.ai-msg');
+    if (!msg) return;
+    const inst = currentInstance();
+    const action = btn.dataset.aiAction;
+    const text = action === 'retry' ? questionFor(msg) : msg.querySelector('.ai-msg-content')?.textContent ?? '';
+    if (!text) return;
+    if (action === 'copy') {
+      void import('@tauri-apps/plugin-clipboard-manager').then(({ writeText }) => writeText(text)).then(() => {
+        btn.textContent = t('commonCopied');
+        setTimeout(() => { btn.textContent = t('aiCtxCopy'); }, 1200);
+      }).catch(() => {});
+    } else if (action === 'edit') {
+      const input = activeChatInput(inst);
+      if (!input) return;
+      input.value = text;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+      input.setSelectionRange(text.length, text.length);
+    } else if ((action === 'resend' || action === 'retry') && !inst.isStreaming) {
+      sendToLLMFrom(inst, text, host);
+    }
+  });
+}
+
 export function createChatPanel(
   instance: AICapsuleInstance,
   host: ChatOpsHost,
@@ -150,8 +202,10 @@ export function createChatPanel(
 
   // New chat button — save current conversation to history, then start fresh
   const newChatBtn = document.createElement('button');
-  newChatBtn.className = 'ai-chat-clear';
-  newChatBtn.textContent = t('aiNewChat');
+  newChatBtn.className = 'ai-chat-header-btn ai-chat-new';
+  newChatBtn.innerHTML = SVG_NEW_CHAT;
+  newChatBtn.title = t('aiNewChat');
+  newChatBtn.setAttribute('aria-label', t('aiNewChat'));
   newChatBtn.addEventListener('click', () => {
     const inst = currentInstance();
     if (inst.isStreaming) return;
@@ -179,8 +233,10 @@ export function createChatPanel(
   });
 
   const clearBtn = document.createElement('button');
-  clearBtn.className = 'ai-chat-clear';
-  clearBtn.textContent = t('aiClearChat');
+  clearBtn.className = 'ai-chat-header-btn ai-chat-clear';
+  clearBtn.innerHTML = SVG_CLEAR_CHAT;
+  clearBtn.title = t('aiClearChat');
+  clearBtn.setAttribute('aria-label', t('aiClearChat'));
   clearBtn.addEventListener('click', async () => {
     const inst = currentInstance();
     if (inst.isStreaming) return;
@@ -210,22 +266,23 @@ export function createChatPanel(
 
   // Layout toggle button
   const layoutBtn = document.createElement('button');
-  layoutBtn.className = 'ai-chat-layout-toggle';
+  layoutBtn.className = 'ai-chat-header-btn ai-chat-layout-toggle';
   layoutBtn.innerHTML = instance.layoutMode === 'bottom' ? SVG_LAYOUT_SIDE : SVG_LAYOUT_BOTTOM;
   layoutBtn.title = instance.layoutMode === 'bottom' ? t('aiLayoutSide') : t('aiLayoutBottom');
   layoutBtn.addEventListener('click', () => toggleLayout(currentInstance(), layoutBtn, host));
 
   // Minimize button
   const minimizeBtn = document.createElement('button');
-  minimizeBtn.className = 'ai-chat-minimize';
-  minimizeBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="8" x2="13" y2="8"/></svg>`;
+  minimizeBtn.className = 'ai-chat-header-btn ai-chat-minimize';
+  minimizeBtn.innerHTML = SVG_MINIMIZE;
   minimizeBtn.title = t('aiCollapse');
   minimizeBtn.addEventListener('click', () => minimizeChat(currentInstance(), host));
 
   // Close button
   const closeBtn = document.createElement('button');
-  closeBtn.className = 'ai-chat-close';
-  closeBtn.innerHTML = '&times;';
+  closeBtn.className = 'ai-chat-header-btn ai-chat-close';
+  closeBtn.innerHTML = SVG_CLOSE;
+  closeBtn.title = t('aiChatClose');
   closeBtn.addEventListener('click', () => closeChatAndSave(currentInstance(), host));
 
   header.appendChild(title);
@@ -245,6 +302,7 @@ export function createChatPanel(
   panel.appendChild(messages);
   createOverlayScrollbar({ viewport: messages, container: messages });
   installChatScrollFollow(messages, panel);
+  bindMessageActions(messages, currentInstance, host);
 
   // Bind context menu on the messages container (event delegation)
   host.bindChatContextMenu(instance, messages);
@@ -649,6 +707,7 @@ export function restoreConversation(
           }
           el.appendChild(row);
         }
+        el.appendChild(buildUserMessageActions());
         msgContainer.appendChild(el);
 
       } else if (msg.type === 'thinking') {
@@ -687,14 +746,14 @@ export function restoreConversation(
         }
 
       } else if (msg.type === 'tool_call') {
-        msgContainer.appendChild(host.buildToolCard(msg));
+        appendToolCardGrouped(msgContainer, host.buildToolCard(msg));
 
       } else if (msg.type === 'assistant') {
         const el = document.createElement('div');
         el.className = 'ai-msg ai-msg-assistant';
         const c = document.createElement('div');
         c.className = 'ai-msg-content';
-        c.innerHTML = renderMarkdown(msg.content, instance.sessionId, addHistory);
+        c.innerHTML = renderMarkdown(msg.content, instance.sessionId, addHistory, { retry: true });
         el.appendChild(c);
         msgContainer.appendChild(el);
 
@@ -712,6 +771,7 @@ export function restoreConversation(
     // so the board is the canonical view of the plan — we need to
     // rehydrate it after a reload.
     restoreTodoBoardFromHistory(instance);
+    collapseToolGroups(msgContainer);
 
     host.bindCommandButtons(instance, msgContainer);
     scrollChatToEnd(msgContainer, true);
