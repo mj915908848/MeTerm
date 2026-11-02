@@ -8,6 +8,7 @@ import { loadSettings } from './themes';
 import { TerminalRegistry } from './terminal';
 import { createOverlayScrollbar } from './overlay-scrollbar';
 import { renderMarkdown } from './ai-capsule-markdown';
+import { buildSystemNotice } from './ai-system-notice';
 import { resolveActiveModel } from './ai-provider';
 import { thinkingIcon } from './ai-icons';
 import {
@@ -760,10 +761,7 @@ export function restoreConversation(
         msgContainer.appendChild(el);
 
       } else if (msg.type === 'system') {
-        const notice = document.createElement('div');
-        notice.className = 'ai-system-notice';
-        notice.textContent = msg.content;
-        msgContainer.appendChild(notice);
+        msgContainer.appendChild(buildSystemNotice(msg.content, msg.tone));
       }
     }
 

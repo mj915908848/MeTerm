@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { addUsage, anthropicUsage, formatUsage, geminiUsage, openAIUsage } from '../src/ai-token-usage.ts';
+import { addUsage, anthropicUsage, formatUsage, formatUsageShort, geminiUsage, openAIUsage } from '../src/ai-token-usage.ts';
 
 test('OpenAI-compatible usage reads cache hits from OpenAI and DeepSeek fields', () => {
   assert.deepEqual(
@@ -39,4 +39,11 @@ test('run totals add up and format compactly', () => {
   assert.equal(formatUsage(total!, 'en'), 'Tokens: 22.5K in (18.0K cached) · 1.2K out · 2 requests');
   assert.equal(formatUsage(total!, 'zh'), 'Token：输入 22.5K（缓存命中 18.0K） · 输出 1.2K · 2 次请求');
   assert.equal(formatUsage({ input: 900, cachedInput: 0, output: 5, requests: 1 }, 'en'), 'Tokens: 900 in · 5 out · 1 request');
+});
+
+test('short usage footnote keeps the numbers and drops the prose', () => {
+  const u = { input: 89_500, cachedInput: 68_600, output: 1_200, requests: 6 };
+  assert.equal(formatUsageShort(u, 'zh'), '↑89.5K（缓存 68.6K） · ↓1.2K · 6 次');
+  assert.equal(formatUsageShort(u, 'en'), '↑89.5K (68.6K cached) · ↓1.2K · 6 req');
+  assert.equal(formatUsageShort({ ...u, cachedInput: 0 }, 'en'), '↑89.5K · ↓1.2K · 6 req');
 });

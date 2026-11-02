@@ -1,6 +1,5 @@
 import { writeTextFile, readTextFile, mkdir, exists, readDir, remove, rename, BaseDirectory } from '@tauri-apps/plugin-fs';
 import { t, getLanguage } from './i18n';
-import { appendToolCardGrouped, appendToRunGroup, buildToolCard, collapseToolGroups } from './ai-capsule-tool-ui';
 import { getPopupScrollViewport } from './overlay-scrollbar';
 import type { AICapsuleInstance, ConvEntry, ChatConversation } from './ai-capsule-types';
 import { hostsMatch, validHost } from './ai-conversation-host';

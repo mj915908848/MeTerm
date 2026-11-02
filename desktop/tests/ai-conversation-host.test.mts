@@ -56,7 +56,7 @@ test('side history preview stays inline, preserves active task and returns to th
     './i18n': { t: (key: string) => key },
     './ai-conversation-host': { hostsMatch, sshConversationHost },
     '@tauri-apps/plugin-clipboard-manager': {}, '@tauri-apps/plugin-dialog': {},
-    './ai-capsule-markdown': { renderMarkdown: (_: string, __: string, ___: any, options: any) => { renderedReadonly = options.allowRun === false; return 'answer'; } },
+    './ai-system-notice': { buildSystemNotice: () => document.createElement('div') }, './ai-capsule-markdown': { renderMarkdown: (_: string, __: string, ___: any, options: any) => { renderedReadonly = options.allowRun === false; return 'answer'; } },
   });
   const panel = new Node(); panel.className = 'ai-side-chat-history-view';
   const originalList = new Node(); panel.append(originalList);
@@ -90,7 +90,7 @@ test('cross-host and legacy restore only preview, never clear or overwrite activ
     './ai-chat-scroll': { installChatScrollFollow: () => {}, scrollChatToEnd: () => {} },
     './i18n': { t: (key: string) => key }, './themes': { loadSettings: () => ({}) },
     './terminal': { TerminalRegistry: {} }, './overlay-scrollbar': { createOverlayScrollbar: () => {} },
-    './ai-capsule-markdown': { renderMarkdown: () => '' }, './ai-provider': { resolveActiveModel: () => ({}) },
+    './ai-system-notice': { buildSystemNotice: () => document.createElement('div') }, './ai-capsule-markdown': { renderMarkdown: () => '' }, './ai-provider': { resolveActiveModel: () => ({}) },
     './ai-icons': { thinkingIcon: () => '' }, './ai-capsule-layout': {},
     './ai-capsule-bar-dom': { syncBarPlaceholder: () => {} },
     './ai-capsule-model-ui': { buildModelDropdown: () => {}, updateModelLabel: () => {} },
@@ -268,7 +268,7 @@ test('focused pane determines host and different username does not affect identi
     './i18n': { t: (key: string) => key },
     './notify': { showToast: () => warnings++ },
     './ai-conversation-host': { hostsMatch, sshConversationHost },
-    '@tauri-apps/plugin-clipboard-manager': {}, './ai-capsule-markdown': {}, '@tauri-apps/plugin-dialog': {}, './ai-capsule-tool-ui': {}, './ai-icons': {},
+    '@tauri-apps/plugin-clipboard-manager': {}, './ai-system-notice': { buildSystemNotice: () => document.createElement('div') }, './ai-capsule-markdown': {}, '@tauri-apps/plugin-dialog': {}, './ai-capsule-tool-ui': {}, './ai-icons': {},
   });
   const instance = { sessionId: 'local', conversationHost: sshConversationHost('host', 22) };
   assert.ok(hostsMatch(mod.currentConversationHost(instance), instance.conversationHost));
@@ -285,7 +285,7 @@ test('save captures binding before async IO and explicit snapshots never borrow 
   const persistence = loadModule('ai-capsule-chat-persistence.ts', {
     '@tauri-apps/plugin-fs': { BaseDirectory: { AppData: 1 }, exists: async () => { await gate; return true; }, rename: async () => {},
       writeTextFile: async (path: string, text: string) => { if (!path.includes('/index/')) writes.push(JSON.parse(text)); } },
-    './i18n': {}, './ai-icons': {}, './ai-capsule-markdown': {}, './ai-capsule-history': {}, './ai-capsule-tool-ui': {}, './overlay-scrollbar': {},
+    './i18n': {}, './ai-icons': {}, './ai-system-notice': { buildSystemNotice: () => document.createElement('div') }, './ai-capsule-markdown': {}, './ai-capsule-history': {}, './ai-capsule-tool-ui': {}, './overlay-scrollbar': {},
     './ai-conversation-host': { hostsMatch, validHost }, './ai-conversation-host-ui': {},
     './ai-conversation-binding-store': {}, './notify': {}, './ai-chat-history-store': historyStore,
     './themes': { loadSettings: () => ({ aiSaveChatHistory: true }) },
@@ -351,7 +351,7 @@ test('legacy preview requires confirmation and freezes target before asynchronou
   }
   let address = 'first'; let accepted = false; const targets: any[] = [];
   const mod = loadModule('ai-conversation-host-ui.ts', {
-    './split-pane': {}, './notify': {}, '@tauri-apps/plugin-clipboard-manager': {}, './ai-capsule-markdown': {}, './ai-capsule-tool-ui': {}, './ai-icons': {},
+    './split-pane': {}, './notify': {}, '@tauri-apps/plugin-clipboard-manager': {}, './ai-system-notice': { buildSystemNotice: () => document.createElement('div') }, './ai-capsule-markdown': {}, './ai-capsule-tool-ui': {}, './ai-icons': {},
     // Keeps the {host} placeholder so the test can assert the frozen target below.
     './i18n': { t: (key: string) => key === 'aiChatBindConfirmBody' ? 'Bind {host}?' : key },
     './ai-conversation-host': { hostsMatch, sshConversationHost },

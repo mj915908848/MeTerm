@@ -1,7 +1,8 @@
 import { getLanguage, t, tf } from './i18n';
 import { scrollChatToEnd } from './ai-chat-scroll';
 import { appendToRunGroup, collapseToolGroups } from './ai-capsule-tool-ui';
-import { formatUsage } from './ai-token-usage';
+import { formatUsage, formatUsageShort } from './ai-token-usage';
+import { buildSystemNotice, type NoticeTone } from './ai-system-notice';
 import { escapeHtml } from './status-bar';
 import { pulseIcon, thinkingIcon, stopIcon } from './ai-icons';
 import { renderMarkdown } from './ai-capsule-markdown';
@@ -271,7 +272,11 @@ export function collapseActiveThinking(instance: AICapsuleInstance): void {
     const details = block.querySelector('details');
     if (details) details.open = false;
     const label = block.querySelector('summary span');
-    if (label) label.textContent = t('aiThought');
+    if (label) {
+      const started = Number((block as HTMLElement).dataset.startedAt);
+      const secs = started ? Math.round((Date.now() - started) / 1000) : 0;
+      label.textContent = secs >= 1 ? `${t('aiThought')} · ${secs}s` : t('aiThought');
+    }
   }
 }
 
@@ -303,6 +308,7 @@ export function appendReasoningToken(instance: AICapsuleInstance, token: string)
   if (!block) {
     block = document.createElement('div');
     block.className = 'ai-thinking-block active';
+    block.dataset.startedAt = String(Date.now());
 
     const details = document.createElement('details');
     details.className = 'ai-reasoning';
@@ -374,10 +380,18 @@ export function finalizeMessage(
     // What the run cost, as the provider reported it (cache hits included).
     const usage = instance.agent.getRunUsage?.();
     if (usage) {
-      const line = document.createElement('div');
+      // A footnote on the reply's action row (copy / retry); full wording on hover.
+      const lang = getLanguage() === 'zh' ? 'zh' : 'en';
+      const line = document.createElement('span');
       line.className = 'ai-msg-usage';
-      line.textContent = formatUsage(usage, getLanguage() === 'zh' ? 'zh' : 'en');
-      instance.streamMsgEl.appendChild(line);
+      line.textContent = formatUsageShort(usage, lang);
+      line.title = formatUsage(usage, lang);
+      const actions = instance.streamMsgEl.querySelector('.ai-response-actions');
+      if (actions) actions.appendChild(line);
+      else {
+        line.classList.add('ai-msg-usage-solo');
+        instance.streamMsgEl.appendChild(line);
+      }
     }
   }
 
@@ -486,18 +500,15 @@ export function announceHostNotes(instance: AICapsuleInstance): void {
   if (notice) appendSystemNotice(instance, notice);
 }
 
-export function appendSystemNotice(instance: AICapsuleInstance, text: string): void {
+export function appendSystemNotice(instance: AICapsuleInstance, text: string, tone: NoticeTone = 'info'): void {
   if (!instance.chatPanel) return;
   const container = instance.chatPanel.querySelector('.ai-chat-messages');
   if (!container) return;
 
-  const notice = document.createElement('div');
-  notice.className = 'ai-system-notice';
-  notice.textContent = text;
-  container.appendChild(notice);
+  container.appendChild(buildSystemNotice(text, tone));
   scrollChatToEnd(container);
 
-  instance.messages.push({ type: 'system', content: text, timestamp: Date.now() });
+  instance.messages.push({ type: 'system', content: text, timestamp: Date.now(), ...(tone === 'warn' ? { tone } : {}) });
 }
 
 /**
@@ -599,7 +610,7 @@ export function buildAgentCallbacks(
       }
       deps.saveConversation(instance);
     },
-    onDegraded: (reason) => appendSystemNotice(instance, reason),
+    onDegraded: (reason) => appendSystemNotice(instance, reason, 'warn'),
 
     onRetrying: (attempt, maxAttempts, _delayMs, reason) => {
       if (instance.streamMsgEl) {
@@ -617,7 +628,7 @@ export function buildAgentCallbacks(
         : reason === 'network'
         ? t('aiNetworkRetry')
         : t('aiServerErrorRetry');
-      appendSystemNotice(instance, `${reasonText} (${attempt}/${maxAttempts})`);
+      appendSystemNotice(instance, `${reasonText} (${attempt}/${maxAttempts})`, 'warn');
     },
     onContextCompressed: (info) => {
       // Distinguish "we compressed proactively" from "the provider
@@ -628,6 +639,7 @@ export function buildAgentCallbacks(
       appendSystemNotice(
         instance,
         `${label} (${info.beforeMessageCount} → ${info.afterMessageCount})`,
+        info.reason === 'overflow' ? 'warn' : 'info',
       );
     },
     // NOTE: task-plan updates are delivered by the persistent listener
