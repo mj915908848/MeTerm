@@ -114,7 +114,15 @@ export function renderInlineMarkdown(text: string): string {
 
   const flushPara = () => {
     if (paraBuf.length === 0) return;
-    out.push(`<p>${paraBuf.join('<br>')}</p>`);
+    // "**Label** — text" / "**Label**：text" is how models write report
+    // sections; show the label as a small title so sections stand apart.
+    const lead = LEAD_LABEL_RE.exec(paraBuf[0]);
+    if (lead) {
+      const rest = [paraBuf[0].slice(lead[0].length), ...paraBuf.slice(1)].filter((l, i) => i > 0 || l);
+      out.push(`<p class="ai-md-lead"><strong class="ai-md-lead-title">${lead[1]}</strong>${rest.join('<br>')}</p>`);
+    } else {
+      out.push(`<p>${paraBuf.join('<br>')}</p>`);
+    }
     paraBuf = [];
   };
   const closeListsTo = (depth: number) => {
@@ -242,6 +250,9 @@ export function renderInlineMarkdown(text: string): string {
 }
 
 const LIST_ITEM_RE = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
+
+/** Rendered paragraph start `<strong>Label</strong> — ` (also ：, :, –, -). */
+const LEAD_LABEL_RE = /^<strong>([^<]{1,40})<\/strong>\s*(?:—+|–|-|：|:)\s*/;
 
 function listOpen(tag: 'ul' | 'ol', marker: string): string {
   if (tag === 'ul') return '<ul class="ai-md-list">';

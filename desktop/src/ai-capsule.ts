@@ -599,6 +599,24 @@ class AICapsuleManagerClass {
         }
       });
     });
+    // Inline code (paths, unit names, commands) copies on click.
+    container.querySelectorAll<HTMLElement>('.ai-inline-code').forEach((code) => {
+      if (code.dataset.copyBound) return;
+      code.dataset.copyBound = 'true';
+      code.title = t('aiClickToCopy');
+      code.addEventListener('click', async () => {
+        if (window.getSelection()?.toString()) return; // user is selecting text
+        try {
+          await clipboardWriteText(code.textContent ?? '');
+          code.classList.add('ai-copied');
+          code.title = t('commonCopied');
+          setTimeout(() => {
+            code.classList.remove('ai-copied');
+            code.title = t('aiClickToCopy');
+          }, 900);
+        } catch { /* clipboard unavailable: leave as is */ }
+      });
+    });
   }
 
   // ─── Chat Bubble Context Menu (delegated to ai-capsule-context-menu.ts) ──

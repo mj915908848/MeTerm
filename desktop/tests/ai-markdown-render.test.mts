@@ -62,3 +62,10 @@ test('inline: code spans are not formatted, links only for http(s)', () => {
 test('escaped html stays escaped', () => {
   assert.doesNotMatch(renderInlineMarkdown('<img src=x onerror=alert(1)>'), /<img/);
 });
+
+test('"**Label** — text" paragraphs get a section title', () => {
+  assert.equal(renderInlineMarkdown('**内存** — 15Gi 中用 9.1Gi\n第二行'),
+    '<p class="ai-md-lead"><strong class="ai-md-lead-title">内存</strong>15Gi 中用 9.1Gi<br>第二行</p>');
+  assert.equal(renderInlineMarkdown('**注意**：别删'), '<p class="ai-md-lead"><strong class="ai-md-lead-title">注意</strong>别删</p>');
+  assert.equal(renderInlineMarkdown('**粗体**开头的句子'), '<p><strong>粗体</strong>开头的句子</p>');
+});
