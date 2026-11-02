@@ -81,6 +81,16 @@ function compact(count: number): string {
   return `${(count / 1_000_000).toFixed(2)}M`;
 }
 
+/** Compact footnote for the reply's action row, e.g. "↑45.2K (38.0K cached) · ↓1.2K · 6 req". */
+export function formatUsageShort(u: TokenUsage, lang: 'zh' | 'en'): string {
+  if (lang === 'zh') {
+    const cached = u.cachedInput > 0 ? `（缓存 ${compact(u.cachedInput)}）` : '';
+    return `↑${compact(u.input)}${cached} · ↓${compact(u.output)} · ${u.requests} 次`;
+  }
+  const cached = u.cachedInput > 0 ? ` (${compact(u.cachedInput)} cached)` : '';
+  return `↑${compact(u.input)}${cached} · ↓${compact(u.output)} · ${u.requests} req`;
+}
+
 /** One line under the reply, e.g. "Tokens: 45.2K in (38.0K cached) · 1.2K out · 6 requests". */
 export function formatUsage(u: TokenUsage, lang: 'zh' | 'en'): string {
   if (lang === 'zh') {

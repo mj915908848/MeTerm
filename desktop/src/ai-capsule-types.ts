@@ -179,7 +179,7 @@ export type ConvEntry =
   | { type: 'user';      content: string; images?: AttachedImage[]; timestamp: number; paneNumber?: number }
   | { type: 'thinking';  content: string; reasoning?: string; timestamp: number }
   | { type: 'assistant'; content: string; timestamp: number }
-  | { type: 'system';    content: string; timestamp: number }
+  | { type: 'system';    content: string; timestamp: number; tone?: 'info' | 'warn' }
   | { type: 'tool_call'; toolName: string; args: Record<string, unknown>;
       result: string | null; isError: boolean; images?: AttachedImage[];
       timestamp: number; paneNumber?: number };

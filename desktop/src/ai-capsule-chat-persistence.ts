@@ -2,6 +2,7 @@ import { writeTextFile, readTextFile, mkdir, exists, readDir, remove, rename, Ba
 import { t } from './i18n';
 import { thinkingIcon } from './ai-icons';
 import { renderMarkdown } from './ai-capsule-markdown';
+import { buildSystemNotice } from './ai-system-notice';
 import { fuzzyMatch, formatRelativeTime } from './ai-capsule-history';
 import { appendToolCardGrouped, appendToRunGroup, buildToolCard, collapseToolGroups } from './ai-capsule-tool-ui';
 import { createOverlayScrollbar, getPopupScrollViewport } from './overlay-scrollbar';
@@ -534,8 +535,8 @@ export function renderChatHistoryDetail(
         continue; // No content to render as a bubble
       }
     } else if (msg.type === 'system') {
-      msgEl.className = 'ai-msg ai-msg-system';
-      content.textContent = msg.content;
+      msgContainer.appendChild(buildSystemNotice(msg.content, msg.tone));
+      continue;
     } else {
       // user
       msgEl.className = 'ai-msg ai-msg-user';

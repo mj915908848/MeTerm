@@ -48,7 +48,7 @@ export function createTrustSwitcher(
         updateSettings({ aiPermissionMode: mode });
         syncButton();
         close();
-        const notice = `── ${t('aiPermissionModeChanged').replace('{mode}', permissionModeLabel(mode))} ──`;
+        const notice = t('aiPermissionModeChanged').replace('{mode}', permissionModeLabel(mode));
         for (const [, inst] of capsules) appendSystemNotice(inst, notice);
       });
       dropdown.appendChild(item);
