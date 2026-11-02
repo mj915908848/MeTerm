@@ -2,6 +2,7 @@ import { DrawerManager } from './drawer';
 import { TabManager } from './tabs';
 import { getAllLeaves } from './split-pane';
 import { t } from './i18n';
+import { buildSystemNotice } from './ai-system-notice';
 import { showToast } from './notify';
 import { hostsMatch, sshConversationHost, type ConversationHost } from './ai-conversation-host';
 import type { AICapsuleInstance, ChatConversation } from './ai-capsule-types';
@@ -106,9 +107,9 @@ export function previewHostConversation(conv: ChatConversation, instance: AICaps
       details.append(summary, reasoning); block.append(details); body.append(block);
     }
     if (message.type === 'thinking' && !message.content) continue;
+    if (message.type === 'system') { body.append(buildSystemNotice(message.content, message.tone)); continue; }
     const row = document.createElement('div');
-    row.className = message.type === 'system' ? 'ai-system-notice'
-      : `ai-msg ai-msg-${message.type === 'user' ? 'user' : 'assistant'}`;
+    row.className = `ai-msg ai-msg-${message.type === 'user' ? 'user' : 'assistant'}`;
     if (message.type === 'assistant' || message.type === 'thinking') {
       const content = document.createElement('div'); content.className = 'ai-msg-content';
       content.innerHTML = renderMarkdown(message.content, '', () => {}, { allowRun: false });

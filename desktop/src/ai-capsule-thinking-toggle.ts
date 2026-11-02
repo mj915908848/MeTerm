@@ -43,7 +43,7 @@ export function createThinkingToggle(
     sync();
     const label = s.aiEnableThinking ? t('aiThinkingOn') : t('aiThinkingOff');
     for (const [, inst] of capsules) {
-      appendSystemNotice(inst, `── ${label} ──`);
+      appendSystemNotice(inst, label);
     }
   });
 
