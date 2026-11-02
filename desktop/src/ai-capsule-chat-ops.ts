@@ -30,7 +30,7 @@ import { hostsMatch } from './ai-conversation-host';
 import { allowConversationSend, currentConversationHost, previewHostConversation } from './ai-conversation-host-ui';
 import { bindLegacyConversation } from './ai-capsule-chat-persistence';
 import { announceHostNotes, attachPersistentTodoListener, buildUserMessageActions } from './ai-capsule-chat-ui';
-import { renderTodoBoard as renderTodoBoardImport, restoreTodoBoardFromHistory, appendToolCardGrouped, collapseToolGroups } from './ai-capsule-tool-ui';
+import { renderTodoBoard as renderTodoBoardImport, restoreTodoBoardFromHistory, appendToolCardGrouped, appendToRunGroup, collapseToolGroups } from './ai-capsule-tool-ui';
 
 /** Host interface: methods the extracted functions need from the manager. */
 export interface ChatOpsHost {
@@ -725,14 +725,14 @@ export function restoreConversation(
           const details = document.createElement('details');
           details.className = 'ai-reasoning';
           const summary = document.createElement('summary');
-          summary.innerHTML = `${thinkingIcon(12)} <span>${t('aiThinking')}</span>`;
+          summary.innerHTML = `${thinkingIcon(12)} <span>${t('aiThought')}</span>`;
           const textEl = document.createElement('div');
           textEl.className = 'ai-reasoning-text';
           textEl.textContent = cleanedReasoning;
           details.appendChild(summary);
           details.appendChild(textEl);
           block.appendChild(details);
-          msgContainer.appendChild(block);
+          appendToRunGroup(msgContainer, block);
         }
         // Assistant text — render as regular bubble
         if (msg.content) {

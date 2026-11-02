@@ -1,6 +1,6 @@
 import { getLanguage, t, tf } from './i18n';
 import { scrollChatToEnd } from './ai-chat-scroll';
-import { collapseToolGroups } from './ai-capsule-tool-ui';
+import { appendToRunGroup, collapseToolGroups } from './ai-capsule-tool-ui';
 import { formatUsage } from './ai-token-usage';
 import { escapeHtml } from './status-bar';
 import { pulseIcon, thinkingIcon, stopIcon } from './ai-icons';
@@ -270,6 +270,8 @@ export function collapseActiveThinking(instance: AICapsuleInstance): void {
     block.classList.remove('active');
     const details = block.querySelector('details');
     if (details) details.open = false;
+    const label = block.querySelector('summary span');
+    if (label) label.textContent = t('aiThought');
   }
 }
 
@@ -315,7 +317,7 @@ export function appendReasoningToken(instance: AICapsuleInstance, token: string)
     details.appendChild(pre);
 
     block.appendChild(details);
-    container.appendChild(block);
+    appendToRunGroup(container, block);
     sinkAgentPulse(instance);
   }
 

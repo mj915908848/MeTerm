@@ -390,6 +390,7 @@ export interface Translations {
   aiMsgEdit: string;
   aiMsgRetry: string;
   aiChatClose: string;
+  aiThought: string;
   aiCopyFailed: string;
   aiDangerConfirmTitle: string;
   aiDangerConfirmMsg: string;
@@ -1163,6 +1164,7 @@ const translations: Record<Language, Translations> = {
     aiMsgEdit: 'Edit',
     aiMsgRetry: 'Retry',
     aiChatClose: 'Close',
+    aiThought: 'Thought process',
     aiCopyFailed: 'Copy failed — try again',
     aiDangerConfirmTitle: 'Dangerous Command',
     aiDangerConfirmMsg: 'This command may cause irreversible changes. Are you sure you want to run it?',
@@ -1932,6 +1934,7 @@ const translations: Record<Language, Translations> = {
     aiMsgEdit: '编辑',
     aiMsgRetry: '重试',
     aiChatClose: '关闭',
+    aiThought: '思考过程',
     aiCopyFailed: '复制失败，请重试',
     aiDangerConfirmTitle: '危险命令',
     aiDangerConfirmMsg: '该命令可能造成不可逆的更改，确定要执行吗？',

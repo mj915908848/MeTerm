@@ -100,6 +100,21 @@ export function refreshToolGroup(group: Element): void {
   }
 }
 
+/**
+ * Append a run element (a reasoning block between tool calls) into the
+ * tool group right above it, so think → run → think → run folds as one
+ * group. With no group above, it goes straight into the container.
+ */
+export function appendToRunGroup(container: Element, el: HTMLElement): void {
+  const last = lastVisibleChild(container);
+  if (last?.classList.contains('ai-tool-group')) {
+    last.appendChild(el);
+    return;
+  }
+  const pulse = container.querySelector(':scope > .ai-agent-pulse');
+  container.insertBefore(el, pulse && pulse === container.lastElementChild ? pulse : null);
+}
+
 /** Append a tool card, joining the group right above it or starting one. */
 export function appendToolCardGrouped(container: Element, card: HTMLElement): void {
   if (card.hidden) { container.appendChild(card); return; }
@@ -1182,6 +1197,13 @@ export function renderTodoBoard(
     ? `<div class="ai-todo-row" style="opacity:0.6;justify-content:center;font-size:11px">… ${escapeHtml(planMoreItemsLabel(todos.length - MAX_VISIBLE_TODOS))}</div>`
     : '';
 
+  // A plan that is already finished when the board first appears (a
+  // restored chat, a page reload) starts folded to its header so it
+  // doesn't sit on top of the reply.
+  if (allDone && (board.dataset.prevDone ?? '') === '' && board.dataset.collapsed === undefined) {
+    board.dataset.collapsed = '1';
+  }
+
   board.innerHTML = `${headerHtml}<div class="ai-todo-board-list">${rows}${moreNote}</div>`;
 
   // Collapse toggle: tap header to fold the list, tap again to expand.
@@ -1189,7 +1211,11 @@ export function renderTodoBoard(
   const list = board.querySelector<HTMLDivElement>('.ai-todo-board-list');
   if (toggleBtn && list) {
     const collapsed = board.dataset.collapsed === '1';
-    if (collapsed) list.style.display = 'none';
+    if (collapsed) {
+      list.style.display = 'none';
+      toggleBtn.innerHTML = chevron('right');
+      toggleBtn.setAttribute('aria-label', planExpandLabel());
+    }
     toggleBtn.addEventListener('click', () => {
       const nowCollapsed = list.style.display !== 'none';
       list.style.display = nowCollapsed ? 'none' : '';

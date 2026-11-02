@@ -25,7 +25,18 @@ export function isFollowing(container: Element): boolean {
 function setFollowing(container: Element, follow: boolean): void {
   const el = container as HTMLElement;
   if (el.dataset) el.dataset.follow = follow ? '1' : '0';
-  jumpButtons.get(container)?.classList.toggle('visible', !follow);
+  const btn = jumpButtons.get(container);
+  if (!btn) return;
+  if (!follow) {
+    // Float just above the list's bottom edge, not the panel's: the task
+    // plan board can sit between the two.
+    const host = btn.parentElement;
+    if (host) {
+      const gap = host.getBoundingClientRect().bottom - container.getBoundingClientRect().bottom;
+      btn.style.bottom = `${Math.max(0, gap) + 12}px`;
+    }
+  }
+  btn.classList.toggle('visible', !follow);
 }
 
 /**

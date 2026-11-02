@@ -219,6 +219,14 @@ body.ai-chat-resizing * {
 /* Replies read as a document, not a bubble: full width, no fill, roomier
    spacing so multi-section answers stay scannable. */
 .ai-msg-assistant { align-self: stretch; max-width: 100%; }
+/* Prose reads in the system UI font even when the app's UI font is a
+   monospace one; code spans and blocks keep --font-mono. */
+.ai-msg .ai-msg-content,
+.ai-tool-group-header,
+.ai-msg-actions,
+.ai-response-actions {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+}
 .ai-msg-assistant .ai-msg-content {
   background: transparent;
   padding: 2px 4px;
