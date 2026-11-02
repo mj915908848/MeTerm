@@ -37,11 +37,10 @@ export interface Translations {
   sshSavedConnectionsHint: string;
   appName: string;
   connectionSort: string;
-  connectionSortDefault: string;
-  connectionSortIpAsc: string;
-  connectionSortIpDesc: string;
-  connectionSortNameAsc: string;
-  connectionSortNameDesc: string;
+  connectionSortByName: string;
+  connectionSortByAdded: string;
+  connectionSortAsc: string;
+  connectionSortDesc: string;
   sshTabTitleMode: string;
   autoOpenAiOnConnect: string;
   autoRestoreAiHistoryOnConnect: string;
@@ -905,12 +904,11 @@ const translations: Record<Language, Translations> = {
     colorSchemeNavy: 'Deep Navy',
     colorSchemeLight: 'Light',
     rememberWindowSize: 'Remember Window Position and Size',
-    connectionSort: 'Sort connections',
-    connectionSortDefault: 'Default order',
-    connectionSortIpAsc: 'IP ascending',
-    connectionSortIpDesc: 'IP descending',
-    connectionSortNameAsc: 'Name ascending',
-    connectionSortNameDesc: 'Name descending',
+    connectionSort: 'Sort by',
+    connectionSortByName: 'Name',
+    connectionSortByAdded: 'Date added',
+    connectionSortAsc: 'Ascending',
+    connectionSortDesc: 'Descending',
     sshTabTitleMode: 'SSH tab title',
     autoOpenAiOnConnect: 'Open AI Panel Automatically',
     autoRestoreAiHistoryOnConnect: 'Restore This Host\'s Latest Conversation',
@@ -1668,12 +1666,11 @@ const translations: Record<Language, Translations> = {
     colorSchemeNavy: '深海蓝',
     colorSchemeLight: '浅色',
     rememberWindowSize: '记住窗口位置和大小',
-    connectionSort: '组内排序',
-    connectionSortDefault: '默认顺序',
-    connectionSortIpAsc: 'IP 升序',
-    connectionSortIpDesc: 'IP 降序',
-    connectionSortNameAsc: '名称升序',
-    connectionSortNameDesc: '名称降序',
+    connectionSort: '排序方式',
+    connectionSortByName: '名称',
+    connectionSortByAdded: '添加日期',
+    connectionSortAsc: '升序',
+    connectionSortDesc: '降序',
     sshTabTitleMode: 'SSH 标签名称',
     autoOpenAiOnConnect: '自动打开 AI 面板',
     autoRestoreAiHistoryOnConnect: '恢复这台主机最近的对话',

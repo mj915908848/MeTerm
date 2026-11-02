@@ -1,8 +1,25 @@
 /** Persisted display-only ordering, independent of connection metadata. */
 export const GROUP_SORT_KEY = 'meterm-connection-group-sort';
-export const CONNECTION_SORT_MODES = ['default', 'ip-asc', 'ip-desc', 'name-asc', 'name-desc'] as const;
-export type ConnectionSortMode = typeof CONNECTION_SORT_MODES[number];
-export interface SortableConnection { name: string; host: string; port: number }
+export const CONNECTION_SORT_KEYS = ['name', 'added'] as const;
+export type ConnectionSortKey = typeof CONNECTION_SORT_KEYS[number];
+export const CONNECTION_SORT_DIRECTIONS = ['asc', 'desc'] as const;
+export type ConnectionSortDirection = typeof CONNECTION_SORT_DIRECTIONS[number];
+export type ConnectionSortMode = `${ConnectionSortKey}-${ConnectionSortDirection}`;
+export const CONNECTION_SORT_MODES: readonly ConnectionSortMode[] = ['added-asc', 'added-desc', 'name-asc', 'name-desc'];
+/** Oldest first: the order connections were saved in, which was the old "default". */
+export const DEFAULT_CONNECTION_SORT: ConnectionSortMode = 'added-asc';
+/**
+ * `addedAt` is the save time in ms. Connections saved before it existed have
+ * none; they count as older than every stamped one and keep their saved order.
+ */
+export interface SortableConnection { name: string; addedAt?: number }
+
+export function sortModeKey(mode: ConnectionSortMode): ConnectionSortKey {
+  return mode.startsWith('name-') ? 'name' : 'added';
+}
+export function sortModeDirection(mode: ConnectionSortMode): ConnectionSortDirection {
+  return mode.endsWith('-desc') ? 'desc' : 'asc';
+}
 
 export function readGroupSorts(): Record<string, ConnectionSortMode> {
   try {
@@ -14,7 +31,7 @@ export function readGroupSorts(): Record<string, ConnectionSortMode> {
 }
 export function getGroupSort(group: string): ConnectionSortMode {
   const sorts = readGroupSorts();
-  return Object.prototype.hasOwnProperty.call(sorts, group) ? sorts[group] : 'default';
+  return Object.prototype.hasOwnProperty.call(sorts, group) ? sorts[group] : DEFAULT_CONNECTION_SORT;
 }
 export function setGroupSort(group: string, mode: ConnectionSortMode): void {
   const sorts = readGroupSorts();
@@ -31,31 +48,19 @@ export function migrateGroupSort(oldName: string, newName?: string): void {
   localStorage.setItem(GROUP_SORT_KEY, JSON.stringify(sorts));
 }
 
-function ipv4(host: string): number[] | null {
-  const parts = host.split('.');
-  return parts.length === 4 && parts.every(p => /^\d{1,3}$/.test(p) && Number(p) <= 255)
-    ? parts.map(Number) : null;
-}
 export function sortConnections<T>(
   items: readonly T[], mode: ConnectionSortMode, language: string,
-  address: (item: T) => SortableConnection,
+  fields: (item: T) => SortableConnection,
 ): T[] {
-  const copy = [...items];
-  if (mode === 'default') return copy;
+  // Ascending with the saved order as the last tie-break, then reversed for
+  // descending, so equal names and unstamped entries flip with the rest.
   const collator = new Intl.Collator(language, { numeric: true, sensitivity: 'base' });
-  const direction = mode.endsWith('-desc') ? -1 : 1;
-  return copy.sort((a, b) => {
-    const left = address(a), right = address(b);
-    if (mode.startsWith('name-')) return direction * collator.compare(left.name, right.name);
-    const l4 = ipv4(left.host), r4 = ipv4(right.host);
-    let hostOrder = 0;
-    if (l4 && r4) {
-      for (let i = 0; i < 4 && !hostOrder; i++) hostOrder = l4[i] - r4[i];
-    } else {
-      hostOrder = collator.compare(left.host, right.host);
-    }
-    return direction * (hostOrder || left.port - right.port || collator.compare(left.name, right.name));
-  });
+  const rows = items.map((item, index) => ({ item, index, f: fields(item) }));
+  rows.sort((a, b) => (sortModeKey(mode) === 'name'
+    ? collator.compare(a.f.name, b.f.name)
+    : (a.f.addedAt ?? 0) - (b.f.addedAt ?? 0)) || a.index - b.index);
+  if (sortModeDirection(mode) === 'desc') rows.reverse();
+  return rows.map(row => row.item);
 }
 
 /**
@@ -66,16 +71,10 @@ export function sortConnections<T>(
  */
 export const UNGROUPED_GROUP = '__ungrouped__';
 
-/**
- * Name/host/port of a stored connection, for the host- and name-based modes.
- * JumpServer configs carry `sshHost`/`sshPort` where SSH/remote ones have
- * `host`/`port`, so both shapes have to be read here rather than at each call.
- */
-export function connectionAddress(item: { name: string; raw: unknown }): SortableConnection {
-  const raw = (item.raw ?? {}) as { sshHost?: string; sshPort?: number; host?: string; port?: number };
-  const host = 'sshHost' in raw ? raw.sshHost : raw.host;
-  const port = 'sshPort' in raw ? raw.sshPort : raw.port;
-  return { name: item.name, host: host ?? '', port: port ?? 0 };
+/** Name and save time of a stored SSH or JumpServer connection. */
+export function connectionSortFields(item: { name: string; raw: unknown }): SortableConnection {
+  const addedAt = (item.raw as { addedAt?: unknown } | null | undefined)?.addedAt;
+  return { name: item.name, addedAt: typeof addedAt === 'number' && Number.isFinite(addedAt) ? addedAt : undefined };
 }
 
 /**
@@ -91,5 +90,5 @@ export function connectionAddress(item: { name: string; raw: unknown }): Sortabl
 export function sortGroupConnections<T extends { name: string; raw: unknown }>(
   items: readonly T[], group: string | null, language: string,
 ): T[] {
-  return sortConnections(items, getGroupSort(group ?? UNGROUPED_GROUP), language, connectionAddress);
+  return sortConnections(items, getGroupSort(group ?? UNGROUPED_GROUP), language, connectionSortFields);
 }
