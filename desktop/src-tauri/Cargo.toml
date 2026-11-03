@@ -6,7 +6,11 @@ license = "MIT"
 
 [lib]
 name = "meterm_lib"
-crate-type = ["lib", "cdylib", "staticlib"]
+# 只要 rlib 给 main.rs 用。cdylib/staticlib 是 Tauri 移动端模板留下的（本项目没有 iOS/Android），
+# 开着 lto 时每多一种产物就多跑一遍整程序 LTO，白白拖慢 release 构建。
+# Only the rlib is needed (main.rs links it). cdylib/staticlib came from Tauri's mobile template;
+# with LTO on, each extra crate type re-runs whole-program LTO and slows release builds.
+crate-type = ["lib"]
 
 [features]
 # Development-only mobile control plane. Documented dev entrypoints enable it
