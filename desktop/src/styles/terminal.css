@@ -89,19 +89,19 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 20px;
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 8px;
-  background: rgba(255,255,255,0.08);
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.08);
   color: #e5e7eb;
   font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
-  font-size: 13px;
+  font-size: var(--fs-md);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  height: var(--ctl-lg);
 }
 .ssh-reconnect-btn:hover {
-  background: rgba(255,255,255,0.14);
-  border-color: rgba(255,255,255,0.25);
+  background: rgba(255, 255, 255, 0.14);
 }
 .ssh-reconnect-btn:active {
   transform: scale(0.97);
@@ -176,19 +176,19 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 20px;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 8px;
-  background: rgba(239, 68, 68, 0.12);
-  color: #fca5a5;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 69, 58, 0.18);
+  color: var(--error-text);
   font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
-  font-size: 13px;
+  font-size: var(--fs-md);
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  height: var(--ctl-lg);
 }
 .kicked-overlay-close-btn:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
+  background: rgba(255, 69, 58, 0.28);
 }
 .kicked-overlay-close-btn:active {
   transform: scale(0.97);

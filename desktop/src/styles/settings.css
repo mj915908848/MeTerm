@@ -371,10 +371,11 @@ button.settings-select:hover {
   border-radius: 9999px;
   color: var(--text-secondary);
   font-size: 11px;
-  padding: 4px 10px;
+  padding: 0 10px;
   cursor: pointer;
   box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.15);
   transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+  height: var(--ctl-sm);
 }
 .settings-preset-btn:hover {
   background: rgba(106, 164, 255, 0.12);
@@ -419,9 +420,9 @@ button.settings-select:hover {
   background: rgba(239, 68, 68, 0.22);
 }
 .settings-btn-small {
-  height: 26px;
-  padding: 0 8px;
-  font-size: 11px;
+  height: var(--ctl-md);
+  padding: 0 12px;
+  font-size: var(--fs-sm);
 }
 .settings-btn-icon {
   background: none;
@@ -855,7 +856,7 @@ html.vibrancy-active .settings-panel {
 
 .about-update-btn {
   width: 100%;
-  padding: 9px 0;
+  padding: 0 16px;
   border-radius: 9999px;
   font-size: 13px;
   font-weight: 500;
@@ -865,6 +866,7 @@ html.vibrancy-active .settings-panel {
   color: var(--text-primary);
   box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
   transition: background 0.15s, box-shadow 0.15s;
+  height: var(--ctl-lg);
 }
 .about-update-btn:hover {
   background: rgba(255, 255, 255, 0.14);
@@ -1178,12 +1180,13 @@ html.platform-macos .settings-panel-sidebar > .settings-content {
   flex: none;
   background: transparent;
   border: none;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
   color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
+  height: var(--ctl-sm);
 }
 .snippet-settings-btn:hover:not(:disabled) { color: var(--text-primary); background: rgba(255, 255, 255, 0.08); }
 .snippet-settings-btn:disabled { opacity: 0.3; cursor: default; }

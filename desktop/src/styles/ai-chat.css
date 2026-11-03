@@ -19,9 +19,9 @@
 }
 .ai-history-preview > p:empty { display: none; }
 .ai-history-preview button {
-  height: 26px; padding: 0 10px; font-size: var(--fs-xs);
-  color: var(--text-primary); background: var(--fill); border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md); cursor: pointer; transition: background 0.12s;
+  height: var(--ctl-md); padding: 0 12px; font-size: var(--fs-sm);
+  color: var(--text-primary); background: var(--fill); border: none;
+  border-radius: var(--radius-pill); cursor: pointer; transition: background 0.12s;
 }
 .ai-history-preview button:hover { background: var(--fill-hover); }
 .ai-history-preview button:disabled { opacity: 0.5; cursor: default; }

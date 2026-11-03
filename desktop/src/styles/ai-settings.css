@@ -39,7 +39,7 @@
   color: var(--text-muted);
   cursor: pointer;
   padding: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -48,7 +48,7 @@
 }
 .ai-provider-delete-btn:hover {
   color: #ff6b6b;
-  background: rgba(255, 107, 107, 0.12);
+  background: var(--fill-hover);
 }
 
 .ai-provider-card-body {
@@ -750,15 +750,15 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 10px;
+  padding: 0 10px;
   border: none;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fill);
   color: var(--text-primary);
   font-size: 11px;
   cursor: pointer;
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.15);
   transition: background 0.15s, box-shadow 0.15s;
+  height: var(--ctl-sm);
 }
 .ai-confirm-btn:hover {
   background: rgba(255, 255, 255, 0.14);
@@ -784,14 +784,13 @@
   padding: 3px 8px;
   resize: vertical;
   line-height: 1.4;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--fill-input);
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   color: var(--text-primary);
   font-size: 12px;
   font-family: var(--font-mono);
   outline: none;
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.1);
   transition: background 0.15s, box-shadow 0.15s;
 }
 .ai-confirm-edit-input:focus {
@@ -920,9 +919,9 @@
   /* Liquid Glass */
   background: rgba(var(--bg-settings), 1);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 4px;
-  box-shadow: none;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   z-index: 9999;
 }
 

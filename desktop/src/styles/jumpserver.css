@@ -568,11 +568,11 @@ html.platform-windows .js-browser-container {
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 0;
 }
 .js-panel-header-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fill-hover);
   color: var(--text-primary);
 }
 [data-theme="light"] .js-panel-header-btn:hover {
@@ -599,13 +599,12 @@ html.platform-windows .js-browser-container {
   height: 26px;
   padding: 0 8px;
   border: none;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  background: var(--fill-input);
   color: var(--text-primary);
   font-size: 12px;
   font-family: inherit;
   outline: none;
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.1);
   transition: background 0.15s, box-shadow 0.15s;
 }
 .js-panel-search-input:focus {
@@ -761,13 +760,13 @@ html.platform-windows .js-browser-container {
   z-index: 10;
 }
 .js-panel-account-dialog {
-  background: rgba(var(--bg-toolbar), 1);
+  background: rgba(var(--bg-settings), 1);
   border: 1px solid var(--border-primary);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   padding: 12px;
   width: calc(100% - 32px);
   max-width: 280px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 html.vibrancy-active .js-panel-account-dialog {
   background: rgba(var(--bg-toolbar), 0.85);
@@ -814,7 +813,7 @@ html.vibrancy-active .js-panel-account-dialog {
   width: 28px;
   height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: rgba(var(--bg-toolbar), 0.6);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -998,15 +997,15 @@ html:not(.platform-windows) .js-narrow .js-narrow-node-dropdown {
 }
 
 .js-account-dialog {
-  background: rgba(var(--bg-toolbar), 1);
+  background: rgba(var(--bg-settings), 1);
   border: 1px solid var(--border-primary);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 12px;
   width: 100%;
   max-width: 340px;
   max-height: calc(100vh - 80px);
   overflow-y: auto;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 html.vibrancy-active .js-account-dialog {
   background: rgba(var(--bg-toolbar), 0.85);
@@ -1061,19 +1060,18 @@ html.vibrancy-active .js-account-dialog {
   display: block;
   width: 100%;
   margin-top: 8px;
-  height: 28px;
+  height: var(--ctl-md);
   border: none;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-pill);
+  background: var(--fill);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
   transition: background 0.15s, box-shadow 0.15s;
+  padding: 0 12px;
 }
 .js-account-cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.3);
+  background: var(--fill-hover);
 }
 [data-theme="light"] .js-account-cancel-btn {
   background: rgba(0, 0, 0, 0.04);

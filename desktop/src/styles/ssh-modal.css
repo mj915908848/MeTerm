@@ -388,7 +388,7 @@
 
 /* SSH small buttons */
 .ssh-btn-sm {
-  height: 26px;
+  height: var(--ctl-md);
   padding: 0 12px;
   font-size: 12px;
 }

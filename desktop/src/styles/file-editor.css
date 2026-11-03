@@ -151,15 +151,16 @@ html.platform-windows .editor-tabs-area {
   border: none;
   background: transparent;
   color: var(--text-secondary, #a8a8a8);
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 3px;
+  font-size: var(--fs-xs);
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  height: var(--ctl-sm);
 }
 .editor-font-btn:hover {
-  background: rgba(128, 128, 128, 0.2);
+  background: var(--fill-hover);
   color: var(--text-primary, #d0d0d0);
 }
 
@@ -168,10 +169,10 @@ html.platform-windows .editor-tabs-area {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px 4px;
+  padding: 4px;
   background: rgba(var(--bg-card, 37, 37, 38), 1);
   border: 1px solid var(--border-primary, #3a3a4a);
-  border-radius: 5px;
+  border-radius: var(--radius-lg);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   z-index: 9999;
 }
@@ -182,14 +183,14 @@ html.platform-windows .editor-tabs-area {
   background: transparent;
   color: var(--text-primary, #d0d0d0);
   font-size: 14px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .font-picker-btn:hover {
-  background: rgba(128, 128, 128, 0.3);
+  background: var(--fill-hover);
 }
 .font-picker-label {
   font-size: 11px;
@@ -202,18 +203,19 @@ html.platform-windows .editor-tabs-area {
 /* Format button */
 .editor-format-btn {
   border: none;
-  background: rgba(128, 128, 128, 0.1);
+  background: var(--fill);
   color: var(--text-secondary, #a8a8a8);
-  font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 3px;
+  font-size: var(--fs-xs);
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
+  height: var(--ctl-sm);
 }
 .editor-format-btn:hover {
-  background: rgba(128, 128, 128, 0.25);
+  background: var(--fill-hover);
   color: var(--text-primary, #d0d0d0);
 }
 .editor-format-btn.success {
@@ -229,36 +231,38 @@ html.platform-windows .editor-tabs-area {
   border: none;
   background: transparent;
   color: var(--text-secondary, #a8a8a8);
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 3px;
+  font-size: var(--fs-xs);
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  height: var(--ctl-sm);
 }
 
 .editor-lang-btn:hover {
-  background: rgba(128, 128, 128, 0.2);
+  background: var(--fill-hover);
   color: var(--text-primary, #d0d0d0);
 }
 
 /* Save button */
 .editor-save-btn {
   border: none;
-  background: rgba(128, 128, 128, 0.15);
+  background: var(--fill);
   color: var(--text-secondary, #a8a8a8);
-  font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 3px;
+  font-size: var(--fs-xs);
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
   margin-left: 4px;
   transition: background 0.15s, color 0.15s;
+  height: var(--ctl-sm);
 }
 
 .editor-save-btn:hover {
-  background: rgba(128, 128, 128, 0.3);
+  background: var(--fill-hover);
   color: var(--text-primary, #d0d0d0);
 }
 
@@ -329,18 +333,19 @@ html.platform-windows .editor-tabs-area {
 /* ── Word wrap toggle button ─────────────────────────────────────── */
 .editor-wrap-btn {
   border: none;
-  background: rgba(128, 128, 128, 0.1);
+  background: var(--fill);
   color: var(--text-secondary, #a8a8a8);
-  font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 3px;
+  font-size: var(--fs-xs);
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
+  height: var(--ctl-sm);
 }
 .editor-wrap-btn:hover {
-  background: rgba(128, 128, 128, 0.25);
+  background: var(--fill-hover);
   color: var(--text-primary, #d0d0d0);
 }
 .editor-wrap-btn.active {
@@ -351,18 +356,19 @@ html.platform-windows .editor-tabs-area {
 /* ── MD Preview toggle button ────────────────────────────────────── */
 .editor-preview-btn {
   border: none;
-  background: rgba(128, 128, 128, 0.1);
+  background: var(--fill);
   color: var(--text-secondary, #a8a8a8);
-  font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 3px;
+  font-size: var(--fs-xs);
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
+  height: var(--ctl-sm);
 }
 .editor-preview-btn:hover {
-  background: rgba(128, 128, 128, 0.25);
+  background: var(--fill-hover);
   color: var(--text-primary, #d0d0d0);
 }
 .editor-preview-btn.active {
