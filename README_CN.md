@@ -147,6 +147,14 @@ xattr -cr "/Applications/MeTerm.app"
 > 无法验证 —— 真机上实测会被 Gatekeeper 拦下且放行不了。既然验证不了，就不该把它当成安装方式；
 > 上面这套「拖进应用程序 + 系统设置放行」是 macOS 的标准路径。
 
+**升级后反复要求输入钥匙串密码**
+
+SSH 密码存在钥匙串里，每个连接一条。只有 ad-hoc 签名的包，钥匙串只按二进制哈希认它，每个版本都会变，
+所以升级后每个连接都会再弹一次密码框。维护者可以把一张代码签名证书（免费的 Apple Development 证书即可）
+导出为 `.p12`，在仓库 Secrets 里配置 `MACOS_STABLE_SIGN_CERTIFICATE`（p12 的 base64）和
+`MACOS_STABLE_SIGN_CERTIFICATE_PASSWORD`，CI 在没有 Developer ID 时会用它固定签名（不公证，首次打开仍需上面的放行）。
+换成固定签名后的第一次启动，每个连接会最后再问一次，点「始终允许」，之后升级就不再询问。
+
 ---
 
 ## 快速开始
