@@ -18,7 +18,10 @@ permissions:
 env:
   NODE_VERSION: '20'
   RUST_TARGET: 'x86_64-pc-windows-msvc'
-  # 实验：Windows 打包用 thin LTO / experiment: thin LTO for Windows packaging
+  # Windows 打包用 thin LTO：实测整个 job 15m26s → 10m54s，安装包 14.6 → 15.2 MB（+4%）。
+  # macOS 仍用 Cargo.toml 里的完整 LTO（那边只快 2.5 分钟，dmg 却大 10%）。
+  # Thin LTO for Windows packaging: job 15m26s → 10m54s, installer 14.6 → 15.2 MB (+4%).
+  # macOS keeps fat LTO from Cargo.toml (only 2.5 min faster there, for a 10% larger dmg).
   CARGO_PROFILE_RELEASE_LTO: 'thin'
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
 
