@@ -42,14 +42,14 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 0;
-  border-radius: 7px;
+  border: none;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
 }
 .hcm-icon-btn svg { width: 16px; height: 16px; }
-.hcm-icon-btn:hover { background: rgba(var(--bg-button-hover), var(--app-window-opacity, 1)); color: var(--text-primary); }
+.hcm-icon-btn:hover { background: var(--fill-hover); color: var(--text-primary); }
 .hcm-icon-btn:focus-visible { outline: 2px solid rgba(var(--accent-rgb, 106, 164, 255), 0.7); outline-offset: 1px; }
 .hcm-detail-actions .hcm-icon-btn { width: 32px; height: 32px; border-radius: 9999px; }
 

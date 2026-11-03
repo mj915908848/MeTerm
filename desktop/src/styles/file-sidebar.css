@@ -141,7 +141,7 @@ html.vibrancy-active .file-sidebar {
   background: var(--bg-input, rgba(255,255,255,0.06));
   color: var(--text-primary);
   border: 1px solid var(--accent, #6aa4ff);
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   padding: 1px 4px;
   font-size: 11px;
   font-family: inherit;
@@ -162,7 +162,7 @@ html.vibrancy-active .file-sidebar {
   color: var(--text-muted);
   cursor: pointer;
   padding: 3px 4px;
-  border-radius: 3px;
+  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -170,7 +170,7 @@ html.vibrancy-active .file-sidebar {
 }
 
 .sidebar-actions button:hover {
-  background: rgba(var(--accent-rgb, 106,164,255), 0.15);
+  background: var(--fill-hover);
   color: var(--text-primary);
 }
 
@@ -445,18 +445,19 @@ html.vibrancy-active .file-sidebar {
 }
 
 .stf-btn {
-  background: none;
-  border: 1px solid transparent;
+  background: transparent;
+  border: none;
   color: var(--text-muted);
-  font-size: 10px;
-  padding: 1px 6px;
-  border-radius: 3px;
+  font-size: var(--fs-xs);
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   transition: all 0.12s;
+  height: var(--ctl-sm);
 }
 
 .stf-btn:hover {
-  background: rgba(var(--accent-rgb, 106,164,255), 0.1);
+  background: var(--fill-hover);
   color: var(--text-primary);
 }
 

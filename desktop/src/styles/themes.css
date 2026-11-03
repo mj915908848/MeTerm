@@ -26,6 +26,12 @@ body,
   --fs-xl: 20px;
   --dur-fast: 0.12s;
   --dur-panel: 0.16s;
+  /* Control heights: buttons and fields come in these three sizes.
+     lg — dialogs and forms; md — inline actions, compact fields; sm — dense
+     toolbars (file editor, file sidebar, transfer list). */
+  --ctl-lg: 32px;
+  --ctl-md: 26px;
+  --ctl-sm: 22px;
 }
 
 /* ============================================================================

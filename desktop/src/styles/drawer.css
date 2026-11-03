@@ -192,7 +192,7 @@ html.vibrancy-active .file-drawer {
   padding: 0 calc(var(--file-manager-font-size, 12px) * 0.67);
   background: rgba(var(--bg-card, 37, 37, 38), 1);
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   font-size: var(--file-manager-font-size, 12px);
   color: var(--text-primary);
   font-family: 'Menlo', monospace;
@@ -305,18 +305,18 @@ html.vibrancy-active .path-autocomplete {
 
 .file-list-trunc-btn {
   flex-shrink: 0;
-  padding: 2px 8px;
-  font-size: 11px;
-  color: var(--accent, #6aa4ff);
-  background: transparent;
-  border: 1px solid rgba(106, 164, 255, 0.4);
-  border-radius: 3px;
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+  color: var(--accent);
+  background: var(--fill);
+  border: none;
+  border-radius: var(--radius-pill);
   cursor: pointer;
+  height: var(--ctl-sm);
 }
 
 .file-list-trunc-btn:hover {
-  background: rgba(106, 164, 255, 0.15);
-  border-color: var(--accent, #6aa4ff);
+  background: var(--fill-hover);
 }
 
 .file-list table {
@@ -701,19 +701,20 @@ html.vibrancy-active .drawer-modal {
 
 .drawer-modal-copy-btn {
   flex-shrink: 0;
-  padding: 2px 8px;
-  font-size: 11px;
-  border-radius: 4px;
-  border: 1px solid var(--border-subtle);
-  background: rgba(255, 255, 255, 0.06);
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--fill);
   color: var(--text-secondary, #aaa);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s;
+  height: var(--ctl-sm);
 }
 
 .drawer-modal-copy-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--fill-hover);
 }
 
 .drawer-modal-input {
@@ -848,19 +849,20 @@ html.vibrancy-active .drawer-modal {
 
 .file-details-copy-btn {
   flex-shrink: 0;
-  padding: 1px 6px;
-  font-size: 10px;
-  border-radius: 3px;
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
-  background: rgba(255, 255, 255, 0.05);
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--fill);
   color: var(--text-secondary, #aaa);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s;
+  height: var(--ctl-sm);
 }
 
 .file-details-copy-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--fill-hover);
   color: var(--text-primary);
 }
 
@@ -900,10 +902,10 @@ html.vibrancy-active .drawer-modal {
   background: rgba(255, 69, 58, 0.28);
 }
 
-[data-theme="light"] .drawer-modal-btn.confirm {
+[data-theme="light"] .drawer-modal-btn.confirm:not(.danger) {
   background: rgba(var(--accent-rgb, 106, 164, 255), 0.12);
 }
-[data-theme="light"] .drawer-modal-btn.confirm:hover {
+[data-theme="light"] .drawer-modal-btn.confirm:not(.danger):hover {
   background: rgba(var(--accent-rgb, 106, 164, 255), 0.18);
 }
 
@@ -958,20 +960,21 @@ html.vibrancy-active .drawer-modal {
 }
 
 .btn-filter {
-  padding: 2px 6px;
+  padding: 0 8px;
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
+  height: var(--ctl-sm);
 }
 
 .btn-filter:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--fill-hover);
 }
 
 .btn-filter.active {
@@ -1023,18 +1026,19 @@ html.vibrancy-active .drawer-modal {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 3px 8px;
+  padding: 0 8px;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-pill);
   background: transparent;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-xs);
   cursor: pointer;
   transition: all 0.15s;
+  height: var(--ctl-sm);
 }
 
 .btn-speed-limit:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--fill-hover);
   color: var(--text-primary);
 }
 
@@ -1239,9 +1243,9 @@ html.vibrancy-active .drawer-modal {
 .transfer-btn {
   width: 22px;
   height: 22px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  background: rgba(var(--bg-toolbar), 0.6);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--fill);
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
@@ -1254,8 +1258,7 @@ html.vibrancy-active .drawer-modal {
 }
 
 .transfer-btn:hover {
-  background: rgba(var(--bg-toolbar), 0.9);
-  border-color: var(--border-primary);
+  background: var(--fill-hover);
   color: var(--text-primary);
 }
 
