@@ -20,6 +20,19 @@ on:
   push:
     tags:
       - 'v*'
+    # main 上依赖变了就跑一次，把 Rust 依赖缓存存到 main：tag 构建只能读 main 和自己的缓存。
+    # tag 推送不受 paths 限制。/ Warm the Rust cache on main when dependencies change: tag builds
+    # can only read caches from main or their own tag. Path filters don't apply to tag pushes.
+    branches:
+      - main
+    paths:
+      - 'desktop/src-tauri/Cargo.lock'
+      - 'desktop/src-tauri/Cargo.toml'
+      - '.github/workflows/build-macos.yml'
+  # GitHub 会清掉 7 天没用过的缓存，每周两次让 main 上的缓存保持新鲜。
+  # GitHub evicts caches unused for 7 days; refresh twice a week.
+  schedule:
+    - cron: '17 2 * * 1,4'
 
 permissions:
   contents: write
@@ -49,7 +62,7 @@ env:
 
 jobs:
   build-macos-arm64:
-    if: ${{ github.event_name == 'push' || inputs.arch == 'arm64' || inputs.arch == 'both' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.arch == 'arm64' || inputs.arch == 'both' }}
     runs-on: macos-latest  # Apple Silicon (M1+)
     steps:
       - uses: actions/checkout@v4
@@ -151,7 +164,7 @@ jobs:
           # Only sign the appex with the real Developer ID when the .app will
           # also be signed + notarized — otherwise keep it ad-hoc so the bundle
           # is internally consistent.
-          SIGN_ENABLED: ${{ (github.event_name == 'push' || inputs.sign) && '1' || '' }}
+          SIGN_ENABLED: ${{ (startsWith(github.ref, 'refs/tags/') || inputs.sign) && '1' || '' }}
         run: |
           APP_PATH=$(find desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos -name "*.app" -maxdepth 1 | head -1)
           if [ -n "$SIGN_ENABLED" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
@@ -185,7 +198,7 @@ jobs:
       # signed inside-out in the previous step). Runs on release tags, or on a
       # manual dispatch with sign=true — whenever signing secrets are present.
       - name: Sign & notarize app (arm64)
-        if: ${{ (github.event_name == 'push' || inputs.sign) && env.APPLE_SIGNING_IDENTITY != '' }}
+        if: ${{ (startsWith(github.ref, 'refs/tags/') || inputs.sign) && env.APPLE_SIGNING_IDENTITY != '' }}
         env:
           ENTITLEMENTS_PATH: desktop/src-tauri/Entitlements.plist
         run: |
@@ -237,7 +250,7 @@ jobs:
           fi
 
       - name: Sign & notarize dmg (arm64)
-        if: ${{ (github.event_name == 'push' || inputs.sign) && env.APPLE_SIGNING_IDENTITY != '' }}
+        if: ${{ (startsWith(github.ref, 'refs/tags/') || inputs.sign) && env.APPLE_SIGNING_IDENTITY != '' }}
         run: |
           DMG_PATH=$(find desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -name "*.dmg" -maxdepth 1 | head -1)
           if [ -n "$DMG_PATH" ]; then
@@ -276,7 +289,7 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
 
   build-macos-x86_64:
-    if: ${{ github.event_name == 'push' || inputs.arch == 'x86_64' || inputs.arch == 'both' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.arch == 'x86_64' || inputs.arch == 'both' }}
     runs-on: macos-latest  # Cross-compile x86_64 on Apple Silicon
     steps:
       - uses: actions/checkout@v4
@@ -370,7 +383,7 @@ jobs:
           # Only sign the appex with the real Developer ID when the .app will
           # also be signed + notarized — otherwise keep it ad-hoc so the bundle
           # is internally consistent.
-          SIGN_ENABLED: ${{ (github.event_name == 'push' || inputs.sign) && '1' || '' }}
+          SIGN_ENABLED: ${{ (startsWith(github.ref, 'refs/tags/') || inputs.sign) && '1' || '' }}
         run: |
           APP_PATH=$(find desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/macos -name "*.app" -maxdepth 1 | head -1)
           if [ -n "$SIGN_ENABLED" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
@@ -398,7 +411,7 @@ jobs:
           fi
 
       - name: Sign & notarize app (x86_64)
-        if: ${{ (github.event_name == 'push' || inputs.sign) && env.APPLE_SIGNING_IDENTITY != '' }}
+        if: ${{ (startsWith(github.ref, 'refs/tags/') || inputs.sign) && env.APPLE_SIGNING_IDENTITY != '' }}
         env:
           ENTITLEMENTS_PATH: desktop/src-tauri/Entitlements.plist
         run: |
@@ -449,7 +462,7 @@ jobs:
           fi
 
       - name: Sign & notarize dmg (x86_64)
-        if: ${{ (github.event_name == 'push' || inputs.sign) && env.APPLE_SIGNING_IDENTITY != '' }}
+        if: ${{ (startsWith(github.ref, 'refs/tags/') || inputs.sign) && env.APPLE_SIGNING_IDENTITY != '' }}
         run: |
           DMG_PATH=$(find desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -name "*.dmg" -maxdepth 1 | head -1)
           if [ -n "$DMG_PATH" ]; then
