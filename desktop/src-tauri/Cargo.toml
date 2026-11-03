@@ -122,6 +122,5 @@ windows-future = "0.3"
 
 [profile.release]
 strip = true
-# thin LTO + 默认 16 个 codegen unit：可以并行编译，release 构建快很多，体积只略大。
-# Thin LTO with the default 16 codegen units compiles in parallel: much faster release builds, slightly larger binary.
-lto = "thin"
+lto = true
+codegen-units = 1
