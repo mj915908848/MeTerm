@@ -11,19 +11,6 @@ on:
   push:
     tags:
       - 'v*'
-    # main 上依赖变了就跑一次，把 Rust 依赖缓存存到 main：tag 构建只能读 main 和自己的缓存。
-    # tag 推送不受 paths 限制。/ Warm the Rust cache on main when dependencies change: tag builds
-    # can only read caches from main or their own tag. Path filters don't apply to tag pushes.
-    branches:
-      - main
-    paths:
-      - 'desktop/src-tauri/Cargo.lock'
-      - 'desktop/src-tauri/Cargo.toml'
-      - '.github/workflows/build-windows.yml'
-  # GitHub 会清掉 7 天没用过的缓存，每周两次让 main 上的缓存保持新鲜。
-  # GitHub evicts caches unused for 7 days; refresh twice a week.
-  schedule:
-    - cron: '17 2 * * 1,4'
 
 permissions:
   contents: write
