@@ -44,6 +44,9 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
+          # tag 上存的缓存只有同一个 tag 能读，下次发版永远用不上，存它白耗 ~40 秒。
+          # A cache saved on a tag is only readable by that same tag, so it is never reused; skip saving it.
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
       - name: Download ConPTY (conpty.dll from NuGet, OpenConsole.exe from WT release)
         run: |
@@ -77,9 +80,10 @@ jobs:
           )
           dir desktop\src-tauri\binaries\conpty\
 
-      - name: Build desktop frontend
+      # 前端由 beforeBuildCommand 在 tauri build 里构建，这里只装依赖 / frontend is built by beforeBuildCommand
+      - name: Install desktop dependencies
         run: |
-          cd desktop && npm ci && npm run build
+          cd desktop && npm ci
 
       - name: Build Tauri app (Windows x64)
         run: |
