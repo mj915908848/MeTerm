@@ -1,5 +1,51 @@
 # MeTerm 更新记录
 
+## v0.4.1
+
+### 重要变化
+
+- **macOS 正式版改为固定签名** — 之前只有临时（ad-hoc）签名，钥匙串按每个版本的程序指纹识别，每次升级后每个保存的连接都要再输一次登录密码。现在用固定证书签名（开启 hardened runtime，未公证），从这一版往后升级不再反复询问；从 v0.4.0 升到这一版时可能还会再问一次。
+
+### 新功能 / 优化
+
+- **AI 对话体验** — 回复流式输出时实时渲染 Markdown，并跟随滚动（往上翻时停止跟随，显示「回到最新」按钮）；底部 AI 输入框支持多行（Shift+Enter 换行）；Markdown 补齐有序 / 嵌套列表、引用、斜体、删除线和链接；回复改为文档式排版，正文用系统字体，行内代码点击即复制。
+- **AI 消息操作与步骤折叠** — 用户消息可复制、编辑、重发，最终回复可重试；连续的工具步骤合并为「执行了 N 步」，完成后自动折叠；思考过程、用量行和系统提示有了不同的视觉层级。
+- **巡检类请求更简洁** — 「查一下负载、内存、磁盘和日志」这类只查看的请求，不再先列计划，而是用 1–3 条命令汇总，发现异常只作为线索报告。
+- **AI 对话历史** — 按日期分组（今天 / 昨天 / 7 天内 / 更早）；只打开对话不再把它顶到最前；搜索支持多个关键词、高亮命中并显示匹配片段，也能搜到 AI 执行过的命令；AI 运行中切换对话会先确认；历史面板样式与聊天区统一。
+- **连接排序** — 排序菜单改为「按名称 / 按添加时间」加「升序 / 降序」两项组合；去掉了按 IP 排序和默认顺序。
+- **状态栏** — 改为终端上方固定 24px 的一行，不再遮住终端左上角，也不会因为 AI 或传输开始结束而改变终端尺寸；首页不显示状态栏，打开终端后一直显示连接状态和延迟。
+- **发布构建提速** — macOS 打包快约 3 分钟，Windows 打包快约 4.5 分钟。
+
+### 验证
+
+- 合并前均通过 CI：前端构建与测试、Rust fmt / clippy / 测试（macOS 与 Windows）。
+- 固定签名此前只在 Apple Silicon 上验证过，Intel（x64）版的签名以这次构建为首次验证；正式安装包与 Windows 真机尚未完整手动验证。
+
+---
+
+## Changelog (English)
+
+### Breaking Changes
+
+- **Stable signing for macOS releases** — Releases were only ad-hoc signed, so the Keychain identified each version by its own fingerprint and every upgrade asked for your login password again for each saved connection. Releases are now signed with a stable certificate (hardened runtime, not notarized), so later upgrades stop re-prompting; moving from v0.4.0 to this release may still ask once.
+
+### What's New / Improvements
+
+- **AI chat** — Replies render as Markdown while they stream, and the list follows new output (scrolling up stops it and shows a jump-to-latest button); the bottom AI bar takes multiple lines (Shift+Enter); Markdown gains ordered and nested lists, quotes, italics, strikethrough and links; replies read as a document in the system font, and inline code copies on click.
+- **Message actions and folded steps** — Copy, edit or resend your messages, retry a final reply; consecutive tool steps collapse into one "Ran N steps" line when the run finishes; thinking, usage lines and system notices are visually distinct.
+- **Quicker health checks** — Look-only requests like "check load, memory, disk and logs" skip the plan, batch reads into 1–3 commands and report anything odd as a lead.
+- **AI chat history** — Grouped by date (today / yesterday / 7 days / earlier); opening a conversation no longer moves it to the top; search matches every word, highlights hits with a snippet and covers the commands the agent ran; switching conversations while the agent runs asks first; the history panel matches the chat styling.
+- **Connection sorting** — The sort menu is now "name / date added" plus "ascending / descending"; IP and default order are gone.
+- **Status bar** — A fixed 24 px row above the terminal instead of a floating layer, so it no longer covers the terminal's corner or resizes terminals when AI turns or transfers start and end; hidden on the home page, always shown once a terminal is open.
+- **Faster release builds** — macOS packaging is about 3 minutes faster, Windows about 4.5 minutes.
+
+### Validation
+
+- Every merge passed CI: frontend build and tests, Rust fmt / clippy / tests on macOS and Windows.
+- Stable signing had only been tried on Apple Silicon; this build is the first to sign the Intel (x64) app. The packaged release and Windows hardware have not been fully verified by hand.
+
+---
+
 ## v0.4.0
 
 ### 重要变化
