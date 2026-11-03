@@ -18,6 +18,9 @@ permissions:
 env:
   NODE_VERSION: '20'
   RUST_TARGET: 'x86_64-pc-windows-msvc'
+  # 实验：Windows 打包用 thin LTO / experiment: thin LTO for Windows packaging
+  CARGO_PROFILE_RELEASE_LTO: 'thin'
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
 
 jobs:
   build-windows:
