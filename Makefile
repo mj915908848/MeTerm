@@ -5,14 +5,25 @@
 # the team ID it belongs to is account specific. Shared by `desktop-dev` and
 # `desktop-build-dev`; see scripts/dev-relay-provenance.sh.
 METERM_DEV_PROVENANCE_SH = $(CURDIR)/scripts/dev-relay-provenance.sh
+# `tauri dev` starts the app through `cargo run`; this cargo target runner
+# re-signs each rebuilt debug executable with the same Apple Development
+# identity before it starts. A stable signature lets one Keychain
+# "Always Allow" survive rebuilds instead of asking for the login password
+# after every recompile.
+METERM_DEV_SIGNED_RUN = $(CURDIR)/scripts/dev-signed-run.sh
 
 desktop-dev:
 	@set -eu; \
 		cd desktop; \
 		cn=$$(bash $(METERM_DEV_PROVENANCE_SH) --cn); \
 		team=$$(bash $(METERM_DEV_PROVENANCE_SH) --team-id); \
+		identity=$$(bash $(METERM_DEV_PROVENANCE_SH) --identity); \
 		echo "desktop-dev: signing as $$cn (team $$team)" >&2; \
-		METERM_DEV_SIGNER_CN="$$cn" METERM_DEV_TEAM_ID="$$team" npm run tauri dev -- --features development-mobile-control --config '{"identifier":"com.meterm.dev","productName":"MeTerm Dev"}'
+		METERM_DEV_SIGNER_CN="$$cn" METERM_DEV_TEAM_ID="$$team" \
+		METERM_DEV_SIGN_IDENTITY="$$identity" METERM_DEV_BUNDLE_ID=com.meterm.dev \
+		CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER=$(METERM_DEV_SIGNED_RUN) \
+		CARGO_TARGET_X86_64_APPLE_DARWIN_RUNNER=$(METERM_DEV_SIGNED_RUN) \
+		npm run tauri dev -- --features development-mobile-control --config '{"identifier":"com.meterm.dev","productName":"MeTerm Dev"}'
 
 # Local UI/device validation only: Apple Development-signed Debug app, isolated
 # from /Applications/MeTerm.app. Stable signing keeps the dev-only Keychain ACL

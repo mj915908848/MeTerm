@@ -152,6 +152,19 @@ xattr -cr "/Applications/MeTerm.app"
 > Since it cannot be verified, it should not be the install path: the standard
 > drag-to-Applications flow above is the supported one.
 
+**Keychain password prompts after every upgrade**
+
+Saved SSH passwords live in the Keychain, one item per connection. An ad-hoc
+signed build is recognised by the Keychain only through its binary hash, which
+changes every release, so each connection asks for the login password again
+after an upgrade. A maintainer can export any code-signing certificate (the free
+Apple Development one is enough) as `.p12` and set the repository secrets
+`MACOS_STABLE_SIGN_CERTIFICATE` (base64 of the p12) and
+`MACOS_STABLE_SIGN_CERTIFICATE_PASSWORD`. Without a Developer ID, CI then signs
+with that certificate (not notarized, so the first-launch approval above still
+applies). On the first launch after the switch each connection asks one last
+time; choose **Always Allow** and later upgrades stop asking.
+
 ---
 
 ## Quick Start
