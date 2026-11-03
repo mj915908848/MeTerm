@@ -1,0 +1,94 @@
+name: Updater manifest
+
+# 应用内自动更新读的是「最新正式版 Release」里的 latest.json：
+#   https://github.com/mj915908848/MeTerm/releases/latest/download/latest.json
+# macOS 和 Windows 是两套独立的 workflow，谁先跑完不一定，所以 latest.json 不在
+# 打包 job 里写，而是在任一打包 workflow 成功结束后跑这里：三个平台的更新包和 .sig
+# 都已上传到 Release 才生成；还缺就直接退出，等另一套跑完再来一次。
+#
+# The in-app updater reads latest.json from the latest (non-prerelease) Release.
+# macOS and Windows build in separate workflows that finish in either order, so the
+# manifest is written here after each of them succeeds: only once every platform's
+# update package and .sig is on the Release; otherwise exit and wait for the other one.
+
+on:
+  workflow_run:
+    workflows: ['Build macOS', 'Build Windows']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag, e.g. v0.4.2'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: updater-manifest-${{ github.event.workflow_run.head_branch || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  manifest:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      TAG: ${{ github.event.workflow_run.head_branch || inputs.tag }}
+    steps:
+      - name: Write latest.json
+        run: |
+          set -euo pipefail
+          names="$(gh release view "$TAG" --repo "$REPO" --json assets -q '.assets[].name')"
+          has() { printf '%s\n' "$names" | grep -qxF "$1"; }
+
+          mac_arm="MeTerm_aarch64.app.tar.gz"
+          mac_x86="MeTerm_x86_64.app.tar.gz"
+          win="$(printf '%s\n' "$names" | grep -E '_x64-setup\.exe$' | head -1 || true)"
+
+          missing=""
+          for f in "$mac_arm" "$mac_x86" "$win"; do
+            if [ -z "$f" ] || ! has "$f" || ! has "$f.sig"; then missing="$missing ${f:-<windows setup.exe>}"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::notice::Release $TAG is not complete yet (missing:$missing); latest.json not written"
+            exit 0
+          fi
+
+          dir="$(mktemp -d)"
+          gh release download "$TAG" --repo "$REPO" --dir "$dir" \
+            --pattern "$mac_arm.sig" --pattern "$mac_x86.sig" --pattern "$win.sig"
+          gh release view "$TAG" --repo "$REPO" --json body -q .body > "$dir/notes.md"
+
+          base="https://github.com/$REPO/releases/download/$TAG"
+          jq -n \
+            --arg version "${TAG#v}" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --rawfile notes "$dir/notes.md" \
+            --rawfile sig_arm "$dir/$mac_arm.sig" \
+            --rawfile sig_x86 "$dir/$mac_x86.sig" \
+            --rawfile sig_win "$dir/$win.sig" \
+            --arg url_arm "$base/$mac_arm" \
+            --arg url_x86 "$base/$mac_x86" \
+            --arg url_win "$base/$win" \
+            '{
+              version: $version,
+              notes: $notes,
+              pub_date: $pub_date,
+              platforms: {
+                "darwin-aarch64": { signature: ($sig_arm | rtrimstr("\n")), url: $url_arm },
+                "darwin-x86_64":  { signature: ($sig_x86 | rtrimstr("\n")), url: $url_x86 },
+                "windows-x86_64": { signature: ($sig_win | rtrimstr("\n")), url: $url_win }
+              }
+            }' > "$dir/latest.json"
+
+          jq '.platforms' "$dir/latest.json"
+          gh release upload "$TAG" "$dir/latest.json" --repo "$REPO" --clobber
+          echo "::notice::latest.json uploaded to $TAG"

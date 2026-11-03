@@ -112,7 +112,7 @@ export function createAboutTab(): HTMLDivElement {
   updateBtn.className = 'about-update-btn';
   updateBtn.textContent = t('aboutCheckUpdate');
   updateBtn.addEventListener('click', () => {
-    checkUpdateNow();
+    void checkUpdateNow();
   });
   tab.appendChild(updateBtn);
 

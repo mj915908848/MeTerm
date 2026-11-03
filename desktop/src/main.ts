@@ -42,6 +42,7 @@ import { setHomeViewSettings } from './home';
 import { setGalleryViewSettings, setGalleryProgressGetter } from './gallery';
 import { initSettingsWindow } from './settings-window';
 import { initAboutWindow } from './about-window';
+import { scheduleStartupUpdateCheck } from './updater';
 import { initJumpServerBrowserWindow } from './jumpserver-browser-window';
 import { initEditorWindowShell } from './file-editor-init';
 import { setupConnectionsDrawerSync } from './connections-drawer';
@@ -318,6 +319,9 @@ async function init(): Promise<void> {
 
   // Post-ready event listeners (updater, etc.)
   setupPostReadyEventListeners(currentWindowLabel);
+
+  // Quiet update check once per launch, from the primary window only.
+  if (currentWindowLabel === 'main') scheduleStartupUpdateCheck();
 }
 
 init().catch((err) => {

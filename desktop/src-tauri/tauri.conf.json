@@ -33,6 +33,17 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_UPDATER_PUBKEY",
+      "endpoints": [
+        "https://github.com/mj915908848/MeTerm/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "app": {
     "macOSPrivateApi": true,
     "windows": [

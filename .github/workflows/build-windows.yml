@@ -94,7 +94,11 @@ jobs:
       - name: Build Tauri app (Windows x64)
         run: |
           cd desktop
-          npm run tauri build -- --target ${{ env.RUST_TARGET }} --bundles nsis --config src-tauri/tauri.windows.conf.json
+          rem 配置了 updater 私钥才产出自动更新签名（setup.exe.sig）/ updater signature only when the key is set
+          set "UPDATER_ARGS="
+          if not "%TAURI_SIGNING_PRIVATE_KEY%"=="" set "UPDATER_ARGS=--config src-tauri/tauri.updater.conf.json"
+          if "%UPDATER_ARGS%"=="" echo ::warning::TAURI_SIGNING_PRIVATE_KEY is not set; this build has no in-app update package
+          npm run tauri build -- --target ${{ env.RUST_TARGET }} --bundles nsis --config src-tauri/tauri.windows.conf.json %UPDATER_ARGS%
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
