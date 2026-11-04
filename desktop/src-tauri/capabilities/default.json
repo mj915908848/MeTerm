@@ -51,6 +51,7 @@
       ]
     },
     "notification:default",
+    "updater:default",
     "opener:allow-reveal-item-in-dir",
     "opener:allow-open-url",
     "opener:allow-default-urls",

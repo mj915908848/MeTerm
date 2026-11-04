@@ -466,6 +466,21 @@ export interface Translations {
   aboutLicense: string;
   aboutCopyright: string;
   aboutCheckUpdate: string;
+  updateTitle: string;
+  updateChecking: string;
+  updateUpToDate: string;
+  updateCheckFailed: string;
+  updateAvailable: string;
+  updateClickToInstall: string;
+  updatePrompt: string;
+  updateInstallNow: string;
+  updateLater: string;
+  updateDownloading: string;
+  updateInstalling: string;
+  updateRestarting: string;
+  updateInstallFailed: string;
+  updateOpenReleases: string;
+  updateCancel: string;
   aboutOpenSource: string;
   aboutLicenses: string;
   aboutAckXterm: string;
@@ -1472,6 +1487,21 @@ const translations: Record<Language, Translations> = {
     aboutLicense: 'License',
     aboutCopyright: 'Copyright',
     aboutCheckUpdate: 'Check for Updates',
+    updateTitle: 'Update',
+    updateChecking: 'Checking for updates…',
+    updateUpToDate: 'MeTerm is up to date.',
+    updateCheckFailed: 'Could not check for updates: {error}\n\nOpen the Releases page to download manually?',
+    updateAvailable: 'MeTerm {version} is available',
+    updateClickToInstall: 'Click to update',
+    updatePrompt: 'MeTerm {version} is available (you have {current}). Install it now? MeTerm will restart when done.',
+    updateInstallNow: 'Update & Restart',
+    updateLater: 'Later',
+    updateDownloading: 'Downloading update… {pct}%',
+    updateInstalling: 'Installing update…',
+    updateRestarting: 'Restarting…',
+    updateInstallFailed: 'Update failed: {error}\n\nOpen the Releases page to download manually?',
+    updateOpenReleases: 'Open Releases',
+    updateCancel: 'Cancel',
     aboutOpenSource: 'Open Source (in no particular order)',
     aboutLicenses: 'Licenses',
     aboutAckXterm: 'Terminal emulator',
@@ -2250,6 +2280,21 @@ const translations: Record<Language, Translations> = {
     aboutLicense: '许可协议',
     aboutCopyright: '版权',
     aboutCheckUpdate: '检查更新',
+    updateTitle: '更新',
+    updateChecking: '正在检查更新…',
+    updateUpToDate: 'MeTerm 已是最新版本。',
+    updateCheckFailed: '检查更新失败：{error}\n\n要打开下载页面手动下载吗？',
+    updateAvailable: 'MeTerm {version} 已发布',
+    updateClickToInstall: '点击更新',
+    updatePrompt: 'MeTerm {version} 已发布（当前 {current}）。现在更新吗？更新完成后会自动重启。',
+    updateInstallNow: '更新并重启',
+    updateLater: '稍后',
+    updateDownloading: '正在下载更新… {pct}%',
+    updateInstalling: '正在安装更新…',
+    updateRestarting: '正在重启…',
+    updateInstallFailed: '更新失败：{error}\n\n要打开下载页面手动下载吗？',
+    updateOpenReleases: '打开下载页面',
+    updateCancel: '取消',
     aboutOpenSource: '开源致谢（排名不分先后）',
     aboutLicenses: '开源致谢',
     aboutAckXterm: '终端模拟器',

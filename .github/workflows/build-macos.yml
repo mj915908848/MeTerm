@@ -138,10 +138,17 @@ jobs:
                   APPLE_API_KEY APPLE_API_ISSUER_ID APPLE_API_KEY_ID \
                   APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
           fi
-          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+          # 有 updater 私钥时才产出自动更新包（.app.tar.gz + .sig）；没有就照旧只出 dmg，
+          # 本地 / 未配置 secret 的构建不受影响。
+          # Updater artifacts (.app.tar.gz + .sig) only when the updater key is configured.
+          UPDATER_ARGS=()
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            UPDATER_ARGS=(--config src-tauri/tauri.updater.conf.json)
+          else
             unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; this build has no in-app update package"
           fi
-          npm run tauri build -- --target aarch64-apple-darwin
+          npm run tauri build -- --target aarch64-apple-darwin "${UPDATER_ARGS[@]}"
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -203,14 +210,13 @@ jobs:
           if [ -n "$APP_NAME" ] && [ -f "$BUNDLE_DIR/${APP_NAME}.tar.gz" ]; then
             echo "Rebuilding ${APP_NAME}.tar.gz with Finder Extension..."
             cd "$BUNDLE_DIR"
-            rm -f "${APP_NAME}.tar.gz"
-            tar czf "${APP_NAME}.tar.gz" "$APP_NAME"
-            # Re-sign with Tauri updater key if available
-            if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-              npx --yes @tauri-apps/cli signer sign -k "$TAURI_SIGNING_PRIVATE_KEY" \
-                ${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:+-p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"} \
-                "${APP_NAME}.tar.gz"
-            fi
+            rm -f "${APP_NAME}.tar.gz" "${APP_NAME}.tar.gz.sig"
+            # 不能带 AppleDouble（._*）和扩展属性：更新时它们会被解进 .app，破坏签名。
+            # No AppleDouble (._*) files or xattrs: the updater would unpack them into the .app and break its signature.
+            COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "${APP_NAME}.tar.gz" "$APP_NAME"
+            # 用项目锁定版本的 Tauri CLI 重签（私钥和密码从环境变量读取）
+            # Re-sign with the project's pinned Tauri CLI (key + password come from the env)
+            "$GITHUB_WORKSPACE/desktop/node_modules/.bin/tauri" signer sign "${APP_NAME}.tar.gz"
           fi
 
       - name: Rename updater artifacts (arm64)
@@ -360,7 +366,15 @@ jobs:
                   APPLE_API_KEY APPLE_API_ISSUER_ID APPLE_API_KEY_ID \
                   APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
           fi
-          npm run tauri build -- --target x86_64-apple-darwin
+          # 同 arm64：只有配置了 updater 私钥才产出自动更新包。
+          UPDATER_ARGS=()
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            UPDATER_ARGS=(--config src-tauri/tauri.updater.conf.json)
+          else
+            unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY is not set; this build has no in-app update package"
+          fi
+          npm run tauri build -- --target x86_64-apple-darwin "${UPDATER_ARGS[@]}"
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -416,13 +430,13 @@ jobs:
           if [ -n "$APP_NAME" ] && [ -f "$BUNDLE_DIR/${APP_NAME}.tar.gz" ]; then
             echo "Rebuilding ${APP_NAME}.tar.gz with Finder Extension..."
             cd "$BUNDLE_DIR"
-            rm -f "${APP_NAME}.tar.gz"
-            tar czf "${APP_NAME}.tar.gz" "$APP_NAME"
-            if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-              npx --yes @tauri-apps/cli signer sign -k "$TAURI_SIGNING_PRIVATE_KEY" \
-                ${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:+-p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"} \
-                "${APP_NAME}.tar.gz"
-            fi
+            rm -f "${APP_NAME}.tar.gz" "${APP_NAME}.tar.gz.sig"
+            # 不能带 AppleDouble（._*）和扩展属性：更新时它们会被解进 .app，破坏签名。
+            # No AppleDouble (._*) files or xattrs: the updater would unpack them into the .app and break its signature.
+            COPYFILE_DISABLE=1 tar --no-mac-metadata -czf "${APP_NAME}.tar.gz" "$APP_NAME"
+            # 用项目锁定版本的 Tauri CLI 重签（私钥和密码从环境变量读取）
+            # Re-sign with the project's pinned Tauri CLI (key + password come from the env)
+            "$GITHUB_WORKSPACE/desktop/node_modules/.bin/tauri" signer sign "${APP_NAME}.tar.gz"
           fi
 
       - name: Rename updater artifacts (x86_64)
