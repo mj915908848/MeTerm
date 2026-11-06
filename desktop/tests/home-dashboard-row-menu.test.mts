@@ -122,6 +122,7 @@ function openMenu(opts: MenuOptions): string[] {
     './home-card-width': { clearCardWidth: noop, dragCardWidth: noop, loadCardWidths: () => ({}), setCardWidth: noop },
     './connection-sort': connectionSort,
     './group-sort-menu': { showGroupSortMenu: noop },
+    './connection-pins': { isPinned: () => false, togglePin: noop, loadPinned: () => new Set() },
     './connection-groups': groupExports,
     './connection-drag': { attachConnectionDrag: () => noop, UNGROUPED_DROP_GROUP: '__ungrouped__' },
     './connection-selection': { pruneSelection: (s: string[]) => s, resolveRowClick: noop },

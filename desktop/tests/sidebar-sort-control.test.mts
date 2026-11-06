@@ -23,6 +23,7 @@ function render(deps: any) {
   const mocks:any={
     './connection-sort': {sortGroupConnections:(x:any)=>[...x]},
     './group-sort-menu': {showGroupSortMenu:(at:any, group:string)=>calls.menus.push({at, group})},
+    './connection-pins': { isPinned: () => false, togglePin: () => {}, loadPinned: () => new Set() },
     './i18n': {t:(x:string)=>x}, './icons':{icon:()=>''}, './app-state':{settings:{language:'zh'}},
     './home-dashboard-left': {collectAllConnections:()=>items,filterConnections:(x:any)=>x,escapeHtml:(x:string)=>x},
     './connection-groups':{loadGroupMap:()=>({'ssh:a':'prod'}),loadGroupOrder:()=>['prod'],loadGroupColors:()=>({}),loadGroupCollapsed:()=>new Set(['prod','__ungrouped__']),toggleGroupCollapsed:()=>calls.collapses++,visibleGroupName:(stored:string|null|undefined)=>(stored&&!stored.startsWith('__')?stored:null)},

@@ -8,15 +8,10 @@ import {
 } from '../src/connection-sort.ts';
 
 /**
- * The connections drawer and the home page both list a group's rows, and the two
- * lists have to agree on the order: switching a group to "name descending" in one
- * has to reorder the other. Both render through home-side.ts, so the wiring
- * checks below are that both use that renderer and that it sorts.
- *
- * That only holds while both go through `sortGroupConnections()`. A surface that
- * sorts on its own — or not at all — silently falls back to insertion order,
- * which reads as "the sort I picked over there did nothing here". The behaviour
- * is covered first, then the wiring of both surfaces.
+ * The home page lists a group's rows through home-side.ts, which has to order
+ * them by the mode saved for that group. A surface that sorts on its own — or
+ * not at all — silently falls back to insertion order, which reads as "the sort
+ * I picked did nothing". The behaviour is covered first, then the wiring.
  */
 
 const saved = new Map<string, string>();
@@ -29,7 +24,6 @@ const read = (path: string): string =>
   readFileSync(new URL(path, import.meta.url), 'utf8');
 
 const homeManager = read('../src/home-connection-manager.ts');
-const drawer = read('../src/connections-drawer.ts');
 const sideList = read('../src/home-side.ts');
 const sortSource = read('../src/connection-sort.ts');
 
@@ -72,11 +66,9 @@ test('SSH and JumpServer configs both carry their date added in raw.addedAt', ()
   );
 });
 
-test('both surfaces order group rows through the shared sorter', () => {
+test('the home page orders group rows through the shared sorter', () => {
   assert.match(sideList, /sortGroupConnections\(/, 'the shared list renderer does not order its rows');
-  for (const [label, source] of [['home page', homeManager], ['connections drawer', drawer]] as const) {
-    assert.match(source, /renderSidebarList\(/, `${label} must render through the shared list`);
-  }
+  assert.match(homeManager, /renderSidebarList\(/, 'the home page must render through the shared list');
 });
 
 test('the ungrouped bucket is spelled the same in both modules', () => {

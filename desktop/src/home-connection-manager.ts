@@ -8,7 +8,7 @@
  *
  * A single click only *selects*. Connecting takes a double-click, Enter, or the
  * "connect" button — on a page for managing connections, a click that opens a
- * session is too easy to trigger by accident. (The connections drawer is for
+ * session is too easy to trigger by accident. (The quick switcher is for
  * picking, so a click there still connects.)
  *
  * ⌘/Ctrl-click and Shift-click select several (rules in connection-selection.ts);
@@ -24,7 +24,8 @@ import { renderSidebarList } from './home-side';
 import {
   collectAllConnections,
   createAssetHistoryRow,
-  renderRecentActivity,
+  renderStartLists,
+  setStartEditDelegate,
   editConnection,
   escapeHtml,
   handleConnectionClick,
@@ -459,8 +460,8 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     homeNav.setAttribute('aria-current', atHome ? 'page' : 'false');
     if (atHome) {
       right.appendChild(startContent);
-      // The recent track renders by id, so it can only be refreshed while attached.
-      renderRecentActivity('');
+      // The start lists render by id, so they can only be refreshed while attached.
+      renderStartLists('');
       return;
     }
 
@@ -523,6 +524,12 @@ export function createConnectionManager(startContent: HTMLElement): HTMLElement 
     getSelection: () => [...picked],
     dragLabel: (count) => L(`${count} 个连接`, `${count} connection${count === 1 ? '' : 's'}`),
     onDrop: (group, keys) => moveKeys(keys, group),
+  });
+
+  // A favourite or recent connection's pencil opens the same form as "edit" here.
+  setStartEditDelegate((item) => {
+    if (item.type === 'ssh') void open(item.key, { edit: true });
+    else editConnection(item, announce);
   });
 
   mounted = { root, refresh: render };

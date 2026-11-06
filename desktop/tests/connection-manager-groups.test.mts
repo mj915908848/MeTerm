@@ -91,6 +91,7 @@ function render(opts: RenderOptions): {
       sortGroupConnections: (items: any[]) => [...items],
     },
     './group-sort-menu': { showGroupSortMenu: () => {} },
+    './connection-pins': { isPinned: () => false, togglePin: () => {}, loadPinned: () => new Set() },
     './i18n': { t: (key: string) => key },
     './icons': { icon: () => '' },
     './app-state': { settings: { language: 'zh' } },

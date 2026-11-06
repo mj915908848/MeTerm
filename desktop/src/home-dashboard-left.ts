@@ -1,6 +1,6 @@
 /**
  * Home Dashboard — shared connection pieces: collecting and filtering saved
- * connections, the recent-connections track, connecting, the row and group
+ * connections, the start content's favourites and recent lists, connecting, the row and group
  * menus, deleting, and the group modal. The saved-connection manager itself
  * (list + detail panel) is home-connection-manager.ts.
  */
@@ -9,6 +9,7 @@ import { settings } from './app-state';
 import { t } from './i18n';
 import { icon } from './icons';
 import { showToast } from './notify';
+import { isPinned } from './connection-pins';
 import { appendSshConnectionMenuItems } from './development-credential-recovery-ui';
 import {
   type SSHConnectionConfig,
@@ -26,6 +27,8 @@ import {
 } from './jumpserver-api';
 import {
   loadGroupOrder,
+  loadGroupMap,
+  visibleGroupName,
   getConnectionGroup,
   sshKey,
   jumpserverKey,
@@ -74,22 +77,88 @@ export function filterConnections(items: ConnectionItem[], query: string): Conne
   return items.filter((i) => i.name.toLowerCase().includes(q) || i.detail.toLowerCase().includes(q));
 }
 
-// ─── Recent connections (home view) ───
+// ─── Start content (home view): favourites and recent ───
 
 /**
- * Render the servers this device actually connected to, most recent first, as
- * the horizontal card track the full-page home used to show.
- *
- * A compact card per entry (icon + name + user@host, × to forget it) laid out
- * left to right and scrolled sideways — a wide window shows several at once
- * instead of one tall column. Newest entries come from the SSH history
- * stores; with neither populated the section stays empty and hides itself.
+ * Edit a connection shown in the start content. The home page's connection
+ * manager installs one so an SSH edit opens its form in the right pane; without
+ * it the usual dialog opens.
  */
-export function renderRecentActivity(query: string): void {
+let startEditDelegate: ((item: ConnectionItem) => void) | null = null;
+export function setStartEditDelegate(fn: ((item: ConnectionItem) => void) | null): void {
+  startEditDelegate = fn;
+}
+const editFromStart = (item: ConnectionItem): void => {
+  if (startEditDelegate) startEditDelegate(item);
+  else editConnection(item);
+};
+
+const EDIT_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="M13.5 6.5l4 4"/></svg>';
+const REMOVE_SVG = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>';
+
+function smallIconButton(cls: string, svg: string, label: string, onClick: () => void): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = cls;
+  b.title = label;
+  b.setAttribute('aria-label', label);
+  b.innerHTML = svg;
+  b.onclick = (event) => {
+    event.stopPropagation();
+    onClick();
+  };
+  return b;
+}
+
+/**
+ * The home page's start content below the search row: favourite connections as
+ * cards, then recently used connections as rows. Both fill elements by id, so
+ * they only render while the start content is attached. Either section with
+ * nothing in it stays empty, and `:empty` takes it out of the column.
+ */
+export function renderStartLists(query: string = ''): void {
+  renderFavorites(query);
+  renderRecentList(query);
+}
+
+function renderFavorites(query: string): void {
+  const section = document.getElementById('home-favorites');
+  if (!section) return;
+  section.innerHTML = '';
+  const map = loadGroupMap();
+  const items = filterConnections(collectAllConnections().filter((i) => isPinned(i.key)), query);
+  if (items.length === 0) return;
+
+  const title = document.createElement('div');
+  title.className = 'home-dash-section-title';
+  title.textContent = settings?.language === 'zh' ? '收藏' : 'Favorites';
+  section.appendChild(title);
+
+  const grid = document.createElement('div');
+  grid.className = 'home-fav-grid';
+  for (const item of items) {
+    const card = document.createElement('div');
+    card.className = `home-fav-card home-fav-${item.type}`;
+    card.title = `${item.name} — ${item.detail}`;
+    const group = visibleGroupName(map[item.key]) ?? '';
+    card.innerHTML = `<div class="home-fav-top"><span class="home-fav-icon">${icon(item.type === 'jumpserver' ? 'jumpserver' : 'ssh')}</span>`
+      + `<span class="home-fav-name">${escapeHtml(item.name)}</span>`
+      + `<span class="home-fav-group">${escapeHtml(group)}</span></div>`
+      + `<div class="home-fav-detail">${escapeHtml(item.detail)}</div>`;
+    card.appendChild(smallIconButton('home-start-edit', EDIT_SVG, t('homeEditConnection'), () => editFromStart(item)));
+    // Click connects straight away, like the recent rows below.
+    card.onclick = () => handleConnectionClick(item, card);
+    grid.appendChild(card);
+  }
+  section.appendChild(grid);
+}
+
+function renderRecentList(query: string): void {
   const section = document.getElementById('home-recent-activity');
   if (!section) return;
   section.innerHTML = '';
 
+  const saved = new Map(collectAllConnections().map((i) => [i.key, i]));
   const recentItems: ConnectionItem[] = [];
   for (const c of loadRecentConnections()) {
     recentItems.push({
@@ -109,45 +178,38 @@ export function renderRecentActivity(query: string): void {
   title.textContent = t('homeRecentActivity');
   section.appendChild(title);
 
-  const track = document.createElement('div');
-  track.className = 'home-dash-recent-track';
+  const list = document.createElement('div');
+  list.className = 'home-recent-list';
 
   for (const item of items) {
-    const iconName = item.type === 'jumpserver' ? 'jumpserver' : 'ssh';
+    const row = document.createElement('div');
+    row.className = `home-recent-row home-recent-${item.type}`;
+    row.title = `${item.name} — ${item.detail}`;
+    row.innerHTML = `<span class="home-recent-icon">${icon('ssh')}</span>`
+      + `<span class="home-recent-name">${escapeHtml(item.name)}</span>`
+      + `<span class="home-recent-detail">${escapeHtml(item.detail)}</span>`;
 
-    const card = document.createElement('div');
-    card.className = `home-dash-recent-card home-dash-recent-${item.type}`;
-    // Names and hosts can be ellipsised in a narrow card, so the full pair is
-    // available on hover.
-    card.title = `${item.name} — ${item.detail}`;
-    card.innerHTML = `<span class="home-dash-recent-icon">${icon(iconName)}</span>`
-      + `<div class="home-dash-recent-info">`
-      + `<div class="home-dash-recent-name">${escapeHtml(item.name)}</div>`
-      + `<div class="home-dash-recent-detail">${escapeHtml(item.detail)}</div>`
-      + `</div>`;
-
-    const delBtn = document.createElement('button');
-    delBtn.type = 'button';
-    delBtn.className = 'home-dash-recent-del';
-    delBtn.title = t('homeRecentRemove');
-    delBtn.setAttribute('aria-label', t('homeRecentRemove'));
-    delBtn.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`;
-    delBtn.onclick = (event) => {
-      event.stopPropagation();
-      if (item.type === 'ssh') {
-        const c = item.raw as SSHConnectionConfig;
-        removeRecentConnection(c.host, c.port ?? 22, c.username);
-      }
-      renderRecentActivity(query);
-    };
-    card.appendChild(delBtn);
+    const actions = document.createElement('span');
+    actions.className = 'home-recent-actions';
+    // Only a connection that is still saved can be edited; a recent entry may
+    // outlive it.
+    const savedItem = saved.get(item.key);
+    if (savedItem) {
+      actions.appendChild(smallIconButton('home-start-edit', EDIT_SVG, t('homeEditConnection'), () => editFromStart(savedItem)));
+    }
+    actions.appendChild(smallIconButton('home-recent-del', REMOVE_SVG, t('homeRecentRemove'), () => {
+      const c = item.raw as SSHConnectionConfig;
+      removeRecentConnection(c.host, c.port ?? 22, c.username);
+      renderRecentList(query);
+    }));
+    row.appendChild(actions);
 
     // Click connects straight away, exactly like a connection-list row.
-    card.onclick = () => handleConnectionClick(item, card);
-    track.appendChild(card);
+    row.onclick = () => handleConnectionClick(item, row);
+    list.appendChild(row);
   }
 
-  section.appendChild(track);
+  section.appendChild(list);
 }
 
 /** A short menu of actions under a button, such as the manager's "+" and "⋯". */
@@ -566,38 +628,6 @@ export function showConnectionContextMenu(
   };
   menu.appendChild(deleteItem);
 
-  document.body.appendChild(menu);
-  clampMenu(menu);
-  autoCloseMenu(menu);
-}
-
-/**
- * The connections drawer's row menu: connect and edit, nothing else. The drawer
- * is for picking a connection; moving and deleting stay on the home page.
- */
-export function showConnectionPickMenu(
-  event: MouseEvent,
-  item: ConnectionItem,
-  onConnect: () => void,
-  onEdit: () => void,
-): void {
-  removeContextMenu();
-  const menu = document.createElement('div');
-  menu.className = 'home-card-menu';
-  menu.style.left = `${event.clientX}px`;
-  menu.style.top = `${event.clientY}px`;
-  const entries: Array<[string, () => void]> = [
-    [t('sshConnectBtn'), onConnect],
-    [t('homeEditConnection'), onEdit],
-  ];
-  for (const [label, run] of entries) {
-    const entry = document.createElement('button');
-    entry.type = 'button';
-    entry.className = 'home-card-menu-item';
-    entry.textContent = label;
-    entry.onclick = () => { menu.remove(); run(); };
-    menu.appendChild(entry);
-  }
   document.body.appendChild(menu);
   clampMenu(menu);
   autoCloseMenu(menu);

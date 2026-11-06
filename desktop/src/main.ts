@@ -12,7 +12,7 @@ import './styles/drawer.css';
 import './styles/drawer-sidebar.css';
 import './styles/dock-panel.css';
 import './styles/server-info-panel.css';
-import './styles/connections-drawer.css';
+import './styles/quick-switcher.css';
 import './styles/home-connection-manager.css';
 import './styles/file-sidebar.css';
 import './styles/ai-bar.css';
@@ -45,7 +45,7 @@ import { initAboutWindow } from './about-window';
 import { scheduleStartupUpdateCheck } from './updater';
 import { initJumpServerBrowserWindow } from './jumpserver-browser-window';
 import { initEditorWindowShell } from './file-editor-init';
-import { setupConnectionsDrawerSync } from './connections-drawer';
+import { setupQuickSwitcherSync } from './quick-switcher';
 import { initMacFullscreen } from './fullscreen-mac';
 import { initLanguage, setLanguage } from './i18n';
 import { setSSHConnectHandler } from './ssh';
@@ -221,7 +221,7 @@ async function init(): Promise<void> {
   setupTauriEventListeners(currentWindowLabel);
   // Every app window keeps its connections drawer and home view in step with
   // edits made in the others.
-  setupConnectionsDrawerSync();
+  setupQuickSwitcherSync();
   setupKeyboardShortcuts();
   initInputBroadcast();
   initTerminalMouseBehavior();

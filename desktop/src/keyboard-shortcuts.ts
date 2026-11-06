@@ -22,7 +22,7 @@ import {
   settings, setSettings, isHomeView,
 } from './app-state';
 import { showQuickHelp } from './tldr-card';
-import { toggleConnectionsDrawer } from './connections-drawer';
+import { toggleQuickSwitcher } from './quick-switcher';
 import { loadSettings, updateSettings } from './themes';
 import { openTerminalSearch } from './terminal-search';
 import { openSnippetPalette } from './snippets';
@@ -59,13 +59,13 @@ export function setupKeyboardShortcuts(): void {
 
     const key = event.key.toLowerCase();
 
-    // Connections drawer (Cmd/Ctrl+Shift+O). Before the Windows terminal-focus
+    // Connection quick switcher (Cmd/Ctrl+Shift+O). Before the Windows terminal-focus
     // guard below because the shortcut is meant to work from the terminal. Plain Ctrl+O (no Shift) still reaches the terminal.
     if (key === 'o' && event.shiftKey && !event.altKey) {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
-      toggleConnectionsDrawer();
+      toggleQuickSwitcher();
       return;
     }
 

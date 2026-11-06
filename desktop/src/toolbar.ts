@@ -27,7 +27,7 @@ import { DrawerManager } from './drawer';
 import { AICapsuleManager } from './ai-capsule';
 import { toggleFileManager, isFileManagerOpen } from './file-manager-toggle';
 import { ServerInfoPanel, hasRemoteServerInfo } from './server-info-panel';
-import { isConnectionsDrawerOpen, toggleConnectionsDrawer } from './connections-drawer';
+import { isQuickSwitcherOpen, toggleQuickSwitcher } from './quick-switcher';
 import appIconUrl from '../src-tauri/icons/icon.svg';
 
 /** Platforms that need custom window controls (no native overlay titlebar). */
@@ -279,16 +279,15 @@ export function renderToolbarActions(): void {
   };
   toolbarLeftEl.appendChild(homeViewBtn);
 
-  // Connection drawer — second in the row, directly after the home button (asked
-  // for in v0.2.18): both are "take me somewhere else in the app" entries, so
-  // they stay adjacent. Session-scoped tools follow. The list opens in the left
-  // dock, taking turns with the server-info panel and the file sidebar.
+  // Connection quick switcher — second in the row, directly after the home
+  // button (asked for in v0.2.18): both are "take me somewhere else in the app"
+  // entries, so they stay adjacent. Session-scoped tools follow.
   const connBtn = document.createElement('button');
-  connBtn.className = `toolbar-action-btn conn-toggle-btn${isConnectionsDrawerOpen() ? ' active' : ''}`;
+  connBtn.className = `toolbar-action-btn conn-toggle-btn${isQuickSwitcherOpen() ? ' active' : ''}`;
   connBtn.type = 'button';
   connBtn.title = `${t('connectionsWindowTitle')} (${isMacPlatform ? '⌘⇧O' : 'Ctrl+Shift+O'})`;
-  connBtn.innerHTML = `<span class="tab-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="9" y1="4" x2="9" y2="20"/></svg></span>`;
-  connBtn.onclick = () => { toggleConnectionsDrawer(); };
+  connBtn.innerHTML = `<span class="tab-icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg></span>`;
+  connBtn.onclick = () => { toggleQuickSwitcher(); };
   toolbarLeftEl.appendChild(connBtn);
 
   // Session-scoped buttons: the server-info panel and the file manager both need
