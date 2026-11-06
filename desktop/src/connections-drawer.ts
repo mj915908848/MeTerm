@@ -8,9 +8,10 @@
  * of them closes the list.
  *
  * The drawer is for *choosing* a connection: search, click (or Enter) to open,
- * or start a new one. Managing connections — editing, deleting, groups — lives
- * on the home page, which the footer links to. So rows here have no context
- * menu, no multi-select and no dragging.
+ * or start a new one. A row can also be edited in place (hover pencil, or the
+ * right-click menu), since fixing a host or password is often why you came.
+ * The rest of managing connections — deleting, groups — lives on the home page,
+ * which the footer links to. So rows here have no multi-select and no dragging.
  *
  * It replaces a standalone connections window. That window owned no sessions,
  * so every click had to be routed to the app window that opened it, and when
@@ -21,7 +22,7 @@
 import { t } from './i18n';
 import { createOverlayScrollbar } from './overlay-scrollbar';
 import { renderSidebarList } from './home-side';
-import { collectAllConnections, handleConnectionClick, type ConnectionItem } from './home-dashboard-left';
+import { collectAllConnections, editConnection, handleConnectionClick, type ConnectionItem } from './home-dashboard-left';
 import { makeNewButtons, runNewConnectionAction } from './connection-sidebar';
 import { TabManager } from './tabs';
 import { TerminalRegistry } from './terminal';
@@ -129,7 +130,7 @@ export function openConnectionsDrawer(): void {
   manageBtn.type = 'button';
   manageBtn.className = 'cn-manage';
   manageBtn.textContent = L('管理连接 →', 'Manage connections →');
-  manageBtn.title = L('在首页编辑、删除和分组', 'Edit, delete and group on the home page');
+  manageBtn.title = L('在首页删除和分组', 'Delete and group on the home page');
   manageBtn.onclick = () => {
     closeConnectionsDrawer({ restoreFocus: false });
     void Promise.all([import('./view-manager'), import('./tab-renderer')]).then(([views, tabs]) => {
@@ -154,6 +155,10 @@ export function openConnectionsDrawer(): void {
       refresh: () => refresh(),
       getSelectedKey: () => null,
       rowMenu: false,
+      // The edit dialog opens over the drawer; a save re-renders it through
+      // the ssh-connections-changed event (and this callback), and "connect"
+      // from the dialog opens a tab, which closes the drawer.
+      onRowEdit: (item) => editConnection(item, () => drawer?.refresh()),
     });
   };
 

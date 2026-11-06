@@ -4,8 +4,9 @@
  * The drawer replaced a standalone connections window. It lives in the window
  * whose sessions it opens, so a pick is a local call — and the window, with its
  * cross-window routing, must not come back by accident. It only *picks*:
- * managing connections is the home page's job, so the drawer has no row menu,
- * no multi-select and no dragging. It is a left-dock panel: it mounts first in
+ * a row can be edited in place, but the rest of managing connections is the
+ * home page's job, so the drawer has no full row menu, no multi-select and no
+ * dragging. It is a left-dock panel: it mounts first in
  * #main-content (pushing the terminal), shares the dock with the server-info
  * panel and the file sidebar, and gets out of the way on a connect, a
  * new-connection dialog, Escape (with focus in the list), a new tab or a tab
@@ -88,6 +89,7 @@ interface Harness {
   body: El;
   renderCalls: any[];
   clicked: any[];
+  edited: any[];
   newActions: string[];
   homeShown: number;
   docListeners: Record<string, Listener[]>;
@@ -113,7 +115,7 @@ function boot(): Harness {
   main.appendChild(terminal);
   activeEl = terminal;
   const h: Harness = {
-    mod: null, body, renderCalls: [], clicked: [], newActions: [], homeShown: 0, docListeners: {},
+    mod: null, body, renderCalls: [], clicked: [], edited: [], newActions: [], homeShown: 0, docListeners: {},
     newButtonsPick: null, docKeyListeners: [], tabListeners: [], tabs: [],
     overlayOpen: false, terminal, main, activeTabId: 't1', resized: 0, closedOthers: [],
   };
@@ -131,6 +133,7 @@ function boot(): Harness {
     './home-dashboard-left': {
       collectAllConnections: () => items,
       handleConnectionClick: (item: any) => { h.clicked.push(item); },
+      editConnection: (item: any, refresh: () => void) => { h.edited.push({ item, refresh }); },
     },
     './view-manager': { showHomeView: () => { h.homeShown++; } },
     './tab-renderer': { renderTabs: () => {} },
@@ -243,16 +246,32 @@ test('picking a connection opens it here and closes the drawer', () => {
   assert.equal(root(h), null);
 });
 
-test('the drawer only picks: no row menu, no multi-select, no dragging', () => {
+test('the drawer picks and edits: no full row menu, no multi-select, no dragging', () => {
   const h = boot();
   h.mod.openConnectionsDrawer();
   const deps = h.renderCalls[0].deps;
-  assert.equal(deps.rowMenu, false, 'editing and deleting happen on the home page');
+  assert.equal(deps.rowMenu, false, 'deleting and grouping happen on the home page');
+  assert.equal(typeof deps.onRowEdit, 'function', 'a row can be edited from the drawer');
   assert.equal(deps.onRowClick, undefined, 'a click always connects');
   assert.equal(deps.onGroupContextMenu, undefined);
   assert.equal(find(h.body, 'cn-selbar'), null);
   const source = read('src/connections-drawer.ts');
   assert.ok(!source.includes('attachConnectionDrag'), 'rows are not draggable here');
+});
+
+test('editing a row opens the edit dialog and keeps the drawer open', () => {
+  const h = boot();
+  h.mod.openConnectionsDrawer();
+  const deps = h.renderCalls[0].deps;
+  const item = { type: 'ssh', key: 'ssh:a', name: 'a', detail: '', raw: {} };
+  deps.onRowEdit(item);
+  assert.equal(h.edited.length, 1);
+  assert.equal(h.edited[0].item, item, 'the existing edit dialog gets this row');
+  assert.ok(root(h), 'the drawer stays open behind the dialog');
+  assert.deepEqual(h.clicked, [], 'editing does not connect');
+  const before = h.renderCalls.length;
+  h.edited[0].refresh();
+  assert.equal(h.renderCalls.length, before + 1, 'a save re-renders the list');
 });
 
 test('"manage connections" closes the drawer and opens the home page', async () => {

@@ -12,6 +12,7 @@ import {
   filterConnections,
   escapeHtml,
   showConnectionContextMenu,
+  showConnectionPickMenu,
 } from './home-dashboard-left';
 import {
   loadGroupMap,
@@ -25,6 +26,7 @@ import {
 const UNGROUPED = '__ungrouped__';
 const L = (zh: string, en: string): string => (settings?.language === 'zh' ? zh : en);
 
+const EDIT_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="M13.5 6.5l4 4"/></svg>`;
 const STAR_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M12 3.2l2.7 5.5 6 .9-4.35 4.2 1.03 6L12 17l-5.38 2.8 1.03-6L3.3 9.6l6-.9z"/></svg>`;
 
 // ── Pin (favorites) persistence ──
@@ -89,6 +91,12 @@ export interface SidebarListDeps {
    * picking a connection, and managing them happens on the home page.
    */
   rowMenu?: boolean;
+  /**
+   * Edit one row in place. When set, each row gets a hover pencil button, and a
+   * list with `rowMenu: false` answers a right-click with a short connect / edit
+   * menu instead of nothing. The connections drawer uses it.
+   */
+  onRowEdit?: (item: ConnectionItem) => void;
   /**
    * Double-click on a row. The home page uses it to connect, because there a
    * single click only selects (a click that connects is too easy to trigger by
@@ -209,6 +217,7 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
       const pinned = isPinned(item.key);
       row.innerHTML = `<span class="hsr-icon">${icon(connTypeIcon(item.type))}</span>`
         + `<span class="hsr-name" title="${escapeHtml(item.detail)}">${escapeHtml(item.name)}</span>`
+        + (deps.onRowEdit ? `<button class="hsr-edit" type="button" tabindex="-1" title="${escapeHtml(t('homeEditConnection'))}" aria-label="${escapeHtml(t('homeEditConnection'))}">${EDIT_SVG}</button>` : '')
         + `<button class="hsr-pin${pinned ? ' pinned' : ''}" type="button" tabindex="-1" title="${L('收藏', 'Pin')}">${STAR_SVG}</button>`;
       const onRowClick = deps.onRowClick;
       row.onclick = (event) => {
@@ -228,7 +237,11 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
       }
       row.oncontextmenu = (e) => {
         e.preventDefault();
-        if (deps.rowMenu === false) return;
+        if (deps.rowMenu === false) {
+          const edit = deps.onRowEdit;
+          if (edit) showConnectionPickMenu(e, item, () => deps.onSelect(item), () => edit(item));
+          return;
+        }
         // Only a selection that *contains* this row may act for it. Right-
         // clicking a row outside the current selection means "just this row", and
         // letting a stale selection move instead is exactly how a batch menu ends
@@ -244,6 +257,15 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
           moveKeys,
         );
       };
+      const editBtn = row.querySelector<HTMLButtonElement>('.hsr-edit');
+      if (editBtn && deps.onRowEdit) {
+        const edit = deps.onRowEdit;
+        editBtn.onclick = (e) => {
+          e.stopPropagation();
+          edit(item);
+        };
+        editBtn.ondblclick = (e) => e.stopPropagation();
+      }
       const pinBtn = row.querySelector('.hsr-pin') as HTMLButtonElement;
       pinBtn.onclick = (e) => {
         e.stopPropagation();

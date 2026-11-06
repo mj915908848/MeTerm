@@ -1971,6 +1971,19 @@ html.vibrancy-active .conn-sidebar.conn-sidebar--flyout {
   opacity: 0;
   transition: opacity 0.12s, color 0.12s;
 }
+.home-side-row .hsr-edit {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+}
+.home-side-row:hover .hsr-edit { opacity: 1; }
+.home-side-row .hsr-edit:hover { color: var(--accent); }
 .home-side-row:hover .hsr-pin { opacity: 1; }
 .home-side-row .hsr-pin.pinned { opacity: 1; color: #f5b301; fill: #f5b301; }
 .home-side-row .hsr-pin:hover { color: #f5b301; }

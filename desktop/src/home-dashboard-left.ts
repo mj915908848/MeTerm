@@ -571,6 +571,38 @@ export function showConnectionContextMenu(
   autoCloseMenu(menu);
 }
 
+/**
+ * The connections drawer's row menu: connect and edit, nothing else. The drawer
+ * is for picking a connection; moving and deleting stay on the home page.
+ */
+export function showConnectionPickMenu(
+  event: MouseEvent,
+  item: ConnectionItem,
+  onConnect: () => void,
+  onEdit: () => void,
+): void {
+  removeContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'home-card-menu';
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+  const entries: Array<[string, () => void]> = [
+    [t('sshConnectBtn'), onConnect],
+    [t('homeEditConnection'), onEdit],
+  ];
+  for (const [label, run] of entries) {
+    const entry = document.createElement('button');
+    entry.type = 'button';
+    entry.className = 'home-card-menu-item';
+    entry.textContent = label;
+    entry.onclick = () => { menu.remove(); run(); };
+    menu.appendChild(entry);
+  }
+  document.body.appendChild(menu);
+  clampMenu(menu);
+  autoCloseMenu(menu);
+}
+
 async function handleDeleteConnection(item: ConnectionItem, refreshView: () => void): Promise<void> {
   try {
     if (item.type === 'ssh') {
