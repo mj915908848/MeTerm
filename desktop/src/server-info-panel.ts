@@ -93,10 +93,8 @@ class ServerInfoPanelClass {
     this.openTabs.add(tabId);
     this._open = true;
 
-    // Single left dock: the file sidebar (sidebar mode) and the connection list
-    // have to give way.
+    // Single left dock: the file sidebar (sidebar mode) has to give way.
     void import('./file-manager-toggle').then((m) => m.closeFileSidebarForDockSwap());
-    void import('./connections-drawer').then((m) => m.closeConnectionsDrawer({ restoreFocus: false }));
 
     this.syncToActiveSession();
     this.requestSysInfo();
@@ -165,8 +163,7 @@ class ServerInfoPanelClass {
     }
     if (this.panel && this.panel.style.display === 'none') {
       this.panel.style.display = '';
-      void import('./connections-drawer').then((m) => m.closeConnectionsDrawer({ restoreFocus: false }));
-      TerminalRegistry.resizeAll();
+        TerminalRegistry.resizeAll();
     }
     // A tab can have its file sidebar open while this tab's server-info dock
     // was hidden. Reclaim the single left dock when switching back.

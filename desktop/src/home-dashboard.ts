@@ -9,28 +9,28 @@
  *
  * Two things changed since. Startup now honours the "create a local session on
  * launch" setting (off by default), so the page IS the starting point again; and
- * the connection list moved off this page (now the connections drawer), freeing it to be
- * what it used to be. So the page is back: search bar, the 2×2 session grid,
- * recent connections and the footer, with the saved-connection manager
+ * the connection list moved off this page (later a drawer, now the quick switcher), freeing it to be
+ * what it used to be. So the page is back: a search row with the new-session
+ * buttons beside it, favourite and recent connections, and the footer, with the
+ * saved-connection manager
  * (home-connection-manager.ts) beside them: list on the left, the selected
  * connection on the right, and the start content shown there while nothing is
  * selected.
  *
- * Division of labour, unchanged from v0.2.17: this page is the *no-session*
- * starting point, the connections drawer (connections-drawer.ts) is for looking
- * connections up while a terminal is open. Both read the same stores, so an edit
- * in one shows up in the other.
+ * Division of labour: this page is where connections are managed; the quick
+ * switcher (quick-switcher.ts, ⌘⇧O) is for jumping to one while a terminal is
+ * open. Both read the same stores, so an edit in one shows up in the other.
  */
 import { getVersion } from '@tauri-apps/api/app';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { t } from './i18n';
+import { settings } from './app-state';
 import { icon } from './icons';
 import { createOverlayScrollbar } from './overlay-scrollbar';
-import { renderRecentActivity } from './home-dashboard-left';
+import { renderStartLists } from './home-dashboard-left';
 import { createConnectionManager, refreshConnectionManager } from './home-connection-manager';
 import { renderSearchOverlay, hideSearchOverlay } from './home-dashboard-right';
 import { createUnifiedSearch } from './home-dashboard-search';
-import { planHomeActionGrid } from './home-action-grid';
 import { NEW_ACTIONS, runNewConnectionAction } from './connection-sidebar';
 
 // Re-export names kept for ssh.ts / view-manager backwards compat.
@@ -38,6 +38,15 @@ export { createDashboardHomeView as createSSHHomeView, updateDashboardHomeView a
 
 const GITHUB_URL = 'https://github.com/paidaxingyo666/MeTerm';
 const GITEE_URL = 'https://gitee.com/paidaxingy666/me-term';
+
+/** Short labels for the pills beside the search box; the tooltip has the full one. */
+const QUICK_LABELS: Record<'local' | 'ssh' | 'jumpserver', () => string> = {
+  local: () => (settings?.language === 'zh' ? '本地终端' : 'Local'),
+  ssh: () => 'SSH',
+  jumpserver: () => 'JumpServer',
+};
+
+const escapeLabel = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
 const SEARCH_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>';
 
@@ -88,31 +97,17 @@ export function createDashboardHomeView(): HTMLDivElement {
   searchWrap.appendChild(kbd);
   searchRow.appendChild(searchWrap);
 
-  const overlay = document.createElement('div');
-  overlay.className = 'home-search-overlay';
-  overlay.id = 'home-search-overlay';
-  overlay.style.display = 'none';
-  searchRow.appendChild(overlay);
-  scroll.appendChild(searchRow);
-
-  // ── Session grid: local and SSH side by side, JumpServer full-width below ──
-  const controlGrid = document.createElement('div');
-  controlGrid.className = 'home-dash-control-grid';
-  controlGrid.id = 'home-control-grid';
-
-  const actionByKind = new Map(NEW_ACTIONS.map((a) => [a.kind, a]));
-  for (const slot of planHomeActionGrid()) {
-    const action = actionByKind.get(slot.kind);
-    if (!action) continue;
-
+  // ── New-session buttons, in the same row as the search box ──
+  // They used to be three large cards under the search box; as compact pills
+  // beside it they stop taking half the pane.
+  for (const action of NEW_ACTIONS) {
     const btn = document.createElement('button');
-    btn.className = `home-dash-ctrl-btn home-btn-${action.cls}`;
+    btn.className = `home-dash-quick-btn home-dash-quick-${action.cls}`;
     btn.type = 'button';
     btn.dataset.kind = action.kind;
-    // A wide card spans the whole grid row; the CSS grid holds the columns.
-    if (slot.span > 1) btn.style.gridColumn = `span ${slot.span}`;
-    btn.innerHTML = `<span class="home-dash-ctrl-icon">${icon(action.iconName)}</span>`
-      + `<span class="home-dash-ctrl-label">${t(action.labelKey)}</span>`;
+    btn.title = t(action.labelKey);
+    btn.innerHTML = `<span class="home-dash-quick-icon">${icon(action.iconName)}</span>`
+      + `<span class="home-dash-quick-label">${escapeLabel(QUICK_LABELS[action.kind]())}</span>`;
     btn.onclick = () => runNewConnectionAction(action.kind);
     if (action.ctxMenu) {
       btn.addEventListener('contextmenu', (event) => {
@@ -122,14 +117,23 @@ export function createDashboardHomeView(): HTMLDivElement {
         }));
       });
     }
-    controlGrid.appendChild(btn);
+    searchRow.appendChild(btn);
   }
-  scroll.appendChild(controlGrid);
 
-  // ── Recent connections (filled by renderRecentActivity) ──
-  // The renderer writes a title + a horizontal card track in here. With no
-  // history the block stays empty and `:empty` takes it out of the column
-  // entirely, so an empty section costs no gap.
+  const overlay = document.createElement('div');
+  overlay.className = 'home-search-overlay';
+  overlay.id = 'home-search-overlay';
+  overlay.style.display = 'none';
+  searchRow.appendChild(overlay);
+  scroll.appendChild(searchRow);
+
+  // ── Favourites (cards) and recent connections (rows) ──
+  // Filled by renderStartLists. An empty section stays empty and `:empty`
+  // takes it out of the column, so it costs no gap.
+  const favoritesSection = document.createElement('div');
+  favoritesSection.id = 'home-favorites';
+  scroll.appendChild(favoritesSection);
+
   const recentSection = document.createElement('div');
   recentSection.id = 'home-recent-activity';
   scroll.appendChild(recentSection);
@@ -227,6 +231,6 @@ export function createDashboardHomeView(): HTMLDivElement {
 }
 
 export function updateDashboardHomeView(): void {
-  renderRecentActivity('');
+  renderStartLists('');
   refreshConnectionManager();
 }

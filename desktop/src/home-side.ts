@@ -27,24 +27,9 @@ const L = (zh: string, en: string): string => (settings?.language === 'zh' ? zh 
 
 const STAR_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M12 3.2l2.7 5.5 6 .9-4.35 4.2 1.03 6L12 17l-5.38 2.8 1.03-6L3.3 9.6l6-.9z"/></svg>`;
 
-// ── Pin (favorites) persistence ──
-const PIN_KEY = 'meterm-pinned-connections';
-export function loadPinned(): Set<string> {
-  try {
-    return new Set(JSON.parse(localStorage.getItem(PIN_KEY) || '[]') as string[]);
-  } catch {
-    return new Set();
-  }
-}
-export function isPinned(key: string): boolean {
-  return loadPinned().has(key);
-}
-export function togglePin(key: string): void {
-  const s = loadPinned();
-  if (s.has(key)) s.delete(key);
-  else s.add(key);
-  localStorage.setItem(PIN_KEY, JSON.stringify([...s]));
-}
+// Favourites live in connection-pins.ts; re-exported for existing callers.
+import { isPinned, togglePin } from './connection-pins';
+export { isPinned, loadPinned, togglePin } from './connection-pins';
 
 export const connTypeIcon = (type: ConnectionItem['type']): 'ssh' | 'jumpserver' =>
   type === 'jumpserver' ? 'jumpserver' : 'ssh';
@@ -83,12 +68,6 @@ export interface SidebarListDeps {
     mods: { toggle: boolean; range: boolean },
     visibleKeys: string[],
   ) => boolean;
-  /**
-   * Whether a row answers a right-click with the connection menu (edit, move,
-   * delete). Defaults to true. The connections drawer turns it off: it is for
-   * picking a connection, and managing them happens on the home page.
-   */
-  rowMenu?: boolean;
   /**
    * Double-click on a row. The home page uses it to connect, because there a
    * single click only selects (a click that connects is too easy to trigger by
@@ -228,7 +207,6 @@ export function renderSidebarList(listEl: HTMLElement, headerSlot: HTMLElement |
       }
       row.oncontextmenu = (e) => {
         e.preventDefault();
-        if (deps.rowMenu === false) return;
         // Only a selection that *contains* this row may act for it. Right-
         // clicking a row outside the current selection means "just this row", and
         // letting a stale selection move instead is exactly how a batch menu ends

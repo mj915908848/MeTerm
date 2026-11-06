@@ -96,7 +96,8 @@ function boot(options: { confirm?: boolean } = {}) {
     './home-dashboard-left': {
       collectAllConnections: () => ITEMS,
       createAssetHistoryRow: () => new El(),
-      renderRecentActivity: () => {},
+      renderStartLists: () => {},
+      setStartEditDelegate: () => {},
       editConnection: () => {},
       escapeHtml: (s: string) => s,
       handleConnectionClick: (item: any) => { h.connected.push(item.key); },
@@ -277,10 +278,4 @@ test('"+" → new SSH connection opens an empty form in the right pane, and savi
   assert.equal(h.forms[0].prefill, undefined);
   h.forms[0].onSaved({ name: 'web-01' });
   assert.equal(deps(h).getSelectedKey(), 'ssh:web-01');
-});
-
-test('the drawer still connects on a single click', () => {
-  const drawer = readFileSync(new URL('../src/connections-drawer.ts', import.meta.url), 'utf8');
-  assert.ok(drawer.includes('onSelect: connect'));
-  assert.ok(!drawer.includes('onRowClick'), 'no selection rules in the picker');
 });
