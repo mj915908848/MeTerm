@@ -110,7 +110,7 @@
 | macOS (Intel) | `MeTerm_x.x.x_x64.dmg` |
 | Windows (x64) | `MeTerm_x.x.x_x64-setup.exe` |
 
-从 [v0.4.1](https://github.com/mj915908848/MeTerm/releases/tag/v0.4.1) 升级时，请从 Releases 下载新版安装包。应用内更新在 v0.4.1 发布后合入 `main`，需要发布版提供 `latest.json` 清单和已签名的更新包。
+从 [v0.4.1](https://github.com/mj915908848/MeTerm/releases/tag/v0.4.1) 升级时，请从 Releases 下载新版安装包。从 v0.4.2 起，可以在应用内检查后续版本。
 
 ### macOS 首次打开被拦下怎么办
 

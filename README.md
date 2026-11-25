@@ -110,7 +110,7 @@ To bring in existing SSH hosts, open **Settings › Connections › Import & Exp
 | macOS (Intel) | `MeTerm_x.x.x_x64.dmg` |
 | Windows (x64) | `MeTerm_x.x.x_x64-setup.exe` |
 
-To upgrade from [v0.4.1](https://github.com/mj915908848/MeTerm/releases/tag/v0.4.1), download the installer from Releases. In-app updates were added to `main` after v0.4.1 and require a release with a published `latest.json` manifest and signed update packages.
+To upgrade from [v0.4.1](https://github.com/mj915908848/MeTerm/releases/tag/v0.4.1), download the installer from Releases. Starting with v0.4.2, you can check for subsequent releases inside the app.
 
 ### macOS blocks the first launch
 
