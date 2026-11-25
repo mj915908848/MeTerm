@@ -1,5 +1,37 @@
 # MeTerm 更新记录
 
+## v0.4.2
+
+### 新功能与优化
+
+- **OpenSSH 配置导入** — 在「设置 › 连接 › 导入导出」选择 `~/.ssh/config`，预览并导入已设置 `User` 的命名主机。同名连接会跳过。支持常用主机参数和单个 `IdentityFile`，复杂配置暂不支持。
+- **快速切换连接** — 按 macOS 的 ⌘⇧O 或 Windows 的 Ctrl+Shift+O，按名称或地址查找连接，按 Enter 连接。收藏和最近使用的连接优先显示，连接管理集中在首页。
+- **后台终端释放 WebGL** — 切换标签时释放隐藏终端的 WebGL 上下文，切回时恢复。当前分屏的可见窗格可以继续使用 WebGL，终端输出和滚动历史会保留。
+- **界面尺寸统一** — 统一按钮、输入框、对话框和菜单的尺寸与圆角，覆盖设置、文件管理、编辑器和 JumpServer 等界面。
+- **恢复应用内更新** — 应用可以检查下载并安装带签名的更新，安装前会询问。检查失败时可以打开 Releases 页面手动下载。
+
+### 升级说明
+
+- 从 v0.4.1 升级时，请从 GitHub Releases 手动下载适用的安装包。v0.4.2 可以在应用内检查后续版本。
+
+---
+
+## Changelog (English)
+
+### What's New
+
+- **OpenSSH config import** — Open Settings › Connections › Import / Export, select `~/.ssh/config`, and preview named hosts with a `User`. Existing names are skipped. Common host options and one `IdentityFile` are supported.
+- **Connection quick switcher** — Press Cmd+Shift+O on macOS or Ctrl+Shift+O on Windows to find a connection by name or address. Press Enter to connect. Favorites and recents appear first, and connection management lives on the home page.
+- **WebGL resources for visible terminals** — Hidden tabs release their WebGL contexts and rebuild them when shown. Visible split panes can keep using WebGL. Terminal output and scrollback are preserved.
+- **Consistent controls** — Buttons, inputs, dialogs, and menus share sizes and corner radii across settings, file management, the editor, and JumpServer.
+- **In-app updates are back** — Check for signed updates and install them after confirmation. If the check fails, you can open GitHub Releases to download an installer.
+
+### Upgrading
+
+- To upgrade from v0.4.1, download the installer for your platform from GitHub Releases. Starting with v0.4.2, you can check for subsequent releases inside the app.
+
+---
+
 ## v0.4.1
 
 ### 重要变化
