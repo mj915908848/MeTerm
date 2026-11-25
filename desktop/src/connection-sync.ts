@@ -322,7 +322,7 @@ export function toSecrets(cfg: SSHConnectionConfig): SavedSecrets {
  * `cfg` 只包含用户刚输入的秘密。metadata-only 编辑传 `null`，Rust vault
  * 保留原值；本函数绝不从 Keychain 把秘密读回 WebView。
  */
-export async function syncUpsert(cfg: SSHConnectionConfig): Promise<void> {
+export async function syncUpsert(cfg: SSHConnectionConfig, createOnly = false): Promise<void> {
   const secrets = toSecrets(cfg);
   const hasSecrets = !!(
     secrets.password
@@ -335,6 +335,7 @@ export async function syncUpsert(cfg: SSHConnectionConfig): Promise<void> {
   await invoke('sync_upsert_connection', {
     connection: saved,
     secrets: hasSecrets ? secrets : null,
+    ...(createOnly ? { createOnly } : {}),
   });
   const updated = loadUpdatedMap();
   updated[saved.id] = saved.updated_at;

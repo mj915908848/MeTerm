@@ -714,6 +714,11 @@ export function setupTauriEventListeners(currentWindowLabel: string): void {
 
 
 
+  // Imports from the settings window update the sidebar and quick switcher.
+  void listen('ssh-connections-changed', () => {
+    document.dispatchEvent(new CustomEvent('ssh-connections-changed'));
+  });
+
   // Listen for settings changes from the settings window
   void listen('settings-changed', () => {
     // The settings window already committed native changes and published only

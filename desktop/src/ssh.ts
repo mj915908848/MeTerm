@@ -246,10 +246,10 @@ export async function saveConnections(connections: SSHConnectionConfig[]): Promi
   localStorage.setItem(SSH_CONNECTIONS_KEY, JSON.stringify(connections.map(stripSecrets)));
 }
 
-export async function addConnection(config: SSHConnectionConfig): Promise<void> {
+export async function addConnection(config: SSHConnectionConfig, createOnly = false): Promise<void> {
   // The native registry/vault is authoritative. Do not publish metadata that
   // looks saved until its credential transaction has completed.
-  await syncUpsert(config);
+  await syncUpsert(config, createOnly);
   const registryId = existingConnectionId(config.name);
   const connections = loadSavedConnections();
   const existing = connections.findIndex((c) => (

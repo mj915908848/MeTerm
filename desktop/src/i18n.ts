@@ -498,6 +498,14 @@ export interface Translations {
   sshImportFailed: string;
   sshImportInvalidFormat: string;
   sshImportCount: string;
+  sshOpenSshConfig: string;
+  sshOpenSshImport: string;
+  sshOpenSshNoNewHosts: string;
+  sshOpenSshPreview: string;
+  sshOpenSshPreviewMore: string;
+  sshOpenSshImported: string;
+  sshOpenSshStopped: string;
+  sshOpenSshUnreadable: string;
   sshExportCount: string;
   sshExportMissingCredential: string;
   sshExportMobileUnsupported: string;
@@ -1264,6 +1272,14 @@ const translations: Record<Language, Translations> = {
     sshImportFailed: 'Import failed',
     sshImportInvalidFormat: 'Invalid file format',
     sshImportCount: 'connections imported',
+    sshOpenSshConfig: 'OpenSSH config',
+    sshOpenSshImport: 'Import OpenSSH config',
+    sshOpenSshNoNewHosts: 'No new supported hosts found. Each host needs a User and supported settings.',
+    sshOpenSshPreview: 'Import {count} SSH connections? {skipped} entries will be skipped. Your device will ask you to confirm each credential binding.',
+    sshOpenSshPreviewMore: '… and {count} more',
+    sshOpenSshImported: 'Imported {count} connections. Skipped {skipped}.',
+    sshOpenSshStopped: 'Import stopped after saving {count} connections and skipping {skipped}. Check the key path or confirm your identity, then try again.',
+    sshOpenSshUnreadable: 'Could not read the OpenSSH config. Select a UTF-8 config file (up to 128 KB) without Include or Match directives.',
     sshExportCount: 'connections exported',
     sshExportMissingCredential: '{count} connection(s) have no portable password/private key and cannot be used offline on mobile',
     sshExportMobileUnsupported: '{count} connection(s) were exported but current mobile direct SSH import will reject their proxy, credential format, or size',
@@ -2057,6 +2073,14 @@ const translations: Record<Language, Translations> = {
     sshImportFailed: '导入失败',
     sshImportInvalidFormat: '文件格式无效',
     sshImportCount: '个连接已导入',
+    sshOpenSshConfig: 'OpenSSH 配置',
+    sshOpenSshImport: '导入 OpenSSH 配置',
+    sshOpenSshNoNewHosts: '没有找到可新增的主机。请检查主机是否设置了 User，以及是否包含暂不支持的选项。',
+    sshOpenSshPreview: '导入 {count} 个 SSH 连接？将跳过 {skipped} 项。系统会逐一确认凭据绑定。',
+    sshOpenSshPreviewMore: '…另有 {count} 项',
+    sshOpenSshImported: '已导入 {count} 个连接，跳过 {skipped} 项。',
+    sshOpenSshStopped: '导入已停止，已保存 {count} 个连接，跳过 {skipped} 项。请检查密钥路径或完成身份确认后重试。',
+    sshOpenSshUnreadable: '无法读取 OpenSSH 配置。请选择不超过 128 KB 的 UTF-8 文件，且文件不含 Include 或 Match 指令。',
     sshExportCount: '个连接已导出',
     sshExportMissingCredential: '其中 {count} 个连接没有可迁移的密码或私钥，无法在手机离线直连',
     sshExportMobileUnsupported: '其中 {count} 个连接已导出，但其代理、凭据格式或大小不受当前手机直连导入支持',

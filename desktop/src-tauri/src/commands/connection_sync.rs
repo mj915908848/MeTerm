@@ -46,6 +46,7 @@ pub async fn sync_upsert_connection(
     state: State<'_, Arc<ServerState>>,
     connection: SavedConnection,
     mut secrets: Option<SshSecrets>,
+    create_only: Option<bool>,
 ) -> Result<(), String> {
     require_ssh_window(&window)?;
     let mut conn = connection;
@@ -62,6 +63,13 @@ pub async fn sync_upsert_connection(
     let validation_copy = conn.clone();
 
     let expected_existing = state.connections.read_with(&id, |existing| existing);
+    if create_only == Some(true)
+        && expected_existing
+            .as_ref()
+            .is_some_and(|existing| existing.deleted_at.is_none())
+    {
+        return Err("SSH connection already exists".to_string());
+    }
     let authority_changes =
         ssh_credential_replacement_required(expected_existing.as_ref(), &validation_copy);
     let confirmation_reason = if let Some(private_key_path) = secrets

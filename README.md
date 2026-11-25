@@ -47,6 +47,8 @@
 - **SSH Remote** — Password/key authentication to remote servers
 - **JumpServer** — Browse and connect bastion host assets (tested v2 & v4, supports MFA authentication)
 
+To bring in existing SSH hosts, open **Settings › Connections › Import & Export › Import OpenSSH config** and select your `~/.ssh/config`. The importer previews named hosts with a `User` setting and skips saved names. It accepts `Host`, `HostName`, `User`, `Port`, and one `IdentityFile` per host. Entries that require a jump host or multiple identity files are skipped. `Include` and `Match` are currently unsupported.
+
 **Tab management:**
 
 - Multi-tab with drag-to-reorder, drag tab out to create new window
