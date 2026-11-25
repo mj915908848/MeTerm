@@ -1,7 +1,6 @@
 import type { Terminal } from '@xterm/xterm';
 import { CanvasAddon } from '@xterm/addon-canvas';
 import { LigaturesAddon } from '@xterm/addon-ligatures';
-import { WebglAddon } from '@xterm/addon-webgl';
 import { AppSettings, getTheme, getColorSchemeBg, hexToRgba, hexToOscRgb } from './themes';
 import { markThumbnailChanged } from './terminal-thumbnail-feed';
 import { getFontFamily, getEffectiveFontWeight } from './fonts';
@@ -10,7 +9,7 @@ import { isMacPlatform, isWindowsPlatform } from './app-state';
 import { patchCanvasBgOpacity, patchCanvasSharpness } from './terminal-patches';
 import { sendToTerminal } from './terminal-transport';
 import type { ManagedTerminal } from './terminal-types';
-import { registerWebglContextLossFallback } from './terminal-render-recovery';
+import { loadTerminalWebgl, releaseTerminalWebgl } from './terminal-render-recovery';
 
 const SCROLLBACK_MIN = 1000;
 const SCROLLBACK_MAX = 100_000;
@@ -69,25 +68,14 @@ export function applySettingsToTerminal(mt: ManagedTerminal, settings: AppSettin
   mt.terminal.options.fontWeightBold = 'bold';
   Object.assign(mt.terminal.options, terminalBehaviorOptions(settings));
 
-  // Manage WebGL addon based on transparency
-  if (needsTransparency && mt.webglAddon) {
-    // WebGL doesn't support alpha — dispose it so canvas renderer takes over
-    mt.webglAddon.dispose();
-    mt.webglAddon = null;
-  } else if (!needsTransparency && !mt.webglAddon) {
-    // Restore WebGL when transparency is no longer needed
+  if (needsTransparency) {
+    releaseTerminalWebgl(mt);
+  } else {
     if (mt.canvasAddon) {
       mt.canvasAddon.dispose();
       mt.canvasAddon = null;
     }
-    try {
-      const webglAddon = new WebglAddon();
-      mt.terminal.loadAddon(webglAddon);
-      mt.webglAddon = webglAddon;
-      if (isMacPlatform) registerWebglContextLossFallback(mt, webglAddon);
-    } catch {
-      // WebGL not available
-    }
+    loadTerminalWebgl(mt);
   }
 
   if (needsTransparency) {

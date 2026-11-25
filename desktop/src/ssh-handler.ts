@@ -67,7 +67,7 @@ export async function handleSSHConnect(config: SSHConnectionConfig): Promise<voi
     hideGalleryView();
     ServerInfoPanel.syncToActiveSession();
     SplitPaneManager.destroy(terminalPanelEl);
-    TerminalRegistry.hideAll(terminalPanelEl);
+    TerminalRegistry.hideAll();
     DrawerManager.hideAll();
     AICapsuleManager.hideAll();
     showSSHConnectingPlaceholder(config);

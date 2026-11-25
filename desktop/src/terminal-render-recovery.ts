@@ -1,4 +1,5 @@
-import type { WebglAddon } from '@xterm/addon-webgl';
+import { WebglAddon } from '@xterm/addon-webgl';
+import { isMacPlatform } from './app-state';
 import type { ManagedTerminal } from './terminal-types';
 
 /**
@@ -49,21 +50,58 @@ export function scheduleTerminalRendererRecovery(terminals: Iterable<ManagedTerm
 }
 
 /**
- * Fall back to xterm's default renderer if a WebGL context cannot be restored.
- * The addon emits onContextLoss only after its own restoration timeout expires.
+ * The xterm 0.18 addon removes its canvas on dispose but leaves the WebGL
+ * context alive until GC. Keep the private access here so a future addon can
+ * replace it with a public API or release the context itself.
  */
-export function registerWebglContextLossFallback(mt: ManagedTerminal, addon: WebglAddon): void {
-  addon.onContextLoss(() => {
-    if (mt.ended || mt.webglAddon !== addon) return;
+function disposeWebgl(addon: WebglAddon): void {
+  const context = (addon as WebglAddon & {
+    _renderer?: { _gl?: WebGL2RenderingContext };
+  })._renderer?._gl;
+  try {
+    addon.dispose();
+  } finally {
+    // Dispose first so deliberate context loss cannot trigger xterm recovery.
+    context?.getExtension('WEBGL_lose_context')?.loseContext();
+  }
+}
 
-    console.warn(`[terminal ${mt.id}] WebGL context lost; falling back to the default renderer`);
-    try {
-      addon.dispose();
-    } catch (error) {
-      console.warn(`[terminal ${mt.id}] failed to dispose lost WebGL renderer`, error);
+export function releaseTerminalWebgl(mt: ManagedTerminal): void {
+  const addon = mt.webglAddon;
+  if (!addon) return;
+  mt.webglAddon = null;
+  try {
+    disposeWebgl(addon);
+  } catch (error) {
+    console.warn(`[terminal ${mt.id}] failed to release WebGL renderer`, error);
+  }
+}
+
+export function loadTerminalWebgl(mt: ManagedTerminal): void {
+  if (mt.webglAddon || mt.canvasAddon || mt.terminal.options.allowTransparency
+    || !mt.terminal.element || !mt.container.isConnected
+    || !mt.container.classList.contains('active')) return;
+
+  let addon: WebglAddon | undefined;
+  try {
+    addon = new WebglAddon();
+    mt.terminal.loadAddon(addon);
+    mt.webglAddon = addon;
+  } catch {
+    // Keep xterm's default renderer when WebGL is unavailable.
+    if (addon) {
+      mt.webglAddon = addon;
+      releaseTerminalWebgl(mt);
     }
-    if (mt.webglAddon === addon) mt.webglAddon = null;
+    return;
+  }
 
-    requestAnimationFrame(() => recoverTerminalRenderer(mt));
-  });
+  if (isMacPlatform) {
+    addon.onContextLoss(() => {
+      if (mt.ended || mt.webglAddon !== addon) return;
+      console.warn(`[terminal ${mt.id}] WebGL context lost; falling back to the default renderer`);
+      releaseTerminalWebgl(mt);
+      requestAnimationFrame(() => recoverTerminalRenderer(mt));
+    });
+  }
 }

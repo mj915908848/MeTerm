@@ -141,6 +141,7 @@ function harness() {
   const scope = {
     clearSSHDirProbe: (sessionId: string) => { probed.push(sessionId); },
     discardThumbnailFeed: (mt: unknown) => { thumbnailFeedsDiscarded.push(mt); },
+    releaseTerminalWebgl: (mt: ReturnType<typeof fakeTerminal>) => { mt.webglAddon.dispose(); },
     clearTimeout,
   };
   const detach = loadMethod<(id: string) => void>('detach', ['sessionId'], scope);

@@ -7,7 +7,6 @@ import { SerializeAddon } from '@xterm/addon-serialize';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { WebglAddon } from '@xterm/addon-webgl';
 import {
   encodeMessage,
   MsgInput,
@@ -45,7 +44,7 @@ import { InlineCompletion } from './cmd-completion';
 import { globalCompletionIndex } from './cmd-completion-data';
 import { setupClickToMoveCursor } from './terminal-click-move';
 import { discardThumbnailFeed, flushThumbnail, thumbnailVersion } from './terminal-thumbnail-feed';
-import { registerWebglContextLossFallback, scheduleTerminalRendererRecovery } from './terminal-render-recovery';
+import { loadTerminalWebgl, releaseTerminalWebgl, scheduleTerminalRendererRecovery } from './terminal-render-recovery';
 import {
   onTerminalSessionDisposed,
   notifyTerminalSessionDisposed,
@@ -460,15 +459,6 @@ class TerminalRegistryClass {
         canvasAddon = null;
       }
     }
-    let webglAddon: WebglAddon | null = null;
-    if (!needsTransparency && !isWindowsPlatform) {
-      try {
-        webglAddon = new WebglAddon();
-        terminal.loadAddon(webglAddon);
-      } catch {
-        webglAddon = null;
-      }
-    }
     let ligaturesAddon: LigaturesAddon | null = null;
     if (this.settings?.enableLigatures) {
       try {
@@ -513,7 +503,7 @@ class TerminalRegistryClass {
       thumbnailTerminal,
       fitAddon,
       canvasAddon,
-      webglAddon,
+      webglAddon: null,
       ligaturesAddon,
       container,
       thumbnailContainer,
@@ -539,10 +529,6 @@ class TerminalRegistryClass {
       _oscMarkerResolvers: new Map(),
       shellState: { phase: 'unknown', lastExitCode: 0, cwd: '', hookInjected: false, lastUserInputAt: 0, lastCommand: '', agentCommand: '', promptRow: -1, promptCol: 0, promptOpen: false },
     };
-
-    if (isMacPlatform && webglAddon) {
-      registerWebglContextLossFallback(mt, webglAddon);
-    }
 
     // OSC 7/7766/7768/9/777 are intercepted by Rust OscFilter and delivered
     // via MSG_OSC_EVENT → wsCallbacks.onOscEvent → handleOscEvents.
@@ -763,6 +749,12 @@ class TerminalRegistryClass {
     connectTerminal(mt, this.wsCallbacks);
   }
 
+  private showTerminal(mt: ManagedTerminal): void {
+    if (mt.container.classList.contains('active')) return;
+    mt.container.classList.add('active');
+    loadTerminalWebgl(mt);
+  }
+
   mountTo(sessionId: string, panel: HTMLElement): void {
     const mt = this.terminals.get(sessionId);
     if (!mt) {
@@ -771,7 +763,7 @@ class TerminalRegistryClass {
     if (mt.container.parentElement !== panel) {
       panel.appendChild(mt.container);
     }
-    mt.container.classList.add('active');
+    this.showTerminal(mt);
     requestAnimationFrame(() => {
       this.scheduleSettleResize(mt);
       mt.terminal.focus();
@@ -787,7 +779,7 @@ class TerminalRegistryClass {
     if (mt.container.parentElement !== paneEl) {
       paneEl.appendChild(mt.container);
     }
-    mt.container.classList.add('active');
+    this.showTerminal(mt);
     requestAnimationFrame(() => {
       this.scheduleSettleResize(mt);
     });
@@ -835,9 +827,11 @@ class TerminalRegistryClass {
     return mt.terminal.getSelection();
   }
 
-  hideAll(_panel: HTMLElement): void {
+  hideAll(keepVisible?: ReadonlySet<string>): void {
     this.terminals.forEach((mt) => {
+      if (keepVisible?.has(mt.id)) return;
       mt.container.classList.remove('active');
+      releaseTerminalWebgl(mt);
     });
   }
 
@@ -846,7 +840,7 @@ class TerminalRegistryClass {
     if (!mt) {
       return;
     }
-    mt.container.classList.add('active');
+    this.showTerminal(mt);
     requestAnimationFrame(() => this.scheduleSettleResize(mt));
   }
 
@@ -1157,7 +1151,7 @@ class TerminalRegistryClass {
     // Dispose xterm instances
     if (mt.ligaturesAddon) mt.ligaturesAddon.dispose();
     if (mt.canvasAddon) mt.canvasAddon.dispose();
-    if (mt.webglAddon) mt.webglAddon.dispose();
+    releaseTerminalWebgl(mt);
     mt._oscMarkerResolvers.clear();
     discardThumbnailFeed(mt);
     mt.thumbnailTerminal?.dispose();
@@ -1374,18 +1368,7 @@ class TerminalRegistryClass {
     const opacityVal = this.settings ? Math.max(20, Math.min(100, this.settings.opacity)) / 100 : 1;
     patchCanvasBgOpacity(mt.container, opacityVal);
 
-    // Load WebGL addon after open (needs rendering context from DOM)
-    // Skip WebGL when transparency is active — canvas renderer handles alpha better
-    if (!isWindowsPlatform && opacityVal >= 1 && !mt.canvasAddon) {
-      try {
-        const webglAddon = new WebglAddon();
-        mt.terminal.loadAddon(webglAddon);
-        mt.webglAddon = webglAddon;
-        if (isMacPlatform) registerWebglContextLossFallback(mt, webglAddon);
-      } catch {
-        // WebGL not available, falls back to canvas renderer
-      }
-    }
+    loadTerminalWebgl(mt);
 
     // Load Ligatures addon
     if (this.settings?.enableLigatures) {
@@ -1525,9 +1508,7 @@ class TerminalRegistryClass {
     if (mt.canvasAddon) {
       mt.canvasAddon.dispose();
     }
-    if (mt.webglAddon) {
-      mt.webglAddon.dispose();
-    }
+    releaseTerminalWebgl(mt);
     if (mt.transport) {
       mt.transport.close();
     }
