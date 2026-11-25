@@ -85,9 +85,12 @@ export async function activateTab(tabId: string): Promise<void> {
   hideHomeView();
   hideGalleryView();
 
-  // Clean up old split DOM
+  const tab = TabManager.tabs.find((t) => t.id === tabId);
+  const leaves = tab ? getAllLeaves(tab.splitRoot) : [];
+  // A split-layout rebuild can remount panes from the same tab. Keep their
+  // renderers while releasing the outgoing tab before allocating new ones.
+  TerminalRegistry.hideAll(new Set(leaves.map((leaf) => leaf.sessionId)));
   SplitPaneManager.destroy(terminalPanelEl);
-  TerminalRegistry.hideAll(terminalPanelEl);
   DrawerManager.hideAll();
   SidebarManager.hideAll();
   AICapsuleManager.hideAll();
@@ -95,10 +98,7 @@ export async function activateTab(tabId: string): Promise<void> {
   hideReclaimButton();
   hideMasterApprovalOverlay();
 
-  const tab = TabManager.tabs.find((t) => t.id === tabId);
   if (!tab) return;
-
-  const leaves = getAllLeaves(tab.splitRoot);
 
   // If session is still pending (SSH connecting), show placeholder
   if (leaves.length === 1 && leaves[0].sessionId.startsWith('pending-')) {
@@ -259,7 +259,7 @@ export function showHomeView(): void {
   const terminalPanelEl = getTerminalPanelEl();
   setViewMode('home');
   SplitPaneManager.destroy(terminalPanelEl);
-  TerminalRegistry.hideAll(terminalPanelEl);
+  TerminalRegistry.hideAll();
   DrawerManager.hideAll();
   SidebarManager.hideAll();
   AICapsuleManager.hideAll();
@@ -293,7 +293,7 @@ export function showGalleryView(): void {
   const terminalPanelEl = getTerminalPanelEl();
   setViewMode('gallery');
   SplitPaneManager.destroy(terminalPanelEl);
-  TerminalRegistry.hideAll(terminalPanelEl);
+  TerminalRegistry.hideAll();
   DrawerManager.hideAll();
   SidebarManager.hideAll();
   AICapsuleManager.hideAll();
