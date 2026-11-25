@@ -6,11 +6,12 @@
 
 **Cross-platform terminal for local, SSH and JumpServer sessions**
 
-[![Build macOS](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-macos.yml?style=flat-square&logo=apple&label=macOS)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-macos.yml)
-[![Build Windows](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-windows.yml?style=flat-square&logo=windows&label=Windows)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-windows.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/mj915908848/MeTerm/ci.yml?style=flat-square&label=CI)](https://github.com/mj915908848/MeTerm/actions/workflows/ci.yml)
+[![Build macOS](https://img.shields.io/github/actions/workflow/status/mj915908848/MeTerm/build-macos.yml?style=flat-square&logo=apple&label=macOS)](https://github.com/mj915908848/MeTerm/actions/workflows/build-macos.yml)
+[![Build Windows](https://img.shields.io/github/actions/workflow/status/mj915908848/MeTerm/build-windows.yml?style=flat-square&logo=windows&label=Windows)](https://github.com/mj915908848/MeTerm/actions/workflows/build-windows.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/paidaxingyo666/MeTerm?style=flat-square&color=brightgreen)](https://github.com/paidaxingyo666/MeTerm/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/paidaxingyo666/MeTerm/total?style=flat-square&color=orange)](https://github.com/paidaxingyo666/MeTerm/releases)
+[![Release](https://img.shields.io/github/v/release/mj915908848/MeTerm?style=flat-square&color=brightgreen)](https://github.com/mj915908848/MeTerm/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/mj915908848/MeTerm/total?style=flat-square&color=orange)](https://github.com/mj915908848/MeTerm/releases)
 
 [中文](./README_CN.md) · [Download](#download) · [Quick Start](#quick-start) · [Docs](#documentation) · [Acknowledgements](#acknowledgements)
 
@@ -98,9 +99,9 @@
 ## Download
 
 <p align="center">
-  <a href="https://github.com/paidaxingyo666/MeTerm/releases/latest"><img src="https://img.shields.io/badge/macOS-Download-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS"></a>
+  <a href="https://github.com/mj915908848/MeTerm/releases/latest"><img src="https://img.shields.io/badge/macOS-Download-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS"></a>
   &nbsp;&nbsp;
-  <a href="https://github.com/paidaxingyo666/MeTerm/releases/latest"><img src="https://img.shields.io/badge/Windows-Download-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows"></a>
+  <a href="https://github.com/mj915908848/MeTerm/releases/latest"><img src="https://img.shields.io/badge/Windows-Download-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows"></a>
 </p>
 
 | Platform | Installer |
@@ -109,16 +110,11 @@
 | macOS (Intel) | `MeTerm_x.x.x_x64.dmg` |
 | Windows (x64) | `MeTerm_x.x.x_x64-setup.exe` |
 
-> [!NOTE]
-> **macOS**: Public v0.2.11 builds use Developer ID signing, notarization, and
-> stapling. Every newer release candidate must independently pass the signing,
-> notarization, and Keychain upgrade checks in `docs/RELEASE_CHECKLIST.md` before
-> distribution; an unsigned local development build is not a release artifact.
-
 ### macOS blocks the first launch
 
+Unless built with paid Apple Developer ID signing and notarization secrets in CI,
 macOS builds published from this repository are **not Developer ID signed and not
-notarized** — that requires a paid Apple Developer Program membership (¥688/year).
+notarized** (that requires a paid Apple Developer Program membership, ¥688/year).
 Gatekeeper therefore blocks the first launch with a "developer cannot be verified"
 message. **The download is not corrupt.** Do the following once and the app behaves
 normally afterwards.
@@ -181,7 +177,7 @@ time; choose **Always Allow** and later upgrades stop asking.
 
 ```bash
 # Clone the repository
-git clone https://github.com/paidaxingyo666/MeTerm.git
+git clone https://github.com/mj915908848/MeTerm.git
 cd MeTerm
 
 # Install desktop frontend dependencies
@@ -294,27 +290,28 @@ Since v0.2.0, MeTerm has migrated from a Go sidecar architecture to a **pure Rus
 ```text
 MeTerm/
 ├── desktop/              # Tauri v2 desktop app
-│   ├── src/              #   Frontend TypeScript (90+ modules)
-│   │   ├── ai-capsule*   #     AI assistant (floating dialog, tools, agent)
-│   │   ├── file-manager  #     SFTP file manager
-│   │   ├── session       #     Session management (Tauri IPC)
-│   │   ├── terminal-*    #     Terminal instances (local/remote)
-│   │   ├── split-pane    #     Split pane layout
+│   ├── src/              #   Frontend TypeScript (220+ modules)
+│   │   ├── ai-*          #     AI assistant (floating dialog, tools, agent, audit log)
+│   │   ├── file-*        #     SFTP file manager & built-in editor
+│   │   ├── session*      #     Session management (Tauri IPC)
+│   │   ├── terminal-*    #     Terminal instances & IPC transport
+│   │   ├── split-pane*   #     Split pane layout
 │   │   └── ...
+│   ├── tests/            #   Frontend unit & regression tests (.test.mts)
 │   └── src-tauri/        #   Rust backend
 │       └── src/
-│           ├── commands/  #     Tauri IPC commands (session, window, menu, AI, etc.)
-│           └── server/    #     In-process backend (terminal IPC + local HTTP)
+│           ├── commands/  #     Tauri IPC commands (terminal Channel, session, window, menu, AI, etc.)
+│           └── server/    #     In-process backend (session manager, PTY/SSH, local HTTP for JumpServer)
 │               ├── session/    # Session state machine & manager
 │               ├── terminal/   # Cross-platform PTY (Unix/Windows/WSL/SSH)
 │               ├── executor/   # Local & SSH executors
 │               ├── jumpserver/ # JumpServer asset browser
-│               ├── dispatch    # Binary protocol message routing
-│               ├── file_handler# File transfer (SFTP adaptive pipeline)
-│               ├── auth        # Bearer token authentication
+│               ├── dispatch/   # Binary protocol message routing
+│               ├── file_handler/ # File transfer (SFTP adaptive pipeline)
+│               ├── auth        # Bearer token & loopback origin authentication
 │               └── ...
-├── control-broker/       # Standalone fail-closed control-plane protocol core (Release scopes blocked)
-└── scripts/              # Build helper scripts
+├── docs/                 # API, protocol & configuration docs
+└── scripts/              # Build & dev signing helper scripts
 ```
 
 ## Tech Stack
@@ -324,8 +321,7 @@ MeTerm/
 | **Backend** | Rust, Axum, Tokio, xpty (cross-platform PTY), russh / russh-sftp (SSH terminal and file transfer) |
 | **Frontend** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
 | **Desktop** | Tauri v2 (Rust + TypeScript), reqwest, keyring |
-| **Control Broker** | Standalone Rust process/protocol core; platform service adapters are not release-ready |
-| **Update** | Manual download from GitHub Releases |
+| **Update** | In-app auto-updater (`tauri-plugin-updater` via GitHub Releases `latest.json` with minisign verification) |
 
 ### Architecture Highlights
 

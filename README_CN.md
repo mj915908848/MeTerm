@@ -6,11 +6,12 @@
 
 **支持本地、SSH 与 JumpServer 会话的跨平台终端**
 
-[![Build macOS](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-macos.yml?style=flat-square&logo=apple&label=macOS)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-macos.yml)
-[![Build Windows](https://img.shields.io/github/actions/workflow/status/paidaxingyo666/MeTerm/build-windows.yml?style=flat-square&logo=windows&label=Windows)](https://github.com/paidaxingyo666/MeTerm/actions/workflows/build-windows.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/mj915908848/MeTerm/ci.yml?style=flat-square&label=CI)](https://github.com/mj915908848/MeTerm/actions/workflows/ci.yml)
+[![Build macOS](https://img.shields.io/github/actions/workflow/status/mj915908848/MeTerm/build-macos.yml?style=flat-square&logo=apple&label=macOS)](https://github.com/mj915908848/MeTerm/actions/workflows/build-macos.yml)
+[![Build Windows](https://img.shields.io/github/actions/workflow/status/mj915908848/MeTerm/build-windows.yml?style=flat-square&logo=windows&label=Windows)](https://github.com/mj915908848/MeTerm/actions/workflows/build-windows.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/paidaxingyo666/MeTerm?style=flat-square&color=brightgreen)](https://github.com/paidaxingyo666/MeTerm/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/paidaxingyo666/MeTerm/total?style=flat-square&color=orange)](https://github.com/paidaxingyo666/MeTerm/releases)
+[![Release](https://img.shields.io/github/v/release/mj915908848/MeTerm?style=flat-square&color=brightgreen)](https://github.com/mj915908848/MeTerm/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/mj915908848/MeTerm/total?style=flat-square&color=orange)](https://github.com/mj915908848/MeTerm/releases)
 
 [English](./README.md) · [下载安装](#下载安装) · [快速开始](#快速开始) · [文档](#文档) · [开源致谢](#开源致谢)
 
@@ -98,9 +99,9 @@
 ## 下载安装
 
 <p align="center">
-  <a href="https://github.com/paidaxingyo666/MeTerm/releases/latest"><img src="https://img.shields.io/badge/macOS-下载-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS 下载"></a>
+  <a href="https://github.com/mj915908848/MeTerm/releases/latest"><img src="https://img.shields.io/badge/macOS-下载-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS 下载"></a>
   &nbsp;&nbsp;
-  <a href="https://github.com/paidaxingyo666/MeTerm/releases/latest"><img src="https://img.shields.io/badge/Windows-下载-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 下载"></a>
+  <a href="https://github.com/mj915908848/MeTerm/releases/latest"><img src="https://img.shields.io/badge/Windows-下载-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Windows 下载"></a>
 </p>
 
 | 平台 | 安装包 |
@@ -109,15 +110,11 @@
 | macOS (Intel) | `MeTerm_x.x.x_x64.dmg` |
 | Windows (x64) | `MeTerm_x.x.x_x64-setup.exe` |
 
-> [!NOTE]
-> **macOS**：公开的 v0.2.11 构建已完成 Developer ID 签名、公证和装订。此后的每个待发布候选仍须
-> 独立通过 `docs/RELEASE_CHECKLIST.md` 中的签名、公证及 Keychain 升级验证；本地未签名开发构建
-> 不能作为发布包。
-
 ### macOS 首次打开被拦下怎么办
 
-本仓库 Release 里的 macOS 包**没有 Apple Developer ID 签名，也没有走公证** —— 那需要每年
-¥688 的付费开发者账号。因此 macOS 的 Gatekeeper 会在首次启动时拦下它，提示"无法验证开发者"。
+若 CI 未配置付费 Apple Developer ID 签名与公证 Secrets，本仓库 Release 里的 macOS 包
+**没有 Apple Developer ID 签名，也没有走公证** —— 那需要每年 ¥688 的付费开发者账号。
+因此 macOS 的 Gatekeeper 会在首次启动时拦下它，提示"无法验证开发者"。
 **这不是包坏了**，按下面的步骤做一次，之后就是普通 App。
 
 **安装**
@@ -171,7 +168,7 @@ SSH 密码存在钥匙串里，每个连接一条。只有 ad-hoc 签名的包�
 
 ```bash
 # 克隆项目
-git clone https://github.com/paidaxingyo666/MeTerm.git
+git clone https://github.com/mj915908848/MeTerm.git
 cd MeTerm
 
 # 安装桌面端前端依赖
@@ -271,27 +268,28 @@ make desktop-build                # Tauri 生产构建（当前平台）
 ```text
 MeTerm/
 ├── desktop/              # Tauri v2 桌面应用
-│   ├── src/              #   前端 TypeScript（90+ 模块）
-│   │   ├── ai-capsule*   #     AI 助手（浮动对话、工具、代理）
-│   │   ├── file-manager  #     SFTP 文件管理器
-│   │   ├── session       #     会话管理（Tauri IPC）
-│   │   ├── terminal-*    #     终端实例（本地/远程）
-│   │   ├── split-pane    #     分屏布局
+│   ├── src/              #   前端 TypeScript（220+ 模块）
+│   │   ├── ai-*          #     AI 助手（浮动对话、工具、代理、审计日志）
+│   │   ├── file-*        #     SFTP 文件管理器与内置编辑器
+│   │   ├── session*      #     会话管理（Tauri IPC）
+│   │   ├── terminal-*    #     终端实例与 IPC 传输层
+│   │   ├── split-pane*   #     分屏布局
 │   │   └── ...
+│   ├── tests/            #   前端单元与回归测试（.test.mts）
 │   └── src-tauri/        #   Rust 后端
 │       └── src/
-│           ├── commands/  #     Tauri IPC 命令（会话、窗口、菜单、AI 等）
-│           └── server/    #     进程内后端（终端 IPC + 本机 HTTP）
+│           ├── commands/  #     Tauri IPC 命令（终端 Channel、会话、窗口、菜单、AI 等）
+│           └── server/    #     进程内后端（会话管理、PTY/SSH、JumpServer 本机 HTTP）
 │               ├── session/    # 会话状态机与管理器
 │               ├── terminal/   # 跨平台 PTY（Unix/Windows/WSL/SSH）
 │               ├── executor/   # 本地与 SSH 执行器
 │               ├── jumpserver/ # JumpServer 资产浏览
-│               ├── dispatch    # 二进制协议消息路由
-│               ├── file_handler# 文件传输（SFTP 自适应流水线）
-│               ├── auth        # Bearer token 认证
+│               ├── dispatch/   # 二进制协议消息路由
+│               ├── file_handler/ # 文件传输（SFTP 自适应流水线）
+│               ├── auth        # Bearer token 与回环来源鉴权
 │               └── ...
-├── control-broker/       # 独立、失败关闭的控制面协议核心（正式 scope 仍阻断）
-└── scripts/              # 构建辅助脚本
+├── docs/                 # API、二进制协议与配置文档
+└── scripts/              # 构建与开发签名辅助脚本
 ```
 
 ## 技术栈
@@ -301,8 +299,7 @@ MeTerm/
 | **后端** | Rust, Axum, Tokio, xpty（跨平台 PTY）, russh / russh-sftp（SSH 终端与文件传输） |
 | **前端** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
 | **桌面** | Tauri v2 (Rust + TypeScript), reqwest, keyring |
-| **控制 Broker** | 独立 Rust 进程/协议核心；三平台系统服务适配尚未达到分发条件 |
-| **更新** | 从 GitHub Releases 手动下载 |
+| **更新** | 应用内自动更新（基于 `tauri-plugin-updater` 与 GitHub Releases `latest.json` minisign 校验） |
 
 ### 架构亮点
 
