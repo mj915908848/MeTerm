@@ -33,10 +33,6 @@
 |:---:|:---:|:---:|
 | ![jumpserver-browser](docs/images/jumpserver-3.png) | ![jumpserver-terminal](docs/images/jumpserver-2.png) | ![jumpserver-files](docs/images/jumpserver-1.png) |
 
-| 画中画 |
-|:---:|
-| ![pip](docs/images/pip.png) |
-
 | AI 助手 | 设置面板 |
 |:---:|:---:|
 | ![ai-capsule](docs/images/ai-capsule.png) | ![settings](docs/images/settings.png) |
@@ -55,7 +51,7 @@
 
 - 多标签页，拖拽排序，拖出标签创建新窗口
 - 分屏布局（水平/竖直分割，各分屏独立会话）
-- 画中画（PiP）浮动窗口
+- 快速切换连接（macOS 用 Cmd+Shift+O，Windows 用 Ctrl+Shift+O）
 
 **终端增强：**
 
@@ -64,10 +60,12 @@
 - 内置编辑器 — 远程文件直接编辑、Markdown 渲染预览、图片预览、自动换行、多格式化支持（JSON/XML/HTML/CSS）
 - Shell Hook 注入 — 基于 OSC 7766/7768 语义提示符：点击移动光标、拖拽选中编辑命令区；无 Hook 时自动回退
 - 命令补全 & tldr 帮助卡片
+- **终端查找** — 在当前窗格的输出中搜索，macOS 用 Cmd+F，Windows 用 Ctrl+Shift+F。支持正则表达式和区分大小写。
+- **命令片段** — 在「设置 › 终端 › 命令片段」管理常用命令，按 Cmd/Ctrl+Shift+S 打开面板，可插入或执行所选片段。
+- **分屏同步输入** — 按 Cmd/Ctrl+Shift+I 开关，把键入和粘贴同步到当前标签的所有窗格。开启时窗格边框会高亮。
 - 主页快速搜索 — 本地命令 + Web 搜索（需自建 [SearXNG](https://github.com/searxng/searxng) 实例）
-- 主题 & 背景 — 8 个终端主题、Neo-Brutalism 主题（标准版 + 圆角变体，11 套预设：赛博朋克 / 深渊 / 薰衣草 / 午夜 / 糖果 / 复古 / 极光 / 德古拉 / 曝光 / 纯黑系列 + 自定义调色板，支持跨窗口实时同步）
+- 主题与背景 — 8 套终端配色，支持自定义背景图片
 - 终端字体增强 — 字重控制、文字锐化、字体大小快捷键（Ctrl/Cmd +/-）
-- 会话录制回放
 
 **网络：**
 
@@ -82,17 +80,17 @@
 - Chrome 风格标签切换快捷键（Ctrl/Cmd 1-9）
 - 窗口置顶按钮
 - 启动时自动新建本地会话（可选）
-- 自动更新 · 国际化（中/英） · 桌面通知
+- 国际化（中/英） · 桌面通知
 
 ---
 
 ## 平台支持
 
-| 平台 | 架构 | 状态 |
+| 平台 | 架构 | 系统要求 |
 |------|------|------|
-| macOS | Apple Silicon (arm64) | ✅ 已支持 |
-| macOS | Intel (x86_64) | ✅ 已支持 |
-| Windows | x64 | ✅ 已支持 |
+| macOS | Apple Silicon (arm64) | macOS 14 或更新版本 |
+| macOS | Intel (x86_64) | macOS 14 或更新版本 |
+| Windows | x64 | [Windows 运行要求](WINDOWS.md#runtime-requirements--运行要求) |
 
 ---
 
@@ -109,6 +107,8 @@
 | macOS (Apple Silicon) | `MeTerm_x.x.x_aarch64.dmg` |
 | macOS (Intel) | `MeTerm_x.x.x_x64.dmg` |
 | Windows (x64) | `MeTerm_x.x.x_x64-setup.exe` |
+
+从 [v0.4.1](https://github.com/mj915908848/MeTerm/releases/tag/v0.4.1) 升级时，请从 Releases 下载新版安装包。应用内更新在 v0.4.1 发布后合入 `main`，需要发布版提供 `latest.json` 清单和已签名的更新包。
 
 ### macOS 首次打开被拦下怎么办
 
@@ -160,11 +160,13 @@ SSH 密码存在钥匙串里，每个连接一条。只有 ad-hoc 签名的包�
 
 | 依赖 | 版本 | 安装方式 |
 |------|------|----------|
-| **Node.js** | 20+ | [nodejs.org](https://nodejs.org/) 或 `brew install node` |
+| **Node.js** | 22（运行测试需 22.6 或更新版本） | [下载 Node.js](https://nodejs.org/) |
 | **Rust** | latest stable | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | **Make** | — | macOS 自带 |
 
 ### 启动开发环境
+
+`make desktop-dev` 和 `make desktop-run-dev` 都要求本机钥匙串里有可用的 Apple Development 签名身份。需要时可在 Xcode 中创建。Windows 的 WSL 开发流程见 [Windows 开发指南](WINDOWS.md#development-and-build-requirements--开发与构建要求)。
 
 ```bash
 # 克隆项目
@@ -172,14 +174,13 @@ git clone https://github.com/mj915908848/MeTerm.git
 cd MeTerm
 
 # 安装桌面端前端依赖
-cd desktop && npm install && cd ..
+cd desktop && npm ci && cd ..
 
 # 启动桌面应用开发模式
 make desktop-dev
 ```
 
-日常开发可用 `make desktop-dev` 热更新。若要测试签名后的调试包、手机控制或开发凭据恢复，
-使用隔离且经过 Apple Development 签名的开发包：
+日常开发可用 `make desktop-dev` 热更新。若要测试签名后的调试包或开发凭据恢复，请启动隔离的 MeTerm Dev。
 
 ```bash
 make desktop-run-dev              # 构建、签名并打开 MeTerm Dev.app（com.meterm.dev）
@@ -191,8 +192,8 @@ make desktop-run-dev              # 构建、签名并打开 MeTerm Dev.app（co
 预期签名证书的 CN 与 Team ID 会在构建时从本机钥匙串解析
 （`scripts/dev-relay-provenance.sh`），并以 `METERM_DEV_SIGNER_CN` /
 `METERM_DEV_TEAM_ID` 注入，因此证书名中的个人 Apple ID 与账号 Team ID 都不会
-写入仓库。两个目标都会自动获取；若缺失，代码仍可编译，但在执行任何高权限操作前
-会直接失败关闭。可先查看将要使用的身份，或指定其他证书：
+写入仓库。两个目标都会在调用 Tauri 前解析签名身份。如果找不到有效身份，命令会提前退出。
+可以用以下命令检查当前身份或指定其他证书。
 
 ```bash
 bash scripts/dev-relay-provenance.sh --check
@@ -299,7 +300,7 @@ MeTerm/
 | **后端** | Rust, Axum, Tokio, xpty（跨平台 PTY）, russh / russh-sftp（SSH 终端与文件传输） |
 | **前端** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
 | **桌面** | Tauri v2 (Rust + TypeScript), reqwest, keyring |
-| **更新** | 应用内自动更新（基于 `tauri-plugin-updater` 与 GitHub Releases `latest.json` minisign 校验） |
+| **更新（`main`）** | `tauri-plugin-updater` 读取 GitHub Releases 的 `latest.json` 并校验更新包签名 |
 
 ### 架构亮点
 
@@ -316,9 +317,10 @@ MeTerm/
 
 | 文档 | 说明 |
 |------|------|
-| [REST API 参考](docs/API.md) | 完整的 API 接口列表和使用示例 |
+| [REST API 参考](docs/API.md) | 回环 HTTP 接口、鉴权及保存连接的 SSH 错误 |
 | [二进制协议](docs/PROTOCOL.md) | 终端二进制协议规范 |
-| [配置参考](docs/CONFIGURATION.md) | 服务端参数、客户端设置、角色系统 |
+| [配置参考](docs/CONFIGURATION.md) | 服务端默认值、客户端设置、会话角色 |
+| [Windows 指南](WINDOWS.md) | Windows 运行要求、开发与打包 |
 
 ---
 

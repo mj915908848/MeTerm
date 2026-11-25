@@ -1,19 +1,18 @@
 # 配置参考 / Configuration Reference
 
-## 服务端参数
+## 进程内服务默认值
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `--port` | `8080` | HTTP 服务端口 |
-| `--bind` | `127.0.0.1` | 绑定地址（`0.0.0.0` 允许局域网访问）|
-| `--ttl` | 5m | 无客户端后会话存活时间 |
-| `--grace` | 60s | 断线后保留身份的时间 |
-| `--ring-buffer` | 256KB | Draining 期间的缓冲区大小 |
-| `--log-dir` | 无 | 启用会话录制的日志目录 |
-| `--parent-pid` | 0 | 父进程 PID（用于 sidecar 生命周期绑定）|
-| `--verbose` | `false` | 启用详细调试日志 |
+桌面应用启动时会创建进程内 Rust 服务。HTTP 固定监听 `127.0.0.1`，优先复用应用数据目录中保存的端口，端口不可用时由系统分配。原 Go sidecar 的命令行参数已停用。终端数据走 Tauri IPC，回环 HTTP 接口见 [REST API 参考](API.md)。
+
+| 会话设置 | 内部默认值 | 说明 |
+|----------|------------|------|
+| 会话存活时间 | 5 分钟 | 最后一个客户端断开后，会话可以等待重连的时间 |
+| 重连宽限 | 60 秒 | 断线后保留客户端身份的时间 |
+| 环形缓冲区容量 | 256 KiB | 每个会话保留的近期 PTY 输出，供重连时回放 |
 
 ## 客户端设置
+
+以下列出部分 `AppSettings` 字段。完整类型及默认值见 [themes.ts](../desktop/src/themes.ts)。
 
 ```typescript
 interface AppSettings {
@@ -25,13 +24,13 @@ interface AppSettings {
   fontFamily: string;              // 字体 key
   enableNerdFont: boolean;         // Nerd Font 开关
   enableLigatures: boolean;        // 编程连字
-  enableBoldFont: boolean;         // 加粗字重
+  fontWeight: number;              // 终端字重 (300/400/500/700)
   encoding: string;                // 编码方式
   language: 'en' | 'zh';           // 界面语言
 
   // 背景
   backgroundImage: string;         // 背景图片路径
-  backgroundImageOpacity: number;  // 背景图片透明度 (%)
+  backgroundImageStrength: number; // 背景图显示强度 (20–100%)
 
   // 窗口与布局
   sshTabTitleMode: 'connection' | 'terminal'; // SSH 标签名称；默认 'terminal'（终端动态标题），'connection' 为可选 / SSH tab title mode; defaults to 'terminal' (dynamic title), 'connection' is opt-in
@@ -45,7 +44,6 @@ interface AppSettings {
   windowMaximized?: boolean;       // 上次保存时主窗口是否处于最大化
   rememberDrawerLayout: boolean;   // 记住抽屉布局
   drawerHeight: number;            // 抽屉高度
-  drawerSidebarWidth: number;      // 抽屉侧栏宽度
   fileManagerFontSize: number;     // 文件管理器字号
 
   // AI
@@ -101,7 +99,7 @@ interface AppSettings {
 - Master 可批准/拒绝请求
 - 支持主动 `MsgMasterReclaim` 收回控制权
 
-## macOS 兼容性影响 / macOS compatibility impact
+## 历史 macOS 兼容性记录 / Historical macOS compatibility notes
 
 `PROJECT_RULES.md` 规则 1 要求：凡影响 macOS 功能、行为、显示与交互的改动，必须先与项目负责人协商并获得明确同意。v0.2.13 / v0.2.14 涉及的 macOS 侧变化如下，合入前需一并确认。
 
@@ -119,7 +117,7 @@ interface AppSettings {
 | 变化 | 默认表现 | 是否改变既有默认 |
 |------|----------|------------------|
 | 标题栏标签宽度分配 | 按每个连接名的实测宽度分配；整排放不下时只收窄过长的标签，仍放不下才降级为横向滚动 | 是，不再把单个标签固定为可用宽度的 1/3，也不再在空间不足时把所有标签等宽压扁 |
-| 「检查更新」的菜单栏 / 托盘 / 关于页三个入口 | 用系统浏览器打开本仓库的 Releases 页面 | 是，取消应用内检查、下载与安装，静默更新能力一并取消 |
+| 「检查更新」的菜单栏 / 托盘 / 关于页三个入口 | v0.2.15 使用系统浏览器打开 Releases 页面 | 是，这是当时的行为。当前更新方式见 [下载安装](../README_CN.md#下载安装) |
 | dmg 的安装方式 | 映像内只有 `MeTerm.app` 与 `Applications` 快捷方式，接收方拖放安装；首次打开由接收方在「系统设置 → 隐私与安全性」放行 | 是，v0.2.15 曾附带 `Open-MeTerm.command` 放行助手，实测会被 Gatekeeper 拦下，已移除 |
 
 尚未在 macOS 实机验收的项（多显示器位置回退、SSH 分屏与重连、正式签名与公证安装包）见 `KNOWN_ISSUES.md` 的 `MAC-001` / `MAC-002`。上表第一项的标签宽度分配，已于 2026-09-20 在 macOS 真机验收通过；未签名分发链路（`MAC-003`）同日改为拖放安装，原先的放行助手方案经真机实测不成立，已废弃。

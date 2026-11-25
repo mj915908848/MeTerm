@@ -50,6 +50,11 @@
 | FileSaveRequest | 0x32 | C→S | 编辑器保存小文件 |
 | FileSearch | 0x33 | C→S | 递归搜索请求 |
 | FileSearchResp | 0x34 | S→C | 流式搜索结果 |
+| OscEvent | 0x40 | S→C | 后端从终端输出中解析出的结构化 OSC 事件 |
+| NotifyEvent | 0x41 | — | 旧通知协议保留值，当前桌面端不发送 |
+
+`OscEvent (0x40)` 的 payload 是 UTF-8 JSON 数组，每个对象用 `t` 标识事件类型。
+例如，当前目录变化时会发送 `[{"t":"cwd","cwd":"/tmp"}]`。
 
 ## 小文件读取与消息上限
 
@@ -59,7 +64,7 @@
 {"path":"/remote/file","max_bytes":2097152}
 ```
 
-- `max_bytes` 可选，新客户端必须按实际内存用途传入正整数上限。新服务端取它与服务端上限的较小值；旧服务端会忽略未知字段。
+- `max_bytes` 可选，客户端应按用途传入正整数上限。当前服务端上限为 **50 MiB**，传入时取两者中的较小值，省略时使用服务端上限。
 - `FileReadResponse (0x31)` payload 为 `[size:u64 BE][content]`，宣称长度必须与实际内容一致。
 - 普通大文件下载必须继续使用 `0x0E/0x0F` 分块协议，不得改用单帧 `0x31`。
 

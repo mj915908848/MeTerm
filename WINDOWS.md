@@ -2,24 +2,21 @@
 
 ## Current Architecture / 当前架构
 
-MeTerm is a native Windows Tauri v2 application. Its Axum HTTP/WebSocket
-server, authentication, SSH implementation and terminal/session management are
-Rust modules linked into the same process. There is no Go backend, sidecar
-executable or WSL server deployment.
+MeTerm is a native Windows Tauri v2 application. Terminal traffic uses Tauri IPC.
+An in-process Axum HTTP server on `127.0.0.1` handles saved SSH connection
+requests and JumpServer operations.
 
-MeTerm 是原生 Windows Tauri v2 应用。Axum HTTP/WebSocket 服务、身份验证、
-SSH 和终端/会话管理都是链接到同一进程的 Rust 模块。当前不存在 Go
-后端、sidecar 可执行文件或部署到 WSL 内的服务。
+MeTerm 是原生 Windows Tauri v2 应用。终端数据走 Tauri IPC。进程内 Axum HTTP
+服务监听 `127.0.0.1`，处理已保存的 SSH 连接请求和 JumpServer 操作。
 
 ```text
-┌─ Windows: MeTerm.exe (one native Tauri/Rust process) ───────────┐
-│  WebView UI                                                    │
-│       ↕ local HTTP/WebSocket                                   │
-│  In-process Rust server (Axum/Tokio/auth/SSH/session/relay)     │
-│       ├─ Native shell: Windows ConPTY                         │
-│       ├─ Optional Linux shell: wsl.exe + WSL PTY helper       │
-│       └─ Remote shell: native Rust SSH                         │
-└─────────────────────────────────────────────────────────────────────┘
+MeTerm.exe (one native Windows process)
+  WebView UI
+       ↕ Tauri IPC / loopback HTTP
+  In-process Rust backend (Axum/Tokio/auth/SSH/session)
+       ├─ Native shell: Windows ConPTY
+       ├─ Optional Linux shell: wsl.exe + WSL PTY helper
+       └─ Remote shell: native Rust SSH
 ```
 
 WSL is optional at runtime and is used only when the user opens a WSL shell.
@@ -66,13 +63,14 @@ Windows 本地目录构建，不代表应用服务运行在 WSL 中。
 
 Install these tools on the **Windows side**:
 
-- Node.js and npm
+- Node.js 22 and npm (Node.js 22.6 or later for frontend tests)
 - Rust stable with the MSVC toolchain
 - Visual Studio 2022 Build Tools with the Desktop development with C++ workload
 - WebView2 Runtime
 
-请在 **Windows 侧**安装：Node.js/npm、Rust stable MSVC toolchain、带“使用
-C++ 的桌面开发”工作负载的 Visual Studio 2022 Build Tools，以及 WebView2 Runtime。
+请在 **Windows 侧**安装 Node.js 22 和 npm（前端测试要求 Node.js 22.6 或更新版本）、
+Rust stable MSVC toolchain、带“使用 C++ 的桌面开发”工作负载的 Visual Studio 2022
+Build Tools，以及 WebView2 Runtime。
 
 The WSL shell that launches the workflow needs `make`, `bash`, `curl`, `unzip`,
 `wslpath` and access to `powershell.exe`. Go is not required.
@@ -95,21 +93,20 @@ make desktop-dev-win
 make desktop-build-win
 ```
 
-两个命令会：
+Both commands perform the following steps.
 
 1. Prepare pinned `conpty.dll` and `OpenConsole.exe` inputs when absent.
-2. Mirror only `desktop/` and `frontend/` into
+2. Mirror `desktop/` into
    `%LOCALAPPDATA%\meterm-rust-dev` on the Windows filesystem. Windows build
    tools do not compile from a WSL UNC path.
-3. Install/build the standalone `frontend/` that the in-process Rust server
-   embeds.
-4. Install/build `desktop/` and run native `tauri dev` or `tauri build`.
+3. Install the desktop dependencies and run native `tauri dev` or `tauri build`.
+
+两个命令都会执行以下步骤。
 
 1. 在缺失时准备锁定版本的 `conpty.dll` 和 `OpenConsole.exe`。
-2. 只把 `desktop/` 和 `frontend/` 同步到 Windows 文件系统上的
+2. 将 `desktop/` 同步到 Windows 文件系统上的
    `%LOCALAPPDATA%\meterm-rust-dev`。Windows 构建工具不从 WSL UNC 路径编译。
-3. 安装并构建会被进程内 Rust 服务嵌入的独立 `frontend/`。
-4. 安装并构建 `desktop/`，执行原生 `tauri dev` 或 `tauri build`。
+3. 安装桌面端依赖，执行原生 `tauri dev` 或 `tauri build`。
 
 Installers produced by `make desktop-build-win` are copied to the Windows
 user's Downloads directory. `desktop/scripts/build-win-local.ps1` is only a
@@ -191,11 +188,12 @@ WSL 脚本会使用 Windows 侧的 `node.exe`、`cargo.exe` 和 MSVC。请执行
 
 ## Release Validation / 发布验证
 
-Local make targets produce development artifacts. Before distribution, use a
-native Windows release runner, code-sign the installer, test SmartScreen and
-the updater signature chain, and complete the Windows real-machine checks in
-`docs/RELEASE_CHECKLIST.md`.
+The [Windows release workflow](.github/workflows/build-windows.yml) builds
+the NSIS installer on a native Windows runner. Before distribution, verify
+the installer signature, SmartScreen, and the updater signature chain where
+applicable. Use a Windows machine to check installation, first launch, and
+the terminal backends covered by the release.
 
-本地 make 目标产生的是开发构建产物。分发前必须在原生 Windows 发布 runner 上
-构建，对安装包签名，测试 SmartScreen 和更新签名链，并完成
-`docs/RELEASE_CHECKLIST.md` 中的 Windows 真机检查。
+[Windows 发布工作流](.github/workflows/build-windows.yml) 在原生 Windows runner 上
+构建 NSIS 安装包。分发前检查安装包签名、SmartScreen，以及适用时的更新签名链。
+在 Windows 真机上验证安装、首次启动和本次发布涉及的终端后端。
