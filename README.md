@@ -33,10 +33,6 @@
 |:---:|:---:|:---:|
 | ![jumpserver-browser](docs/images/jumpserver-3.png) | ![jumpserver-terminal](docs/images/jumpserver-2.png) | ![jumpserver-files](docs/images/jumpserver-1.png) |
 
-| Picture-in-Picture |
-|:---:|
-| ![pip](docs/images/pip.png) |
-
 | AI Assistant | Settings |
 |:---:|:---:|
 | ![ai-capsule](docs/images/ai-capsule.png) | ![settings](docs/images/settings.png) |
@@ -51,11 +47,13 @@
 - **SSH Remote** — Password/key authentication to remote servers
 - **JumpServer** — Browse and connect bastion host assets (tested v2 & v4, supports MFA authentication)
 
+To bring in existing SSH hosts, open **Settings › Connections › Import & Export › Import OpenSSH config** and select your `~/.ssh/config`. The importer previews named hosts with a `User` setting and skips saved names. It accepts `Host`, `HostName`, `User`, `Port`, and one `IdentityFile` per host. Entries that require a jump host or multiple identity files are skipped. `Include` and `Match` are currently unsupported.
+
 **Tab management:**
 
 - Multi-tab with drag-to-reorder, drag tab out to create new window
 - Split pane layout (horizontal/vertical, independent sessions per pane)
-- Picture-in-Picture (PiP) floating window
+- Connection quick switcher (Cmd+Shift+O on macOS, Ctrl+Shift+O on Windows)
 
 **Terminal enhancements:**
 
@@ -64,10 +62,12 @@
 - Built-in Editor — Remote file editing, Markdown preview, image preview, word wrap, multi-format formatting (JSON/XML/HTML/CSS)
 - Shell Hook Integration — OSC 7766/7768 semantic prompts: click-to-move cursor, drag-select-to-edit in command area; automatic fallback when hook is unavailable
 - Command completion & tldr help cards
+- **Find in terminal** — Search the active pane's output with Cmd+F on macOS or Ctrl+Shift+F on Windows. Supports regex and case-sensitive matching.
+- **Command snippets** — Manage reusable commands in Settings › Terminal › Snippets. Open the palette with Cmd/Ctrl+Shift+S to insert or run a snippet.
+- **Synced input across panes** — Toggle with Cmd/Ctrl+Shift+I to send typing and pastes to all panes in the current tab. Highlighted borders show when it is active.
 - Home quick search — Local commands + web search (requires self-hosted [SearXNG](https://github.com/searxng/searxng))
-- Themes & Backgrounds — 8 terminal themes, Neo-Brutalism theme (standard + rounded variants, 11 presets: Cyberpunk / Abyss / Lavender / Midnight / Candy / Retro / Aurora / Dracula / Exposure / Pure Black series + custom palette with real-time cross-window sync)
+- Themes & Backgrounds — 8 terminal color themes and customizable background images
 - Terminal font enhancements — Font weight control, text sharpening, font size shortcuts (Ctrl/Cmd +/-)
-- Session recording & replay
 
 **Networking:**
 
@@ -82,17 +82,17 @@
 - Chrome-style tab switching shortcuts (Ctrl/Cmd 1-9)
 - Window always-on-top pin button
 - Auto-create local session on startup (optional)
-- Auto updates · Internationalization (EN/ZH) · Desktop notifications
+- Internationalization (EN/ZH) · Desktop notifications
 
 ---
 
 ## Platform Support
 
-| Platform | Architecture | Status |
-|----------|-------------|--------|
-| macOS | Apple Silicon (arm64) | ✅ Supported |
-| macOS | Intel (x86_64) | ✅ Supported |
-| Windows | x64 | ✅ Supported |
+| Platform | Architecture | Requirements |
+|----------|-------------|--------------|
+| macOS | Apple Silicon (arm64) | macOS 14 or later |
+| macOS | Intel (x86_64) | macOS 14 or later |
+| Windows | x64 | [Windows requirements](WINDOWS.md#runtime-requirements--运行要求) |
 
 ---
 
@@ -109,6 +109,8 @@
 | macOS (Apple Silicon) | `MeTerm_x.x.x_aarch64.dmg` |
 | macOS (Intel) | `MeTerm_x.x.x_x64.dmg` |
 | Windows (x64) | `MeTerm_x.x.x_x64-setup.exe` |
+
+To upgrade from [v0.4.1](https://github.com/mj915908848/MeTerm/releases/tag/v0.4.1), download the installer from Releases. In-app updates were added to `main` after v0.4.1 and require a release with a published `latest.json` manifest and signed update packages.
 
 ### macOS blocks the first launch
 
@@ -169,11 +171,13 @@ time; choose **Always Allow** and later upgrades stop asking.
 
 | Dependency | Version | Installation |
 |------------|---------|-------------|
-| **Node.js** | 20+ | [nodejs.org](https://nodejs.org/) or `brew install node` |
+| **Node.js** | 22 (22.6 or later for tests) | [Download Node.js](https://nodejs.org/) |
 | **Rust** | latest stable | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | **Make** | — | macOS built-in |
 
 ### Development Setup
+
+Both `make desktop-dev` and `make desktop-run-dev` require a usable Apple Development signing identity in the local Keychain. Create one in Xcode if needed. Use [the Windows development guide](WINDOWS.md#development-and-build-requirements--开发与构建要求) for the WSL-based workflow.
 
 ```bash
 # Clone the repository
@@ -181,15 +185,14 @@ git clone https://github.com/mj915908848/MeTerm.git
 cd MeTerm
 
 # Install desktop frontend dependencies
-cd desktop && npm install && cd ..
+cd desktop && npm ci && cd ..
 
 # Start desktop app in dev mode
 make desktop-dev
 ```
 
-For local development, use `make desktop-dev` for hot reload. To test the
-signed debug bundle, mobile control, or development credential recovery, use
-the isolated Apple Development-signed bundle:
+Use `make desktop-dev` for hot reload. To test the signed debug bundle or
+development credential recovery, launch the isolated MeTerm Dev app:
 
 ```bash
 make desktop-run-dev              # Builds/signs and opens MeTerm Dev.app (com.meterm.dev)
@@ -203,9 +206,9 @@ The expected signer common name and team ID are resolved from the local
 keychain at build time (`scripts/dev-relay-provenance.sh`) and injected as
 `METERM_DEV_SIGNER_CN` / `METERM_DEV_TEAM_ID`, so neither the personal Apple ID
 embedded in the certificate name nor the account's team ID is committed to the
-repository. Both targets derive them automatically; a build without them
-compiles but fails closed before any privileged action. To inspect what will be
-used, or to point at a different certificate:
+repository. Both targets resolve the signing identity before calling Tauri
+and stop if it is unavailable. To check the selected identity or specify a
+different certificate, use the following commands.
 
 ```bash
 bash scripts/dev-relay-provenance.sh --check
@@ -321,7 +324,7 @@ MeTerm/
 | **Backend** | Rust, Axum, Tokio, xpty (cross-platform PTY), russh / russh-sftp (SSH terminal and file transfer) |
 | **Frontend** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
 | **Desktop** | Tauri v2 (Rust + TypeScript), reqwest, keyring |
-| **Update** | In-app auto-updater (`tauri-plugin-updater` via GitHub Releases `latest.json` with minisign verification) |
+| **Update (`main`)** | `tauri-plugin-updater` reads GitHub Releases `latest.json` and verifies update package signatures |
 
 ### Architecture Highlights
 
@@ -338,9 +341,10 @@ MeTerm/
 
 | Document | Description |
 |----------|-------------|
-| [REST API Reference](docs/API.md) | Complete API endpoints and usage examples |
+| [REST API Reference](docs/API.md) | Loopback HTTP routes, authentication, and saved SSH connection errors |
 | [Binary Protocol](docs/PROTOCOL.md) | Terminal binary protocol spec |
-| [Configuration](docs/CONFIGURATION.md) | Server parameters, client settings, role system |
+| [Configuration](docs/CONFIGURATION.md) | Server defaults, client settings, and session roles |
+| [Windows Guide](WINDOWS.md) | Windows requirements, development, and packaging |
 
 ---
 

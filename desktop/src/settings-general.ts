@@ -12,6 +12,7 @@ import { createGroup, createPage, switchRow, SETTINGS_ICONS, type SettingsPage }
 import { createCommandAssistRows } from './settings-command-assist';
 import { createTerminalInputRows } from './settings-terminal-input';
 import { createSnippetRows } from './settings-snippets';
+import { createOpenSshImportButton } from './settings-ssh-config';
 // emit removed — palette now syncs through update() → saveSettings → settings-changed
 
 /**
@@ -581,6 +582,16 @@ export function createGeneralPages(
   sshIoSection.appendChild(sshIoStatus);
 
   sshIoSection.classList.add('settings-section-io');
+
+  const sshConfigSection = document.createElement('div');
+  sshConfigSection.className = 'settings-section settings-section-io';
+  const sshConfigLabel = document.createElement('label');
+  sshConfigLabel.textContent = t('sshOpenSshConfig');
+  const sshConfigStatus = document.createElement('div');
+  sshConfigStatus.className = 'settings-ssh-io-status';
+  sshConfigStatus.setAttribute('role', 'status');
+  sshConfigSection.append(sshConfigLabel, createOpenSshImportButton(sshConfigStatus), sshConfigStatus);
+
   const check = (root: HTMLElement, id: string, hintText?: string) => {
     const row = switchRow(root.querySelector<HTMLInputElement>('#' + id));
     return hintText ? hint(row, hintText) : row;
@@ -632,7 +643,7 @@ export function createGeneralPages(
     ]),
     page('connections', t('settingsPageConnections'), SETTINGS_ICONS.connections, [
       createGroup(t('settingsGroupOnConnect'), [check(rememberGroup, 'auto-open-ai-toggle', t('autoOpenAiOnConnectHint')), autoRestoreAiRow]),
-      createGroup(t('settingsGroupImportExport'), [sshIoSection]),
+      createGroup(t('settingsGroupImportExport'), [sshIoSection, sshConfigSection]),
     ]),
   ];
 }
