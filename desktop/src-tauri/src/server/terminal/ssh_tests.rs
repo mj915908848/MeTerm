@@ -24,6 +24,7 @@ fn ssh_config_debug_never_prints_credentials() {
         private_key: "private-key-must-not-print".into(),
         passphrase: "passphrase-must-not-print".into(),
         trusted_fingerprint: "SHA256:test".into(),
+        replace_host_key: false,
         disable_hook: false,
         multiplex_sftp: false,
         proxy_type: "socks5".into(),

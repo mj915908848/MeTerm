@@ -8,6 +8,7 @@
 
 import type { SSHConnectionConfig } from './ssh';
 import {
+  canReplaceSSHHostKey,
   createSSHSession,
   isInlinePrivateKey,
   loadSavedConnections,
@@ -102,6 +103,7 @@ async function postSavedOperation(
   ownerAuthToken: string,
   trustedFingerprint?: string,
   skipShellHook?: boolean,
+  replaceHostKey = false,
 ): Promise<{ response: Response; body: Record<string, unknown> }> {
   const response = await fetch(`http://127.0.0.1:${ownerPort}/api/sessions/ssh/${path}`, {
     method: 'POST',
@@ -112,6 +114,7 @@ async function postSavedOperation(
     body: JSON.stringify({
       id,
       trusted_fingerprint: trustedFingerprint || null,
+      replace_host_key: replaceHostKey,
       skip_shell_hook: skipShellHook ?? null,
     }),
   });
@@ -143,11 +146,12 @@ function hostKeyMismatchMessage(challenge: HostKeyChallenge): string {
     .replace('{keyType}', challenge.key_type);
 }
 
-async function confirmUnknownHost(challenge: HostKeyChallenge): Promise<boolean> {
+async function confirmHostKey(challenge: HostKeyChallenge): Promise<boolean> {
   return showHostKeyConfirmDialog(
     challenge.hostname,
     challenge.fingerprint,
     challenge.key_type,
+    challenge.error === 'host_key_mismatch',
   );
 }
 
@@ -156,21 +160,22 @@ export async function createSSHSessionForConfig(
   ownerPort: number,
   ownerAuthToken: string,
   trustedFingerprint?: string,
+  replaceHostKey = false,
 ): Promise<string> {
   const id = brokerConnectionId(config);
   if (!id || !shouldUseSavedSessionBroker(config)) {
-    return createSSHSession(config, trustedFingerprint);
+    return createSSHSession(config, trustedFingerprint, replaceHostKey);
   }
 
   const { response, body } = await postSavedOperation(
-    'saved', id, ownerPort, ownerAuthToken, trustedFingerprint, config.skipShellHook,
+    'saved', id, ownerPort, ownerAuthToken, trustedFingerprint, config.skipShellHook, replaceHostKey,
   );
   const challenge = asHostKeyChallenge(body);
-  if (challenge?.error === 'host_key_mismatch') {
+  if (challenge && (trustedFingerprint || (challenge.error === 'host_key_mismatch' && !canReplaceSSHHostKey()))) {
     throw new Error(hostKeyMismatchMessage(challenge));
   }
-  if (challenge?.error === 'host_key_unknown') {
-    if (!(await confirmUnknownHost(challenge))) {
+  if (challenge) {
+    if (!(await confirmHostKey(challenge))) {
       throw new Error('Connection cancelled by user');
     }
     return createSSHSessionForConfig(
@@ -178,6 +183,7 @@ export async function createSSHSessionForConfig(
       ownerPort,
       ownerAuthToken,
       challenge.fingerprint,
+      challenge.error === 'host_key_mismatch',
     );
   }
 
@@ -195,21 +201,22 @@ export async function testSSHConnectionForConfig(
   ownerPort: number,
   ownerAuthToken: string,
   trustedFingerprint?: string,
+  replaceHostKey = false,
 ): Promise<TestResult> {
   const id = brokerConnectionId(config);
   if (!id || !shouldUseSavedSessionBroker(config)) {
-    return testSSHConnection(config, trustedFingerprint);
+    return testSSHConnection(config, trustedFingerprint, replaceHostKey);
   }
 
   const { response, body } = await postSavedOperation(
-    'saved/test', id, ownerPort, ownerAuthToken, trustedFingerprint, config.skipShellHook,
+    'saved/test', id, ownerPort, ownerAuthToken, trustedFingerprint, config.skipShellHook, replaceHostKey,
   );
   const challenge = asHostKeyChallenge(body);
-  if (challenge?.error === 'host_key_mismatch') {
+  if (challenge && (trustedFingerprint || (challenge.error === 'host_key_mismatch' && !canReplaceSSHHostKey()))) {
     return { ok: false, error: hostKeyMismatchMessage(challenge) };
   }
-  if (challenge?.error === 'host_key_unknown') {
-    if (!(await confirmUnknownHost(challenge))) {
+  if (challenge) {
+    if (!(await confirmHostKey(challenge))) {
       return { ok: false, error: 'Connection cancelled by user' };
     }
     return testSSHConnectionForConfig(
@@ -217,6 +224,7 @@ export async function testSSHConnectionForConfig(
       ownerPort,
       ownerAuthToken,
       challenge.fingerprint,
+      challenge.error === 'host_key_mismatch',
     );
   }
 

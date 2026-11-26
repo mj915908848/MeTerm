@@ -88,6 +88,7 @@ async fn failed_ssh_connect_never_registers_a_discoverable_session() {
         private_key: String::new(),
         passphrase: String::new(),
         trusted_fingerprint: String::new(),
+        replace_host_key: false,
         disable_hook: true,
         multiplex_sftp: false,
         proxy_type: String::new(),

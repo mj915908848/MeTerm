@@ -137,7 +137,7 @@ pub(super) fn classify_ssh_connect_error(error: &str) -> (StatusCode, &'static s
 /// 与稳定失败码完全一致。`pub(super)`——只在 `server` 模块内跨文件复用,不对外暴露。
 pub(super) async fn connect_and_start_ssh_session(
     state: Arc<ServerState>,
-    config: super::terminal::ssh::SshConfig,
+    mut config: super::terminal::ssh::SshConfig,
 ) -> (StatusCode, Json<serde_json::Value>) {
     // Do not publish a Session until the complete SSH handshake/auth/channel
     // setup has succeeded.  A pre-registered `created` session is observable by
@@ -169,6 +169,7 @@ pub(super) async fn connect_and_start_ssh_session(
     // Commit the now-usable terminal to the session registry in one short,
     // infallible sequence. Creator/type/config are installed before any client
     // can discover the id.
+    config.replace_host_key = false;
     let pending_session = state.session_manager.prepare_connected_ssh(config.clone());
     let session = pending_session.session();
 

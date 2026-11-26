@@ -515,6 +515,9 @@ export interface Translations {
   sshHostKeyFingerprint: string;
   sshHostKeyTrust: string;
   sshHostKeyMismatchMsg: string;
+  sshHostKeyChangedTitle: string;
+  sshHostKeyChangedMsg: string;
+  sshHostKeyReplace: string;
   kickedOverlayMsg: string;
   closeTab: string;
   enableTerminalNotifications: string;
@@ -1288,6 +1291,9 @@ const translations: Record<Language, Translations> = {
     sshHostKeyType: 'Key Type',
     sshHostKeyFingerprint: 'Fingerprint',
     sshHostKeyTrust: 'Trust & Connect',
+    sshHostKeyChangedTitle: 'SSH host key changed',
+    sshHostKeyChangedMsg: 'The SSH host key for {hostname} has changed. This can happen after a rebuild or could indicate interception. Verify the new fingerprint from the server console or another trusted source before replacing the saved key.',
+    sshHostKeyReplace: 'Trust new key and retry',
     sshHostKeyMismatchMsg: 'WARNING: Host key for {hostname} has CHANGED! This may indicate a man-in-the-middle attack. Key type: {keyType}, Fingerprint: {fingerprint}. Connection refused.',
     kickedOverlayMsg: 'You have been disconnected by the host.',
     closeTab: 'Close Tab',
@@ -2088,6 +2094,9 @@ const translations: Record<Language, Translations> = {
     sshHostKeyType: '密钥类型',
     sshHostKeyFingerprint: '指纹',
     sshHostKeyTrust: '信任并连接',
+    sshHostKeyChangedTitle: 'SSH 主机密钥已变更',
+    sshHostKeyChangedMsg: '{hostname} 的 SSH 主机密钥已变更。主机重建或连接被拦截都可能导致此变化。请通过服务器控制台或其他可信渠道核对新指纹，再更新信任记录。',
+    sshHostKeyReplace: '信任新密钥并重试',
     sshHostKeyMismatchMsg: '警告：主机 {hostname} 的密钥已变更！这可能表示中间人攻击。密钥类型：{keyType}，指纹：{fingerprint}。连接已拒绝。',
     kickedOverlayMsg: '你已被主机断开连接。',
     closeTab: '关闭标签',

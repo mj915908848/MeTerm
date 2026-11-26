@@ -207,6 +207,7 @@ fn build_ssh_config(
         private_key: String::new(),
         passphrase: String::new(),
         trusted_fingerprint: trusted_fingerprint.unwrap_or_default(),
+        replace_host_key: false,
         disable_hook: true,
         multiplex_sftp: true,
         proxy_type: context.binding.proxy_type.clone(),
