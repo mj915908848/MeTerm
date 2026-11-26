@@ -1,8 +1,7 @@
 // ─── AI Tools: save_host_note ──────────────────────────────────
 // Lets the agent keep durable facts about a host for later runs (see
-// ai-host-notes.ts). Every save goes through the approval card unless
-// the user runs in full-auto, because whatever is saved is shown to the
-// model again on every later run against that host.
+// ai-host-notes.ts). Saves require confirmation by default because
+// notes are included in later runs against the same host.
 
 import { ToolHandler, resolvePaneTarget } from './ai-tools-core';
 import {
@@ -39,7 +38,6 @@ export function createSaveHostNoteTool(): ToolHandler {
     },
     isConcurrencySafe: false,
     requiresConfirm: () => true,
-    isDestructive: () => false,
 
     async execute(args, ctx): Promise<string> {
       const note = typeof args.note === 'string' ? args.note.trim() : '';

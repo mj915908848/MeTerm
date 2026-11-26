@@ -98,9 +98,8 @@ export function createWebSearchTool(): ToolHandler {
     isConcurrencySafe: true,
     // The query leaves the machine, so text the model was steered into
     // (terminal output, file contents) could be sent to the search server.
-    // Ask in plan and semi-auto modes; full-auto still runs it.
+    // Ask before sending the query.
     requiresConfirm: () => true,
-    isDestructive: () => false,
   };
 }
 
@@ -129,7 +128,6 @@ export function createCommandHelpTool(): ToolHandler {
     // command_help is a pure lookup → safe to parallelize.
     isConcurrencySafe: true,
     requiresConfirm: () => false,
-    isDestructive: () => false,
   };
 }
 
@@ -167,6 +165,5 @@ export function createReadOutputTool(): ToolHandler {
     // Pure in-memory lookup → safe to parallelize.
     isConcurrencySafe: true,
     requiresConfirm: () => false,
-    isDestructive: () => false,
   };
 }

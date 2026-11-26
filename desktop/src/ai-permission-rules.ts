@@ -1,12 +1,9 @@
 // ─── AI Agent: Permission Modes & Rule Engine ──────────────
-// Modeled on Claude Code's permission system but simplified to fit
-// MeTerm's 3-level trust model.
-//
 //   PermissionMode: coarse-grained default behavior
 //   PermissionRule: fine-grained allow/deny overrides with regex
 //
-// Evaluation order: bypass / plan guards → user rules (with canonical read
-// scope constraints) → mode default → handler heuristic.
+// Explicit rules run before the mode defaults. Canonical read scope
+// can still require approval for an otherwise allowed read.
 // User rules remain first-match-wins.
 
 import type { ToolContext, ToolHandler } from './ai-tools-core';
@@ -14,46 +11,31 @@ import type { TerminalSubmit } from './ai-terminal-submit';
 
 // ─── Permission Modes ──────────────────────────────────────
 
-export type PermissionMode =
-  /** Ask for confirmation on EVERY tool call (corresponds to trust level 0). */
-  | 'ask'
-  /** Auto-approve scoped reads and commands not flagged by the danger heuristic. */
-  | 'acceptSafe'
-  /** Auto-approve unless the call is catastrophic (trust level 2). */
-  | 'acceptAll'
-  /**
-   * Plan mode allows scoped read-only tools and todo planning. Sensitive or
-   * out-of-workspace reads require confirmation; mutating tools are denied.
-   */
-  | 'plan'
-  /**
-   * Bypass mode: no confirmation, no rule check, no denial. Intended for
-   * CI / automation.  Must be opt-in via an explicit setting flag.
-   */
-  | 'bypass';
-
-/** Map the legacy trust-level number to a PermissionMode. */
-export function trustLevelToMode(level: number): PermissionMode {
-  switch (level) {
-    case 0: return 'ask';
-    case 1: return 'acceptSafe';
-    case 2: return 'acceptAll';
-    default: return 'ask';
-  }
-}
+export type PermissionMode = 'ask' | 'acceptSafe' | 'extendedAccess';
 
 /** Every mode, in the order the settings page and the AI bar list them. */
-export const PERMISSION_MODES: readonly PermissionMode[] = ['plan', 'ask', 'acceptSafe', 'acceptAll', 'bypass'];
+export const PERMISSION_MODES: readonly PermissionMode[] = ['ask', 'acceptSafe', 'extendedAccess'];
 
-/**
- * The mode the agent runs under. Users who never picked a mode keep the
- * behaviour of their old trust level; once a mode is stored it wins.
- */
+/** Resolve current settings and migrate older saved permission choices. */
 export function effectivePermissionMode(settings: {
-  aiPermissionMode?: PermissionMode;
+  aiPermissionMode?: unknown;
   aiAgentTrustLevel?: number;
 }): PermissionMode {
-  return settings.aiPermissionMode ?? trustLevelToMode(settings.aiAgentTrustLevel ?? 0);
+  switch (settings.aiPermissionMode) {
+    case 'plan':
+    case 'ask':
+      return 'ask';
+    case 'extendedAccess':
+      return 'extendedAccess';
+    case 'acceptSafe':
+    case 'acceptAll':
+    case 'bypass':
+      return 'acceptSafe';
+    case undefined:
+      return settings.aiAgentTrustLevel === 1 || settings.aiAgentTrustLevel === 2 ? 'acceptSafe' : 'ask';
+    default:
+      return 'ask';
+  }
 }
 
 // ─── Permission Rules ──────────────────────────────────────
@@ -269,7 +251,7 @@ export const DEFAULT_PERMISSION_RULES: PermissionRule[] = [
   // Ask: system config. Denying it only pushed the agent to `sudo tee` via
   // run_command, where the user cannot review the change line by line.
   { tool: 'write_file', match: { path: '/etc/' }, action: 'ask' },
-  // Deny: destructive git operations even in acceptAll mode.
+  // Deny: destructive git operations in automatic mode.
   { tool: 'run_command', match: { command: '^\\s*git\\s+push\\s+.*--force' }, action: 'deny' },
   { tool: 'run_command', match: { command: '^\\s*git\\s+reset\\s+--hard' }, action: 'deny' },
   // Ask: sudo, curl mutations, wget POST, destructive disk ops.
@@ -310,6 +292,11 @@ export function mergePermissionRules(customRules?: PermissionRule[]): Permission
 
 // ─── Rule Evaluator ────────────────────────────────────────
 
+const TOOLS_ALLOWED_WITH_MANUAL_APPROVAL = new Set([
+  'read_file', 'grep_search', 'glob_search', 'list_directory',
+  'read_terminal', 'read_screen', 'read_output', 'command_help', 'todo_write',
+]);
+
 /**
  * Decide whether a tool call is allowed, denied, or needs confirmation.
  *
@@ -332,26 +319,6 @@ export function decidePermission(
   const scopeNeedsConfirmation = readScopeConfirmation
     ?? requiresReadScopeConfirmation(toolName, args, context);
 
-  // Bypass: short-circuit everything.
-  if (mode === 'bypass') return { kind: 'allow' };
-
-  // Plan mode: only read-only tools allowed, everything else silently denied.
-  // Exception: todo_write is a pure in-memory operation (no filesystem / PTY
-  // side effects) and is essential for task planning, so we allow it even
-  // though isConcurrencySafe is false (it's serialized, not read-only).
-  if (mode === 'plan') {
-    if (handler?.isConcurrencySafe || toolName === 'todo_write') {
-      // A read that still wants confirmation (web_search sends its query
-      // off the machine) asks here too.
-      const needsConfirm = scopeNeedsConfirmation || !!handler?.requiresConfirm(args);
-      return needsConfirm ? { kind: 'ask' } : { kind: 'allow' };
-    }
-    return {
-      kind: 'deny',
-      reason: 'Plan mode is active — only read-only tools are allowed. The agent cannot modify anything.',
-    };
-  }
-
   // Walk user rules first (first match wins).
   for (const rule of rules) {
     const compiled = compileRule(rule);
@@ -366,7 +333,7 @@ export function decidePermission(
       if (rule.action === 'allow') {
         // A rule can auto-approve an in-scope read, but cannot grant access
         // beyond the canonical workspace/sensitive-path boundary.
-        if (scopeNeedsConfirmation && mode !== 'acceptAll') return { kind: 'ask' };
+        if (scopeNeedsConfirmation) return { kind: 'ask' };
         return { kind: 'allow' };
       }
       if (rule.action === 'deny') {
@@ -376,27 +343,25 @@ export function decidePermission(
     }
   }
 
-  // Mode defaults (equivalent to legacy trust levels).
-  if (!handler) return { kind: 'ask' }; // unknown tool → always ask
-
-  if (mode === 'acceptSafe' && scopeNeedsConfirmation) {
-    return { kind: 'ask' };
+  if (scopeNeedsConfirmation || !handler) return { kind: 'ask' };
+  if (mode === 'ask' && !TOOLS_ALLOWED_WITH_MANUAL_APPROVAL.has(toolName)) return { kind: 'ask' };
+  if (mode === 'extendedAccess') {
+    if (toolName === 'web_search') return { kind: 'allow' };
+    if (toolName === 'write_file' || toolName === 'edit_file') {
+      const path = typeof args.path === 'string' ? args.path.trim() : '';
+      return path && args.sudo !== true && !hasSensitivePathComponent(path)
+        ? { kind: 'allow' }
+        : { kind: 'ask' };
+    }
   }
-  switch (mode) {
-    case 'ask':
-      return { kind: 'ask' };
-    case 'acceptSafe':
-      return handler.requiresConfirm(args) ? { kind: 'ask' } : { kind: 'allow' };
-    case 'acceptAll':
-      return handler.isDestructive(args) ? { kind: 'ask' } : { kind: 'allow' };
-  }
+  return handler.requiresConfirm(args) ? { kind: 'ask' } : { kind: 'allow' };
 }
 
 /**
  * type_text / press_keys that submit a line at a shell prompt run a
  * command just like run_command, so each submitted line goes through
  * run_command's rules and danger heuristic. A submit whose line content
- * is unknown always asks (outside bypass). The stricter of `base` (the
+ * is unknown always asks. The stricter of `base` (the
  * tool's own decision) and the per-line decisions wins.
  */
 export function decideTerminalSubmitPermission(
@@ -408,7 +373,7 @@ export function decideTerminalSubmitPermission(
   rules: PermissionRule[],
   context?: ToolContext,
 ): PermissionDecision {
-  if (base.kind !== 'allow' || submit.kind === 'none' || mode === 'bypass') return base;
+  if (base.kind !== 'allow' || submit.kind === 'none') return base;
   let result: PermissionDecision = submit.kind === 'unknown' ? { kind: 'ask' } : base;
   for (const command of submit.lines) {
     const variants = commandStartVariants(command);
@@ -457,14 +422,10 @@ export function decidePromptAnswerPermission(
   base: PermissionDecision,
   submit: TerminalSubmit,
   commandHandler: ToolHandler | undefined,
-  mode: PermissionMode,
 ): PermissionDecision {
-  if (base.kind !== 'allow' || submit.kind === 'none' || mode === 'bypass' || !commandHandler) return base;
+  if (base.kind !== 'allow' || submit.kind === 'none' || !commandHandler) return base;
   for (const command of submit.lines) {
-    const risky = mode === 'acceptAll'
-      ? commandHandler.isDestructive({ command })
-      : commandHandler.requiresConfirm({ command });
-    if (risky) return { kind: 'ask' };
+    if (commandHandler.requiresConfirm({ command })) return { kind: 'ask' };
   }
   return base;
 }

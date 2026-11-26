@@ -11,7 +11,6 @@ import {
   stripAnsi,
   truncateOutput,
   isDangerousCommand,
-  isExtremelyDangerous,
   resolvePaneTarget,
   type PaneInfo,
   type ToolContext,
@@ -415,10 +414,6 @@ export function createRunCommandTool(): ToolHandler {
       return isDangerousCommand(args.command as string);
     },
 
-    isDestructive(args) {
-      return isExtremelyDangerous(args.command as string);
-    },
-
     async execute(args, ctx): Promise<string> {
       const cmd = args.command as string;
       const timeout = clampCommandTimeout(args.timeout);
@@ -565,7 +560,6 @@ export function createReadTerminalTool(): ToolHandler {
     // Read-only snapshot of the terminal buffer → safe to run in parallel.
     isConcurrencySafe: true,
     requiresConfirm: () => false,
-    isDestructive: () => false,
 
     async execute(args, ctx): Promise<string> {
       const resolved = resolvePaneTarget(ctx, args.pane);
@@ -620,7 +614,6 @@ export function createTypeTextTool(): ToolHandler {
     },
     isConcurrencySafe: false,
     requiresConfirm: () => false,
-    isDestructive: () => false,
 
     async execute(args, ctx): Promise<string> {
       const text = args.text;
@@ -692,7 +685,6 @@ export function createPressKeysTool(): ToolHandler {
     },
     isConcurrencySafe: false,
     requiresConfirm: () => false,
-    isDestructive: () => false,
 
     async execute(args, ctx): Promise<string> {
       const raw = args.keys;
@@ -809,7 +801,6 @@ export function createWatchTerminalTool(): ToolHandler {
     // watch_terminal blocks the session on live output → not concurrent.
     isConcurrencySafe: false,
     requiresConfirm: () => false,
-    isDestructive: () => false,
 
     async execute(args, ctx): Promise<string> {
       const paneResolved = resolvePaneTarget(ctx, args.pane);
@@ -1116,7 +1107,6 @@ export function createWaitForUserInputTool(): ToolHandler {
     isConcurrencySafe: false,
     // Already safe (read-only wait); never needs confirmation or is destructive.
     requiresConfirm: () => false,
-    isDestructive: () => false,
 
     async execute(args, ctx): Promise<string> {
       const reason = String(args.reason || 'User input required').slice(0, 200);
@@ -1372,7 +1362,6 @@ export function createReadScreenTool(): ToolHandler {
     // Read-only snapshot → safe for parallel execution.
     isConcurrencySafe: true,
     requiresConfirm: () => false,
-    isDestructive: () => false,
 
     async execute(args, ctx): Promise<ToolOutputWithImages> {
       const paneResolved = resolvePaneTarget(ctx, args.pane);

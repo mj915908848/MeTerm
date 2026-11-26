@@ -3,7 +3,7 @@ import { loadSettings, updateSettings } from './themes';
 import { t } from './i18n';
 import { permissionModeIcon } from './ai-icons';
 import { effectivePermissionMode, PERMISSION_MODES } from './ai-permission-rules';
-import { permissionModeLabel } from './ai-permission-labels';
+import { permissionModeDescription, permissionModeLabel } from './ai-permission-labels';
 import { SETTINGS_STORAGE_KEY } from './settings-secrets';
 import type { AICapsuleInstance } from './ai-capsule-types';
 
@@ -57,7 +57,7 @@ export function createTrustSwitcher(
     label.textContent = permissionModeLabel(mode);
     btn.innerHTML = permissionModeIcon(mode, 16);
     btn.appendChild(label);
-    btn.title = `${t('aiPermissionMode')}: ${label.textContent}`;
+    btn.title = `${t('aiPermissionMode')}: ${permissionModeLabel(mode)}`;
     btn.setAttribute('aria-label', btn.title);
     btn.dataset.mode = mode;
   };
@@ -72,11 +72,18 @@ export function createTrustSwitcher(
     const currentMode = effectivePermissionMode(loadSettings());
     dropdown.innerHTML = '';
     for (const mode of PERMISSION_MODES) {
+      const selected = mode === currentMode;
       const item = document.createElement('button');
       item.type = 'button';
-      item.className = `ai-trust-item ${mode === currentMode ? 'active' : ''}`;
-      item.setAttribute('aria-pressed', String(mode === currentMode));
-      item.innerHTML = `${permissionModeIcon(mode, 14)} <span>${escapeHtml(permissionModeLabel(mode))}</span>`;
+      item.className = selected ? 'ai-trust-item active' : 'ai-trust-item';
+      item.dataset.mode = mode;
+      item.setAttribute('aria-pressed', String(selected));
+      item.innerHTML = `${permissionModeIcon(mode, 16)}
+        <span class="ai-trust-item-copy">
+          <span class="ai-trust-item-title">${escapeHtml(permissionModeLabel(mode))}</span>
+          <span class="ai-trust-item-description">${escapeHtml(permissionModeDescription(mode))}</span>
+        </span>
+        <span class="ai-trust-item-check" aria-hidden="true">${selected ? '✓' : ''}</span>`;
       item.addEventListener('click', (e) => {
         e.stopPropagation();
         updateSettings({ aiPermissionMode: mode });

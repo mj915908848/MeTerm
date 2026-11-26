@@ -163,10 +163,8 @@ export interface ToolHandler {
     args: Record<string, unknown>,
     ctx: ToolContext,
   ) => Promise<string | ToolOutputWithImages>;
-  /** Level 1: should this invocation require user confirmation? */
+  /** Whether this invocation requires confirmation in safe automatic mode. */
   requiresConfirm: (args: Record<string, unknown>) => boolean;
-  /** Level 2: is this invocation extremely destructive (always confirm)? */
-  isDestructive: (args: Record<string, unknown>) => boolean;
   /**
    * Whether this tool is safe to run concurrently with other
    * concurrency-safe tools in the same batch.
@@ -370,25 +368,5 @@ export class ToolRegistry {
 
   getDefinitions(): ToolDefinition[] {
     return Array.from(this.tools.values()).map((h) => h.definition);
-  }
-
-  /**
-   * Determine whether a tool invocation needs user confirmation
-   * based on the CURRENT trust level (read at call time).
-   */
-  shouldConfirm(toolName: string, args: Record<string, unknown>, trustLevel: number): boolean {
-    const handler = this.tools.get(toolName);
-    if (!handler) return true; // unknown tool → always confirm
-
-    switch (trustLevel) {
-      case 0:
-        return true; // Level 0: ALL operations need confirmation
-      case 1:
-        return handler.requiresConfirm(args); // Level 1: dangerous ops only
-      case 2:
-        return handler.isDestructive(args); // Level 2: only catastrophic
-      default:
-        return true;
-    }
   }
 }

@@ -181,7 +181,6 @@ export function createTodoWriteTool(): ToolHandler {
     // prompt always reflects the latest authoritative list.
     isConcurrencySafe: false,
     requiresConfirm: () => false,
-    isDestructive: () => false,
 
     async execute(args, ctx: ToolContext): Promise<string> {
       const ref = ctx.todoState;

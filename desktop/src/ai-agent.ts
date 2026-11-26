@@ -1,6 +1,6 @@
 // ─── AI Agent ─────────────────────────────────────────────────────
 // Terminal-aware AI agent with Tool Use + Agentic Loop.
-// Supports three trust levels (manual / semi-auto / full-auto) and
+// Supports manual approval, automatic approval, and extended access, and
 // degrades gracefully to chat-only mode for models without tool support.
 //
 // This file hosts the ToolAgent class itself.  Supporting logic lives
@@ -47,7 +47,6 @@ import { isTerminalInterruption } from './ai-terminal-interruption';
 import { resetAgentNotificationThrottle } from './ai-notifications';
 import {
   decidePermission,
-  requiresReadScopeConfirmation,
   effectivePermissionMode,
   mergePermissionRules,
   decideTerminalSubmitPermission,
@@ -114,7 +113,7 @@ function checkTerminalInput(
     // The answer goes to the program, and only a risky-looking one is
     // escalated; show it as a submitted line only in that case.
     const { submit } = classifyTerminalInput(toolName, args, '');
-    const perm = decidePromptAnswerPermission(base, submit, commandHandler, mode);
+    const perm = decidePromptAnswerPermission(base, submit, commandHandler);
     return perm === base ? none : { perm, submit };
   }
   const { submit } = classifyTerminalInput(toolName, args, state.line);
@@ -1093,7 +1092,9 @@ export class ToolAgent {
             });
             continue;
           }
-          const readScopeConfirmation = readScopePreflight?.kind === 'confirmation-required';
+          const readScopeConfirmation = readScopePreflight
+            ? readScopePreflight.kind === 'confirmation-required'
+            : undefined;
 
           // Permission decision via mode + rules + handler heuristic.
           let perm = decidePermission(
@@ -1127,15 +1128,6 @@ export class ToolAgent {
             continue;
           }
           if (perm.kind === 'allow') {
-            const allowScopeBypass = permMode === 'acceptAll'
-              || permMode === 'bypass'
-              || (readScopeConfirmation ?? requiresReadScopeConfirmation(toolCall.function.name, args, toolCtx));
-            rememberAuthorizedReadPath(
-              toolCall.function.name,
-              args,
-              toolCtx,
-              allowScopeBypass ? readScopePreflight?.canonicalPath : undefined,
-            );
             decisions.set(toolCall.id, { kind: 'run', args, recheckTerminal });
             continue;
           }

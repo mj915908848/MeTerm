@@ -78,7 +78,6 @@ export function createListDirectoryTool(): ToolHandler {
     },
     isConcurrencySafe: true,
     requiresConfirm: () => false,
-    isDestructive: () => false,
 
     async execute(args, ctx: ToolContext): Promise<string> {
       const path = String(args.path ?? '').trim();
@@ -199,7 +198,6 @@ export function createGlobSearchTool(): ToolHandler {
     },
     isConcurrencySafe: true,
     requiresConfirm: () => false,
-    isDestructive: () => false,
 
     async execute(args, ctx: ToolContext): Promise<string> {
       const pattern = String(args.pattern ?? '').trim();
@@ -300,7 +298,6 @@ export function createGrepSearchTool(): ToolHandler {
     },
     isConcurrencySafe: true,
     requiresConfirm: () => false,
-    isDestructive: () => false,
 
     async execute(args, ctx: ToolContext): Promise<string> {
       const pattern = String(args.pattern ?? '').trim();

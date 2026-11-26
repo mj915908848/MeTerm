@@ -2,15 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { decidePermission, DEFAULT_PERMISSION_RULES, isLegacyAutoAddedRuleSet, LEGACY_DEFAULT_PERMISSION_RULES, mergePermissionRules, trustLevelToMode } from '../src/ai-permission-rules.ts';
+import { decidePermission, DEFAULT_PERMISSION_RULES, isLegacyAutoAddedRuleSet, LEGACY_DEFAULT_PERMISSION_RULES, mergePermissionRules, effectivePermissionMode } from '../src/ai-permission-rules.ts';
 
 const commandHandler = {
   requiresConfirm: (args: { command: string }) => /\brm\s+-|\bsudo\b/.test(args.command),
-  isDestructive: () => false,
 } as any;
 
 function decision(command: string) {
-  return decidePermission('run_command', { command }, commandHandler, trustLevelToMode(1), DEFAULT_PERMISSION_RULES);
+  return decidePermission('run_command', { command }, commandHandler, effectivePermissionMode({ aiAgentTrustLevel: 1 }), DEFAULT_PERMISSION_RULES);
 }
 
 test('semi-auto restores the legacy command heuristic for non-dangerous commands', () => {
@@ -35,22 +34,37 @@ test('explicit permission rules still take precedence over semi-auto defaults', 
   assert.deepEqual(decidePermission('run_command', { command: 'pwd' }, commandHandler, 'ask', []), { kind: 'ask' });
 });
 
-test('web_search asks in plan and semi-auto modes, runs in full-auto', () => {
-  // Mirrors createWebSearchTool: a concurrency-safe read whose query leaves the machine.
-  const webSearch = { isConcurrencySafe: true, requiresConfirm: () => true, isDestructive: () => false } as any;
-  const commandHelp = { isConcurrencySafe: true, requiresConfirm: () => false, isDestructive: () => false } as any;
+test('ask-first allows local lookup while web search only auto-runs with extended access', () => {
+  const webSearch = { isConcurrencySafe: true, requiresConfirm: () => true } as any;
+  const commandHelp = { isConcurrencySafe: true, requiresConfirm: () => false } as any;
   const args = { query: 'meterm' };
-  assert.deepEqual(decidePermission('web_search', args, webSearch, 'plan', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
   assert.deepEqual(decidePermission('web_search', args, webSearch, 'acceptSafe', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
-  assert.deepEqual(decidePermission('web_search', args, webSearch, 'acceptAll', DEFAULT_PERMISSION_RULES), { kind: 'allow' });
-  // Other read-only tools are unaffected in plan mode.
-  assert.deepEqual(decidePermission('command_help', { command: 'tar' }, commandHelp, 'plan', DEFAULT_PERMISSION_RULES), { kind: 'allow' });
+  assert.deepEqual(decidePermission('web_search', args, webSearch, 'ask', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
+  assert.deepEqual(decidePermission('web_search', args, webSearch, 'extendedAccess', DEFAULT_PERMISSION_RULES), { kind: 'allow' });
+  assert.deepEqual(decidePermission('command_help', { command: 'tar' }, commandHelp, 'ask', DEFAULT_PERMISSION_RULES), { kind: 'allow' });
+  const localRead = { requiresConfirm: () => false } as any;
+  assert.deepEqual(decidePermission('read_file', { path: 'notes.txt' }, localRead, 'ask', [], undefined, false), { kind: 'allow' });
+});
+
+test('extended access auto-approves routine file edits and retains approval for protected operations', () => {
+  const editFile = { requiresConfirm: () => true } as any;
+  const args = { path: 'notes.txt' };
+  assert.deepEqual(decidePermission('edit_file', args, editFile, 'ask', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
+  assert.deepEqual(decidePermission('edit_file', args, editFile, 'extendedAccess', DEFAULT_PERMISSION_RULES), { kind: 'allow' });
+  assert.deepEqual(decidePermission('write_file', args, editFile, 'extendedAccess', DEFAULT_PERMISSION_RULES), { kind: 'allow' });
+  assert.deepEqual(decidePermission('edit_file', { ...args, sudo: true }, editFile, 'extendedAccess', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
+  assert.deepEqual(decidePermission('edit_file', { path: 'signing.key' }, editFile, 'extendedAccess', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
+  assert.equal(decidePermission('edit_file', { path: '.env' }, editFile, 'extendedAccess', DEFAULT_PERMISSION_RULES).kind, 'deny');
+  assert.deepEqual(decidePermission('run_command', { command: 'rm -rf tmp' }, commandHandler, 'extendedAccess', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
+  assert.deepEqual(decidePermission('read_file', { path: '/outside.txt' }, editFile, 'extendedAccess', [
+    { tool: 'read_file', action: 'allow' },
+  ], undefined, true), { kind: 'ask' });
 });
 
 test('custom permission rules keep defaults active without displaying them as custom rows', () => {
   const rules = mergePermissionRules([{ tool: 'run_command', match: { command: '^pwd$' }, action: 'ask' }]);
   assert.deepEqual(decidePermission('run_command', { command: 'pwd' }, commandHandler, 'acceptSafe', rules), { kind: 'ask' });
-  assert.equal(decidePermission('run_command', { command: 'git reset --hard' }, commandHandler, 'acceptAll', rules).kind, 'deny');
+  assert.equal(decidePermission('run_command', { command: 'git reset --hard' }, commandHandler, 'acceptSafe', rules).kind, 'deny');
 });
 
 test('only the exact rule set generated by the old Add button is recognized for cleanup', () => {
@@ -61,7 +75,7 @@ test('only the exact rule set generated by the old Add button is recognized for 
   assert.equal(mergePermissionRules(generated).some(rule => rule.tool === 'run_command' && !rule.match), false);
 });
 
-test('loading settings removes the exact auto-added rule set from persisted settings', () => {
+test('loading settings migrates removed modes and the exact auto-added rule set', () => {
   const file = readFileSync(new URL('../src/themes.ts', import.meta.url), 'utf8');
   const source = ts.createSourceFile('themes.ts', file, ts.ScriptTarget.Latest, true);
   const fn = source.statements.find((node): node is ts.FunctionDeclaration =>
@@ -71,32 +85,58 @@ test('loading settings removes the exact auto-added rule set from persisted sett
     compilerOptions: { target: ts.ScriptTarget.ES2021, module: ts.ModuleKind.CommonJS },
   }).outputText;
   const generated = [...LEGACY_DEFAULT_PERMISSION_RULES, { tool: 'run_command', action: 'ask' }];
-  let saved: Record<string, unknown> | undefined;
-  const load = new Function('localStorage', 'SETTINGS_KEY', 'DEFAULT_SETTINGS', 'applySettingsSecrets',
-    'saveSettings', 'isLegacyAutoAddedRuleSet', `${code}\nreturn loadSettings;`)(
-    { getItem: () => JSON.stringify({ aiPermissionRules: generated }) },
-    'settings',
-    { aiProviders: [] },
-    (settings: unknown) => settings,
-    (settings: Record<string, unknown>) => { saved = settings; },
-    isLegacyAutoAddedRuleSet,
-  );
-  assert.equal(load().aiPermissionRules, undefined);
-  assert.equal(saved?.aiPermissionRules, undefined);
+  for (const [legacySettings, expected] of [
+    [{ aiPermissionMode: 'plan' }, 'ask'],
+    [{ aiPermissionMode: 'acceptAll' }, 'acceptSafe'],
+    [{ aiPermissionMode: 'bypass' }, 'acceptSafe'],
+    [{ aiAgentTrustLevel: 2 }, 'acceptSafe'],
+  ] as const) {
+    let saved: Record<string, unknown> | undefined;
+    const load = new Function('localStorage', 'SETTINGS_KEY', 'DEFAULT_SETTINGS', 'applySettingsSecrets',
+      'saveSettings', 'isLegacyAutoAddedRuleSet', 'effectivePermissionMode', `${code}\nreturn loadSettings;`)(
+      { getItem: () => JSON.stringify({
+        terminalThemeDark: 'default',
+        ...legacySettings,
+        aiPermissionRules: generated,
+      }) },
+      'settings',
+      { aiProviders: [] },
+      (settings: unknown) => settings,
+      (settings: Record<string, unknown>) => { saved = settings; },
+      isLegacyAutoAddedRuleSet,
+      effectivePermissionMode,
+    );
+    const settings = load();
+    assert.equal(settings.aiPermissionRules, undefined);
+    assert.equal(settings.aiPermissionMode, expected);
+    assert.equal(saved?.aiPermissionRules, undefined);
+    assert.equal(saved?.aiPermissionMode, expected);
+  }
 });
 
 test('write_file rules, including the default .ssh / .env denials and /etc ask, also govern edit_file', () => {
-  const editHandler = { requiresConfirm: () => true, isDestructive: () => false } as any;
-  assert.deepEqual(decidePermission('edit_file', { path: '/etc/nginx/nginx.conf', old_string: 'a', new_string: 'b' }, editHandler, 'acceptAll', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
+  const editHandler = { requiresConfirm: () => true } as any;
+  assert.deepEqual(decidePermission('edit_file', { path: '/etc/nginx/nginx.conf', old_string: 'a', new_string: 'b' }, editHandler, 'acceptSafe', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
   for (const path of ['/root/.ssh/authorized_keys', '/srv/app/.env']) {
-    assert.equal(decidePermission('edit_file', { path, old_string: 'a', new_string: 'b' }, editHandler, 'acceptAll', DEFAULT_PERMISSION_RULES).kind, 'deny', path);
+    assert.equal(decidePermission('edit_file', { path, old_string: 'a', new_string: 'b' }, editHandler, 'acceptSafe', DEFAULT_PERMISSION_RULES).kind, 'deny', path);
   }
-  assert.deepEqual(decidePermission('edit_file', { path: '/srv/app/app.yml', old_string: 'a', new_string: 'b' }, editHandler, 'acceptAll', DEFAULT_PERMISSION_RULES), { kind: 'allow' });
+  assert.deepEqual(decidePermission('edit_file', { path: '/srv/app/app.yml', old_string: 'a', new_string: 'b' }, editHandler, 'acceptSafe', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
 });
 
 test('writes under /etc ask instead of being denied; credential files stay denied', () => {
-  const editFile = { definition: { name: 'edit_file' }, isConcurrencySafe: false, requiresConfirm: () => true, isDestructive: () => true } as never;
+  const editFile = { definition: { name: 'edit_file' }, isConcurrencySafe: false, requiresConfirm: () => true } as never;
   const args = { path: '/etc/nginx/nginx.conf', old_string: 'a', new_string: 'b', sudo: true };
-  assert.deepEqual(decidePermission('edit_file', args, editFile, 'acceptAll', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
-  assert.equal(decidePermission('write_file', { path: '/home/u/.ssh/authorized_keys', content: '' }, editFile, 'acceptAll', DEFAULT_PERMISSION_RULES).kind, 'deny');
+  assert.deepEqual(decidePermission('edit_file', args, editFile, 'acceptSafe', DEFAULT_PERMISSION_RULES), { kind: 'ask' });
+  assert.equal(decidePermission('write_file', { path: '/home/u/.ssh/authorized_keys', content: '' }, editFile, 'acceptSafe', DEFAULT_PERMISSION_RULES).kind, 'deny');
+});
+
+
+test('legacy automatic modes still require approval for reads outside the workspace', () => {
+  const readHandler = { isConcurrencySafe: true, requiresConfirm: () => false } as any;
+  const rules = [{ tool: 'read_file', action: 'allow' as const }];
+  for (const legacy of ['acceptAll', 'bypass']) {
+    const mode = effectivePermissionMode({ aiPermissionMode: legacy });
+    assert.deepEqual(decidePermission('read_file', { path: '/outside.txt' }, readHandler,
+      mode, rules, undefined, true), { kind: 'ask' });
+  }
 });

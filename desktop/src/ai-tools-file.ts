@@ -21,7 +21,6 @@ import { invoke } from '@tauri-apps/api/core';
 import { resolveLocalToolPath, ToolHandler } from './ai-tools-core';
 import { executeViaTerminal } from './ai-tools-shell';
 import { readShellInputState } from './ai-tools-command';
-import { hasSensitivePathComponent } from './ai-permission-rules';
 import { quoteRemotePath, resolveSftpPath } from './ai-remote-path';
 import {
   commitSucceeded, describeSudoFailure, parseTempPath, removeTempCommand,
@@ -191,7 +190,6 @@ export function createReadFileTool(): ToolHandler {
     isConcurrencySafe: true,
     // A root read can expose anything on the host, so it is always confirmed.
     requiresConfirm: (args) => wantsSudo(args),
-    isDestructive: (args) => wantsSudo(args),
 
     async execute(args, ctx): Promise<string> {
       const path = String(args.path ?? '').trim();
@@ -293,11 +291,8 @@ export function createWriteFileTool(): ToolHandler {
     },
     // write_file mutates filesystem → never concurrent.
     isConcurrencySafe: false,
-    // Level 1: write_file always needs confirmation
+    // The permission engine can waive this in Extended access mode.
     requiresConfirm: () => true,
-    // Full-auto skips confirmation, except for credential locations
-    // (~/.ssh, .env, keys, …) where a silent write could plant access.
-    isDestructive: (args) => wantsSudo(args) || hasSensitivePathComponent(String(args.path ?? '')),
 
     async execute(args, ctx): Promise<string> {
       const filePath = String(args.path ?? '').trim();
@@ -409,7 +404,6 @@ export function createEditFileTool(): ToolHandler {
     },
     isConcurrencySafe: false,
     requiresConfirm: () => true,
-    isDestructive: (args) => wantsSudo(args) || hasSensitivePathComponent(String(args.path ?? '')),
 
     async execute(args, ctx): Promise<string> {
       const filePath = String(args.path ?? '').trim();

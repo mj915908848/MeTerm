@@ -513,7 +513,6 @@ export function createUploadFileTool(): ToolHandler {
     },
     isConcurrencySafe: false,
     requiresConfirm: () => true,
-    isDestructive: () => false,
 
     async execute(args, ctx: ToolContext): Promise<string> {
       const localPath = String(args.local_path ?? '').trim();
@@ -619,7 +618,6 @@ export function createDownloadFileTool(): ToolHandler {
     },
     isConcurrencySafe: false,
     requiresConfirm: () => true,
-    isDestructive: () => false,
 
     async execute(args, ctx: ToolContext): Promise<string> {
       const remotePath = String(args.remote_path ?? '').trim();

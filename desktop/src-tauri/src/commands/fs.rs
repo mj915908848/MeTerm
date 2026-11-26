@@ -666,8 +666,8 @@ fn canonical_write_target(path: &std::path::Path) -> Option<std::path::PathBuf> 
 /// Agent writes may go anywhere the user can write, except MeTerm's own
 /// data and config directories: settings, saved connections, chat history
 /// and the audit log live there, and an agent that could rewrite them
-/// could, for example, switch itself to bypass mode or erase its audit
-/// trail. Attachments are the one exception (they are agent inputs).
+/// could change its own approval settings or erase its audit trail.
+/// Attachments are the one exception (they are agent inputs).
 fn ensure_agent_write_allowed(app: &AppHandle, target: &std::path::Path) -> Result<(), String> {
     let Some(canonical) = canonical_write_target(target) else {
         return Err(format!("cannot resolve write target: {}", target.display()));

@@ -8,10 +8,14 @@ const read = (file: string) => readFileSync(new URL('../src/' + file, import.met
 test('a stored permission mode wins; otherwise the old trust level decides', () => {
   assert.equal(effectivePermissionMode({ aiAgentTrustLevel: 0 }), 'ask');
   assert.equal(effectivePermissionMode({ aiAgentTrustLevel: 1 }), 'acceptSafe');
-  assert.equal(effectivePermissionMode({ aiAgentTrustLevel: 2 }), 'acceptAll');
+  assert.equal(effectivePermissionMode({ aiAgentTrustLevel: 2 }), 'acceptSafe');
   assert.equal(effectivePermissionMode({}), 'ask');
-  assert.equal(effectivePermissionMode({ aiPermissionMode: 'plan', aiAgentTrustLevel: 2 }), 'plan');
-  assert.deepEqual([...PERMISSION_MODES].sort(), ['acceptAll', 'acceptSafe', 'ask', 'bypass', 'plan']);
+  assert.equal(effectivePermissionMode({ aiPermissionMode: 'plan', aiAgentTrustLevel: 2 }), 'ask');
+  assert.equal(effectivePermissionMode({ aiPermissionMode: 'acceptAll' }), 'acceptSafe');
+  assert.equal(effectivePermissionMode({ aiPermissionMode: 'bypass' }), 'acceptSafe');
+  assert.equal(effectivePermissionMode({ aiPermissionMode: 'unknown', aiAgentTrustLevel: 2 }), 'ask');
+  assert.equal(effectivePermissionMode({ aiPermissionMode: 'extendedAccess' }), 'extendedAccess');
+  assert.deepEqual(PERMISSION_MODES, ['ask', 'acceptSafe', 'extendedAccess']);
 });
 
 test('the agent, the AI bar shield and Settings all read the same permission mode', () => {

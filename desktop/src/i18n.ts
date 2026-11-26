@@ -360,9 +360,10 @@ export interface Translations {
   aiPermissionMode: string;
   aiPermissionModeAsk: string;
   aiPermissionModeAcceptSafe: string;
-  aiPermissionModeAcceptAll: string;
-  aiPermissionModePlan: string;
-  aiPermissionModeBypass: string;
+  aiPermissionModeExtendedAccess: string;
+  aiPermissionModeAskDescription: string;
+  aiPermissionModeAcceptSafeDescription: string;
+  aiPermissionModeExtendedAccessDescription: string;
   aiPermissionModeHint: string;
   aiPermissionModeChanged: string;
   aiPermissionRules: string;
@@ -1172,12 +1173,13 @@ const translations: Record<Language, Translations> = {
     aiThinkingOn: 'Thinking on',
     aiThinkingOff: 'Thinking off',
     aiPermissionMode: 'Permission mode',
-    aiPermissionModeAsk: 'Ask every time',
-    aiPermissionModeAcceptSafe: 'Auto-run safe actions',
-    aiPermissionModeAcceptAll: 'Auto-run all but dangerous',
-    aiPermissionModePlan: 'Plan (read-only)',
-    aiPermissionModeBypass: 'Bypass (never ask)',
-    aiPermissionModeHint: 'Whether the agent asks before using a tool. The shield button in the AI bar switches the same setting. Plan mode never changes anything; reading sensitive files or files outside the working directory always asks.',
+    aiPermissionModeAsk: 'Ask first',
+    aiPermissionModeAcceptSafe: 'Auto-approve',
+    aiPermissionModeExtendedAccess: 'Extended access',
+    aiPermissionModeAskDescription: 'Ask before changing files, running commands, or going online.',
+    aiPermissionModeAcceptSafeDescription: 'Run routine operations automatically and ask when risk is detected.',
+    aiPermissionModeExtendedAccessDescription: 'Allow routine file edits and web searches automatically.',
+    aiPermissionModeHint: 'MeAgent uses this mode when no explicit rule matches. Reading sensitive files or files outside the working directory requires approval in all modes.',
     aiPermissionModeChanged: 'Permission mode: {mode}',
     aiPermissionRules: 'Permission rules',
     aiPermissionRulesAdd: 'Add rule',
@@ -1984,12 +1986,13 @@ const translations: Record<Language, Translations> = {
     aiThinkingOn: '思考已开启',
     aiThinkingOff: '思考已关闭',
     aiPermissionMode: '权限模式',
-    aiPermissionModeAsk: '每次询问',
-    aiPermissionModeAcceptSafe: '安全操作自动执行',
-    aiPermissionModeAcceptAll: '除危险操作外自动执行',
-    aiPermissionModePlan: '只读计划',
-    aiPermissionModeBypass: '全部放行（不再询问）',
-    aiPermissionModeHint: 'Agent 使用工具前要不要先问你，AI 输入栏上的盾牌按钮切换的也是这一项。只读计划不会做任何修改；读取敏感文件或工作目录外的文件时总会询问。',
+    aiPermissionModeAsk: '请求批准',
+    aiPermissionModeAcceptSafe: '帮我批准',
+    aiPermissionModeExtendedAccess: '扩展访问',
+    aiPermissionModeAskDescription: '修改文件、执行命令或联网前先询问',
+    aiPermissionModeAcceptSafeDescription: '自动执行常规操作，检测到风险时询问',
+    aiPermissionModeExtendedAccessDescription: '普通文件修改和联网搜索可自动执行',
+    aiPermissionModeHint: '未匹配具体规则时，MeAgent 按所选模式执行。读取敏感文件或工作目录外的文件始终需要批准。',
     aiPermissionModeChanged: '权限模式：{mode}',
     aiPermissionRules: '权限规则',
     aiPermissionRulesAdd: '添加规则',

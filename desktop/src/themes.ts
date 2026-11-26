@@ -1,5 +1,5 @@
 import type { AIProviderEntry } from './ai-provider';
-import { isLegacyAutoAddedRuleSet } from './ai-permission-rules';
+import { effectivePermissionMode, isLegacyAutoAddedRuleSet, type PermissionMode } from './ai-permission-rules';
 import {
   SETTINGS_STORAGE_KEY,
   applySettingsSecrets,
@@ -337,7 +337,7 @@ export interface AppSettings {
    */
   aiThinkingBudget: number;
   // AI Agent configuration
-  aiAgentTrustLevel: number;       // 0 = manual, 1 = semi-auto, 2 = full-auto
+  aiAgentTrustLevel: number;       // Compatibility with older saved settings
   aiAgentMaxIterations: number;    // max agentic loop steps (default 30)
   /** Write AI conversations to chat-history/ at all. */
   aiSaveChatHistory: boolean;
@@ -346,17 +346,8 @@ export interface AppSettings {
   /** Set once the old default step limit (15) has been raised to 30. */
   aiStepLimitRaised?: boolean;
   aiContextLinesRaised?: boolean;
-  /**
-   * Permission mode for tool execution. Fine-grained override of
-   * aiAgentTrustLevel; when set, takes precedence. Values:
-   *   'ask'         → every tool needs confirmation
-   *   'acceptSafe'  → auto-approve safe tools, prompt for destructive
-   *   'acceptAll'   → auto-approve unless catastrophic
-   *   'plan'        → read-only tools allowed, write tools denied
-   *   'bypass'      → no prompts (use with care)
-   * Defaults to undefined so existing users fall back to trust level.
-   */
-  aiPermissionMode?: 'ask' | 'acceptSafe' | 'acceptAll' | 'plan' | 'bypass';
+  /** Permission mode for tool execution. Older profiles can fall back to their trust level. */
+  aiPermissionMode?: PermissionMode;
   /** User-defined permission rules — first match wins. Regex-based. */
   aiPermissionRules?: Array<{
     tool: string;
@@ -518,6 +509,14 @@ export function loadSettings(): AppSettings {
       const parsed = JSON.parse(stored);
       let settings = { ...DEFAULT_SETTINGS, ...parsed } as AppSettings;
       let needsSave = false;
+
+      if (parsed.aiPermissionMode !== undefined || parsed.aiAgentTrustLevel === 2) {
+        const mode = effectivePermissionMode(parsed);
+        if (parsed.aiPermissionMode !== mode) {
+          settings.aiPermissionMode = mode;
+          needsSave = true;
+        }
+      }
 
       // The old Add button saved all defaults plus an unconditional ask rule.
       // Remove only that exact generated set; preserve any edited user rules.

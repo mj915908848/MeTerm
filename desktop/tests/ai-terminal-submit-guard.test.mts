@@ -6,16 +6,16 @@ import {
   decidePromptAnswerPermission,
   decideTerminalSubmitPermission,
   DEFAULT_PERMISSION_RULES,
+  effectivePermissionMode,
 } from '../src/ai-permission-rules.ts';
 
 const commandHandler = {
   requiresConfirm: (args: { command: string }) => /\brm\s+-|\bsudo\b/.test(args.command),
-  isDestructive: (args: { command: string }) => /\brm\s+-rf\s+[~/]/.test(args.command),
 } as any;
 
-function decide(toolName: string, args: Record<string, unknown>, line: string | null, mode: any = 'acceptSafe') {
+function decide(toolName: string, args: Record<string, unknown>, line: string | null) {
   const { submit } = classifyTerminalInput(toolName, args, line);
-  return decideTerminalSubmitPermission({ kind: 'allow' }, submit, args.pane, commandHandler, mode, DEFAULT_PERMISSION_RULES);
+  return decideTerminalSubmitPermission({ kind: 'allow' }, submit, args.pane, commandHandler, 'acceptSafe', DEFAULT_PERMISSION_RULES);
 }
 
 test('typing without a submit key never runs anything', () => {
@@ -38,12 +38,12 @@ test('Enter submits what is already on the line, including earlier typed text', 
   assert.deepEqual(decide('press_keys', { keys: 'Ctrl-U Enter' }, 'sudo id'), { kind: 'allow' });
 });
 
-test('deny rules apply to submitted lines even in full-auto mode', () => {
-  const perm = decide('press_keys', { keys: 'Enter' }, 'git reset --hard', 'acceptAll');
+test('deny rules apply to submitted lines in safe automatic mode', () => {
+  const perm = decide('press_keys', { keys: 'Enter' }, 'git reset --hard');
   assert.equal(perm.kind, 'deny');
-  assert.equal(decide('type_text', { text: 'git push origin main --force\n' }, '', 'acceptAll').kind, 'deny');
-  assert.deepEqual(decide('type_text', { text: 'rm -rf ~\n' }, '', 'acceptAll'), { kind: 'ask' });
-  assert.deepEqual(decide('type_text', { text: 'rm -rf build\n' }, '', 'acceptAll'), { kind: 'allow' });
+  assert.equal(decide('type_text', { text: 'git push origin main --force\n' }, '').kind, 'deny');
+  assert.deepEqual(decide('type_text', { text: 'rm -rf ~\n' }, ''), { kind: 'ask' });
+  assert.deepEqual(decide('type_text', { text: 'rm -rf build\n' }, ''), { kind: 'ask' });
 });
 
 test('history recall, completion or an unreadable line make the submit unknown and ask', () => {
@@ -51,24 +51,25 @@ test('history recall, completion or an unreadable line make the submit unknown a
   assert.equal(classifyTerminalInput('press_keys', { keys: 'Tab Enter' }, 'ls ').submit.kind, 'unknown');
   assert.equal(classifyTerminalInput('press_keys', { keys: 'Alt-Enter' }, 'ls').submit.kind, 'unknown');
   assert.deepEqual(decide('press_keys', { keys: 'Enter' }, null), { kind: 'ask' });
-  assert.deepEqual(decide('press_keys', { keys: 'Up Enter' }, '', 'acceptAll'), { kind: 'ask' });
+  assert.deepEqual(decide('press_keys', { keys: 'Up Enter' }, ''), { kind: 'ask' });
   assert.deepEqual(decide('press_keys', { keys: 'Ctrl-O' }, 'ls'), { kind: 'allow' });
   assert.equal(classifyTerminalInput('press_keys', { keys: 'Ctrl-O' }, 'sudo id').submit.kind, 'commands');
 });
 
-test('bypass mode and stricter base decisions are left untouched', () => {
+test('legacy bypass settings no longer skip submit checks or base confirmation', () => {
   const { submit } = classifyTerminalInput('press_keys', { keys: 'Enter' }, null);
-  assert.deepEqual(decideTerminalSubmitPermission({ kind: 'allow' }, submit, undefined, commandHandler, 'bypass', []), { kind: 'allow' });
-  assert.deepEqual(decideTerminalSubmitPermission({ kind: 'ask' }, submit, undefined, commandHandler, 'acceptAll', []), { kind: 'ask' });
+  const mode = effectivePermissionMode({ aiPermissionMode: 'bypass' });
+  assert.deepEqual(decideTerminalSubmitPermission({ kind: 'allow' }, submit, undefined, commandHandler, mode, []), { kind: 'ask' });
+  assert.deepEqual(decideTerminalSubmitPermission({ kind: 'ask' }, submit, undefined, commandHandler, mode, []), { kind: 'ask' });
 });
 
 test('a line read back with the shell prompt in front is still matched by anchored rules', () => {
   // The prompt hook fires before PS1 is drawn, so the line starts with the prompt.
-  assert.equal(decide('press_keys', { keys: 'Enter' }, 'mj@mini MeTerm % git reset --hard', 'acceptAll').kind, 'deny');
-  assert.equal(decide('press_keys', { keys: 'Enter' }, 'user@host:~$ git push origin main --force', 'acceptAll').kind, 'deny');
+  assert.equal(decide('press_keys', { keys: 'Enter' }, 'mj@mini MeTerm % git reset --hard').kind, 'deny');
+  assert.equal(decide('press_keys', { keys: 'Enter' }, 'user@host:~$ git push origin main --force').kind, 'deny');
   assert.deepEqual(decide('press_keys', { keys: 'Enter' }, '❯ sudo id'), { kind: 'ask' });
   assert.deepEqual(decide('press_keys', { keys: 'Enter' }, 'mj@mini MeTerm % git status'), { kind: 'allow' });
-  assert.deepEqual(decide('type_text', { text: 'git reset --hard\n' }, '[mj@mini ~]$ ', 'acceptAll').kind, 'deny');
+  assert.deepEqual(decide('type_text', { text: 'git reset --hard\n' }, '[mj@mini ~]$ ').kind, 'deny');
 });
 
 test('a line with more words than can be checked one by one asks', () => {
@@ -79,12 +80,12 @@ test('a line with more words than can be checked one by one asks', () => {
 });
 
 test('an answer to a program question asks only when it looks like a dangerous command', () => {
-  const answer = (text: string, mode: any = 'acceptSafe') => decidePromptAnswerPermission(
-    { kind: 'allow' }, classifyTerminalInput('type_text', { text }, '').submit, commandHandler, mode);
+  const answer = (text: string) => decidePromptAnswerPermission(
+    { kind: 'allow' }, classifyTerminalInput('type_text', { text }, '').submit, commandHandler);
   assert.deepEqual(answer('y\r'), { kind: 'allow' });
   assert.deepEqual(answer('rm -rf ~'), { kind: 'allow' }); // not submitted
   assert.deepEqual(answer('sudo rm -r /tmp/x\n'), { kind: 'ask' });
-  assert.deepEqual(answer('rm -r build\n', 'acceptAll'), { kind: 'allow' });
-  assert.deepEqual(answer('rm -rf ~\n', 'acceptAll'), { kind: 'ask' });
-  assert.deepEqual(decidePromptAnswerPermission({ kind: 'ask' }, { kind: 'commands', lines: ['ls'] }, commandHandler, 'ask'), { kind: 'ask' });
+  assert.deepEqual(answer('rm -r build\n'), { kind: 'ask' });
+  assert.deepEqual(answer('rm -rf ~\n'), { kind: 'ask' });
+  assert.deepEqual(decidePromptAnswerPermission({ kind: 'ask' }, { kind: 'commands', lines: ['ls'] }, commandHandler), { kind: 'ask' });
 });
