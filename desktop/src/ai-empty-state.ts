@@ -654,6 +654,7 @@ const SMART_TIPS: SmartTip[] = [
     id: 'esc-clear',
     en: 'Press Esc to clear the input box instantly.',
     zh: '按 Esc 可以秒清空输入框。',
+    when: (c) => c.layoutMode === 'bottom',
     weight: 1,
   },
   {
@@ -697,9 +698,10 @@ const SMART_TIPS: SmartTip[] = [
     weight: 1,
   },
   {
-    id: 'minimize-chat',
-    en: 'Clicking the send button with an empty input minimizes the chat — the conversation stays alive.',
-    zh: '输入框为空时点发送按钮会最小化聊天窗口，对话本身还在。',
+    id: 'side-composer-shortcuts',
+    en: 'Press Enter to send or Shift+Enter to start a new line.',
+    zh: '按 Enter 发送，按 Shift+Enter 换行。',
+    when: (c) => c.layoutMode === 'side',
     weight: 1,
   },
 
