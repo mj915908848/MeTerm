@@ -13,9 +13,10 @@ import { TabManager, type Tab } from './tabs';
 import { TerminalRegistry } from './terminal';
 import { DrawerManager } from './drawer';
 import { AICapsuleManager } from './ai-capsule';
+import { previewTerminalSelection } from './ai-terminal-selection';
 import { getAllLeaves, countLeaves, findLeafById } from './split-pane';
 import { StatusBar } from './status-bar';
-import { t } from './i18n';
+import { t, tf } from './i18n';
 import { buildFieldMenu, isFieldInputType } from './editable-menu-model';
 import { invoke } from '@tauri-apps/api/core';
 import { confirm } from '@tauri-apps/plugin-dialog';
@@ -629,6 +630,24 @@ export function showCustomContextMenu(event: MouseEvent): void {
   addItem(t('contextMenuCopy'), () => {
     performCopy();
   }, !hasSelection);
+  const sourcePane = target?.closest<HTMLElement>('.split-pane');
+  const sourceSessionId = sourcePane?.dataset.sessionId;
+  const selectedText = sourceSessionId ? TerminalRegistry.getSessionSelection(sourceSessionId) : '';
+  if (sourceSessionId && selectedText.trim()) {
+    const located = TabManager.locateSession(sourceSessionId);
+    const connection = connectionLabelFor(sourceSessionId);
+    const source = located && located.tab.paneNumbers.size > 1
+      ? `${connection} · ${tf('aiPaneBadge', { n: located.paneNumber })}`
+      : connection;
+    addItem(t('contextMenuAskAi'), () => {
+      previewTerminalSelection(source, selectedText, (prompt) => {
+        if (TabManager.getActiveSessionId() !== sourceSessionId || !TerminalRegistry.get(sourceSessionId)) {
+          return t('aiTerminalSelectionSourceChanged');
+        }
+        return AICapsuleManager.sendTerminalSelection(sourceSessionId, prompt);
+      });
+    });
+  }
   addItem(t('contextMenuPaste'), () => {
     performPaste();
   });

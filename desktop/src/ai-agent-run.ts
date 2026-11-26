@@ -13,6 +13,10 @@ export interface ImageAttachment {
   label?: string;
 }
 
+export interface AgentTurnOptions {
+  includeTerminalOutput?: boolean;
+}
+
 /**
  * Drive a ToolAgent via its callback API and yield AgentEvent values
  * as a pull-based stream. See ToolAgent.run() for the public entry.
@@ -23,6 +27,7 @@ export async function* runAgentAsGenerator(
   sessionId: string,
   signal?: AbortSignal,
   images?: ImageAttachment[],
+  options?: AgentTurnOptions,
 ): AsyncGenerator<AgentEvent, void, void> {
   // Hook the external abort signal into the agent's internal abort.
   const onExternalAbort = () => agent.abort();
@@ -92,7 +97,7 @@ export async function* runAgentAsGenerator(
 
   // Kick off the agent in the background.
   if (userMessage || (images && images.length > 0)) {
-    agent.send(userMessage, sessionId, callbacks, images);
+    agent.send(userMessage, sessionId, callbacks, images, options);
   } else {
     agent.resume(sessionId, callbacks);
   }

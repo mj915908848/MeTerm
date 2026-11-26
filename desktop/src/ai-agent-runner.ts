@@ -12,6 +12,7 @@
 
 import type { ToolAgent, AgentCallbacks } from './ai-agent';
 import type { AgentEvent } from './ai-agent-events';
+import type { AgentTurnOptions, ImageAttachment } from './ai-agent-run';
 
 /**
  * Run the agent via its AsyncGenerator API and dispatch each event
@@ -23,17 +24,14 @@ export function runAgentWithCallbacks(
   userMessage: string,
   sessionId: string,
   callbacks: AgentCallbacks,
-  images?: Array<{
-    mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
-    data: string;
-    label?: string;
-  }>,
+  images?: ImageAttachment[],
+  options?: AgentTurnOptions,
 ): { abort: () => void; done: Promise<void> } {
   const controller = new AbortController();
 
   const done = (async () => {
     try {
-      for await (const ev of agent.run(userMessage, sessionId, controller.signal, images)) {
+      for await (const ev of agent.run(userMessage, sessionId, controller.signal, images, options)) {
         dispatchEvent(ev, callbacks);
       }
     } catch (e) {

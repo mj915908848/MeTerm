@@ -60,6 +60,7 @@ export function appendUserMessage(
   text: string,
   images?: Array<{ mediaType: string; data: string; label?: string }>,
   paneNumber?: number,
+  terminalSelection?: boolean,
 ): void {
   if (!instance.chatPanel) return;
   const container = instance.chatPanel.querySelector('.ai-chat-messages');
@@ -69,6 +70,7 @@ export function appendUserMessage(
 
   const msg = document.createElement('div');
   msg.className = 'ai-msg ai-msg-user';
+  if (terminalSelection) msg.dataset.terminalSelection = 'true';
 
   // Phase 2: pane badge on the user message. Shown only when the
   // tab has >1 pane — a single-pane tab doesn't need the noise.

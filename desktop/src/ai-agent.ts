@@ -35,7 +35,7 @@ import {
 import { buildRestoredMessages } from './ai-agent-restore';
 import type { ConvEntry } from './ai-capsule-types';
 import { type AgentEvent } from './ai-agent-events';
-import { runAgentAsGenerator, type ImageAttachment } from './ai-agent-run';
+import { runAgentAsGenerator, type AgentTurnOptions, type ImageAttachment } from './ai-agent-run';
 import { runTools, type ToolExecResult } from './ai-tool-orchestrator';
 import type { ToolHandler } from './ai-tools';
 import { invoke } from '@tauri-apps/api/core';
@@ -479,11 +479,8 @@ export class ToolAgent {
     userMessage: string,
     sessionId: string,
     callbacks: AgentCallbacks,
-    images?: Array<{
-      mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
-      data: string;
-      label?: string;
-    }>,
+    images?: ImageAttachment[],
+    options?: AgentTurnOptions,
   ): void {
     this.abort();
     this.aborted = false;
@@ -526,7 +523,7 @@ export class ToolAgent {
     }
     void hooks.emitUserPromptSubmit({ sessionId, prompt: userMessage });
 
-    this.runLoop(sessionId, callbacks).catch((e) => {
+    this.runLoop(sessionId, callbacks, options).catch((e) => {
       callbacks.onError(e instanceof Error ? e : new Error(String(e)));
     });
   }
@@ -650,8 +647,9 @@ export class ToolAgent {
     sessionId: string,
     signal?: AbortSignal,
     images?: ImageAttachment[],
+    options?: AgentTurnOptions,
   ): AsyncGenerator<AgentEvent, void, void> {
-    return runAgentAsGenerator(this, userMessage, sessionId, signal, images);
+    return runAgentAsGenerator(this, userMessage, sessionId, signal, images, options);
   }
 
   // ─── Core Agentic Loop ─────────────────────────────────────
@@ -659,6 +657,7 @@ export class ToolAgent {
   private async runLoop(
     sessionId: string,
     callbacks: AgentCallbacks,
+    options: AgentTurnOptions = {},
   ): Promise<void> {
     this.runUsage = null;
     const settings = loadSettings();
@@ -880,6 +879,7 @@ export class ToolAgent {
       const ctx = gatherContext(sessionId, contextLines, {
         targetPaneNumber: meta.targetPaneNumber,
         closureNotices,
+        includeTerminalOutput: options.includeTerminalOutput,
       });
       const hasTools = useTools && toolSpecs.length > 0;
       const systemPrompt = buildSystemPrompt(ctx, hasTools, {
@@ -1422,7 +1422,7 @@ export class ToolAgent {
           );
           this.abortController = null;
           // Restart loop — user message is still in this.messages
-          return this.runLoop(sessionId, callbacks);
+          return this.runLoop(sessionId, callbacks, options);
         }
 
         // ── Context overflow → compress and retry ──
@@ -1532,7 +1532,7 @@ export class ToolAgent {
     // provider; any tool call it still makes is dropped, not run.
     this.todoState.interrupt();
     const summary = await this.summarizeAtStepLimit(
-      sessionId, contextLines, providerConfig, useTools ? toolSpecs : [], callbacks,
+      sessionId, contextLines, providerConfig, useTools ? toolSpecs : [], callbacks, options,
     );
     if (this.aborted) {
       this.abortController = null;
@@ -1609,12 +1609,16 @@ export class ToolAgent {
     providerConfig: AIProviderConfig,
     toolSpecs: ToolSpec[],
     callbacks: AgentCallbacks,
+    options: AgentTurnOptions,
   ): Promise<string> {
     const fallback = stepLimitNotice();
     if (this.aborted) return fallback;
     callbacks.onIterationStart?.();
     const meta = getSessionMeta(sessionId);
-    const ctx = gatherContext(sessionId, contextLines, { targetPaneNumber: meta.targetPaneNumber });
+    const ctx = gatherContext(sessionId, contextLines, {
+      targetPaneNumber: meta.targetPaneNumber,
+      includeTerminalOutput: options.includeTerminalOutput,
+    });
     const systemPrompt = buildSystemPrompt(ctx, toolSpecs.length > 0, {
       todoBlock: this.todoState.renderForSystemPrompt(),
       contextLines,

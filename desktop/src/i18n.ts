@@ -115,6 +115,12 @@ export interface Translations {
   contextMenuSettings: string;
   contextMenuCloseSession: string;
   contextMenuCopy: string;
+  contextMenuAskAi: string;
+  aiTerminalSelectionSource: string;
+  aiTerminalSelectionQuestion: string;
+  aiTerminalSelectionDefaultQuestion: string;
+  aiTerminalSelectionSend: string;
+  aiTerminalSelectionSourceChanged: string;
   contextMenuPaste: string;
   responseSession: string;
   hideToTrayTipTitle: string;
@@ -909,6 +915,12 @@ const translations: Record<Language, Translations> = {
     contextMenuSettings: 'Settings',
     contextMenuCloseSession: 'Close Current Session',
     contextMenuCopy: 'Copy',
+    contextMenuAskAi: 'Ask AI',
+    aiTerminalSelectionSource: 'Selected terminal output from {source}',
+    aiTerminalSelectionQuestion: 'Question',
+    aiTerminalSelectionDefaultQuestion: 'Can you explain this terminal output?',
+    aiTerminalSelectionSend: 'Send to AI',
+    aiTerminalSelectionSourceChanged: 'The source terminal is no longer active. Return to that terminal and select the output again.',
     contextMenuPaste: 'Paste',
     responseSession: 'Response Session',
     hideToTrayTipTitle: 'Hide to tray?',
@@ -1709,6 +1721,12 @@ const translations: Record<Language, Translations> = {
     contextMenuSettings: '设置',
     contextMenuCloseSession: '关闭当前会话',
     contextMenuCopy: '复制',
+    contextMenuAskAi: '问 AI',
+    aiTerminalSelectionSource: '选自终端 {source}',
+    aiTerminalSelectionQuestion: '问题',
+    aiTerminalSelectionDefaultQuestion: '请解释这段终端输出。',
+    aiTerminalSelectionSend: '发送给 AI',
+    aiTerminalSelectionSourceChanged: '来源终端已切换或关闭，请回到原终端并重新选择。',
     contextMenuPaste: '粘贴',
     responseSession: '响应会话',
     hideToTrayTipTitle: '隐藏到系统托盘？',

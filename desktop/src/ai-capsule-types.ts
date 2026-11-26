@@ -179,7 +179,7 @@ export interface AttachedFile {
  *  pane the tool actually operated on. Undefined for legacy / pre-
  *  phase-2 entries or for messages without a pane context. */
 export type ConvEntry =
-  | { type: 'user';      content: string; images?: AttachedImage[]; timestamp: number; paneNumber?: number }
+  | { type: 'user';      content: string; images?: AttachedImage[]; timestamp: number; paneNumber?: number; terminalSelection?: boolean }
   | { type: 'thinking';  content: string; reasoning?: string; timestamp: number }
   | { type: 'assistant'; content: string; timestamp: number }
   | { type: 'system';    content: string; timestamp: number; tone?: 'info' | 'warn' }

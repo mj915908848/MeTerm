@@ -25,6 +25,43 @@ function loadModule(file: string, dependencies: Record<string, any>) {
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const markdown = () => loadModule('ai-capsule-markdown.ts', { './status-bar': { escapeHtml }, './i18n': { t: (key: string) => key } });
 
+test('terminal selection excludes automatic buffer and last-command reads from every pane', () => {
+  const leaves = [{ id: 'left', sessionId: 'a' }, { id: 'right', sessionId: 'b' }];
+  const located = { tab: { focusedPaneId: 'right', paneNumbers: new Map([['left', 1], ['right', 2]]) } };
+  const reads: string[] = [];
+  const { gatherContext } = loadModule('ai-agent-context.ts', {
+    './terminal': { TerminalRegistry: {
+      get: () => ({ shellState: { cwd: '/work', hookInjected: true } }),
+      serializeBuffer: (session: string) => { reads.push(session); return `output from ${session}`; },
+    } },
+    './drawer': { DrawerManager: { getServerInfo: () => ({ username: 'me', host: 'remote', port: 22 }) } },
+    './ai-tools-core': { stripAnsi: (value: string) => value, knownShellType: () => 'bash' },
+    './ai-host-facts': { remoteOsFor: () => 'Linux' }, './ai-env-facts': {},
+    './ai-host-notes': {}, './ai-context-budget': {}, './i18n': {},
+    './terminal-command-block': { lastCommandBlock: () => {
+      reads.push('command');
+      return { command: 'pwd', output: '/work', exitCode: 0, byAgent: false };
+    } },
+    './tabs': { TabManager: { locateSession: (session: string) => session === 'orphan' ? null : located } },
+    './split-pane': { getAllLeaves: () => leaves },
+  });
+
+  for (const session of ['b', 'orphan']) {
+    const context = gatherContext(session, 20, { includeTerminalOutput: false });
+    assert.equal(context.recentOutput, '');
+    for (const pane of context.panes) {
+      assert.equal(pane.recentOutput, '');
+      assert.equal(pane.lastCommand, undefined);
+      assert.equal(pane.cwd, '/work');
+    }
+  }
+  assert.deepEqual(reads, []);
+
+  const normalChat = gatherContext('b', 20);
+  assert.equal(normalChat.recentOutput, 'output from b');
+  assert.deepEqual(normalChat.panes.map((pane: { lastCommand: { command: string } }) => pane.lastCommand.command), ['pwd', 'pwd']);
+});
+
 test('preview uses opaque RGB theme surface, not bare channel variables', () => {
   const css = readFileSync(new URL('../src/styles/ai-chat.css', import.meta.url), 'utf8');
   const preview = css.match(/\.ai-history-preview\s*\{([^}]+)\}/)![1];

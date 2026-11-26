@@ -1525,3 +1525,34 @@ html.vibrancy-active .ai-host-notes-popover {
 .ai-tool-group.collapsed > .ai-tool-group-header .ai-tool-group-chevron { transform: rotate(0deg); }
 .ai-tool-group.collapsed > :not(.ai-tool-group-header) { display: none !important; }
 .ai-tool-group.multi > .ai-tool-card { margin-left: 8px; width: calc(95% - 8px); }
+.ai-terminal-selection {
+  min-width: 0;
+  width: min(540px, 90vw);
+  max-height: 90dvh;
+  box-sizing: border-box;
+  overflow: auto;
+  color: var(--text-primary);
+}
+
+.ai-terminal-selection::backdrop {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.ai-terminal-selection textarea {
+  height: auto;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.ai-terminal-selection-source {
+  overflow-wrap: anywhere;
+}
+
+.ai-terminal-selection .ai-terminal-selection-output {
+  font-family: ui-monospace, monospace;
+}
+
+.ai-terminal-selection-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+}

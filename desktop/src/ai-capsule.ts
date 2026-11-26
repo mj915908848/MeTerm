@@ -9,6 +9,7 @@ import { showToast } from './notify';
 import type { ConversationSummary } from './ai-chat-history-store';
 import { globalCompletionIndex } from './cmd-completion-data';
 import { loadSettings } from './themes';
+import { resolveActiveModel } from './ai-provider';
 import { AgentCallbacks } from './ai-agent';
 import type { HistoryEntry, AICapsuleInstance, ConvEntry, ChatConversation } from './ai-capsule-types';
 import { wireTabStateDelegation } from './ai-capsule-types';
@@ -262,7 +263,7 @@ class AICapsuleManagerClass {
       updateButtonHighlight: (inst) => this.updateButtonHighlight(inst),
       notifyChatToggled: () => document.dispatchEvent(new CustomEvent('ai-chat-toggled')),
       updateChatTitle: (inst, title) => this.updateChatTitle(inst, title),
-      appendUserMessage: (inst, text, images) => this.appendUserMessage(inst, text, images),
+      appendUserMessage: (inst, text, images, terminalSelection) => this.appendUserMessage(inst, text, images, terminalSelection),
       showAgentPulse: (inst) => this.showAgentPulse(inst),
       beginAssistantMessage: (inst) => this.beginAssistantMessage(inst),
       buildAgentCallbacks: (inst) => this.buildAgentCallbacks(inst),
@@ -391,6 +392,19 @@ class AICapsuleManagerClass {
     sendToLLMFromFn(instance, text, this.getChatOpsHost());
   }
 
+  sendTerminalSelection(sessionId: string, prompt: string): string | undefined {
+    const settings = loadSettings();
+    if (!resolveActiveModel(settings.aiProviders, settings.aiActiveModel)) return t('aiNoConfig');
+    if (!this.capsules.has(sessionId)) this.create(sessionId);
+    const instance = this.capsules.get(sessionId)!;
+    if (instance.isStreaming) return t('aiChatSwitchRunningTitle');
+    if (instance.conversationHost && !hostsMatch(instance.conversationHost, currentConversationHost(instance))) {
+      return t('aiChatHostMismatch');
+    }
+    this.closeChatHistory(instance);
+    sendToLLMFromFn(instance, prompt, this.getChatOpsHost(), { terminalSelection: true });
+  }
+
   private async restoreConversation(instance: AICapsuleInstance, conv: ChatConversation): Promise<void> {
     if (hostsMatch(conv.hostBinding, currentConversationHost(instance))) {
       // Already the live conversation of this tab: the listed copy can be older
@@ -447,8 +461,9 @@ class AICapsuleManagerClass {
     instance: AICapsuleInstance,
     text: string,
     images?: Array<{ mediaType: string; data: string; label?: string }>,
+    terminalSelection?: boolean,
   ): void {
-    appendUserMessageFn(instance, text, images);
+    appendUserMessageFn(instance, text, images, undefined, terminalSelection);
   }
 
   private showAgentPulse(instance: AICapsuleInstance): void {

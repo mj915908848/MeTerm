@@ -60,6 +60,7 @@ export interface ChatOpsHost {
     instance: AICapsuleInstance,
     text: string,
     images?: Array<{ mediaType: string; data: string; label?: string }>,
+    terminalSelection?: boolean,
   ): void;
   showAgentPulse(instance: AICapsuleInstance): void;
   beginAssistantMessage(instance: AICapsuleInstance): void;
@@ -124,11 +125,11 @@ function activeChatInput(inst: AICapsuleInstance): HTMLTextAreaElement | null {
   return inst.element.querySelector('.ai-bar-input') as HTMLTextAreaElement | null;
 }
 
-/** Text of the user message a reply answers: the nearest one above it. */
-function questionFor(reply: Element): string {
-  let el = reply.previousElementSibling;
+/** User message a reply answers: the nearest one above its reply group. */
+function questionFor(reply: Element): HTMLElement | null {
+  let el = (reply.closest('.ai-tool-group') ?? reply).previousElementSibling;
   while (el && !el.classList.contains('ai-msg-user')) el = el.previousElementSibling;
-  return el?.querySelector('.ai-msg-content')?.textContent ?? '';
+  return el as HTMLElement | null;
 }
 
 /** Copy / edit / resend / retry buttons under messages (delegated). */
@@ -144,7 +145,8 @@ function bindMessageActions(
     if (!msg) return;
     const inst = currentInstance();
     const action = btn.dataset.aiAction;
-    const text = action === 'retry' ? questionFor(msg) : msg.querySelector('.ai-msg-content')?.textContent ?? '';
+    const question = action === 'retry' ? questionFor(msg) : msg as HTMLElement;
+    const text = question?.querySelector('.ai-msg-content')?.textContent ?? '';
     if (!text) return;
     if (action === 'copy') {
       void import('@tauri-apps/plugin-clipboard-manager').then(({ writeText }) => writeText(text)).then(() => {
@@ -159,7 +161,7 @@ function bindMessageActions(
       input.focus();
       input.setSelectionRange(text.length, text.length);
     } else if ((action === 'resend' || action === 'retry') && !inst.isStreaming) {
-      sendToLLMFrom(inst, text, host);
+      sendToLLMFrom(inst, text, host, { terminalSelection: question?.dataset.terminalSelection === 'true' });
     }
   });
 }
@@ -528,6 +530,7 @@ export function sendToLLMFrom(
   instance: AICapsuleInstance,
   text: string,
   host: ChatOpsHost,
+  { terminalSelection = false }: { terminalSelection?: boolean } = {},
 ): void {
   if (!allowConversationSend(instance)) return;
   // Guard: if the agent is already streaming, inject the message into
@@ -545,8 +548,8 @@ export function sendToLLMFrom(
   // Snapshot pending images before we clear them — they'll be attached
   // to this user turn.  Allow empty text if at least one image or file
   // attachment is queued.
-  const attached = instance.pendingImages.slice();
-  const attachedFiles = instance.pendingAttachments.slice();
+  const attached = terminalSelection ? [] : instance.pendingImages.slice();
+  const attachedFiles = terminalSelection ? [] : instance.pendingAttachments.slice();
   if (!text && attached.length === 0 && attachedFiles.length === 0) return;
 
   const settings = loadSettings();
@@ -566,19 +569,20 @@ export function sendToLLMFrom(
 
   openChat(instance, host);
   announceHostNotes(instance);
-  host.appendUserMessage(instance, text, attached.length > 0 ? attached : undefined);
+  host.appendUserMessage(instance, text, attached.length > 0 ? attached : undefined, terminalSelection);
   instance.messages.push({
     type: 'user',
     content: text,
     images: attached.length > 0 ? attached : undefined,
     timestamp: Date.now(),
     paneNumber: lockedPaneNumber || undefined,
+    ...(terminalSelection ? { terminalSelection } : {}),
   });
-  clearPendingImages(instance);
-  // Clear the strip UI but keep the on-disk files — the agent is
-  // about to consume their paths via its system prompt. Files are
-  // removed only when the conversation is cleared.
-  clearPendingAttachments(instance, /* deleteFiles */ false);
+  if (!terminalSelection) {
+    clearPendingImages(instance);
+    // The agent still needs the attached files on disk for this turn.
+    clearPendingAttachments(instance, /* deleteFiles */ false);
+  }
   // Push the snapshot into the agent so the runLoop's system prompt
   // injects the attachment list on every iteration of THIS turn.
   instance.agent.setPendingAttachments(attachedFiles);
@@ -601,6 +605,7 @@ export function sendToLLMFrom(
   const handle = runAgentWithCallbacks(
     instance.agent, text, instance.sessionId, agentCallbacks,
     attached.length > 0 ? attached : undefined,
+    { includeTerminalOutput: !terminalSelection },
   );
   instance.agentAbort = handle.abort;
   instance.agentDone = handle.done;
@@ -678,6 +683,7 @@ export function restoreConversation(
       if (msg.type === 'user') {
         const el = document.createElement('div');
         el.className = 'ai-msg ai-msg-user';
+        if (msg.terminalSelection) el.dataset.terminalSelection = 'true';
         // Phase 2 pane badge, if this restored message was tagged.
         if (msg.paneNumber && msg.paneNumber > 0) {
           const badge = document.createElement('span');

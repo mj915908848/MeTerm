@@ -58,6 +58,7 @@ To bring in existing SSH hosts, open **Settings › Connections › Import & Exp
 **Terminal enhancements:**
 
 - AI Assistant & Agent — Floating dialog or side panel, supports OpenAI-compatible / Anthropic / Gemini protocols; Agent mode adds multi-pane awareness, file transfer, task planning, structured search, and per-session PTY lock
+- **Ask AI about terminal output** — Select output and choose **Ask AI** from the terminal menu. Check the source and edit the excerpt and question before sending.
 - SFTP File Manager — Breadcrumb navigation, keyboard nav, file search, multi-select, remote copy/move, chmod, bookmarks, speed limit, transfer notifications, drag-and-drop, resume, parallel high-speed transfers via adaptive SFTP pipeline
 - Built-in Editor — Remote file editing, Markdown preview, image preview, word wrap, multi-format formatting (JSON/XML/HTML/CSS)
 - Shell Hook Integration — OSC 7766/7768 semantic prompts: click-to-move cursor, drag-select-to-edit in command area; automatic fallback when hook is unavailable
