@@ -462,7 +462,6 @@ export interface Translations {
   settingsTabAbout: string;
   aboutDescription: string;
   aboutGitHub: string;
-  aboutGitee: string;
   aboutLicense: string;
   aboutCopyright: string;
   aboutCheckUpdate: string;
@@ -1499,7 +1498,6 @@ const translations: Record<Language, Translations> = {
     settingsTabAbout: 'About',
     aboutDescription: 'A lightweight multi-session terminal client.',
     aboutGitHub: 'GitHub',
-    aboutGitee: 'Gitee',
     aboutLicense: 'License',
     aboutCopyright: 'Copyright',
     aboutCheckUpdate: 'Check for Updates',
@@ -2300,7 +2298,6 @@ const translations: Record<Language, Translations> = {
     settingsTabAbout: '关于',
     aboutDescription: '轻量的多会话终端客户端。',
     aboutGitHub: 'GitHub',
-    aboutGitee: 'Gitee',
     aboutLicense: '许可协议',
     aboutCopyright: '版权',
     aboutCheckUpdate: '检查更新',

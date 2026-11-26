@@ -2,9 +2,7 @@ import { t } from './i18n';
 import { getVersion } from '@tauri-apps/api/app';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { checkUpdateNow } from './updater';
-
-const GITHUB_URL = 'https://github.com/paidaxingyo666/MeTerm';
-const GITEE_URL = 'https://gitee.com/paidaxingy666/me-term';
+import { PROJECT_GITHUB_URL, PROJECT_REPOSITORY } from './project-links';
 
 export function createAboutTab(): HTMLDivElement {
   const tab = document.createElement('div');
@@ -73,13 +71,8 @@ export function createAboutTab(): HTMLDivElement {
   const items: Array<{ label: string; value: string; action?: () => void }> = [
     {
       label: t('aboutGitHub'),
-      value: 'paidaxingyo666/MeTerm',
-      action: () => void openUrl(GITHUB_URL),
-    },
-    {
-      label: t('aboutGitee'),
-      value: 'paidaxingy666/me-term',
-      action: () => void openUrl(GITEE_URL),
+      value: PROJECT_REPOSITORY,
+      action: () => void openUrl(PROJECT_GITHUB_URL),
     },
     { label: t('aboutLicense'), value: 'MIT' },
     { label: t('aboutCopyright'), value: `© ${new Date().getFullYear()} MeTerm` },

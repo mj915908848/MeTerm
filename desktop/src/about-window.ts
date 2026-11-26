@@ -11,9 +11,7 @@ import { listen } from '@tauri-apps/api/event';
 import { loadSettings, resolveIsDark } from './themes';
 import { initLanguage, setLanguage, t } from './i18n';
 import { applyVibrancy } from './appearance';
-
-const GITHUB_URL = 'https://github.com/paidaxingyo666/MeTerm';
-const GITEE_URL = 'https://gitee.com/paidaxingy666/me-term';
+import { PROJECT_GITHUB_URL, THIRD_PARTY_LICENSES_URL } from './project-links';
 
 function resolveThemeAttr(colorScheme: string): string {
   if (colorScheme === 'light') return 'light';
@@ -49,11 +47,9 @@ export function initAboutWindow(): void {
     <div class="about-version"></div>
     <div class="about-body">${t('aboutDialogBody')}</div>
     <div class="about-links">
-      <a class="about-link" href="#" data-url="${GITHUB_URL}">GitHub</a>
+      <a class="about-link" href="#" data-url="${PROJECT_GITHUB_URL}">GitHub</a>
       <span class="about-link-sep">·</span>
-      <a class="about-link" href="#" data-url="${GITEE_URL}">Gitee</a>
-      <span class="about-link-sep">·</span>
-      <a class="about-link" href="#" data-url="${GITHUB_URL}/blob/main/THIRD_PARTY_LICENSES.md">${t('aboutLicenses')}</a>
+      <a class="about-link" href="#" data-url="${THIRD_PARTY_LICENSES_URL}">${t('aboutLicenses')}</a>
     </div>
   `;
   document.body.appendChild(container);
