@@ -52,7 +52,7 @@ class FakeEvent {
 
 function aiChatHarness() {
   const code = compile(
-    ['openChat', 'minimizeChat', 'closeChatAndSave']
+    ['openChat', 'minimizeChat', 'closeChatAndSave', 'updateSideChatTarget']
       .map((name) => fnSource('ai-capsule-chat-ops.ts', name))
       .join('\n'),
   );

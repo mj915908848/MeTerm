@@ -19,6 +19,7 @@
 //      these files:" block listing each path so the model can feed
 //      them into upload_file / read_file / run_command
 
+import { syncSideSendAvailability } from './ai-capsule-layout';
 import { invoke } from '@tauri-apps/api/core';
 import type { AttachedFile, AICapsuleInstance } from './ai-capsule-types';
 import { MAX_IMAGE_RAW_BYTES } from './ai-image-budget';
@@ -326,6 +327,7 @@ function removeAllAttachmentStrips(instance: AICapsuleInstance): void {
 }
 
 export function renderAttachmentStrip(instance: AICapsuleInstance): void {
+  syncSideSendAvailability(instance);
   removeAllAttachmentStrips(instance);
   if (instance.pendingAttachments.length === 0) return;
   const container = pickStripContainer(instance);

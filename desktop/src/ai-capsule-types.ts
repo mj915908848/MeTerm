@@ -185,7 +185,7 @@ export type ConvEntry =
   | { type: 'system';    content: string; timestamp: number; tone?: 'info' | 'warn' }
   | { type: 'tool_call'; toolName: string; args: Record<string, unknown>;
       result: string | null; isError: boolean; images?: AttachedImage[];
-      timestamp: number; paneNumber?: number };
+      timestamp: number; paneNumber?: number; targetLabel?: string };
 
 export interface ChatConversation {
   hostBinding?: import('./ai-conversation-host').ConversationHost;

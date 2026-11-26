@@ -76,6 +76,7 @@ import {
   sendToLLMFrom as sendToLLMFromFn,
   restoreConversation as restoreConversationFn,
   getSideInputCallbacks as getSideInputCallbacksFn,
+  updateSideChatTarget,
   type ChatOpsHost,
 } from './ai-capsule-chat-ops';
 import {
@@ -950,6 +951,7 @@ class AICapsuleManagerClass {
 
     // Mount and show the target session's bar
     const inst = this.capsules.get(sessionId)!;
+    if (inst.chatOpen && inst.layoutMode === 'side') updateSideChatTarget(inst);
     if (inst.element.parentElement !== container) {
       container.appendChild(inst.element);
     }
@@ -1047,6 +1049,7 @@ class AICapsuleManagerClass {
         switchToSideMode(inst, getSideInputCallbacksFn(this.getChatOpsHost()));
       }
       if (inst.chatPanel) inst.chatPanel.style.display = '';
+      updateSideChatTarget(inst);
       showSidePanel(inst);
     } else {
       inst.element.classList.remove('ai-bar--side-active');

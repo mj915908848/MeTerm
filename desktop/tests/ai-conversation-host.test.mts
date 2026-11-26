@@ -92,6 +92,7 @@ test('cross-host and legacy restore only preview, never clear or overwrite activ
     './terminal': { TerminalRegistry: {} }, './overlay-scrollbar': { createOverlayScrollbar: () => {} },
     './ai-system-notice': { buildSystemNotice: () => document.createElement('div') }, './ai-capsule-markdown': { renderMarkdown: () => '' }, './ai-provider': { resolveActiveModel: () => ({}) },
     './ai-icons': { thinkingIcon: () => '' }, './ai-capsule-layout': {},
+    './ai-host-notes-popover': {}, './tabs': {},
     './ai-capsule-bar-dom': { syncBarPlaceholder: () => {} },
     './ai-capsule-model-ui': { buildModelDropdown: () => {}, updateModelLabel: () => {} },
     './ai-agent-runner': { runAgentWithCallbacks: () => {} },
@@ -110,7 +111,7 @@ test('cross-host and legacy restore only preview, never clear or overwrite activ
   for (const hostBinding of [undefined, sshConversationHost('b', 22)]) {
     ops.restoreConversation(instance, { id: 'other', hostBinding }, {});
   }
-  ops.sendToLLMFrom(instance, 'command', { injectUserMessage: () => assert.fail('injected') });
+  assert.equal(ops.sendToLLMFrom(instance, 'command', { injectUserMessage: () => assert.fail('injected') }), false);
   assert.equal(previews, 2); assert.equal(instance.currentConversationId, 'active');
   assert.deepEqual(instance.messages, ['unchanged']);
 });
@@ -376,7 +377,7 @@ test('legacy preview requires confirmation and freezes target before asynchronou
 test('both AI send paths bind the conversation host and enforce the host gate', () => {
   for (const file of ['../src/ai-capsule-chat-ops.ts', '../src/ai-capsule-input-setup.ts']) {
     const text = readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.match(text, /if \(!allowConversationSend\(instance\)\) return;/, file);
+    assert.match(text, /if \(!allowConversationSend\(instance\)\) return(?: false)?;/, file);
     assert.match(text, /instance\.conversationHost \?\?= currentConversationHost\(instance\);/, file);
   }
 });

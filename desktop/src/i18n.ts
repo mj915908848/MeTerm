@@ -294,6 +294,12 @@ export interface Translations {
   aiPlaceholderAgent: string;
   aiSideQuestionPlaceholder: string;
   aiSideSend: string;
+  aiSideAttach: string;
+  aiSideAllowOnce: string;
+  aiSideFollowup: string;
+  aiSideWaiting: string;
+  aiSideRunning: string;
+  aiSideTarget: string;
   aiCollapse: string;
   aiLayoutSide: string;
   aiLayoutBottom: string;
@@ -622,6 +628,10 @@ export interface Translations {
   aiTransferWaiting: string;
   aiTransferCancel: string;
   aiTransferCompleted: string;
+  aiApprovalExpired: string;
+  aiApprovalAllowed: string;
+  aiApprovalDenied: string;
+  aiApprovalEdited: string;
   aiConfirmReject: string;
   aiConfirmEdit: string;
   aiConfirmAllOccurrences: string;
@@ -1100,6 +1110,12 @@ const translations: Record<Language, Translations> = {
     aiPlaceholderAgent: ' Ask MeAgent... ',
     aiSideQuestionPlaceholder: 'Ask a question or paste an error…',
     aiSideSend: 'Send',
+    aiSideAttach: 'Attach',
+    aiSideAllowOnce: 'Allow once',
+    aiSideFollowup: 'Add to the running task',
+    aiSideWaiting: 'Waiting for your approval',
+    aiSideRunning: 'Agent is working',
+    aiSideTarget: 'Current terminal',
     aiCollapse: 'Collapse',
     aiLayoutSide: 'Sidebar',
     aiLayoutBottom: 'Bottom',
@@ -1398,6 +1414,10 @@ const translations: Record<Language, Translations> = {
     aiTransferWaiting: 'waiting…',
     aiTransferCancel: 'Cancel transfer',
     aiTransferCompleted: 'completed',
+    aiApprovalExpired: 'Timed out',
+    aiApprovalAllowed: 'Approved',
+    aiApprovalDenied: 'Rejected',
+    aiApprovalEdited: 'Edited',
     aiConfirmReject: 'Reject',
     aiConfirmEdit: 'Edit',
     aiConfirmAllOccurrences: ' (all occurrences)',
@@ -1902,6 +1922,12 @@ const translations: Record<Language, Translations> = {
     aiPlaceholderAgent: ' 询问 MeAgent... ',
     aiSideQuestionPlaceholder: '输入问题，或粘贴报错…',
     aiSideSend: '发送',
+    aiSideAttach: '附件',
+    aiSideAllowOnce: '允许这一次',
+    aiSideFollowup: '补充到当前运行的任务',
+    aiSideWaiting: '等待你确认',
+    aiSideRunning: 'Agent 正在处理',
+    aiSideTarget: '当前终端',
     aiCollapse: '收起',
     aiLayoutSide: '侧边栏',
     aiLayoutBottom: '底部',
@@ -2200,6 +2226,10 @@ const translations: Record<Language, Translations> = {
     aiTransferWaiting: '等待中…',
     aiTransferCancel: '取消传输',
     aiTransferCompleted: '已完成',
+    aiApprovalExpired: '已超时',
+    aiApprovalAllowed: '已允许',
+    aiApprovalDenied: '已拒绝',
+    aiApprovalEdited: '已编辑执行',
     aiConfirmReject: '拒绝',
     aiConfirmEdit: '编辑',
     aiConfirmAllOccurrences: '（全部匹配项）',

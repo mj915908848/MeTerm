@@ -7,6 +7,7 @@
 // above the AI bar, and ride along as multimodal content parts in
 // the next send_to_llm call.
 
+import { syncSideSendAvailability } from './ai-capsule-layout';
 import { invoke } from '@tauri-apps/api/core';
 import type { AttachedImage, AICapsuleInstance } from './ai-capsule-types';
 import { openImageLightbox } from './ai-image-lightbox';
@@ -574,6 +575,7 @@ function removeAllStrips(instance: AICapsuleInstance): void {
  * thumbnails on switch.
  */
 export function renderPendingStrip(instance: AICapsuleInstance): void {
+  syncSideSendAvailability(instance);
   // Always start from a clean slate so layout switches don't leave
   // a strip behind on the other surface.
   removeAllStrips(instance);

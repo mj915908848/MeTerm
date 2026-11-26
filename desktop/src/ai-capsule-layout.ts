@@ -7,19 +7,17 @@
  * and the side panel has its own independent input area for LLM chat.
  */
 
-import { createHostNotesButton } from './ai-host-notes-popover';
 import { TerminalRegistry } from './terminal';
 import { t } from './i18n';
 import { LLM_SEND_SVG } from './ai-capsule-chat-ui';
 import { stopIcon } from './ai-icons';
-import { ATTACH_ICON_SVG } from './ai-capsule-bar-dom';
 import type { AICapsuleInstance, AIChatLayoutMode } from './ai-capsule-types';
 
 // ── Constants ──
 
 const LS_LAYOUT_KEY = 'meterm-ai-layout-mode';
 const LS_SIDE_WIDTH_KEY = 'meterm-ai-side-width';
-const DEFAULT_SIDE_WIDTH = 360;
+const DEFAULT_SIDE_WIDTH = 480;
 const SIDE_MIN_WIDTH = 280;
 const SIDE_MAX_WIDTH = 600;
 const SIDE_MIN_RATIO = 0.20;
@@ -121,12 +119,10 @@ function setupSideResize(handle: HTMLDivElement, panel: HTMLDivElement): void {
 // ── Side input area ──
 
 export interface SideInputCallbacks {
-  sendToLLM: (instance: AICapsuleInstance, text: string) => void;
+  sendToLLM: (instance: AICapsuleInstance, text: string) => boolean;
   buildModelDropdown: (dropdown: HTMLDivElement, label: HTMLSpanElement) => void;
   updateModelLabel: (label: HTMLSpanElement) => void;
-  createTrustSwitcher: () => HTMLDivElement;
   createThinkingToggle: () => HTMLDivElement;
-  toggleSideChatHistory: (instance: AICapsuleInstance) => void;
   toggleLayout: (instance: AICapsuleInstance) => void;
   /**
    * Resolve the instance that should own the *current* action
@@ -140,8 +136,7 @@ export interface SideInputCallbacks {
 }
 
 /**
- * Create the side panel input area with model selector, trust switcher,
- * chat history button, textarea, and send button.
+ * Create the side panel composer and its per-request options.
  */
 export function createSideInputArea(
   instance: AICapsuleInstance,
@@ -153,7 +148,6 @@ export function createSideInputArea(
   const toolbar = document.createElement('div');
   toolbar.className = 'ai-side-input-toolbar';
 
-  // Model selector
   const modelSelect = document.createElement('div');
   modelSelect.className = 'ai-side-model-select';
 
@@ -170,45 +164,43 @@ export function createSideInputArea(
   modelDropdown.style.display = 'none';
   callbacks.buildModelDropdown(modelDropdown, modelLabel);
 
-  modelSelect.appendChild(modelLabel);
-  modelSelect.appendChild(modelArrow);
-  modelSelect.appendChild(modelDropdown);
+  const modelTrigger = document.createElement('button');
+  modelTrigger.type = 'button';
+  modelTrigger.className = 'ai-side-model-trigger';
+  modelTrigger.setAttribute('aria-expanded', 'false');
+  modelTrigger.append(modelLabel, modelArrow);
+  modelSelect.append(modelTrigger, modelDropdown);
 
-  modelSelect.addEventListener('click', (e) => {
-    e.stopPropagation();
+  function closeModelDropdown(): void {
+    modelDropdown.style.display = 'none';
+    modelTrigger.setAttribute('aria-expanded', 'false');
+  }
+
+  modelTrigger.addEventListener('click', () => {
     const isOpen = modelDropdown.style.display !== 'none';
     if (isOpen) {
-      modelDropdown.style.display = 'none';
-      modelSelect.classList.remove('open');
+      closeModelDropdown();
     } else {
       callbacks.buildModelDropdown(modelDropdown, modelLabel);
       modelDropdown.style.display = '';
-      modelSelect.classList.add('open');
+      modelTrigger.setAttribute('aria-expanded', 'true');
     }
   });
-  document.addEventListener('click', () => {
-    modelDropdown.style.display = 'none';
-    modelSelect.classList.remove('open');
+  document.addEventListener('click', (event) => {
+    if (!(event.target instanceof Node) || !modelSelect.contains(event.target)) closeModelDropdown();
   });
 
-  // Trust switcher
-  const trustSwitcher = callbacks.createTrustSwitcher();
-  trustSwitcher.classList.add('ai-side-trust-switcher');
+  modelSelect.addEventListener('focusout', (event) => {
+    if (event.relatedTarget instanceof Node && !modelSelect.contains(event.relatedTarget)) closeModelDropdown();
+  });
+  modelSelect.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || modelDropdown.style.display === 'none') return;
+    event.stopPropagation();
+    closeModelDropdown();
+    modelTrigger.focus();
+  });
 
-  // Thinking-mode toggle — per-request flag, safe to flip mid-conversation.
   const thinkingToggle = callbacks.createThinkingToggle();
-
-  // Chat history button
-  const chatHistBtn = document.createElement('button');
-  chatHistBtn.className = 'ai-side-btn ai-side-btn-chat-history';
-  chatHistBtn.title = t('aiChatHistory');
-  chatHistBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12v8a1 1 0 01-1 1H5l-3 2.5V4a1 1 0 011-1z"/><line x1="5" y1="6.5" x2="11" y2="6.5"/><line x1="5" y1="9" x2="9" y2="9"/></svg>`;
-  chatHistBtn.addEventListener('click', () => {
-    callbacks.toggleSideChatHistory(callbacks.resolveCurrentInstance(instance));
-  });
-
-  // Notes for the host of the focused pane (see ai-host-notes-popover.ts).
-  const hostNotesBtn = createHostNotesButton(() => callbacks.resolveCurrentInstance(instance).sessionId);
 
   // Layout toggle button (switch back to bottom mode)
   const layoutBtn = document.createElement('button');
@@ -224,12 +216,11 @@ export function createSideInputArea(
   // clipboard fallback for the system pasteboard); right click only
   // tries the clipboard.
   const attachBtn = document.createElement('button');
-  attachBtn.className = 'ai-side-btn ai-side-btn-attach';
+  attachBtn.type = 'button';
+  attachBtn.className = 'ai-side-btn ai-side-btn-attach ai-side-composer-action';
   attachBtn.title = t('aiAttachBtnTitle');
-  // Reuse the same SVG used by the bottom-mode AI bar so the visual
-  // weight matches.  Imported lazily to avoid a circular dep at the
-  // module-loading layer.
-  attachBtn.innerHTML = ATTACH_ICON_SVG;
+  attachBtn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>';
+  attachBtn.append(t('aiSideAttach'));
   attachBtn.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -266,11 +257,11 @@ export function createSideInputArea(
   // pane that happened to create the side panel DOM.
   const doSend = () => {
     const text = textarea.value.trim();
-    if (!text) return;
     const target = callbacks.resolveCurrentInstance(instance);
-    callbacks.sendToLLM(target, text);
+    if (!callbacks.sendToLLM(target, text)) return;
     textarea.value = '';
     textarea.style.height = ''; // reset auto-height
+    syncSideSendAvailability(target);
   };
 
   // Abort is handled by the agent's onAborted callback which calls
@@ -314,17 +305,7 @@ export function createSideInputArea(
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      const target = callbacks.resolveCurrentInstance(instance);
-      if (target.isStreaming) {
-        const text = textarea.value.trim();
-        if (text) {
-          callbacks.sendToLLM(target, text);
-          textarea.value = '';
-          textarea.style.height = '';
-        }
-      } else {
-        doSend();
-      }
+      doSend();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       const target = callbacks.resolveCurrentInstance(instance);
@@ -339,22 +320,20 @@ export function createSideInputArea(
   textarea.addEventListener('input', () => {
     textarea.style.height = '';
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+    syncSideSendAvailability(callbacks.resolveCurrentInstance(instance));
   });
 
   // Bottom bar: tools on left, send on right
-  toolbar.appendChild(modelSelect);
-  toolbar.appendChild(thinkingToggle);
-  toolbar.appendChild(chatHistBtn);
-  toolbar.appendChild(hostNotesBtn);
-  toolbar.appendChild(layoutBtn);
-  toolbar.appendChild(attachBtn);
-  toolbar.appendChild(sendBtn);
-
-  area.append(trustSwitcher, textarea, toolbar);
+  toolbar.append(attachBtn, modelSelect, thinkingToggle, layoutBtn, sendBtn);
+  const followup = document.createElement('div');
+  followup.className = 'ai-composer-followup';
+  followup.textContent = t('aiSideFollowup');
+  area.append(followup, textarea, toolbar);
 
   // Store references
   instance.sideInputArea = area;
   instance.sideInput = textarea;
+  syncSideSendAvailability(instance);
 
   // Register this side input area as paste-eligible so the
   // document-level paste listener can route image clipboard data
@@ -371,14 +350,24 @@ export function updateSideSendButton(btn: HTMLButtonElement | null, isStreaming:
   if (!btn) return;
   const label = t(isStreaming ? 'aiStopGenerating' : 'aiSideSend');
   btn.classList.toggle('streaming-active', isStreaming);
+  if (isStreaming) btn.disabled = false;
   btn.innerHTML = isStreaming ? stopIcon(16) : LLM_SEND_SVG;
-  btn.append(label);
+  btn.setAttribute('aria-label', label);
   btn.title = isStreaming ? label : `${label} (Enter)`;
 }
 
 /** Get the side send button from instance */
 export function getSideSendButton(instance: AICapsuleInstance): HTMLButtonElement | null {
   return instance.sideInputArea?.querySelector('.ai-side-btn-send') as HTMLButtonElement | null;
+}
+
+export function syncSideSendAvailability(instance: AICapsuleInstance): void {
+  const button = getSideSendButton(instance);
+  if (!button) return;
+  button.disabled = !instance.isStreaming
+    && !instance.sideInput?.value.trim()
+    && instance.pendingImages.length === 0
+    && instance.pendingAttachments.length === 0;
 }
 
 // ── Mode switching ──
@@ -414,6 +403,16 @@ export function switchToSideMode(instance: AICapsuleInstance, callbacks: SideInp
   // Ensure correct DOM order: chatPanel first, then sideInputArea
   // Always re-append to guarantee order even after mode switches
   if (instance.chatPanel) {
+    const board = instance.chatPanel.querySelector(':scope > .ai-todo-board');
+    const messages = instance.chatPanel.querySelector(':scope > .ai-chat-messages');
+    if (board && messages) instance.chatPanel.insertBefore(board, messages);
+    const targetRow = instance.chatPanel.querySelector('.ai-chat-target-row');
+    const toolbar = instance.sideInputArea?.querySelector('.ai-side-input-toolbar');
+    const permission = targetRow?.querySelector('.ai-side-trust-switcher');
+    if (targetRow && permission && toolbar) {
+      toolbar.querySelector('.ai-side-btn-attach')?.after(permission);
+      instance.sideInputArea?.prepend(targetRow);
+    }
     instance.chatPanel.classList.add('ai-chat-panel--side');
     instance.sidePanel.appendChild(instance.chatPanel);
   }
@@ -468,6 +467,14 @@ export function switchToBottomMode(instance: AICapsuleInstance): void {
 
   // Move chat panel back to terminal-panel (before AI bar)
   if (instance.chatPanel) {
+    const board = instance.chatPanel.querySelector(':scope > .ai-todo-board');
+    if (board) instance.chatPanel.appendChild(board);
+    const targetRow = instance.sideInputArea?.querySelector('.ai-chat-target-row');
+    const permission = instance.sideInputArea?.querySelector('.ai-side-trust-switcher');
+    if (targetRow && permission) {
+      targetRow.append(permission);
+      instance.chatPanel.insertBefore(targetRow, instance.chatPanel.querySelector('.ai-chat-run-status'));
+    }
     instance.chatPanel.classList.remove('ai-chat-panel--side');
     terminalPanel.insertBefore(instance.chatPanel, instance.element);
     instance.chatPanel.style.height = '';

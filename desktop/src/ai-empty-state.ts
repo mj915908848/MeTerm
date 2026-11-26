@@ -17,6 +17,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { getLanguage, t } from './i18n';
+import { toolIcon } from './ai-icons';
 import { gatherContext } from './ai-agent-context';
 import { TerminalRegistry } from './terminal';
 import type { AICapsuleInstance } from './ai-capsule-types';
@@ -582,7 +583,7 @@ function buildGreeting(): HTMLElement {
 }
 
 function buildQuickPromptsRow(
-  prompts: QuickPrompt[],
+  prompts: Pick<QuickPrompt, 'icon' | 'label' | 'prompt'>[],
   onSend: (text: string) => void,
 ): HTMLElement {
   const row = document.createElement('div');
@@ -917,13 +918,22 @@ export async function renderEmptyState(
   // removed above) — so any remaining children are real messages.
   if (container.children.length > 0) return;
 
-  // Gather context synchronously; project-hint detection runs async
-  // so the render is two-phase: placeholder first, pills filled in
-  // when the probes return.
-  const ctx = gatherContext(instance.sessionId, 5);
-
   const wrapper = document.createElement('div');
   wrapper.className = 'ai-empty-state';
+
+  if (instance.layoutMode === 'side') {
+    const strings = pick();
+    const prompts = [
+      { icon: toolIcon('read_terminal', 16), label: strings.summarizeRecent, prompt: strings.summarizeRecentPrompt },
+      { icon: toolIcon('list_directory', 16), label: strings.listDir, prompt: strings.listDirPrompt },
+      { icon: toolIcon('run_command', 16), label: strings.diskUsage, prompt: strings.diskUsagePrompt },
+    ];
+    wrapper.append(buildGreeting(), buildQuickPromptsRow(prompts, onSend));
+    container.appendChild(wrapper);
+    return;
+  }
+
+  const ctx = gatherContext(instance.sessionId, 5);
 
   // Initial render with empty hints — the context header doesn't
   // need project detection, so it can show immediately.

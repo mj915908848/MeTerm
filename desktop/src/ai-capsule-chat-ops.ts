@@ -11,6 +11,8 @@ import { renderMarkdown } from './ai-capsule-markdown';
 import { buildSystemNotice } from './ai-system-notice';
 import { resolveActiveModel } from './ai-provider';
 import { thinkingIcon } from './ai-icons';
+import { createHostNotesButton } from './ai-host-notes-popover';
+import { TabManager } from './tabs';
 import {
   SVG_LAYOUT_SIDE, SVG_LAYOUT_BOTTOM,
   switchToSideMode, switchToBottomMode,
@@ -31,7 +33,7 @@ import { hostsMatch } from './ai-conversation-host';
 import { allowConversationSend, currentConversationHost, previewHostConversation } from './ai-conversation-host-ui';
 import { bindLegacyConversation } from './ai-capsule-chat-persistence';
 import { announceHostNotes, attachPersistentTodoListener, buildUserMessageActions } from './ai-capsule-chat-ui';
-import { renderTodoBoard as renderTodoBoardImport, restoreTodoBoardFromHistory, appendToolCardGrouped, appendToRunGroup, collapseToolGroups } from './ai-capsule-tool-ui';
+import { renderTodoBoard as renderTodoBoardImport, restoreTodoBoardFromHistory, appendToolCardGrouped, appendToRunGroup, collapseToolGroups, sessionTargetLabel } from './ai-capsule-tool-ui';
 
 /** Host interface: methods the extracted functions need from the manager. */
 export interface ChatOpsHost {
@@ -114,6 +116,7 @@ function installMarkdownLinkHandler(): void {
 
 const HEADER_SVG = 'width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"';
 const SVG_NEW_CHAT = `<svg ${HEADER_SVG}><path d="M8 3H4a1.5 1.5 0 0 0-1.5 1.5v7A1.5 1.5 0 0 0 4 13h7a1.5 1.5 0 0 0 1.5-1.5V8"/><path d="M11.5 2.5l2 2L8 10H6V8z"/></svg>`;
+const SVG_CHAT_HISTORY = `<svg ${HEADER_SVG}><path d="M3 4h10v6H6l-3 2z"/><path d="M5.5 6h5m-5 2h4"/></svg>`;
 const SVG_CLEAR_CHAT = `<svg ${HEADER_SVG}><path d="M3 4.5h10"/><path d="M6.5 4.5V3h3v1.5"/><path d="M4.5 4.5l.6 8.2a1 1 0 0 0 1 .8h3.8a1 1 0 0 0 1-.8l.6-8.2"/></svg>`;
 const SVG_MINIMIZE = `<svg ${HEADER_SVG}><line x1="4" y1="8" x2="12" y2="8"/></svg>`;
 const SVG_CLOSE = `<svg ${HEADER_SVG}><line x1="4.5" y1="4.5" x2="11.5" y2="11.5"/><line x1="11.5" y1="4.5" x2="4.5" y2="11.5"/></svg>`;
@@ -201,12 +204,22 @@ export function createChatPanel(
     return instance;
   };
 
+  const createHeaderAction = (className: string, icon: string, label: string): HTMLButtonElement => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `ai-chat-header-btn ${className}`;
+    button.innerHTML = icon;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    const caption = document.createElement('span');
+    caption.className = 'ai-chat-header-label';
+    caption.textContent = label;
+    button.append(caption);
+    return button;
+  };
+
   // New chat button — save current conversation to history, then start fresh
-  const newChatBtn = document.createElement('button');
-  newChatBtn.className = 'ai-chat-header-btn ai-chat-new';
-  newChatBtn.innerHTML = SVG_NEW_CHAT;
-  newChatBtn.title = t('aiNewChat');
-  newChatBtn.setAttribute('aria-label', t('aiNewChat'));
+  const newChatBtn = createHeaderAction('ai-chat-new', SVG_NEW_CHAT, t('aiNewChat'));
   newChatBtn.addEventListener('click', () => {
     const inst = currentInstance();
     if (inst.isStreaming) return;
@@ -231,13 +244,10 @@ export function createChatPanel(
     if (msgContainer) msgContainer.innerHTML = '';
     host.updateChatTitle(inst);
     maybeRenderEmptyState(inst, host);
+    if (inst.layoutMode === 'side') inst.sideInput?.focus();
   });
 
-  const clearBtn = document.createElement('button');
-  clearBtn.className = 'ai-chat-header-btn ai-chat-clear';
-  clearBtn.innerHTML = SVG_CLEAR_CHAT;
-  clearBtn.title = t('aiClearChat');
-  clearBtn.setAttribute('aria-label', t('aiClearChat'));
+  const clearBtn = createHeaderAction('ai-chat-clear', SVG_CLEAR_CHAT, t('aiClearChat'));
   clearBtn.addEventListener('click', async () => {
     const inst = currentInstance();
     if (inst.isStreaming) return;
@@ -280,13 +290,39 @@ export function createChatPanel(
   minimizeBtn.addEventListener('click', () => minimizeChat(currentInstance(), host));
 
   // Close button
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'ai-chat-header-btn ai-chat-close';
-  closeBtn.innerHTML = SVG_CLOSE;
-  closeBtn.title = t('aiChatClose');
+  const closeBtn = createHeaderAction('ai-chat-close', SVG_CLOSE, t('aiChatClose'));
   closeBtn.addEventListener('click', () => closeChatAndSave(currentInstance(), host));
 
+  const historyBtn = createHeaderAction('ai-chat-history-action', SVG_CHAT_HISTORY, t('aiChatHistory'));
+  historyBtn.setAttribute('aria-pressed', 'false');
+  historyBtn.addEventListener('click', () => host.toggleChatHistory(currentInstance(), true));
+
+  const targetRow = document.createElement('div');
+  targetRow.className = 'ai-chat-target-row';
+  const targetName = document.createElement('span');
+  targetName.className = 'ai-chat-target-name';
+  const hostNotes = createHostNotesButton(() => currentInstance().sessionId);
+  const permission = host.createTrustSwitcher();
+  permission.classList.add('ai-side-trust-switcher');
+  targetRow.append(targetName, hostNotes, permission);
+
+  const runStatus = document.createElement('div');
+  runStatus.className = 'ai-chat-run-status';
+  runStatus.setAttribute('role', 'status');
+  const working = document.createElement('span');
+  working.className = 'ai-chat-working';
+  working.textContent = t('aiSideRunning');
+  const waiting = document.createElement('span');
+  waiting.className = 'ai-chat-waiting';
+  waiting.textContent = t('aiSideWaiting');
+  runStatus.append(working, waiting);
+
+  const agentTitle = document.createElement('strong');
+  agentTitle.className = 'ai-side-agent-title';
+  agentTitle.textContent = 'MeAgent';
+  header.appendChild(agentTitle);
   header.appendChild(title);
+  header.appendChild(historyBtn);
   header.appendChild(newChatBtn);
   header.appendChild(clearBtn);
   header.appendChild(layoutBtn);
@@ -299,8 +335,7 @@ export function createChatPanel(
 
   panel.style.position = 'relative';
   panel.appendChild(resizeHandle);
-  panel.appendChild(header);
-  panel.appendChild(messages);
+  panel.append(header, targetRow, runStatus, messages);
   createOverlayScrollbar({ viewport: messages, container: messages });
   installChatScrollFollow(messages, panel);
   bindMessageActions(messages, currentInstance, host);
@@ -309,6 +344,23 @@ export function createChatPanel(
   host.bindChatContextMenu(instance, messages);
 
   return panel;
+}
+
+/** Reflect the focused terminal, independently of any previous conversation's host. */
+export function updateSideChatTarget(instance: AICapsuleInstance): void {
+  const label = instance.sideInputArea?.querySelector<HTMLElement>('.ai-chat-target-name')
+    ?? instance.chatPanel?.querySelector<HTMLElement>('.ai-chat-target-name');
+  if (!label) return;
+  const location = TabManager.locateSession(instance.sessionId);
+  const pane = location && location.tab.paneNumbers.size > 1
+    ? tf('aiPaneBadge', { n: resolveFocusedPaneNumber(instance.sessionId) })
+    : '';
+  const focused = location && TabManager.resolvePaneNumber(instance.tabId, resolveFocusedPaneNumber(instance.sessionId));
+  const host = sessionTargetLabel(focused?.sessionId ?? instance.sessionId);
+  label.textContent = pane ? `${host} · ${pane}` : host;
+  label.title = `${t('aiSideTarget')} · ${label.textContent}`;
+  label.setAttribute('aria-label', label.title);
+  label.parentElement?.querySelector('.ai-side-btn-host-notes')?.dispatchEvent(new Event('ai-host-notes-target'));
 }
 
 function setupChatResize(panel: HTMLDivElement, handle: HTMLDivElement): void {
@@ -356,6 +408,7 @@ export function openChat(instance: AICapsuleInstance, host: ChatOpsHost): void {
 
   if (instance.layoutMode === 'side') {
     switchToSideMode(instance, getSideInputCallbacks(host));
+    updateSideChatTarget(instance);
     instance.chatPanel!.style.display = '';
   } else {
     // Bottom mode: re-anchor the chat panel directly above THIS
@@ -480,6 +533,7 @@ export function toggleLayout(
 ): void {
   if (instance.layoutMode === 'bottom') {
     switchToSideMode(instance, getSideInputCallbacks(host));
+    updateSideChatTarget(instance);
     layoutBtn.innerHTML = SVG_LAYOUT_BOTTOM;
     layoutBtn.title = t('aiLayoutBottom');
   } else {
@@ -503,9 +557,7 @@ export function getSideInputCallbacks(host: ChatOpsHost): SideInputCallbacks {
     sendToLLM: (instance, text) => sendToLLMFrom(instance, text, host),
     buildModelDropdown: (dropdown, label) => buildModelDropdown(dropdown, label),
     updateModelLabel: (label) => updateModelLabel(label),
-    createTrustSwitcher: () => host.createTrustSwitcher(),
     createThinkingToggle: () => host.createThinkingToggle(),
-    toggleSideChatHistory: (instance) => host.toggleChatHistory(instance, true),
     toggleLayout: (instance) => {
       const layoutBtn = instance.chatPanel?.querySelector('.ai-chat-layout-toggle') as HTMLButtonElement;
       if (layoutBtn) toggleLayout(instance, layoutBtn, host);
@@ -528,18 +580,17 @@ export function sendToLLMFrom(
   instance: AICapsuleInstance,
   text: string,
   host: ChatOpsHost,
-): void {
-  if (!allowConversationSend(instance)) return;
+): boolean {
+  if (!allowConversationSend(instance)) return false;
   // Guard: if the agent is already streaming, inject the message into
   // the running conversation instead of starting a new run. This
   // prevents the race condition where a quick-prompt click or side-panel
   // Enter fires a second concurrent runLoop — the old loop gets an
   // implicit abort via agent.send() and the UI sees duplicated replies.
   if (instance.isStreaming) {
-    if (text) {
-      host.injectUserMessage(instance, text);
-    }
-    return;
+    if (!text) return false;
+    host.injectUserMessage(instance, text);
+    return true;
   }
 
   // Snapshot pending images before we clear them — they'll be attached
@@ -547,14 +598,14 @@ export function sendToLLMFrom(
   // attachment is queued.
   const attached = instance.pendingImages.slice();
   const attachedFiles = instance.pendingAttachments.slice();
-  if (!text && attached.length === 0 && attachedFiles.length === 0) return;
+  if (!text && attached.length === 0 && attachedFiles.length === 0) return false;
 
   const settings = loadSettings();
   const resolved = resolveActiveModel(settings.aiProviders, settings.aiActiveModel);
   if (!resolved) {
     openChat(instance, host);
     host.showNoConfigHint(instance);
-    return;
+    return false;
   }
 
   // Lock the target pane for this run: whichever pane has current
@@ -611,6 +662,7 @@ export function sendToLLMFrom(
     if (instance.agentDone === handle.done) instance.agentDone = null;
     instance.state.activeRunTargetPaneNumber = null;
   });
+  return true;
 }
 
 // ─── Restore Conversation ───────────────────────────────────
@@ -661,6 +713,7 @@ export function restoreConversation(
   }
   if (instance.layoutMode === 'side') {
     switchToSideMode(instance, getSideInputCallbacks(host));
+    updateSideChatTarget(instance);
   } else {
     const terminalPanel = instance.element.parentElement;
     if (terminalPanel && instance.chatPanel.parentElement !== terminalPanel) {

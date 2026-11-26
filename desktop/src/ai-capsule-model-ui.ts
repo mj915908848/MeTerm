@@ -29,6 +29,9 @@ export function buildModelDropdown(dropdown: HTMLDivElement, label: HTMLSpanElem
   const closeDropdown = () => {
     dropdown.style.display = 'none';
     dropdown.closest('.ai-bar-model-select')?.classList.remove('open');
+    const sideTrigger = dropdown.parentElement?.querySelector<HTMLButtonElement>('.ai-side-model-trigger');
+    sideTrigger?.setAttribute('aria-expanded', 'false');
+    sideTrigger?.focus();
   };
 
   // Auto option

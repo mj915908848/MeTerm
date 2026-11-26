@@ -5,6 +5,7 @@ import { toolIcon, statusIcon, spinnerIcon, approveIcon, rejectIcon, editIcon, T
 import type { AICapsuleInstance, ConvEntry } from './ai-capsule-types';
 import { notifyAgentWaiting } from './ai-notifications';
 import { attachLightboxClick } from './ai-image-lightbox';
+import { DrawerManager } from './drawer';
 import { TabManager } from './tabs';
 import { createOverlayScrollbar } from './overlay-scrollbar';
 import type { TodoItem } from './ai-tools-todo';
@@ -73,10 +74,7 @@ export function toolArgsInline(toolName: string, args: Record<string, unknown>):
 }
 
 // ─── Tool-call groups ───────────────────────────────────────
-// Consecutive tool cards share one group. A group of two or more gets a
-// summary header ("Ran 5 steps · 1 failed") and folds once the run is
-// over, so a long agent run leaves the final answer in view instead of a
-// wall of cards. One card on its own renders exactly as before.
+// Fold completed successful steps together and leave failures visible.
 
 const CHEVRON_SVG = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 2 6.5 5 3.5 8"/></svg>`;
 
@@ -92,7 +90,12 @@ function lastVisibleChild(container: Element): Element | null {
 export function refreshToolGroup(group: Element): void {
   const cards = group.querySelectorAll(':scope > .ai-tool-card');
   const failed = group.querySelectorAll(':scope > .ai-tool-card.failed').length;
-  group.classList.toggle('multi', cards.length >= 2);
+  const complete = cards.length > 0 && Array.from(cards).every(card => card.classList.contains('completed'));
+  group.classList.toggle('multi', cards.length >= 2 || complete);
+  if (!(group as HTMLElement).dataset.userToggled) {
+    group.classList.toggle('collapsed', complete && failed === 0);
+  }
+  group.querySelector('.ai-tool-group-header')?.setAttribute('aria-expanded', String(!group.classList.contains('collapsed')));
   const label = group.querySelector(':scope > .ai-tool-group-header .ai-tool-group-label');
   if (label) {
     label.textContent = tf('aiToolGroupSummary', { n: cards.length })
@@ -128,7 +131,7 @@ export function appendToolCardGrouped(container: Element, card: HTMLElement): vo
     header.className = 'ai-tool-group-header';
     header.innerHTML = `<span class="ai-tool-group-chevron">${CHEVRON_SVG}</span><span class="ai-tool-group-label"></span>`;
     header.addEventListener('click', () => {
-      group!.classList.toggle('collapsed');
+      header.setAttribute('aria-expanded', String(!group!.classList.toggle('collapsed')));
       group!.dataset.userToggled = '1';
     });
     group.appendChild(header);
@@ -139,10 +142,10 @@ export function appendToolCardGrouped(container: Element, card: HTMLElement): vo
   refreshToolGroup(group);
 }
 
-/** Fold every multi-card group the user hasn't opened or closed by hand. */
+/** Reconcile live and restored groups with their final result states. */
 export function collapseToolGroups(container: Element | null | undefined): void {
   container?.querySelectorAll('.ai-tool-group.multi').forEach((g) => {
-    if ((g as HTMLElement).dataset.userToggled !== '1') g.classList.add('collapsed');
+    refreshToolGroup(g);
   });
 }
 
@@ -167,7 +170,7 @@ export function buildToolCard(msg: Extract<ConvEntry, { type: 'tool_call' }>): H
     return d;
   }
   const card = document.createElement('div');
-  card.className = `ai-tool-card completed${msg.isError ? ' failed' : ''}`;
+  card.className = `ai-tool-card completed${msg.isError || msg.result === null ? ' failed' : ''}`;
   card.dataset.tool = msg.toolName;
   const status = msg.result !== null
     ? (msg.isError ? statusIcon('error', 12) : statusIcon('success', 12))
@@ -176,6 +179,7 @@ export function buildToolCard(msg: Extract<ConvEntry, { type: 'tool_call' }>): H
   header.className = 'ai-tool-card-header clickable';
   // Phase 2 pane badge (restore path) — use the stored paneNumber so
   // the card renders the same way it did at live run time.
+  const targetHtml = msg.targetLabel ? `<span class="ai-command-target">${escapeHtml(msg.targetLabel)}</span>` : '';
   const badgeHtml = msg.paneNumber && msg.paneNumber > 0
     ? `<span class="ai-tool-pane-badge" title="${escapeHtml(tf('aiPaneBadge', { n: msg.paneNumber }))}">${escapeHtml(tf('aiPaneBadge', { n: msg.paneNumber }))}</span>`
     : '';
@@ -183,11 +187,12 @@ export function buildToolCard(msg: Extract<ConvEntry, { type: 'tool_call' }>): H
     <span class="ai-tool-icon">${toolIcon(msg.toolName, 14)}</span>
     <span class="ai-tool-name" title="${escapeHtml(msg.toolName)}">${escapeHtml(toolDisplayName(msg.toolName))}</span>
     ${badgeHtml}
+    ${targetHtml}
     ${toolArgsInline(msg.toolName, msg.args)}
     <span class="ai-tool-status">${status}</span>`;
   const resultEl = document.createElement('div');
   resultEl.className = `ai-tool-result${msg.isError ? ' ai-tool-result-error' : ''}`;
-  resultEl.style.display = 'none';
+  resultEl.style.display = msg.isError ? '' : 'none';
   resultEl.innerHTML = `<pre>${escapeHtml(clipResult(msg.result ?? ''))}</pre>`;
   header.addEventListener('click', () => {
     const willShow = resultEl.style.display === 'none';
@@ -261,6 +266,21 @@ function decidePaneBadge(
   return chosen;
 }
 
+function commandTarget(instance: AICapsuleInstance, args: Record<string, unknown>): string {
+  const explicit = args.pane != null && args.pane !== '';
+  const pane = explicit ? parseInt(String(args.pane), 10) : instance.state.activeRunTargetPaneNumber;
+  const session = pane == null ? instance.sessionId : TabManager.resolvePaneNumber(instance.tabId, pane)?.sessionId;
+  if (!session) return tf('aiPaneBadge', { n: String(args.pane ?? pane) });
+  return sessionTargetLabel(session);
+}
+
+export function sessionTargetLabel(session: string): string {
+  const info = DrawerManager.getServerInfo(session);
+  if (!info) return t('aiChatHostLocal');
+  const host = info.port === 22 ? info.host : `${info.host}:${info.port}`;
+  return info.username ? `${info.username}@${host}` : host;
+}
+
 function paneBadgeSpan(paneNumber: number, isCrossPane: boolean): string {
   const cls = isCrossPane ? 'ai-tool-pane-badge cross' : 'ai-tool-pane-badge';
   const title = isCrossPane ? t('aiPaneCrossCall') : t('aiPaneDefaultTarget');
@@ -304,6 +324,7 @@ export function appendToolCallCard(
 
   // Compute pane badge once so we can reuse on the card dataset
   // (for conversation restore) and inject into the header HTML.
+  const targetLabel = toolName === 'run_command' ? commandTarget(instance, args) : undefined;
   const paneNumber = decidePaneBadge(instance, toolName, args);
   const explicitArg = typeof args.pane === 'number' ? args.pane : null;
   const isCrossPane = explicitArg !== null
@@ -358,6 +379,7 @@ export function appendToolCallCard(
       <span class="ai-tool-icon">${toolIcon(toolName, 14)}</span>
       <span class="ai-tool-name" title="${escapeHtml(toolName)}">${escapeHtml(toolDisplayName(toolName))}</span>
       ${badgeHtml}
+      ${targetLabel ? `<span class="ai-command-target">${escapeHtml(targetLabel)}</span>` : ''}
       ${toolArgsInline(toolName, args)}
       <span class="ai-tool-status">${spinnerIcon(color, 12)}</span>
     `;
@@ -451,6 +473,7 @@ export function appendToolCallCard(
     type: 'tool_call', toolName, args, result: null, isError: false,
     timestamp: Date.now(),
     paneNumber: paneNumber ?? undefined,
+    targetLabel,
   });
 }
 
@@ -762,7 +785,7 @@ export function updateToolResultCard(
   // Add collapsible result
   const resultEl = document.createElement('div');
   resultEl.className = `ai-tool-result ${isError ? 'ai-tool-result-error' : ''}`;
-  resultEl.style.display = 'none'; // collapsed by default
+  resultEl.style.display = isError ? '' : 'none';
 
   resultEl.innerHTML = `<pre>${escapeHtml(clipResult(result))}</pre>`;
   card.appendChild(resultEl);
@@ -875,8 +898,6 @@ export function showConfirmCard(
     card.className = 'ai-confirm-card';
     card.dataset.tool = toolName;
 
-    const color = TOOL_COLORS[toolName] ?? '#6B7280';
-
     // Header
     const header = document.createElement('div');
     header.className = 'ai-confirm-header';
@@ -884,6 +905,13 @@ export function showConfirmCard(
       <span class="ai-tool-icon">${toolIcon(toolName, 14)}</span>
       <span class="ai-tool-name" title="${escapeHtml(toolName)}">${escapeHtml(toolDisplayName(toolName))}</span>
     `;
+
+    if (instance.layoutMode === 'side' && toolName === 'run_command') {
+      const target = document.createElement('span');
+      target.className = 'ai-command-target';
+      target.textContent = commandTarget(instance, args);
+      header.appendChild(target);
+    }
 
     // Command preview
     const preview = document.createElement('div');
@@ -923,7 +951,7 @@ export function showConfirmCard(
 
     const approveBtn = document.createElement('button');
     approveBtn.className = 'ai-confirm-btn ai-confirm-approve';
-    approveBtn.innerHTML = `${approveIcon(12)} <span>${escapeHtml(t('aiPermissionActionAllow'))}</span>`;
+    approveBtn.innerHTML = `${approveIcon(12)} <span>${escapeHtml(t(instance.layoutMode === 'side' ? 'aiSideAllowOnce' : 'aiPermissionActionAllow'))}</span>`;
 
     const rejectBtn = document.createElement('button');
     rejectBtn.className = 'ai-confirm-btn ai-confirm-reject';
@@ -934,15 +962,26 @@ export function showConfirmCard(
     editBtn.innerHTML = `${editIcon(12)} <span>${escapeHtml(t('aiConfirmEdit'))}</span>`;
 
     buttons.appendChild(approveBtn);
-    buttons.appendChild(rejectBtn);
     if (toolName === 'run_command') {
       buttons.appendChild(editBtn);
     }
+    buttons.appendChild(rejectBtn);
 
     card.appendChild(header);
     card.appendChild(preview);
     card.appendChild(buttons);
-    container.appendChild(card);
+    const position = instance.layoutMode === 'side' ? document.createComment('approval') : null;
+    if (position) {
+      container.appendChild(position);
+      card.classList.add('ai-approval-dock');
+      const heading = document.createElement('strong');
+      heading.className = 'ai-approval-title';
+      heading.textContent = t('aiSideWaiting');
+      card.prepend(heading);
+      instance.chatPanel.appendChild(card);
+    } else {
+      container.appendChild(card);
+    }
     scrollChatToEnd(container, true);
 
     // Background notification: the agent is blocked waiting for the
@@ -978,6 +1017,11 @@ export function showConfirmCard(
       settled = true;
       clearTimeout(autoRejectTimer);
       signal?.removeEventListener('abort', onAbort);
+      if (position) {
+        position.replaceWith(card);
+        card.classList.remove('ai-approval-dock');
+        card.querySelector('.ai-approval-title')?.remove();
+      }
       card.classList.add('resolved');
       approveBtn.disabled = true;
       rejectBtn.disabled = true;
@@ -990,7 +1034,7 @@ export function showConfirmCard(
     const autoRejectTimer = setTimeout(() => {
       if (settled) return;
       cleanup();
-      card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('warning', 10)} Timed out</span>`;
+      card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('warning', 10)} ${escapeHtml(t('aiApprovalExpired'))}</span>`;
       resolve(false);
     }, 5 * 60 * 1000);
     signal?.addEventListener('abort', onAbort, { once: true });
@@ -999,19 +1043,21 @@ export function showConfirmCard(
     approveBtn.addEventListener('click', () => {
       if (settled) return;
       cleanup();
-      card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('success', 10)} Approved</span>`;
+      card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('success', 10)} ${escapeHtml(t('aiApprovalAllowed'))}</span>`;
       resolve(true);
     });
 
     rejectBtn.addEventListener('click', () => {
       if (settled) return;
       cleanup();
-      card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('error', 10)} Rejected</span>`;
+      card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('error', 10)} ${escapeHtml(t('aiApprovalDenied'))}</span>`;
       resolve(false);
     });
 
     editBtn.addEventListener('click', () => {
       if (settled) return;
+      approveBtn.disabled = true;
+      editBtn.disabled = true;
       // Show inline editor
       const cmd = String(args.command || '');
       const editorDiv = document.createElement('div');
@@ -1031,8 +1077,11 @@ export function showConfirmCard(
 
       const runEdited = () => {
         if (settled) return;
+        if (!editInput.value.trim()) return;
+        preview.textContent = editInput.value;
+        editorDiv.replaceWith(preview);
         cleanup();
-        card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('success', 10)} Edited</span>`;
+        card.querySelector('.ai-confirm-header')!.innerHTML += ` <span class="ai-confirm-resolved">${statusIcon('success', 10)} ${escapeHtml(t('aiApprovalEdited'))}</span>`;
         resolve(editInput.value);
       };
 
@@ -1055,8 +1104,8 @@ export function showConfirmCard(
 // inline card pinned to the bottom of the chat. There is at most ONE
 // todo board per chat panel: the first todo_updated event creates it,
 // subsequent events mutate it in place. The card is always re-anchored
-// to the END of the chat container so it stays visible as new tool
-// cards stream in above it.
+// outside the scrolling messages so it stays visible as new tool
+// cards stream in.
 //
 // The board includes:
 //   • A header with overall progress (N/M completed) + animated
@@ -1071,9 +1120,7 @@ export function showConfirmCard(
 
 /**
  * Find or create the persistent plan board. Mounted as a direct child
- * of `.ai-chat-panel` AFTER `.ai-chat-messages`, so it floats above
- * the input bar instead of getting buried in the scrolling message
- * stream. Trigger the slide-up animation by toggling `.entered` on
+ * of `.ai-chat-panel` beside `.ai-chat-messages`. Trigger the slide-up animation by toggling `.entered` on
  * the next animation frame (so the initial translateY(100%) is
  * actually rendered first).
  *
@@ -1086,7 +1133,10 @@ function findOrCreateTodoBoard(panel: Element): HTMLDivElement {
     board.className = 'ai-todo-board';
     board.setAttribute('role', 'group');
     board.setAttribute('aria-label', planTitle());
-    panel.appendChild(board);
+    const messages = panel.classList.contains('ai-chat-panel--side')
+      ? panel.querySelector(':scope > .ai-chat-messages')
+      : null;
+    panel.insertBefore(board, messages);
     // Next frame: toggle `.entered` to play the slide-in animation.
     // Double-rAF to ensure layout has the start state painted.
     const el = board;

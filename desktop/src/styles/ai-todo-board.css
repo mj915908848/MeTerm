@@ -1,7 +1,7 @@
 /* ─── AI Agent: Persistent Task Plan (TodoBoard) ────────────── */
 /*
  * Renders the agent's `todo_write` plan as a persistent inline card
- * pinned to the bottom of the chat panel. Visual goals:
+ * pinned outside the scrolling chat transcript. Visual goals:
  *   • Distinct from regular tool cards (slightly thicker border, accent bar)
  *   • Compact when collapsed, scannable when open
  *   • Per-row status: pending (empty box), in_progress (spinner+pulse),
@@ -11,21 +11,7 @@
  * Light/dark theming follows the surrounding chat surface variables.
  */
 
-/* Plan board lives as a sibling of .ai-chat-messages at the BOTTOM
- * of .ai-chat-panel — visually pinned just above the input bar, NOT
- * inline in the scrolling message stream. This means:
- *   • The board is always visible while a task runs, regardless of
- *     how the user scrolls the chat history.
- *   • Status changes (item complete / progress bar / running shimmer)
- *     animate in place rather than scrolling past out of view.
- *   • Once all items are completed we celebrate for ~3s then
- *     slide-down + fade out (see .ai-todo-board.exiting), leaving the
- *     chat dialog clean for the next task.
- *
- * Visual language: match `.ai-chat-panel`'s liquid-glass look so the
- * board reads as a small card EMERGING from the dialog itself, not a
- * separate slab. Width inset from the panel edges, rounded on all 4
- * corners, glassy background + the same border colour family. */
+/* Keep the plan visible while the transcript scrolls. */
 .ai-todo-board {
   flex-shrink: 0;
   /* Inset from the chat-panel's interior edges so the board looks

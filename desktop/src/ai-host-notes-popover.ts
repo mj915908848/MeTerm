@@ -41,8 +41,10 @@ export function hostNotesLoadedNotice(sessionId: string): string | null {
  */
 export function createHostNotesButton(currentSessionId: () => string): HTMLButtonElement {
   const btn = document.createElement('button');
+  btn.type = 'button';
   btn.className = 'ai-side-btn ai-side-btn-host-notes';
   btn.title = t('aiHostNotesBtnTitle');
+  btn.setAttribute('aria-label', btn.title);
   btn.innerHTML = NOTES_ICON_SVG;
 
   let popover: HTMLDivElement | null = null;
@@ -52,6 +54,8 @@ export function createHostNotesButton(currentSessionId: () => string): HTMLButto
     const key = hostNotesKeyForSession(currentSessionId());
     btn.classList.toggle('has-notes', !!key && !!getHostNotes(key));
   };
+
+  btn.addEventListener('ai-host-notes-target', refreshDot);
 
   const close = () => {
     editor?.save();
@@ -76,13 +80,22 @@ export function createHostNotesButton(currentSessionId: () => string): HTMLButto
   };
 
   const open = () => {
-    const anchor = (btn.closest('.ai-side-input-area') as HTMLElement | null) ?? btn;
+    const anchor = btn.closest('.ai-chat-target-row') ?? btn;
     const rect = anchor.getBoundingClientRect();
     popover = document.createElement('div');
     popover.className = 'ai-host-notes-popover';
-    popover.style.left = `${Math.max(8, rect.left)}px`;
-    popover.style.width = `${Math.max(260, rect.width)}px`;
-    popover.style.bottom = `${window.innerHeight - rect.top + 6}px`;
+    const width = Math.min(window.innerWidth - 16, Math.max(260, rect.width));
+    popover.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))}px`;
+    popover.style.width = `${width}px`;
+    const openAbove = rect.top > window.innerHeight - rect.bottom;
+    if (openAbove) {
+      popover.style.bottom = `${window.innerHeight - rect.top + 6}px`;
+    } else {
+      popover.style.top = `${rect.bottom + 6}px`;
+    }
+    const availableHeight = openAbove ? rect.top : window.innerHeight - rect.bottom;
+    popover.style.maxHeight = `${Math.max(64, availableHeight - 14)}px`;
+    popover.style.overflowY = 'auto';
 
     const head = document.createElement('div');
     head.className = 'ai-host-notes-popover-head';
@@ -115,7 +128,7 @@ export function createHostNotesButton(currentSessionId: () => string): HTMLButto
     popover.appendChild(head);
 
     if (key) {
-      editor = createHostNotesEditor(key, { maxHeight: Math.max(120, rect.top - 120), autofocus: true });
+      editor = createHostNotesEditor(key, { maxHeight: Math.max(64, window.innerHeight - rect.bottom - 115), autofocus: true });
       popover.appendChild(editor);
     } else {
       const empty = document.createElement('div');

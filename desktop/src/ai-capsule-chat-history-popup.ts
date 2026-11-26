@@ -73,8 +73,8 @@ export function openChatHistory(
 
   if (fromSidePanel && instance.chatPanel) {
     // Side panel: show chat history inline inside the chat messages area
-    const btn = instance.sideInputArea?.querySelector('.ai-side-btn-chat-history') as HTMLButtonElement;
-    if (btn) btn.classList.add('active');
+    const btn = instance.chatPanel?.querySelector('.ai-chat-history-action') as HTMLButtonElement;
+    btn?.setAttribute('aria-pressed', 'true');
 
     let panel = instance.chatPanel.querySelector('.ai-side-chat-history-view') as HTMLDivElement;
     if (!panel) {
@@ -132,10 +132,10 @@ export function closeChatHistory(
 
   if (isSideInline) {
     const msgs = instance.chatPanel?.querySelector('.ai-chat-messages') as HTMLElement;
-    const btn = instance.sideInputArea?.querySelector('.ai-side-btn-chat-history') as HTMLButtonElement;
+    const btn = instance.chatPanel?.querySelector('.ai-chat-history-action') as HTMLButtonElement;
     sideHistView.style.display = 'none';
     if (msgs) msgs.style.display = '';
-    if (btn) btn.classList.remove('active');
+    btn?.setAttribute('aria-pressed', 'false');
   } else {
     const panel = instance.element.querySelector('.ai-bar-chat-history-panel') as HTMLDivElement;
     const btn = instance.element.querySelector('.ai-bar-btn-chat-history') as HTMLButtonElement;
