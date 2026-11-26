@@ -15,6 +15,8 @@ use tokio_util::sync::CancellationToken;
 
 use super::ssh_algorithms::preferred_algorithms;
 use super::ssh_auth;
+#[cfg(any(windows, target_os = "macos"))]
+use super::ssh_host_keys;
 pub use super::ssh_limits::ssh_exec;
 use super::ssh_limits::{
     operation_with_timeout, SSH_AUTH_TIMEOUT, SSH_CHANNEL_TIMEOUT, SSH_CLOSE_TIMEOUT,
@@ -76,6 +78,8 @@ pub struct SshConfig {
     pub passphrase: String,
     #[serde(default)]
     pub trusted_fingerprint: String,
+    #[serde(skip)]
+    pub replace_host_key: bool,
     #[serde(default)]
     pub disable_hook: bool,
     /// When true, run SFTP on a sub-channel of the **existing** terminal
@@ -124,6 +128,10 @@ impl Drop for SshConfig {
 
 pub struct SshHandler {
     trusted_fingerprint: Option<String>,
+    #[cfg(any(windows, target_os = "macos"))]
+    saved_fingerprint: Option<String>,
+    #[cfg(any(windows, target_os = "macos"))]
+    replace_host_key: bool,
     host: String,
     port: u16,
     /// Captured fingerprint when host key is unknown (for frontend confirmation).
@@ -155,6 +163,21 @@ impl client::Handler for SshHandler {
         // Store for error reporting
         *self.server_fingerprint.lock().await = Some(fingerprint.clone());
         *self.server_key_type.lock().await = Some(key_type);
+
+        // An explicitly replaced endpoint stays pinned across reconnects.
+        #[cfg(any(windows, target_os = "macos"))]
+        if let Some(accepted) = ssh_host_keys::verify(
+            self.saved_fingerprint.as_deref(),
+            self.trusted_fingerprint.as_deref(),
+            &fingerprint,
+            self.replace_host_key,
+        ) {
+            if !accepted {
+                self.host_key_changed.store(true, Ordering::SeqCst);
+                self.host_key_rejected.store(true, Ordering::SeqCst);
+            }
+            return Ok(accepted);
+        }
 
         // An explicit fingerprint supplied by the client is authoritative.  It
         // must not be bypassed merely because a separately mutable known_hosts
@@ -495,12 +518,22 @@ async fn connect_authenticated_session(
     let server_key_type = Arc::new(Mutex::new(None));
     let host_key_rejected = Arc::new(AtomicBool::new(false));
     let host_key_changed = Arc::new(AtomicBool::new(false));
+    #[cfg(any(windows, target_os = "macos"))]
+    let (host_key_path, saved_fingerprint) = {
+        let path = ssh_host_keys::path(&config.host, config.port)?;
+        let saved = ssh_host_keys::read(&path)?;
+        (path, saved)
+    };
     let handler = SshHandler {
         trusted_fingerprint: if config.trusted_fingerprint.is_empty() {
             None
         } else {
             Some(config.trusted_fingerprint.clone())
         },
+        #[cfg(any(windows, target_os = "macos"))]
+        saved_fingerprint: saved_fingerprint.clone(),
+        #[cfg(any(windows, target_os = "macos"))]
+        replace_host_key: config.replace_host_key,
         host: config.host.clone(),
         port: config.port,
         server_fingerprint: server_fingerprint.clone(),
@@ -546,6 +579,21 @@ async fn connect_authenticated_session(
             return Err(format!("SSH connect: {}", e));
         }
     };
+
+    // The SSH handshake has verified possession of the confirmed key.
+    // Save before authentication so a changed password can be retried normally.
+    #[cfg(any(windows, target_os = "macos"))]
+    if config.replace_host_key {
+        let observed = server_fingerprint.lock().await;
+        if observed.as_deref() != Some(config.trusted_fingerprint.as_str()) {
+            return Err("Could not verify the confirmed SSH host key".into());
+        }
+        ssh_host_keys::replace(
+            &host_key_path,
+            saved_fingerprint.as_deref(),
+            &config.trusted_fingerprint,
+        )?;
+    }
 
     let auth_attempt = async {
         Ok::<_, String>(match config.auth_method {

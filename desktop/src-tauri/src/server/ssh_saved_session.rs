@@ -39,6 +39,8 @@ pub struct CreateSshSessionFromSavedRequest {
     #[serde(default)]
     trusted_fingerprint: Option<String>,
     #[serde(default)]
+    replace_host_key: bool,
+    #[serde(default)]
     skip_shell_hook: Option<bool>,
 }
 
@@ -76,6 +78,7 @@ fn build_ssh_config_from_saved(
         private_key,
         passphrase: secrets.passphrase.unwrap_or_default(),
         trusted_fingerprint: trusted_fingerprint.unwrap_or_default(),
+        replace_host_key: false,
         disable_hook: skip_shell_hook.or(conn.skip_shell_hook).unwrap_or(false),
         multiplex_sftp: conn.multiplex_sftp.unwrap_or(false),
         proxy_type: conn.proxy_type.unwrap_or_default(),
@@ -205,7 +208,7 @@ pub async fn create_ssh_session_from_saved(
     Extension(state): Extension<Arc<ServerState>>,
     Json(body): Json<CreateSshSessionFromSavedRequest>,
 ) -> impl IntoResponse {
-    let config = match materialize_saved_ssh_config_bounded(
+    let mut config = match materialize_saved_ssh_config_bounded(
         state.clone(),
         body.id.clone(),
         body.trusted_fingerprint,
@@ -244,6 +247,7 @@ pub async fn create_ssh_session_from_saved(
         }
     };
 
+    config.replace_host_key = body.replace_host_key;
     super::handlers::connect_and_start_ssh_session(state, config).await
 }
 
@@ -254,7 +258,7 @@ pub async fn test_ssh_session_from_saved(
     Extension(state): Extension<Arc<ServerState>>,
     Json(body): Json<CreateSshSessionFromSavedRequest>,
 ) -> impl IntoResponse {
-    let config = match materialize_saved_ssh_config_bounded(
+    let mut config = match materialize_saved_ssh_config_bounded(
         state.clone(),
         body.id.clone(),
         body.trusted_fingerprint,
@@ -305,6 +309,7 @@ pub async fn test_ssh_session_from_saved(
         }
     };
 
+    config.replace_host_key = body.replace_host_key;
     match super::terminal::ssh::test_connection(&config).await {
         Ok(_) => (StatusCode::OK, Json(serde_json::json!({ "ok": true }))),
         Err(error) => {

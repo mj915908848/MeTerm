@@ -28,6 +28,7 @@ pub async fn create_ssh_session(
     private_key: Option<String>,
     passphrase: Option<String>,
     trusted_fingerprint: Option<String>,
+    replace_host_key: Option<bool>,
     skip_shell_hook: Option<bool>,
     multiplex_sftp: Option<bool>,
     proxy_type: Option<String>,
@@ -40,7 +41,7 @@ pub async fn create_ssh_session(
         return Err("host and username are required".to_string());
     }
 
-    let config = SshConfig {
+    let mut config = SshConfig {
         host,
         port,
         username,
@@ -49,6 +50,7 @@ pub async fn create_ssh_session(
         private_key: private_key.unwrap_or_default(),
         passphrase: passphrase.unwrap_or_default(),
         trusted_fingerprint: trusted_fingerprint.unwrap_or_default(),
+        replace_host_key: replace_host_key.unwrap_or_default(),
         disable_hook: skip_shell_hook.unwrap_or(false),
         multiplex_sftp: multiplex_sftp.unwrap_or(false),
         proxy_type: proxy_type.unwrap_or_default(),
@@ -83,6 +85,7 @@ pub async fn create_ssh_session(
         Err(_) => return Err("SSH failed: ssh_connect_timeout".to_string()),
     };
 
+    config.replace_host_key = false;
     let auth_used = terminal.auth_used;
     let pending_session = state.session_manager.prepare_connected_ssh(config.clone());
     let session = pending_session.session();
@@ -187,6 +190,7 @@ pub async fn test_ssh_connection(
     private_key: Option<String>,
     passphrase: Option<String>,
     trusted_fingerprint: Option<String>,
+    replace_host_key: Option<bool>,
     proxy_type: Option<String>,
     proxy_host: Option<String>,
     proxy_port: Option<u16>,
@@ -209,6 +213,7 @@ pub async fn test_ssh_connection(
         private_key: private_key.unwrap_or_default(),
         passphrase: passphrase.unwrap_or_default(),
         trusted_fingerprint: trusted_fingerprint.unwrap_or_default(),
+        replace_host_key: replace_host_key.unwrap_or_default(),
         disable_hook: false,
         multiplex_sftp: false,
         proxy_type: proxy_type.unwrap_or_default(),

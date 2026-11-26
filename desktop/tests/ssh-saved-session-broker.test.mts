@@ -6,10 +6,16 @@ import ts from 'typescript';
 
 const source = readFileSync(new URL('../src/ssh-saved-session.ts', import.meta.url), 'utf8');
 
-function harness(saved: Record<string, unknown>) {
+function harness(saved: Record<string, unknown>, options: {
+  challenges?: Record<string, unknown>[];
+  accept?: boolean;
+  canReplace?: boolean;
+} = {}) {
   const exports: Record<string, (...args: any[]) => any> = {};
   const requests: Array<{ path: string; body: Record<string, unknown> }> = [];
   const raw: string[] = [];
+  const confirmations: unknown[][] = [];
+  const challenges = [...(options.challenges ?? [])];
   const context = {
     exports,
     require: (path: string) => {
@@ -18,7 +24,11 @@ function harness(saved: Record<string, unknown>) {
         isInlinePrivateKey: (value: string) => value.includes('\n') || value.trimStart().startsWith('-----BEGIN '),
         createSSHSession: async () => { raw.push('connect'); return 'raw-session'; },
         testSSHConnection: async () => { raw.push('test'); return { ok: true }; },
-        showHostKeyConfirmDialog: async () => false,
+        canReplaceSSHHostKey: () => options.canReplace ?? true,
+        showHostKeyConfirmDialog: async (...args: unknown[]) => {
+          confirmations.push(args);
+          return options.accept ?? false;
+        },
       };
       if (path === './connection-sync') return { existingConnectionId: () => 'saved-id' };
       if (path === './i18n') return { t: (key: string) => key };
@@ -26,13 +36,14 @@ function harness(saved: Record<string, unknown>) {
     },
     fetch: async (url: string, init: { body: string }) => {
       requests.push({ path: url, body: JSON.parse(init.body) });
-      return { ok: true, json: async () => ({ id: 'saved-session', ok: true }) };
+      const challenge = challenges.shift();
+      return { ok: !challenge, json: async () => challenge ?? { id: 'saved-session', ok: true } };
     },
   };
   vm.runInNewContext(ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2021 },
   }).outputText, context);
-  return { api: exports, requests, raw };
+  return { api: exports, requests, raw, confirmations };
 }
 
 const saved = {
@@ -85,4 +96,58 @@ test('a stale id never borrows a saved connection for a different endpoint', asy
   assert.equal(h.api.shouldUseSavedSessionBroker(other), false);
   assert.equal(await h.api.createSSHSessionForConfig(other, 51766, 'token'), 'raw-session');
   assert.equal(h.requests.length, 0);
+});
+
+const changedKey = {
+  error: 'host_key_mismatch',
+  hostname: 'prod.example.com:22',
+  fingerprint: 'new-fingerprint',
+  key_type: 'ssh-ed25519',
+};
+
+test('confirmed changed host key retries connect and test with the displayed fingerprint', async () => {
+  for (const operation of ['createSSHSessionForConfig', 'testSSHConnectionForConfig']) {
+    const h = harness(saved, { challenges: [changedKey], accept: true });
+    await h.api[operation](saved, 51766, 'token');
+    assert.deepEqual(h.confirmations, [[changedKey.hostname, changedKey.fingerprint, changedKey.key_type, true]]);
+    assert.equal(h.requests.length, 2);
+    assert.equal(h.requests[0].body.replace_host_key, false);
+    assert.equal(h.requests[1].body.replace_host_key, true);
+    assert.equal(h.requests[1].body.trusted_fingerprint, changedKey.fingerprint);
+    assert.equal(h.requests[1].path, h.requests[0].path);
+  }
+});
+
+test('cancelling a changed key leaves the saved trust alone', async () => {
+  const h = harness(saved, { challenges: [changedKey] });
+  await assert.rejects(h.api.createSSHSessionForConfig(saved, 51766, 'token'), /cancelled/);
+  assert.equal(h.requests.length, 1);
+});
+
+test('a changed key is rejected if it changes again during the pinned retry', async () => {
+  const h = harness(saved, {
+    challenges: [changedKey, { ...changedKey, fingerprint: 'different-again' }],
+    accept: true,
+  });
+  await assert.rejects(h.api.createSSHSessionForConfig(saved, 51766, 'token'), /sshHostKeyMismatchMsg/);
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.confirmations.length, 1);
+});
+
+test('the normal first-trust flow does not request host key replacement', async () => {
+  const h = harness(saved, {
+    challenges: [{ ...changedKey, error: 'host_key_unknown' }],
+    accept: true,
+  });
+  await h.api.createSSHSessionForConfig(saved, 51766, 'token');
+  assert.equal(h.confirmations[0][3], false);
+  assert.equal(h.requests[1].body.replace_host_key, false);
+  assert.equal(h.requests[1].body.trusted_fingerprint, changedKey.fingerprint);
+});
+
+test('changed-key confirmation is unavailable on other platforms', async () => {
+  const h = harness(saved, { challenges: [changedKey], canReplace: false });
+  await assert.rejects(h.api.createSSHSessionForConfig(saved, 51766, 'token'), /sshHostKeyMismatchMsg/);
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.confirmations.length, 0);
 });

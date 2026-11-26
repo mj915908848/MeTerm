@@ -15,6 +15,8 @@ pub mod pty_wsl;
 pub mod ssh;
 mod ssh_algorithms;
 mod ssh_auth;
+#[cfg(any(windows, target_os = "macos", test))]
+mod ssh_host_keys;
 pub(crate) mod ssh_limits;
 mod ssh_transport;
 

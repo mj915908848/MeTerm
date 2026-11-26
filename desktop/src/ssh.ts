@@ -392,7 +392,7 @@ export function addRecentConnection(config: SSHConnectionConfig): void {
   saveRecentConnections(recent);
 }
 
-export async function createSSHSession(config: SSHConnectionConfig, trustedFingerprint?: string): Promise<string> {
+export async function createSSHSession(config: SSHConnectionConfig, trustedFingerprint?: string, replaceHostKey = false): Promise<string> {
   // Saved metadata-only connections are routed through ssh-saved-session.ts;
   // this raw command is only for credentials the user just entered.
   const resolvedConfig = config;
@@ -420,6 +420,7 @@ export async function createSSHSession(config: SSHConnectionConfig, trustedFinge
     privateKey: resolvedConfig.privateKey || null,
     passphrase: resolvedConfig.passphrase || null,
     trustedFingerprint: trustedFingerprint || null,
+    replaceHostKey,
     skipShellHook: resolvedConfig.skipShellHook || null,
     multiplexSftp: resolvedConfig.multiplexSftp || null,
     proxyType: resolvedConfig.proxyType || null,
@@ -433,19 +434,19 @@ export async function createSSHSession(config: SSHConnectionConfig, trustedFinge
   // Check for host key verification errors
   if (parsed.error === 'host_key_unknown' || parsed.error === 'host_key_mismatch') {
     const hkErr = parsed as HostKeyError;
-    if (hkErr.error === 'host_key_mismatch') {
+    const changed = hkErr.error === 'host_key_mismatch';
+    if (trustedFingerprint || (changed && !canReplaceSSHHostKey())) {
       throw new Error(t('sshHostKeyMismatchMsg')
         .replace('{hostname}', hkErr.hostname)
         .replace('{fingerprint}', hkErr.fingerprint)
         .replace('{keyType}', hkErr.key_type));
     }
-    // Unknown host — ask user to confirm
-    const confirmed = await showHostKeyConfirmDialog(hkErr.hostname, hkErr.fingerprint, hkErr.key_type);
+    const confirmed = await showHostKeyConfirmDialog(hkErr.hostname, hkErr.fingerprint, hkErr.key_type, changed);
     if (!confirmed) {
       throw new Error('Connection cancelled by user');
     }
     // Retry with trusted fingerprint — pass resolved secrets in config to avoid re-loading
-    return createSSHSession(resolvedConfig, hkErr.fingerprint);
+    return createSSHSession(resolvedConfig, hkErr.fingerprint, changed);
   }
 
   const resp = parsed as SSHSessionCreateResponse;
@@ -453,8 +454,17 @@ export async function createSSHSession(config: SSHConnectionConfig, trustedFinge
   return resp.id;
 }
 
-// Host key confirmation dialog — TOFU (Trust On First Use) flow
-export function showHostKeyConfirmDialog(hostname: string, fingerprint: string, keyType: string): Promise<boolean> {
+export function canReplaceSSHHostKey(): boolean {
+  const platform = navigator.userAgent.toLowerCase();
+  return platform.includes('windows') || platform.includes('macintosh') || platform.includes('mac os');
+}
+
+export function showHostKeyConfirmDialog(
+  hostname: string,
+  fingerprint: string,
+  keyType: string,
+  changed = false,
+): Promise<boolean> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'ssh-modal-overlay';
@@ -466,19 +476,20 @@ export function showHostKeyConfirmDialog(hostname: string, fingerprint: string, 
     dialog.style.width = '500px';
 
     const title = document.createElement('h3');
-    title.textContent = t('sshHostKeyUnknownTitle');
+    title.textContent = t(changed ? 'sshHostKeyChangedTitle' : 'sshHostKeyUnknownTitle');
     title.style.marginBottom = '12px';
     dialog.appendChild(title);
 
     const msg = document.createElement('p');
-    msg.textContent = t('sshHostKeyUnknownMsg').replace('{hostname}', hostname);
+    msg.textContent = t(changed ? 'sshHostKeyChangedMsg' : 'sshHostKeyUnknownMsg').replace('{hostname}', hostname);
     msg.style.marginBottom = '12px';
     msg.style.lineHeight = '1.5';
     dialog.appendChild(msg);
 
     const infoBox = document.createElement('div');
     infoBox.style.cssText = 'background:rgba(var(--bg-card-hover),1);padding:12px;border-radius:6px;margin-bottom:16px;font-family:var(--font-mono);font-size:12px;word-break:break-all;';
-    infoBox.innerHTML = `<div style="margin-bottom:4px"><strong>${t('sshHostKeyType')}:</strong> ${escapeHtml(keyType)}</div><div><strong>${t('sshHostKeyFingerprint')}:</strong> ${escapeHtml(fingerprint)}</div>`;
+    const displayFingerprint = changed && !fingerprint.startsWith('SHA256:') ? `SHA256:${fingerprint}` : fingerprint;
+    infoBox.innerHTML = `<div style="margin-bottom:4px"><strong>${t('sshHostKeyType')}:</strong> ${escapeHtml(keyType)}</div><div><strong>${t('sshHostKeyFingerprint')}:</strong> ${escapeHtml(displayFingerprint)}</div>`;
     dialog.appendChild(infoBox);
 
     const btnRow = document.createElement('div');
@@ -492,7 +503,7 @@ export function showHostKeyConfirmDialog(hostname: string, fingerprint: string, 
 
     const trustBtn = document.createElement('button');
     trustBtn.className = 'ssh-btn ssh-btn-primary';
-    trustBtn.textContent = t('sshHostKeyTrust');
+    trustBtn.textContent = t(changed ? 'sshHostKeyReplace' : 'sshHostKeyTrust');
     trustBtn.onclick = () => { overlay.remove(); resolve(true); };
     btnRow.appendChild(trustBtn);
 
@@ -515,7 +526,7 @@ export function getSSHConnectHandler(): SSHConnectHandler | null {
   return onConnectHandler;
 }
 
-export async function testSSHConnection(config: SSHConnectionConfig, trustedFingerprint?: string): Promise<{ ok: boolean; error?: string }> {
+export async function testSSHConnection(config: SSHConnectionConfig, trustedFingerprint?: string, replaceHostKey = false): Promise<{ ok: boolean; error?: string }> {
   const resolvedConfig = config;
   if (resolvedConfig.authMethod === 'key'
     && !resolvedConfig.privateKey
@@ -541,6 +552,7 @@ export async function testSSHConnection(config: SSHConnectionConfig, trustedFing
     privateKey: resolvedConfig.privateKey || null,
     passphrase: resolvedConfig.passphrase || null,
     trustedFingerprint: trustedFingerprint || null,
+    replaceHostKey,
     proxyType: resolvedConfig.proxyType || null,
     proxyHost: resolvedConfig.proxyHost || null,
     proxyPort: resolvedConfig.proxyPort || null,
@@ -553,19 +565,19 @@ export async function testSSHConnection(config: SSHConnectionConfig, trustedFing
   // Check for host key verification errors
   if (parsed.error === 'host_key_unknown' || parsed.error === 'host_key_mismatch') {
     const hkErr = parsed as HostKeyError;
-    if (hkErr.error === 'host_key_mismatch') {
+    const changed = hkErr.error === 'host_key_mismatch';
+    if (trustedFingerprint || (changed && !canReplaceSSHHostKey())) {
       return { ok: false, error: t('sshHostKeyMismatchMsg')
         .replace('{hostname}', hkErr.hostname)
         .replace('{fingerprint}', hkErr.fingerprint)
         .replace('{keyType}', hkErr.key_type) };
     }
-    // Unknown host — ask user to confirm
-    const confirmed = await showHostKeyConfirmDialog(hkErr.hostname, hkErr.fingerprint, hkErr.key_type);
+    const confirmed = await showHostKeyConfirmDialog(hkErr.hostname, hkErr.fingerprint, hkErr.key_type, changed);
     if (!confirmed) {
       return { ok: false, error: 'Connection cancelled by user' };
     }
     // Retry with trusted fingerprint
-    return testSSHConnection(resolvedConfig, hkErr.fingerprint);
+    return testSSHConnection(resolvedConfig, hkErr.fingerprint, changed);
   }
 
   return parsed as { ok: boolean; error?: string };
