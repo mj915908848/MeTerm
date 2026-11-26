@@ -64,7 +64,7 @@
 
 ## MAC-003: 未签名分发的门禁放行（助手脚本方案已废弃）
 
-**模块**: `desktop/scripts/build-dmg.sh`、`build-macos.sh`、`.github/workflows/build-macos.yml`、`README.md` / `README_CN.md`
+**模块**: `desktop/scripts/build-dmg.sh`、`build-macos.sh`、`.github/workflows/build-macos.yml`、`README.md` / `README_EN.md`
 
 **现象**: 本 fork 不购买 Apple Developer Program，发布包不做 Developer ID 签名与公证，接收方首次打开会被 Gatekeeper 拦下。
 

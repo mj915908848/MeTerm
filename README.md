@@ -4,268 +4,241 @@
 
 # MeTerm
 
-**Cross-platform terminal for local, SSH and JumpServer sessions**
+**支持本地、SSH 与 JumpServer 会话的跨平台终端**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/mj915908848/MeTerm/ci.yml?style=flat-square&label=CI)](https://github.com/mj915908848/MeTerm/actions/workflows/ci.yml)
-[![Build macOS](https://img.shields.io/github/actions/workflow/status/mj915908848/MeTerm/build-macos.yml?style=flat-square&logo=apple&label=macOS)](https://github.com/mj915908848/MeTerm/actions/workflows/build-macos.yml)
-[![Build Windows](https://img.shields.io/github/actions/workflow/status/mj915908848/MeTerm/build-windows.yml?style=flat-square&logo=windows&label=Windows)](https://github.com/mj915908848/MeTerm/actions/workflows/build-windows.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/mj915908848/MeTerm?style=flat-square&color=brightgreen)](https://github.com/mj915908848/MeTerm/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/mj915908848/MeTerm/total?style=flat-square&color=orange)](https://github.com/mj915908848/MeTerm/releases)
+[![CI](https://github.com/mj915908848/MeTerm/actions/workflows/ci.yml/badge.svg)](https://github.com/mj915908848/MeTerm/actions/workflows/ci.yml)
+[![Build macOS](https://github.com/mj915908848/MeTerm/actions/workflows/build-macos.yml/badge.svg)](https://github.com/mj915908848/MeTerm/actions/workflows/build-macos.yml)
+[![Build Windows](https://github.com/mj915908848/MeTerm/actions/workflows/build-windows.yml/badge.svg)](https://github.com/mj915908848/MeTerm/actions/workflows/build-windows.yml)
 
-[中文](./README_CN.md) · [Download](#download) · [Quick Start](#quick-start) · [Docs](#documentation) · [Acknowledgements](#acknowledgements)
+[MIT 许可证](LICENSE) · [最新版本](https://github.com/mj915908848/MeTerm/releases/latest) · [历史版本](https://github.com/mj915908848/MeTerm/releases)
+
+[English](./README_EN.md) · [下载安装](#下载安装) · [快速开始](#快速开始) · [文档](#文档) · [开源致谢](#开源致谢)
 
 </div>
 
 ---
 
-## Screenshots
+## 截图预览
 
-| Terminal | Split Pane |
+| 终端主界面 | 分屏布局 |
 |:---:|:---:|
 | ![terminal](docs/images/terminal.png) | ![split-pane](docs/images/split-pane.png) |
 
-| SFTP File Manager | Home Search |
+| SFTP 文件管理 | 主页搜索 |
 |:---:|:---:|
 | ![file-manager](docs/images/file-manager.png) | ![home-search](docs/images/home-search.png) |
 
-| JumpServer Asset Browser | JumpServer Terminal | JumpServer File Manager |
+| JumpServer 资产浏览 | JumpServer 终端 | JumpServer 文件管理 |
 |:---:|:---:|:---:|
 | ![jumpserver-browser](docs/images/jumpserver-3.png) | ![jumpserver-terminal](docs/images/jumpserver-2.png) | ![jumpserver-files](docs/images/jumpserver-1.png) |
 
-| AI Assistant | Settings |
+| AI 助手 | 设置面板 |
 |:---:|:---:|
 | ![ai-capsule](docs/images/ai-capsule.png) | ![settings](docs/images/settings.png) |
 
 ---
 
-## Key Features
+## 核心特性
 
-**Three session types:**
+**三种会话类型：**
 
-- **Local Terminal** — Out-of-the-box local shell sessions
-- **SSH Remote** — Password/key authentication to remote servers
-- **JumpServer** — Browse and connect bastion host assets (tested v2 & v4, supports MFA authentication)
+- **本地终端** — 开箱即用的本地 Shell 会话
+- **SSH 远程连接** — 密码/密钥认证，连接远程服务器
+- **JumpServer 堡垒机** — 浏览并连接堡垒机资产（已测试 v2 与 v4，支持 MFA 认证）
 
-To bring in existing SSH hosts, open **Settings › Connections › Import & Export › Import OpenSSH config** and select your `~/.ssh/config`. The importer previews named hosts with a `User` setting and skips saved names. It accepts `Host`, `HostName`, `User`, `Port`, and one `IdentityFile` per host. Entries that require a jump host or multiple identity files are skipped. `Include` and `Match` are currently unsupported.
+在「设置 › 连接 › 导入导出 › 导入 OpenSSH 配置」选择 `~/.ssh/config`，即可预览并导入已设置 `User` 的命名主机。同名连接会被跳过。支持 `Host`、`HostName`、`User`、`Port` 和每台主机一个 `IdentityFile`。依赖跳板或配置多把密钥的主机会跳过，目前暂不支持含 `Include` 或 `Match` 的文件。
 
-**Tab management:**
+**标签页管理：**
 
-- Multi-tab with drag-to-reorder, drag tab out to create new window
-- Split pane layout (horizontal/vertical, independent sessions per pane)
-- Connection quick switcher (Cmd+Shift+O on macOS, Ctrl+Shift+O on Windows)
+- 多标签页，拖拽排序，拖出标签创建新窗口
+- 分屏布局（水平/竖直分割，各分屏独立会话）
+- 快速切换连接（macOS 用 Cmd+Shift+O，Windows 用 Ctrl+Shift+O）
 
-**Terminal enhancements:**
+**终端增强：**
 
-- AI Assistant & Agent — Floating dialog or side panel, supports OpenAI-compatible / Anthropic / Gemini protocols; Agent mode adds multi-pane awareness, file transfer, task planning, structured search, and per-session PTY lock
-- SFTP File Manager — Breadcrumb navigation, keyboard nav, file search, multi-select, remote copy/move, chmod, bookmarks, speed limit, transfer notifications, drag-and-drop, resume, parallel high-speed transfers via adaptive SFTP pipeline
-- Built-in Editor — Remote file editing, Markdown preview, image preview, word wrap, multi-format formatting (JSON/XML/HTML/CSS)
-- Shell Hook Integration — OSC 7766/7768 semantic prompts: click-to-move cursor, drag-select-to-edit in command area; automatic fallback when hook is unavailable
-- Command completion & tldr help cards
-- **Find in terminal** — Search the active pane's output with Cmd+F on macOS or Ctrl+Shift+F on Windows. Supports regex and case-sensitive matching.
-- **Command snippets** — Manage reusable commands in Settings › Terminal › Snippets. Open the palette with Cmd/Ctrl+Shift+S to insert or run a snippet.
-- **Synced input across panes** — Toggle with Cmd/Ctrl+Shift+I to send typing and pastes to all panes in the current tab. Highlighted borders show when it is active.
-- Home quick search — Local commands + web search (requires self-hosted [SearXNG](https://github.com/searxng/searxng))
-- Themes & Backgrounds — 8 terminal color themes and customizable background images
-- Terminal font enhancements — Font weight control, text sharpening, font size shortcuts (Ctrl/Cmd +/-)
+- AI 助手 & Agent — 浮动对话面板或侧栏模式，支持 OpenAI 兼容 / Anthropic / Gemini 三种协议；Agent 模式新增多面板感知、文件传输、任务规划、结构化搜索和会话 PTY 锁
+- SFTP 文件管理 — 面包屑导航、键盘导航、文件搜索、多选操作、远程复制/移动、chmod 权限修改、书签收藏、限速控制、传输通知、拖拽上传、断点续传、SFTP 自适应流水线高速并行传输
+- 内置编辑器 — 远程文件直接编辑、Markdown 渲染预览、图片预览、自动换行、多格式化支持（JSON/XML/HTML/CSS）
+- Shell Hook 注入 — 基于 OSC 7766/7768 语义提示符：点击移动光标、拖拽选中编辑命令区；无 Hook 时自动回退
+- 命令补全 & tldr 帮助卡片
+- **终端查找** — 在当前窗格的输出中搜索，macOS 用 Cmd+F，Windows 用 Ctrl+Shift+F。支持正则表达式和区分大小写。
+- **命令片段** — 在「设置 › 终端 › 命令片段」管理常用命令，按 Cmd/Ctrl+Shift+S 打开面板，可插入或执行所选片段。
+- **分屏同步输入** — 按 Cmd/Ctrl+Shift+I 开关，把键入和粘贴同步到当前标签的所有窗格。开启时窗格边框会高亮。
+- 主页快速搜索 — 本地命令 + Web 搜索（需自建 [SearXNG](https://github.com/searxng/searxng) 实例）
+- 主题与背景 — 8 套终端配色，支持自定义背景图片
+- 终端字体增强 — 字重控制、文字锐化、字体大小快捷键（Ctrl/Cmd +/-）
 
-**Networking:**
+**网络：**
 
-- Auto-reconnection — Ring buffer for missed data
+- 断线自动重连 — 环形缓冲区补发丢失数据
 
-**Other:**
+**其他：**
 
-- Windows right-click menu integration (Open in MeTerm)
-- Clickable file paths in terminal output (open files/folders directly)
-- SSH proxy support — SOCKS5 / HTTP CONNECT, independent proxy config per JumpServer
-- OSC enhancements — OSC 52 clipboard passthrough, OSC 8 hyperlinks, image display protocol
-- Chrome-style tab switching shortcuts (Ctrl/Cmd 1-9)
-- Window always-on-top pin button
-- Auto-create local session on startup (optional)
-- Internationalization (EN/ZH) · Desktop notifications
-
----
-
-## Platform Support
-
-| Platform | Architecture | Requirements |
-|----------|-------------|--------------|
-| macOS | Apple Silicon (arm64) | macOS 14 or later |
-| macOS | Intel (x86_64) | macOS 14 or later |
-| Windows | x64 | [Windows requirements](WINDOWS.md#runtime-requirements--运行要求) |
+- Windows 右键菜单集成（在 MeTerm 中打开）
+- 终端内文件路径可点击（直接打开文件/文件夹）
+- SSH 代理支持 — SOCKS5 / HTTP CONNECT，JumpServer 可独立配置代理
+- OSC 增强 — OSC 52 剪贴板穿透、OSC 8 超链接、图片显示协议
+- Chrome 风格标签切换快捷键（Ctrl/Cmd 1-9）
+- 窗口置顶按钮
+- 启动时自动新建本地会话（可选）
+- 国际化（中/英） · 桌面通知
 
 ---
 
-## Download
+## 平台支持
 
-<p align="center">
-  <a href="https://github.com/mj915908848/MeTerm/releases/latest"><img src="https://img.shields.io/badge/macOS-Download-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download for macOS"></a>
-  &nbsp;&nbsp;
-  <a href="https://github.com/mj915908848/MeTerm/releases/latest"><img src="https://img.shields.io/badge/Windows-Download-0078D4?style=for-the-badge&logo=windows&logoColor=white" alt="Download for Windows"></a>
-</p>
+| 平台 | 架构 | 系统要求 |
+|------|------|------|
+| macOS | Apple Silicon (arm64) | macOS 14 或更新版本 |
+| macOS | Intel (x86_64) | macOS 14 或更新版本 |
+| Windows | x64 | [Windows 运行要求](WINDOWS.md#runtime-requirements--运行要求) |
 
-| Platform | Installer |
-|----------|-----------|
+---
+
+## 下载安装
+
+[下载最新安装包](https://github.com/mj915908848/MeTerm/releases/latest)
+
+| 平台 | 安装包 |
+|------|--------|
 | macOS (Apple Silicon) | `MeTerm_x.x.x_aarch64.dmg` |
 | macOS (Intel) | `MeTerm_x.x.x_x64.dmg` |
 | Windows (x64) | `MeTerm_x.x.x_x64-setup.exe` |
 
-To upgrade from [v0.4.1](https://github.com/mj915908848/MeTerm/releases/tag/v0.4.1), download the installer from Releases. Starting with v0.4.2, you can check for subsequent releases inside the app.
+从 [v0.4.1](https://github.com/mj915908848/MeTerm/releases/tag/v0.4.1) 升级时，请从 Releases 下载新版安装包。从 v0.4.2 起，可以在应用内检查后续版本。
 
-### macOS blocks the first launch
+### macOS 首次打开被拦下怎么办
 
-Unless built with paid Apple Developer ID signing and notarization secrets in CI,
-macOS builds published from this repository are **not Developer ID signed and not
-notarized** (that requires a paid Apple Developer Program membership, ¥688/year).
-Gatekeeper therefore blocks the first launch with a "developer cannot be verified"
-message. **The download is not corrupt.** Do the following once and the app behaves
-normally afterwards.
+若 CI 未配置付费 Apple Developer ID 签名与公证 Secrets，本仓库 Release 里的 macOS 包
+**没有 Apple Developer ID 签名，也没有走公证** —— 那需要每年 ¥688 的付费开发者账号。
+因此 macOS 的 Gatekeeper 会在首次启动时拦下它，提示"无法验证开发者"。
+**这不是包坏了**，按下面的步骤做一次，之后就是普通 App。
 
-**Install**
+**安装**
 
-Open the dmg and drag `MeTerm.app` onto the `Applications` shortcut in the same
-window. That is the whole installation — no installer script is involved.
+打开 dmg，把 `MeTerm.app` 拖到同一个窗口里的 `Applications` 快捷方式上，安装就完成了 ——
+全程没有安装脚本。
 
-**Then allow the first launch** — either way works:
+**然后放行首次打开**，两种方式任选：
 
-*Option 1 — System Settings (no Terminal)*
+**方式一：走系统设置（不需要终端）**
 
-1. Double-click MeTerm in Applications and dismiss the warning with **Done**
-2. Open **System Settings → Privacy & Security** and scroll to **Security**
-3. Click **Open Anyway** next to the MeTerm notice, then authenticate
-4. Double-click the app again
+1. 在「应用程序」里双击 MeTerm，弹出提示后点「完成」
+2. 打开 **系统设置 → 隐私与安全性**，向下滚动到「安全性」
+3. 找到关于 MeTerm 的那条提示，点 **「仍要打开」**，用 Touch ID 或密码确认
+4. 再双击一次即可
 
-> Since macOS 15 (Sequoia) Apple **removed the old right-click → Open override**.
-> Most tutorials still recommend it, but it no longer works.
+> macOS 15 (Sequoia) 起 **「右键 → 打开」这个老办法已被 Apple 移除**，网上多数教程还在教它，
+> 实际点不动；只能走系统设置或下面的命令行。
 
-*Option 2 — one command*
+**方式二：一行命令**
 
 ```bash
 xattr -cr "/Applications/MeTerm.app"
 ```
 
-> The image deliberately contains **no helper script**. A helper only runs when
-> double-clicked from inside the mounted window, and that path cannot be verified
-> before shipping — on a real Mac it is blocked by Gatekeeper with no way through.
-> Since it cannot be verified, it should not be the install path: the standard
-> drag-to-Applications flow above is the supported one.
+> 映像里**刻意不放任何脚本**。放行脚本只有在「在映像窗口里双击」时才可能运行，而这条路径在出货前
+> 无法验证 —— 真机上实测会被 Gatekeeper 拦下且放行不了。既然验证不了，就不该把它当成安装方式；
+> 上面这套「拖进应用程序 + 系统设置放行」是 macOS 的标准路径。
 
-**Keychain password prompts after every upgrade**
+**升级后反复要求输入钥匙串密码**
 
-Saved SSH passwords live in the Keychain, one item per connection. An ad-hoc
-signed build is recognised by the Keychain only through its binary hash, which
-changes every release, so each connection asks for the login password again
-after an upgrade. A maintainer can export any code-signing certificate (the free
-Apple Development one is enough) as `.p12` and set the repository secrets
-`MACOS_STABLE_SIGN_CERTIFICATE` (base64 of the p12) and
-`MACOS_STABLE_SIGN_CERTIFICATE_PASSWORD`. Without a Developer ID, CI then signs
-with that certificate (not notarized, so the first-launch approval above still
-applies). On the first launch after the switch each connection asks one last
-time; choose **Always Allow** and later upgrades stop asking.
+SSH 密码存在钥匙串里，每个连接一条。只有 ad-hoc 签名的包，钥匙串只按二进制哈希认它，每个版本都会变，
+所以升级后每个连接都会再弹一次密码框。维护者可以把一张代码签名证书（免费的 Apple Development 证书即可）
+导出为 `.p12`，在仓库 Secrets 里配置 `MACOS_STABLE_SIGN_CERTIFICATE`（p12 的 base64）和
+`MACOS_STABLE_SIGN_CERTIFICATE_PASSWORD`，CI 在没有 Developer ID 时会用它固定签名（不公证，首次打开仍需上面的放行）。
+换成固定签名后的第一次启动，每个连接会最后再问一次，点「始终允许」，之后升级就不再询问。
 
 ---
 
-## Quick Start
+## 快速开始
 
-### Prerequisites
+### 环境要求
 
-| Dependency | Version | Installation |
-|------------|---------|-------------|
-| **Node.js** | 22 (22.6 or later for tests) | [Download Node.js](https://nodejs.org/) |
+| 依赖 | 版本 | 安装方式 |
+|------|------|----------|
+| **Node.js** | 22（运行测试需 22.6 或更新版本） | [下载 Node.js](https://nodejs.org/) |
 | **Rust** | latest stable | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| **Make** | — | macOS built-in |
+| **Make** | — | macOS 自带 |
 
-### Development Setup
+### 启动开发环境
 
-Both `make desktop-dev` and `make desktop-run-dev` require a usable Apple Development signing identity in the local Keychain. Create one in Xcode if needed. Use [the Windows development guide](WINDOWS.md#development-and-build-requirements--开发与构建要求) for the WSL-based workflow.
+`make desktop-dev` 和 `make desktop-run-dev` 都要求本机钥匙串里有可用的 Apple Development 签名身份。需要时可在 Xcode 中创建。Windows 的 WSL 开发流程见 [Windows 开发指南](WINDOWS.md#development-and-build-requirements--开发与构建要求)。
 
 ```bash
-# Clone the repository
+# 克隆项目
 git clone https://github.com/mj915908848/MeTerm.git
 cd MeTerm
 
-# Install desktop frontend dependencies
+# 安装桌面端前端依赖
 cd desktop && npm ci && cd ..
 
-# Start desktop app in dev mode
+# 启动桌面应用开发模式
 make desktop-dev
 ```
 
-Use `make desktop-dev` for hot reload. To test the signed debug bundle or
-development credential recovery, launch the isolated MeTerm Dev app:
+日常开发可用 `make desktop-dev` 热更新。若要测试签名后的调试包或开发凭据恢复，请启动隔离的 MeTerm Dev。
 
 ```bash
-make desktop-run-dev              # Builds/signs and opens MeTerm Dev.app (com.meterm.dev)
+make desktop-run-dev              # 构建、签名并打开 MeTerm Dev.app（com.meterm.dev）
 ```
 
-This target never opens or overwrites an installed production `MeTerm.app`.
-Use the same signing identity on later rebuilds so development Keychain access
-continues to match the app's designated requirement.
+该目标不会打开或覆盖已安装的正式版 `MeTerm.app`。后续重建需保持同一签名身份，
+以确保开发 Keychain 的访问要求仍与应用匹配。
 
-The expected signer common name and team ID are resolved from the local
-keychain at build time (`scripts/dev-relay-provenance.sh`) and injected as
-`METERM_DEV_SIGNER_CN` / `METERM_DEV_TEAM_ID`, so neither the personal Apple ID
-embedded in the certificate name nor the account's team ID is committed to the
-repository. Both targets resolve the signing identity before calling Tauri
-and stop if it is unavailable. To check the selected identity or specify a
-different certificate, use the following commands.
+预期签名证书的 CN 与 Team ID 会在构建时从本机钥匙串解析
+（`scripts/dev-relay-provenance.sh`），并以 `METERM_DEV_SIGNER_CN` /
+`METERM_DEV_TEAM_ID` 注入，因此证书名中的个人 Apple ID 与账号 Team ID 都不会
+写入仓库。两个目标都会在调用 Tauri 前解析签名身份。如果找不到有效身份，命令会提前退出。
+可以用以下命令检查当前身份或指定其他证书。
 
 ```bash
 bash scripts/dev-relay-provenance.sh --check
 METERM_DEV_SIGNER_CN='Apple Development: you@example.com (XXXXXXXXXX)' make desktop-dev
 ```
 
-`desktop-build-dev` is the only supported target that enables the
-`development-credential-recovery` feature (together with
-`development-mobile-control`). The feature is rejected in Release builds and
-the import command additionally verifies the exact signed `MeTerm Dev.app`
-identity before it can run.
+只有 `desktop-build-dev` 会同时启用 `development-mobile-control` 与
+`development-credential-recovery`。Release 构建会拒绝该恢复 feature；导入命令执行前还会
+校验当前运行的确实是指定签名身份的 `MeTerm Dev.app`。
 
-`MeTerm Dev` never scans the production Keychain at startup. To recover one
-missing development credential, right-click that saved SSH connection and use
-the development-only import action. Only that connection's exact authority is
-shown in the native owner-presence prompt. In any macOS Keychain dialog choose
-**Allow**, never **Always Allow**. This action may read only the quarantined
-production `com.meterm.app.ssh.v2` item and can never read the clean production
-v3 vault. A bound v2 item must match the authority; an unbound v2 item is bound
-only after the explicit owner confirmation describing that possibility. The
-source remains unchanged, the copy is written to the isolated Dev service,
-cancellation is not retried on a later launch, and normal Dev runtime never
-falls back to a production vault. Desktop private-key paths are deliberately
-not copied from v2; reselect the file locally so the native confirmation can
-show the exact normalized path. A desktop key-ladder grant copies no production
-secret bytes and writes only a fresh authority marker after owner confirmation.
+`MeTerm Dev` 启动时绝不会扫描正式版 Keychain。开发凭据缺失时，只能在对应 SSH 保存连接的
+右键菜单中主动选择开发专用导入；原生本机身份确认只展示这一条连接的精确 authority。
+若 macOS 显示钥匙串弹窗，只选择“允许”，绝不要选择“始终允许”。该入口只允许读取已经隔离待处置的
+正式 `com.meterm.app.ssh.v2` 条目，绝不读取新的正式 v3 库；已绑定的 v2 凭据必须与 authority
+完全匹配，旧版未绑定 v2 只会在本次明确身份确认后绑定到提示中展示的 authority。副本写入
+隔离的开发 service；取消或失败后不会在下次启动自动重试，开发版正常运行也不会回退读取
+正式凭据库。桌面私钥文件路径不会从 v2 复制，必须在本机重新选择，以便系统身份确认展示规范化后的
+实际路径；ssh-agent/默认私钥授权不读取生产密钥字节，只在 owner confirmation 后写入新的 authority
+marker。
 
-Normal startup also does not open Keychain for old localStorage/name-keyed SSH,
-Remote, JumpServer, or settings credentials. It only inspects Web Storage and
-records redacted pending/manual/complete states or a non-secret presence cache.
-Re-save the corresponding connection/settings when needed. Until the formal,
-owner-confirmed recovery UI is implemented, old credentials are not claimed as
-recoverable by the distributed app.
+旧 localStorage/name-keyed SSH、Remote、JumpServer 与设置凭据也不会在普通启动时自动打开钥匙串；
+启动只检查 Web Storage，并记录脱敏的 pending/manual/complete 状态或非敏感 presence cache。
+需要时请在对应连接/设置界面重新保存；正式、经本机身份确认的 recovery UI 落地前，不宣称分发包
+能够恢复这些旧凭据。
 
-Windows development (from WSL):
+Windows 开发（从 WSL 执行）：
 
 ```bash
-make desktop-dev-win              # Start dev
+make desktop-dev-win              # 启动开发
 ```
 
 <details>
-<summary><b>Build Installers</b></summary>
+<summary><b>构建安装包</b></summary>
 
 #### macOS
 
 ```bash
-make release-macos                # Current architecture
+make release-macos                # 当前架构
 make release-macos-arm64          # Apple Silicon
 make release-macos-x86_64         # Intel
-make release-macos-all            # Build both architectures
+make release-macos-all            # 同时构建两个架构
 
-# Code signing uses an existing local Keychain identity; it never exports the private key.
+# 使用本机 Keychain 里的 Developer ID 签名，不会导出私钥
 APPLE_SIGNING_IDENTITY='Developer ID Application: …' \
   ./build-macos.sh --arch arm64 --sign
 
-# Notarization additionally requires APPLE_API_KEY_ID, APPLE_API_ISSUER_ID,
-# and APPLE_API_KEY_PATH pointing to a local App Store Connect .p8 file.
+# 公证还需设置 APPLE_API_KEY_ID、APPLE_API_ISSUER_ID，以及指向本机
+# App Store Connect .p8 文件的 APPLE_API_KEY_PATH
 APPLE_SIGNING_IDENTITY='Developer ID Application: …' \
   ./build-macos.sh --arch arm64 --sign --notarize
 ```
@@ -273,101 +246,101 @@ APPLE_SIGNING_IDENTITY='Developer ID Application: …' \
 #### Windows
 
 ```bash
-make desktop-build-win            # One-click build from WSL
+make desktop-build-win            # 从 WSL 一键构建
 ```
 
-#### Generic
+#### 通用
 
 ```bash
-make desktop-build                # Tauri production build (current platform)
+make desktop-build                # Tauri 生产构建（当前平台）
 ```
 
 </details>
 
 ---
 
-## Architecture
+## 架构概览
 
-Since v0.2.0, MeTerm has migrated from a Go sidecar architecture to a **pure Rust in-process backend**, eliminating external process management and inter-process communication overhead.
+从 v0.2.0 起，MeTerm 已从 Go sidecar 架构迁移到**纯 Rust 进程内后端**，消除了外部进程管理和进程间通信的开销。
 
 ```text
 MeTerm/
-├── desktop/              # Tauri v2 desktop app
-│   ├── src/              #   Frontend TypeScript (220+ modules)
-│   │   ├── ai-*          #     AI assistant (floating dialog, tools, agent, audit log)
-│   │   ├── file-*        #     SFTP file manager & built-in editor
-│   │   ├── session*      #     Session management (Tauri IPC)
-│   │   ├── terminal-*    #     Terminal instances & IPC transport
-│   │   ├── split-pane*   #     Split pane layout
+├── desktop/              # Tauri v2 桌面应用
+│   ├── src/              #   前端 TypeScript（220+ 模块）
+│   │   ├── ai-*          #     AI 助手（浮动对话、工具、代理、审计日志）
+│   │   ├── file-*        #     SFTP 文件管理器与内置编辑器
+│   │   ├── session*      #     会话管理（Tauri IPC）
+│   │   ├── terminal-*    #     终端实例与 IPC 传输层
+│   │   ├── split-pane*   #     分屏布局
 │   │   └── ...
-│   ├── tests/            #   Frontend unit & regression tests (.test.mts)
-│   └── src-tauri/        #   Rust backend
+│   ├── tests/            #   前端单元与回归测试（.test.mts）
+│   └── src-tauri/        #   Rust 后端
 │       └── src/
-│           ├── commands/  #     Tauri IPC commands (terminal Channel, session, window, menu, AI, etc.)
-│           └── server/    #     In-process backend (session manager, PTY/SSH, local HTTP for JumpServer)
-│               ├── session/    # Session state machine & manager
-│               ├── terminal/   # Cross-platform PTY (Unix/Windows/WSL/SSH)
-│               ├── executor/   # Local & SSH executors
-│               ├── jumpserver/ # JumpServer asset browser
-│               ├── dispatch/   # Binary protocol message routing
-│               ├── file_handler/ # File transfer (SFTP adaptive pipeline)
-│               ├── auth        # Bearer token & loopback origin authentication
+│           ├── commands/  #     Tauri IPC 命令（终端 Channel、会话、窗口、菜单、AI 等）
+│           └── server/    #     进程内后端（会话管理、PTY/SSH、JumpServer 本机 HTTP）
+│               ├── session/    # 会话状态机与管理器
+│               ├── terminal/   # 跨平台 PTY（Unix/Windows/WSL/SSH）
+│               ├── executor/   # 本地与 SSH 执行器
+│               ├── jumpserver/ # JumpServer 资产浏览
+│               ├── dispatch/   # 二进制协议消息路由
+│               ├── file_handler/ # 文件传输（SFTP 自适应流水线）
+│               ├── auth        # Bearer token 与回环来源鉴权
 │               └── ...
-├── docs/                 # API, protocol & configuration docs
-└── scripts/              # Build & dev signing helper scripts
+├── docs/                 # API、二进制协议与配置文档
+└── scripts/              # 构建与开发签名辅助脚本
 ```
 
-## Tech Stack
+## 技术栈
 
-| Layer | Technologies |
-|-------|-------------|
-| **Backend** | Rust, Axum, Tokio, xpty (cross-platform PTY), russh / russh-sftp (SSH terminal and file transfer) |
-| **Frontend** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
-| **Desktop** | Tauri v2 (Rust + TypeScript), reqwest, keyring |
-| **Update (`main`)** | `tauri-plugin-updater` reads GitHub Releases `latest.json` and verifies update package signatures |
+| 层级 | 技术 |
+|------|------|
+| **后端** | Rust, Axum, Tokio, xpty（跨平台 PTY）, russh / russh-sftp（SSH 终端与文件传输） |
+| **前端** | TypeScript, Vite, xterm.js 5.x, CodeMirror 6 |
+| **桌面** | Tauri v2 (Rust + TypeScript), reqwest, keyring |
+| **更新（`main`）** | `tauri-plugin-updater` 读取 GitHub Releases 的 `latest.json` 并校验更新包签名 |
 
-### Architecture Highlights
+### 架构亮点
 
-- **Single-process** — Backend server runs in-process via Tokio, no external sidecar management
-- **Cross-platform PTY** — Unified abstraction over Unix PTY, Windows ConPTY, WSL, and SSH
-- **Session state machine** — Created → Running → Draining (with ring buffer) → Closed, supporting seamless reconnection
-- **Binary protocol** — Custom binary messaging over Tauri IPC for efficient terminal I/O
-- **Adaptive SFTP pipeline** — Dynamic window scaling (2→64) based on RTT for high-throughput file transfers
-- **Desktop SSH transfer backend** — Desktop SSH uploads and downloads can use a dedicated native transfer path to avoid terminal-path bottlenecks
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [REST API Reference](docs/API.md) | Loopback HTTP routes, authentication, and saved SSH connection errors |
-| [Binary Protocol](docs/PROTOCOL.md) | Terminal binary protocol spec |
-| [Configuration](docs/CONFIGURATION.md) | Server defaults, client settings, and session roles |
-| [Windows Guide](WINDOWS.md) | Windows requirements, development, and packaging |
+- **单进程架构** — 后端服务通过 Tokio 在进程内运行，无需管理外部 sidecar 进程
+- **跨平台 PTY** — 统一抽象 Unix PTY、Windows ConPTY、WSL 和 SSH 终端
+- **会话状态机** — Created → Running → Draining（环形缓冲区保存输出）→ Closed，支持无缝重连
+- **二进制协议** — Tauri IPC 上的自定义二进制消息传输，高效终端 I/O
+- **SFTP 自适应流水线** — 基于 RTT 动态窗口调整（2→64），实现高吞吐文件传输
+- **桌面端 SSH 传输后端** — 桌面 SSH 上传和下载可走独立原生 SSH 传输路径，避免终端链路上的传输瓶颈
 
 ---
 
-## Contributing
+## 文档
 
-Issues and Pull Requests are welcome!
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## Acknowledgements
-
-MeTerm is built on top of many excellent open-source projects. Thanks to all contributors!
-
-See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for full third-party license details.
+| 文档 | 说明 |
+|------|------|
+| [REST API 参考](docs/API.md) | 回环 HTTP 接口、鉴权及保存连接的 SSH 错误 |
+| [二进制协议](docs/PROTOCOL.md) | 终端二进制协议规范 |
+| [配置参考](docs/CONFIGURATION.md) | 服务端默认值、客户端设置、会话角色 |
+| [Windows 指南](WINDOWS.md) | Windows 运行要求、开发与打包 |
 
 ---
 
-## License
+## 贡献
+
+欢迎提交 Issue 和 Pull Request！
+
+1. Fork 本仓库
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交修改 (`git commit -m 'Add amazing feature'`)
+4. 推送分支 (`git push origin feature/amazing-feature`)
+5. 创建 Pull Request
+
+---
+
+## 开源致谢
+
+MeTerm 的诞生离不开以下优秀的开源项目，感谢所有贡献者！
+
+完整的第三方许可证信息请参阅 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
+
+---
+
+## 许可证
 
 [MIT License](LICENSE)
