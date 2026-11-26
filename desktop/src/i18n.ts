@@ -292,6 +292,8 @@ export interface Translations {
   aiSendPrompt: string;
   aiPlaceholderCmd: string;
   aiPlaceholderAgent: string;
+  aiSideQuestionPlaceholder: string;
+  aiSideSend: string;
   aiCollapse: string;
   aiLayoutSide: string;
   aiLayoutBottom: string;
@@ -1096,6 +1098,8 @@ const translations: Record<Language, Translations> = {
     aiSendPrompt: 'Send Prompt',
     aiPlaceholderCmd: 'Command ',
     aiPlaceholderAgent: ' Ask MeAgent... ',
+    aiSideQuestionPlaceholder: 'Ask a question or paste an error…',
+    aiSideSend: 'Send',
     aiCollapse: 'Collapse',
     aiLayoutSide: 'Sidebar',
     aiLayoutBottom: 'Bottom',
@@ -1896,6 +1900,8 @@ const translations: Record<Language, Translations> = {
     aiSendPrompt: '发送提示词',
     aiPlaceholderCmd: '命令 ',
     aiPlaceholderAgent: ' 询问 MeAgent... ',
+    aiSideQuestionPlaceholder: '输入问题，或粘贴报错…',
+    aiSideSend: '发送',
     aiCollapse: '收起',
     aiLayoutSide: '侧边栏',
     aiLayoutBottom: '底部',

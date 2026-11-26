@@ -897,12 +897,57 @@ html.vibrancy-active .tldr-popup {
   border-color: rgba(255, 255, 255, 0.45);
 }
 
+.ai-side-input-area:focus-within {
+  border-color: rgba(var(--accent-rgb), 0.55);
+}
+
+.ai-side-trust-switcher {
+  align-self: flex-start;
+  max-width: 100%;
+}
+
+.ai-side-trust-switcher .ai-bar-btn-trust {
+  width: auto;
+  gap: 5px;
+  padding: 3px 7px;
+  background: var(--fill-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.ai-side-trust-switcher .ai-bar-btn-trust:hover {
+  background: var(--fill);
+}
+
+.ai-side-trust-switcher .ai-bar-btn-trust:is(:hover, :active) {
+  transform: none;
+}
+
+.ai-side-trust-switcher .ai-bar-btn-trust::after {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border: solid currentColor;
+  border-width: 0 1px 1px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+.ai-side-trust-switcher .ai-trust-label {
+  display: inline;
+  font-size: var(--fs-xs);
+}
+
+.ai-side-trust-switcher .ai-trust-dropdown {
+  left: 0;
+  right: auto;
+}
+
 /* Bottom toolbar: buttons left + send right */
 .ai-side-input-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 2px;
-  height: 28px;
+  min-height: 28px;
   padding: 0 2px;
 }
 
@@ -916,7 +961,7 @@ html.vibrancy-active .tldr-popup {
   padding: 2px 6px;
   border-radius: var(--radius-sm);
   transition: background 0.15s;
-  flex-shrink: 0;
+  min-width: 0;
 }
 .ai-side-model-select:hover {
   background: var(--fill);
@@ -1019,13 +1064,17 @@ html.vibrancy-active .ai-side-model-dropdown {
   opacity: 0.6;
 }
 
-/* Send button: round accent pill */
 .ai-side-btn-send {
-  width: 28px;
+  width: auto;
   height: 28px;
-  border-radius: 50%;
+  margin-left: auto;
+  padding: 0 10px;
+  gap: 5px;
+  border-radius: 14px;
   background: var(--accent, #6aa4ff);
-  color: #fff;
+  color: #131820;
+  font-size: var(--fs-xs);
+  font-weight: 600;
   border: none;
   cursor: pointer;
   display: flex;
@@ -1035,17 +1084,21 @@ html.vibrancy-active .ai-side-model-dropdown {
   transition: opacity 0.15s, transform 0.15s;
 }
 .ai-side-btn-send:hover {
-  opacity: 0.85;
-  transform: scale(1.05);
+  background: var(--accent, #6aa4ff);
+  color: #131820;
+  opacity: 0.9;
 }
 .ai-side-btn-send:active {
   transform: scale(0.95);
 }
-.ai-side-btn-send.streaming-active {
-  background: #ef4444;
+[data-theme="light"] .ai-side-btn-send {
+  color: #fff;
 }
+
+.ai-side-btn-send.streaming-active,
 .ai-side-btn-send.streaming-active:hover {
-  opacity: 0.85;
+  background: #b4232c;
+  color: #fff;
 }
 
 /* ============================================

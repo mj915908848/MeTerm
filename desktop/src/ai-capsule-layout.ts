@@ -150,7 +150,6 @@ export function createSideInputArea(
   const area = document.createElement('div');
   area.className = 'ai-side-input-area';
 
-  // ── Top toolbar row: model selector + trust + chat history ──
   const toolbar = document.createElement('div');
   toolbar.className = 'ai-side-input-toolbar';
 
@@ -194,6 +193,7 @@ export function createSideInputArea(
 
   // Trust switcher
   const trustSwitcher = callbacks.createTrustSwitcher();
+  trustSwitcher.classList.add('ai-side-trust-switcher');
 
   // Thinking-mode toggle — per-request flag, safe to flip mid-conversation.
   const thinkingToggle = callbacks.createThinkingToggle();
@@ -248,16 +248,17 @@ export function createSideInputArea(
 
   const textarea = document.createElement('textarea');
   textarea.className = 'ai-side-input';
-  textarea.placeholder = t('aiPlaceholderAgent');
+  textarea.placeholder = t('aiSideQuestionPlaceholder');
+  textarea.setAttribute('aria-label', textarea.placeholder);
   textarea.rows = 2;
   textarea.autocapitalize = 'off';
   textarea.setAttribute('autocorrect', 'off');
   textarea.spellcheck = false;
 
   const sendBtn = document.createElement('button');
+  sendBtn.type = 'button';
   sendBtn.className = 'ai-side-btn ai-side-btn-send';
-  sendBtn.title = `${t('aiSendPrompt')} (Enter)`;
-  sendBtn.innerHTML = LLM_SEND_SVG;
+  updateSideSendButton(sendBtn, instance.isStreaming);
 
   // Wire up send — resolve the *current* instance each invocation
   // so the side panel (which lives at tab scope) always targets the
@@ -340,23 +341,16 @@ export function createSideInputArea(
     textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
   });
 
-  // Layout: textarea on top, toolbar + send button on bottom
-  area.appendChild(textarea);
-
   // Bottom bar: tools on left, send on right
   toolbar.appendChild(modelSelect);
-  toolbar.appendChild(trustSwitcher);
   toolbar.appendChild(thinkingToggle);
   toolbar.appendChild(chatHistBtn);
   toolbar.appendChild(hostNotesBtn);
   toolbar.appendChild(layoutBtn);
   toolbar.appendChild(attachBtn);
-  const toolbarSpacer = document.createElement('div');
-  toolbarSpacer.style.flex = '1';
-  toolbar.appendChild(toolbarSpacer);
   toolbar.appendChild(sendBtn);
 
-  area.appendChild(toolbar);
+  area.append(trustSwitcher, textarea, toolbar);
 
   // Store references
   instance.sideInputArea = area;
@@ -372,18 +366,14 @@ export function createSideInputArea(
   return area;
 }
 
-/** Update the side panel send button to show send/stop icon */
+/** Keep the side panel action label and icon in sync with the stream. */
 export function updateSideSendButton(btn: HTMLButtonElement | null, isStreaming: boolean): void {
   if (!btn) return;
-  if (isStreaming) {
-    btn.innerHTML = stopIcon(16);
-    btn.classList.add('streaming-active');
-    btn.title = t('aiStopGenerating');
-  } else {
-    btn.innerHTML = LLM_SEND_SVG;
-    btn.classList.remove('streaming-active');
-    btn.title = `${t('aiSendPrompt')} (Enter)`;
-  }
+  const label = t(isStreaming ? 'aiStopGenerating' : 'aiSideSend');
+  btn.classList.toggle('streaming-active', isStreaming);
+  btn.innerHTML = isStreaming ? stopIcon(16) : LLM_SEND_SVG;
+  btn.append(label);
+  btn.title = isStreaming ? label : `${label} (Enter)`;
 }
 
 /** Get the side send button from instance */

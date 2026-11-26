@@ -339,6 +339,7 @@ class AICapsuleManagerClass {
       this.minimizeChat(inst);
     } else {
       this.openChat(inst);
+      if (inst.layoutMode === 'side') inst.sideInput?.focus({ preventScroll: true });
     }
   }
 
